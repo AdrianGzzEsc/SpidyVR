@@ -17,8 +17,8 @@ uint32_t install(uintptr_t base);
 // Unhooks. A tab still open shows its rows until the game rebuilds it; then
 // they are gone, and a change made in them meanwhile does nothing.
 void uninstall();
-// What the tab shows: the session's values (X switches the aim markers
-// during play). A change made in the tab and not yet taken is kept.
+// What the tab shows: the session's values. A change made in the tab and
+// not yet taken is kept.
 void publish(const vr_settings::Values&);
 // A change made in the tab since the last call: true, with `values` holding it.
 bool take(vr_settings::Values&);

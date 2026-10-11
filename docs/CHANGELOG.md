@@ -3,7 +3,99 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 11, fifth build): the reflections are back in the
+**Latest build (October 11, seventh build): the first mission's crash is
+fixed, and a two-hand web pull is the game's LB + RB.** You reported "game
+crashes on first mission ... at some point during one of the steps it crashes
+for everyone", then a door further on that "prompts me to rb+lb and i cant
+target it with webs", and asked "why cant we use the existing grip
+webshooting with both hands to to physically pull objects that need rb + lb".
+
+- **The crash was Spidy's blow to a thug who had just appeared.** Your 14:49
+  session's minidump ends in the game's `BotAttackResponseManager`, on the
+  thug your left web had just yanked: it asks the thug's `AwarenessDB` how
+  aware he is of whoever hit him, and that thug had none (a null read at
+  `Spider-Man.exe+314d3e`, 1.5 s into the first fight). The thug yanked 60 ms
+  before him took the same blow and flew. Punches and web balls name
+  Spider-Man the same way.
+- **Now:** every blow Spidy sends first looks at the thug's own handle to
+  that component. Where it names nothing, the blow goes out as nobody's: the
+  game's function then leaves before the lookup. He is hit all the same.
+- **The door.** In VR play nothing sent the game's LB or RB: your grips shoot
+  your webs. Those webs do not hold on that door (16 grip presses in a row
+  missed it in your 14:20 session: the red cross), and the web grab does not
+  know it.
+- **Now:** point both hands at the thing, squeeze both web buttons, and yank
+  either hand back as for a zip. Both controllers pulse, the console says
+  "Web pull", and the game gets its LB + RB for as long as you hold both
+  (0.3 s at least, 4 s at most). Only standing on the ground, with no web
+  attached and both hands on one thing within 12 m that no web holds on.
+  Spidy does not see the game's prompt: a pull at such a thing without one
+  gives the game its LB + RB too.
+- **A plain fallback:** the right thumbstick's click, or hold, is the game's
+  LB + RB as well.
+- **In your headset, 15:24 to 15:34 (570 s), from the autosave before that
+  fight:** no crash, the game closed normally. Of 359 blows 9 went out as
+  nobody's, the first 3.3 s into the first fight; 29 punches, 80 yanks, 66
+  knock-downs. The door: both grips missed it once more, a yank held LB + RB
+  for 1.4 s, and from there you went on up a floor. Up there LB + RB went
+  down four more times (503 s to 551 s, 0.3 to 0.5 s each), each right after
+  both grips missed; seven grip presses in between missed and pulled
+  nothing. The report cannot tell a pull from a right-stick click there, nor
+  whether you yanked: tell me if the gesture was hard to trigger.
+- A session's report has `punch.unnamed` (the blows that went out as
+  nobody's), and `pad_buttons` shows `0x300` while LB + RB are down.
+- The aim rays (a few a step) now run with the aim markers off too: the pull
+  needs to know what each hand points at.
+
+`spidy_ray_bridge.dll`, `spidy_stereo_probe.dll`, `run_game_vr.py`, the
+launcher's CONTROLS page and README.txt changed. 239 core checks (2 new), 23
+launcher checks and 109 Python checks pass.
+In your play folder (`Documents\Spidy-0.2.11`) since 15:23: the two modules,
+`run_game_vr.py` and README.txt, the files they replaced in its
+`reports\backups\play-folder-before-web-pull-20261011-152300`. Not the
+launcher, which was open.
+
+Not checked: what the game does with a nobody's blow in every later fight
+(one session), a pull at a thing without a prompt, and whether every LB + RB
+prompt is a thing no web holds on (where a web does hold, a yank zips you to
+it: use the right stick there).
+
+**Earlier build (October 11, sixth build): B dodges.** You asked for "a dodge
+button and ability (you can remap some stuff".
+
+- **B is the game's own dodge.** Press it and Spider-Man dodges the way the
+  left stick points; with the stick at rest the game chooses. It is the
+  game's B, so whatever the game does with a dodge comes with it. Not while
+  a web or your own flight carries you: there the game does not have you,
+  as with the interact.
+- **Three buttons moved to make room.** A dodge needs the left thumb on the
+  stick, so it had to be a right-hand button. Interact (web strike in a
+  fight) went from B to **Y**, the game menu (map, suits, skills) from Y to
+  **X**, and X no longer hides the aim markers: AIM MARKERS in Settings >
+  SPIDY VR, or in the launcher's options, does. A, B and Y are now the
+  buttons the game's own prompts show.
+- Flips are as they were (the left stick, and A in the air). B skips the
+  T-pose calibration as before and does not dodge meanwhile.
+- **In the game, without a headset:** the virtual controller's B with the
+  stick took the player 2.5 m to the side (off the perch he stood on), B
+  alone 1.0 m, the stick alone for as long 0.2 m; the player's own camera
+  kept committing through each, so VR stays on during a dodge
+  (`tools/probe_dodge.py`).
+- A session's report counts `dodges`: the B presses that reached the game.
+
+`spidy_stereo_probe.dll`, the launcher (its CONTROLS page and option texts)
+and `run_game_vr.py` changed. 237 core checks (1 new), 23 launcher checks
+and 109 Python checks pass.
+In your play folder (`Documents\Spidy-0.2.11`) since 14:42: the stereo
+module, `run_game_vr.py` and README.txt, the files they replaced in its
+`reports\backups\play-folder-before-dodge-20261011-144225`. Not the
+launcher, which was open: its CONTROLS page names the old buttons until
+`build\windows-ninja\spidy_launcher.exe` replaces it.
+
+Not run in the headset: the path from your controller's B to the game, a
+dodge in a fight, and how the leap feels are yours to try.
+
+**Earlier build (October 11, fifth build): the reflections are back in the
 eyes; the third build had taken them out.** You played on the cable:
 "preformance was good again, but no ssr visible (turned it off and on in the
 menu". Both halves check out.

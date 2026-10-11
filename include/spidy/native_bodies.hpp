@@ -133,9 +133,11 @@ struct Counters {
     // instance poses Spidy set; bots flung and flights steered; requests the
     // game refused, and slots whose lease lapsed; props let go that came to
     // rest; and props flying free in real time now. Damage requests issued,
-    // and those dropped (an actor gone, the system's pool full).
+    // those dropped (an actor gone, the system's pool full), and those of the
+    // issued that went out as nobody's: to a bot with no AwarenessDB, whose
+    // BotAttackResponseManager crashes the game on a blow with a damager.
     uint64_t steps{}, frees{}, rebuilds{}, writes{}, follows{}, flings{}, steers{}, rejected{}, expired{},
-        rested{}, flying{}, damages{}, damageDropped{};
+        rested{}, flying{}, damages{}, damageDropped{}, damageUnnamed{};
 };
 Counters counters();
 // Physics steps seen so far, and the world's time the latest took (seconds:

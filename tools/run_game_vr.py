@@ -495,8 +495,9 @@ def snapshot(game, address):
         result.update(zip(('flat_screen','toggles','eye_width','eye_height'),struct.unpack_from('<4I',raw,560)))
         # What the last headset frame showed; game_screen frames showed the game's own camera on the
         # virtual screen because gameplay was unavailable (menus, hint cards, cutscenes, animated cameras).
-        presentation, = struct.unpack_from('<I', raw, 576)
-        result.update(presentation=PRESENTATIONS.get(presentation, presentation),
+        # Then the B presses the game got as its B (the dodge).
+        presentation, dodges = struct.unpack_from('<2I', raw, 576)
+        result.update(presentation=PRESENTATIONS.get(presentation, presentation), dodges=dodges,
                       screen_submitted=struct.unpack_from('<Q', raw, 584)[0])
         # Why gameplay was unavailable, and which camera the game used meanwhile (a scene that
         # stays on the screen although it is played: its camera is missing from the gate).
@@ -510,12 +511,12 @@ def snapshot(game, address):
         # Camera commits, and those on the player by the follow or combat camera. Both rising while
         # the gate says other_camera: another camera commits after the player's every frame.
         result.update(zip(('camera_commits', 'player_commits'), struct.unpack_from('<2Q', raw, 632)))
-        # B presses the game got as its Y (interact, web strike), whether the aim markers show (X
-        # switches them in VR), and the markers drawn so far (one per hand per headset frame).
+        # Y presses the game got as its Y (interact, web strike), whether the aim markers show, and the
+        # markers drawn so far (one per hand per headset frame).
         interacts, aim_markers = struct.unpack_from('<2I', raw, 648)
         result.update(interacts=interacts, aim_markers=bool(aim_markers),
                       markers=struct.unpack_from('<Q', raw, 656)[0])
-        # The VR settings now (the SPIDY VR tab in the game's Settings changes them, X the aim markers),
+        # The VR settings now (the SPIDY VR tab in the game's Settings changes them),
         # the tab's changes, the times the game built its Settings with it, whether its hooks are in, and
         # why it is missing (game_menu.hpp: 93xx-94xx not hooked, 95xx not built).
         flags, snap_turn, haptics, screen_size = struct.unpack_from('<4I', raw, 664)
@@ -602,12 +603,14 @@ def body_snapshot(game, address):
 
 def punch_snapshot(game, address):
     """Punches (game_punch::Data): landed per hand, the game's damage requests issued and dropped, the bots
-    within reach of a fist, and the latest punch."""
+    within reach of a fist, and the latest punch. unnamed: the issued requests (punches, web pulls and web
+    balls alike) that went out without their damager, to a bot whose attack responses have no AwarenessDB
+    to look one up in (the game crashes on a damager there)."""
     for _ in range(8):
-        raw = game.read(address, 160)
-        if len(raw) != 160:
+        raw = game.read(address, 168)
+        if len(raw) != 168:
             return None
-        if struct.unpack_from('<3I', raw) != (0x53505544, 1, 160):
+        if struct.unpack_from('<3I', raw) != (0x53505544, 1, 168):
             raise RuntimeError('Punch protocol mismatch')
         if struct.unpack_from('<Q', raw, 16)[0] & 1 or raw[16:24] != game.read(address+16, 8):
             continue
@@ -621,7 +624,8 @@ def punch_snapshot(game, address):
                               speed=round(speed, 2), last_knockback=knockback, busy=bool(busy)))
         point, direction = struct.unpack_from('<3f', raw, 128), struct.unpack_from('<3f', raw, 140)
         damage, speed = struct.unpack_from('<2f', raw, 152)
-        return dict(status=status, samples=samples, punches=punches, issued=issued, dropped=dropped, bots=bots,
+        return dict(status=status, samples=samples, punches=punches, issued=issued, dropped=dropped,
+                    unnamed=struct.unpack_from('<Q', raw, 160)[0], bots=bots,
                     error=error, hands=hands, last_point=[round(x, 3) for x in point],
                     last_direction=[round(x, 3) for x in direction], last_damage=round(damage, 1),
                     last_speed=round(speed, 2))
@@ -1021,7 +1025,8 @@ def main():
     p.add_argument('--no-web-shooter', action='store_true',
                    help="A free hand's trigger shoots nothing, instead of the game's web-shooter web balls")
     p.add_argument('--no-aim-markers', action='store_true',
-                   help="Start with the aim markers (where each hand's web would land) hidden; X shows them in VR")
+                   help="Start with the aim markers (where each hand's web would land) hidden; AIM MARKERS in the "
+                        "SPIDY VR tab shows them")
     p.add_argument('--no-eye-occlusion', action='store_true',
                    help='Each eye draws everything in its view, hidden behind buildings or not (builds before '
                         'October 6 did; about half the frame rate)')
@@ -1338,8 +1343,7 @@ def session(a, startup):
                         # Thugs within reach of a fist, and each fist's speed relative to the head.
                         sample['punch'] = dict(bots=landed['bots'], punches=landed['punches'],
                                                speed=[h['speed'] for h in landed['hands']])
-                        if landed['punches'] != (punch or {}).get('punches') or \
-                                landed['dropped'] != (punch or {}).get('dropped'):
+                        if any(landed[k] != (punch or {}).get(k) for k in ('punches', 'dropped', 'unnamed')):
                             punch_samples.append(dict(landed, seconds=round(time.monotonic()-started, 3)))
                         punch = landed
                     shots = shooter_snapshot(game, rays['SpidyShooterData'])

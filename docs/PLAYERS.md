@@ -134,9 +134,10 @@ now; the left hand's are blue, the right hand's orange)
   Red cross ............ it would miss (a car, or a wall in your way)
   Ring of three arcs ... it catches that prop or thug (the ring turns, and
                          closes in as it locks on)
-  X .................... hide or show the markers (SPIDY VR in the game's
-                         Settings has the same switch; the next session
-                         starts as you left it)
+  AIM MARKERS .......... hides or shows the markers: Settings > SPIDY VR, or
+                         "Aim markers" in the launcher's options (the next
+                         session starts as you left it). X no longer
+                         switches them: it opens the game menu
 
 Your body and fists
   Look down ............ you are Spider-Man: his body under you, his arms
@@ -157,10 +158,21 @@ Moving
                          the further you tilt it, the faster
   A .................... jump (from the ground, a wall or a perch; in the
                          air it flips you, below: no web zip from the wrist)
-  B .................... interact: the game's Y (backpacks, doors, prompts;
+  B .................... dodge: the game's B. You dodge the way the left
+                         stick points; with the stick at rest the game
+                         chooses the way. Not while a web carries you
+  Y .................... interact: the game's Y (backpacks, doors, prompts;
                          web strike in a fight)
+  Right stick click .... the game's LB + RB: its web pull. Where the game
+                         shows LB + RB (a door or a grate to tear off),
+                         click the right stick, or hold it for as long as
+                         the game wants the two held. Not while a web
+                         carries you
   Menu button .......... pause
-  Y .................... game menu (map, suits, skills)
+  X .................... game menu (map, suits, skills)
+  A, B and Y are the game's own A, B and Y: where the game shows one of
+  them on screen, press that button. Your grips shoot webs, so they are
+  not the game's LB and RB in VR: the right stick's click is both.
   Click both sticks .... switch between VR and a flat game screen
 
 Walls
@@ -314,8 +326,8 @@ IF SOMETHING IS WRONG
   frame rate and memory: 150% gave about 30% fewer frames on an RTX 5090.
   Press Check beside your headset to see the pixels per eye. Virtual
   Desktop's quality setting raises what 100% is.
-- The aim markers distract you: press X in VR to hide them, or switch "Aim
-  markers" off in Settings > SPIDY VR.
+- The aim markers distract you: switch AIM MARKERS off in Settings > SPIDY VR
+  (or "Aim markers" in the launcher's options).
 - Webs shot at the sky hold somewhere you can't see: switch "Webs hold in
   open air" off in Settings > SPIDY VR or the launcher's options; a web then
   needs something within 100 m to hold on to.
@@ -338,7 +350,12 @@ IF SOMETHING IS WRONG
   > SPIDY VR.
 - The HUD is too small, too large or in the way: HUD in Settings > SPIDY VR
   (or "HUD" in the launcher's options): SMALL, MEDIUM, LARGE, or OFF.
-- The game asks for Y (Triangle) to interact: in VR that is B.
+- The game asks for LB + RB (a door you cannot get through, a grate) and
+  your webs do nothing to it: click the right stick. That is the game's
+  LB + RB in VR; your grips shoot your own webs there.
+- B no longer interacts, or Y no longer opens the game menu: the buttons
+  moved to make room for the dodge. B dodges, Y interacts (as the game's
+  prompts say) and X opens the game menu.
 - The view turning onto a wall makes you uneasy: switch STAND ON WALLS off in
   Settings > SPIDY VR (or "Stand on walls" in the launcher's options). You
   still stay on walls, upright beside them.

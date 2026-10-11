@@ -75,8 +75,10 @@ if($Seconds) { Write-Host "Timed test: $Seconds seconds." }
 else { Write-Host 'VR stays active until you close the game or press Ctrl+C here.' }
 Write-Host 'VR starts with the game: its intro, menus, loading and cutscenes show on a screen in the headset.'
 Write-Host 'There the controllers are an Xbox controller: thumbstick moves, A selects, B goes back, grips switch tabs.'
-Write-Host 'In VR the menu button pauses and Y opens the game menu (map, suits, skills).'
-Write-Host "In VR B is the game's interact button (its Y: backpacks, doors, prompts; web strike in a fight)."
+Write-Host 'In VR the menu button pauses and X opens the game menu (map, suits, skills).'
+Write-Host "In VR B and Y are the game's own: B dodges the way the left stick points, Y interacts (backpacks,"
+Write-Host 'doors, prompts; web strike in a fight).'
+Write-Host "Where the game shows LB + RB (a door or a grate to pull off), click the right thumbstick."
 Write-Host 'Keep the game window in front on the desktop: the game pauses while another window is.'
 Write-Host 'Click both thumbsticks to switch between immersive VR and a flat game screen in the headset.'
 Write-Host "VR settings are in the game's own Settings: pause, Settings, then SPIDY VR (Up from GAME reaches it)."
@@ -120,9 +122,9 @@ else {
 }
 if($NoAimMarkers) {
     $captureArgs+=@('--no-aim-markers')
-    Write-Host "Aim markers hidden at the start: X shows where each hand's web would land."
+    Write-Host "Aim markers hidden at the start: AIM MARKERS in Settings > SPIDY VR shows where each hand's web would land."
 }
-else { Write-Host "Aim markers show where each hand's web would land; X hides them (add -NoAimMarkers to start hidden)." }
+else { Write-Host "Aim markers show where each hand's web would land (add -NoAimMarkers to start hidden)." }
 if($Flips) {
     $captureArgs+=@('--flips')
     Write-Host 'Flips (experimental) on: in the air the left stick turns you over; tap A for one flip, hold A to stay turned.'

@@ -18,6 +18,7 @@
 #include "spidy/vr_settings.hpp"
 #include "spidy/vr_shortcut.hpp"
 #include "spidy/web_visual.hpp"
+#include "spidy/web_pull.hpp"
 #include "spidy/web_grab.hpp"
 #include "spidy/lab_props.hpp"
 #include "spidy/body_ik.hpp"
@@ -3090,7 +3091,9 @@ int main() {
         // Full deflection, a stick at rest a few percent off centre, analog triggers.
         check(menus.thumbLX==-32767 && menus.thumbLY==0 && menus.thumbRX==0 && menus.thumbRY==19660,"sticks");
         check(menus.leftTrigger==128 && menus.rightTrigger==255,"triggers");
-        // In VR the controllers swing: of their own buttons only pause (menu) and the game menu (Y) pass.
+        // In VR the controllers swing: of their own buttons only pause (menu) and the game menu (X) pass.
+        check(fromControllers(f,Mapping::gameplay)==game_pad::State{static_cast<uint16_t>(start)},"Y alone reached the game in play");
+        f.buttons=buttonA|buttonX|buttonMenu;
         const auto play=fromControllers(f,Mapping::gameplay);
         check(play==game_pad::State{static_cast<uint16_t>(start|back)},"gameplay passes only Start and Back");
         // Walking and jumping come as the swing leaves them: the October 6
@@ -3101,15 +3104,239 @@ int main() {
         check(!walking.leftTrigger && !walking.rightTrigger,"triggers leaked into gameplay");
         check(fromControllers(f,Mapping::gameplay,{.05f,0,false})==play,"stick noise walked");
         check(fromControllers(f,Mapping::none,{1,1,true})==game_pad::State{},"nothing without the headset");
-        // B is the game's Y in VR (interact, web strike), as the swing leaves it; on the screen B stays B.
+        // Y is the game's Y in VR (interact, web strike) and B its B (the dodge), as the swing leaves them.
         check(fromControllers(f,Mapping::gameplay,{0,0,false,true}).buttons==(start|back|y),"interact is not the game's Y");
-        XrFrame pressed;pressed.buttons=buttonB;
-        check(fromControllers(pressed,Mapping::menus).buttons==b,"B on the game screen is not the game's B");
-        check(fromControllers(pressed,Mapping::gameplay)==game_pad::State{},"B reached the game without the swing's leave");
+        check(fromControllers(f,Mapping::gameplay,{0,0,false,false,true}).buttons==(start|back|b),"dodge is not the game's B");
+        // A dodge goes the way the stick points: both reach the game together.
+        const auto dodging=fromControllers(f,Mapping::gameplay,{-1,0,false,false,true});
+        check(dodging.buttons==(start|back|b) && dodging.thumbLX==-32767 && !dodging.thumbLY,"a dodge lost its way");
+        // The game's web pull is its LB and RB together; the grips alone are no bumpers in VR.
+        check(fromControllers(f,Mapping::gameplay,{0,0,false,false,false,true}).buttons==(start|back|leftShoulder|rightShoulder),
+              "a pull is not the game's LB + RB");
+        XrFrame gripping;gripping.hands[0].squeeze=gripping.hands[1].squeeze=1;
+        check(fromControllers(gripping,Mapping::gameplay)==game_pad::State{},"the grips were bumpers in VR play");
+        XrFrame pressed;pressed.buttons=buttonB|buttonY;
+        check(fromControllers(pressed,Mapping::menus).buttons==(b|y),"B and Y on the game screen are not the game's");
+        check(fromControllers(pressed,Mapping::gameplay)==game_pad::State{},"B or Y reached the game without the swing's leave");
         XrFrame broken;
         broken.hands[0].stickX=std::numeric_limits<float>::quiet_NaN();
         broken.hands[1].trigger=std::numeric_limits<float>::infinity();
         check(fromControllers(broken,Mapping::menus)==game_pad::State{},"bad readings stay at rest");
+    });
+    test("B, X and Y stay what they were pressed as between the game screen and VR", [] {
+        using namespace game_pad;
+        const auto sent=[](const PressOrigins& o,uint32_t held,Mapping mapping,Walk walk={}) {
+            XrFrame f;f.buttons=held;
+            return fromControllers(o.filtered(f,mapping),mapping,walk).buttons;
+        };
+        PressOrigins o;
+        // B pressed in VR dodges; the menu the game opens meanwhile gets no Back from it.
+        o.update(buttonB,true);
+        check(o.play()==buttonB && !o.screen(),"a press in VR is not play's");
+        o.update(buttonB,false);
+        check(o.play()==buttonB && !sent(o,buttonB,Mapping::menus),"a dodge held into a menu went Back there");
+        // Let go and pressed on the screen it is Back, and no dodge once play is back.
+        o.update(0,false);
+        o.update(buttonB,false);
+        check(sent(o,buttonB,Mapping::menus)==b,"B on the game screen is not Back");
+        o.update(buttonB,true);
+        check(!(o.play()&buttonB) && o.screen()==buttonB,"Back held into play dodged");
+        o.update(0,true);
+        check(!o.play() && !o.screen(),"a button let go stayed held");
+        // X opens the game menu from VR; held on into the menu it is no X there.
+        o.update(buttonX,true);
+        check(sent(o,buttonX,Mapping::gameplay)==back,"X in VR is not the game menu");
+        o.update(buttonX,false);
+        check(!sent(o,buttonX,Mapping::menus),"the game menu's press was X in that menu");
+        // X pressed in the menu is X there, and opens no menu when play is back.
+        o.update(0,false);
+        o.update(buttonX,false);
+        check(sent(o,buttonX,Mapping::menus)==x,"X on the game screen is not the game's X");
+        o.update(buttonX,true);
+        check(!sent(o,buttonX,Mapping::gameplay),"X held from a menu opened the game menu");
+        // Y interacts in VR; held into the game's Settings it resets no tab. A second button
+        // pressed meanwhile is the screen's own; A and the menu button pass as they are.
+        o.update(buttonY,true);
+        o.update(buttonY|buttonB,false);
+        check(sent(o,buttonY|buttonB|buttonA|buttonMenu,Mapping::menus)==(b|a|start),"buttons mixed up across the switch");
+        check(!sent(o,buttonY|buttonB,Mapping::none),"buttons reached the game without the headset");
+    });
+    test("the right thumbstick's click is the game's LB + RB, and not half of clicking both", [] {
+        using game_pad::PullPress;
+        PullPress press;
+        // Held, it holds from the chord's time on, for as long as the stick is down.
+        float began = -1;
+        for (int i = 0; i < 60; ++i)
+            if (press.update(.011f, true, true, false) && began < 0)
+                began = i * .011f;
+        check(began >= PullPress::chordSeconds - .012f && began <= PullPress::chordSeconds + .012f,
+              "a held click began to pull at the wrong time");
+        check(press.update(.011f, true, true, false), "a held click let go of the pull");
+        check(!press.update(.011f, true, false, false), "the pull outlasted the stick");
+        // A short click holds for a moment after it.
+        PullPress tap;
+        check(!tap.update(.011f, true, true, false) && !tap.update(.011f, true, true, false), "a click pulled at once");
+        float held = 0;
+        for (int i = 0; i < 60; ++i)
+            held += tap.update(.011f, true, false, false) ? .011f : 0;
+        check(held >= PullPress::tapSeconds - .012f && held <= PullPress::tapSeconds + .012f,
+              "a short click did not hold for its time");
+        // Both sticks, either first, switch the screen and pull nothing.
+        for (const bool rightFirst : {false, true}) {
+            PullPress chord;
+            bool any = chord.update(.011f, true, rightFirst, !rightFirst);
+            for (int i = 0; i < 30; ++i)
+                any = chord.update(.011f, true, true, true) || any;
+            for (int i = 0; i < 30; ++i)
+                any = chord.update(.011f, true, false, false) || any;
+            check(!any, "clicking both sticks pulled");
+        }
+        // The left stick joining a pull ends it, until the right one is let go.
+        PullPress joined;
+        for (int i = 0; i < 20; ++i)
+            joined.update(.011f, true, true, false);
+        check(joined.update(.011f, true, true, false), "a held click did not pull");
+        check(!joined.update(.011f, true, true, true) && !joined.update(.011f, true, true, false),
+              "a pull went on after the left stick joined");
+        // Outside VR play nothing pulls, and a stick held through it waits for a release.
+        PullPress screen;
+        for (int i = 0; i < 30; ++i)
+            check(!screen.update(.011f, false, true, false), "a click on the game screen pulled");
+        for (int i = 0; i < 30; ++i)
+            check(!screen.update(.011f, true, true, false), "a click held into play pulled");
+        check(!screen.update(.011f, true, false, false), "letting go of a click held into play pulled");
+        for (int i = 0; i < 20; ++i)
+            screen.update(.011f, true, true, false);
+        check(screen.update(.011f, true, true, false), "a new click after the screen did not pull");
+    });
+    test("both web buttons on a thing no web holds on, and a yank, are the game's LB + RB", [] {
+        // A door 3 m ahead (-Z); the hands a shoulder's width apart, each pointing at it.
+        const Vec3 door[2] = {{-.4f, 1.2f, -3}, {.4f, 1.2f, -3}};
+        const Vec3 rest[2] = {{-.25f, -.3f, -.4f}, {.25f, -.3f, -.4f}}; // from the head
+        const Vec3 head{0, 1.7f, 0};
+        const Quat level{};
+        struct Step {
+            bool held[2];
+            bool blocked[2];
+            float back[2]; // each hand drawn this far back (+Z) from its rest
+        };
+        const auto hands = [&](const Step& s) {
+            std::array<WebPullHand, 2> out;
+            for (int i = 0; i < 2; ++i) {
+                const Vec3 grip = rest[i] + Vec3{0, 0, s.back[i]};
+                out[i] = {s.held[i], s.blocked[i], door[i], head + grip, grip};
+            }
+            return out;
+        };
+        constexpr float dt = 1.f / 90;
+        // A yank: 0.3 m back at 3 m/s.
+        const auto yank = [&](WebPull& pull, bool ready, bool left, bool right, bool blocked = true) {
+            bool any{};
+            for (int i = 1; i <= 9; ++i)
+                any = pull.update(dt, ready, level,
+                                  hands({{true, true},
+                                         {blocked, blocked},
+                                         {left ? i * 3 * dt : 0, right ? i * 3 * dt : 0}})) ||
+                      any;
+            return any;
+        };
+        const Step open{{false, false}, {true, true}, {0, 0}}, pressed{{true, true}, {true, true}, {0, 0}};
+        const Step drawn{{true, true}, {true, true}, {.3f, .3f}};
+        WebPull pull;
+        check(!pull.update(dt, true, level, hands(open)) && !pull.aimed(), "open hands aimed");
+        check(!pull.update(dt, true, level, hands(pressed)) && pull.aimed(), "both web buttons on a door did not aim");
+        for (int i = 0; i < 30; ++i)
+            check(!pull.update(dt, true, level, hands(pressed)), "holding both web buttons pulled without a yank");
+        check(yank(pull, true, true, true) && pull.pulls() == 1, "a yank of both hands did not pull");
+        // LB + RB stay down while both web buttons do, and let go with them.
+        for (int i = 0; i < 60; ++i)
+            check(pull.update(dt, true, level, hands(drawn)), "the pull ended while both web buttons were down");
+        check(!pull.update(dt, true, level, hands({{true, false}, {true, true}, {.3f, .3f}})),
+              "the pull outlasted a web button");
+        check(pull.pulls() == 1, "one yank pulled twice");
+        // A yank that lets go of the grips at once still holds the buttons a moment.
+        WebPull quick;
+        quick.update(dt, true, level, hands(open));
+        quick.update(dt, true, level, hands(pressed));
+        check(yank(quick, true, true, false), "one hand's yank did not pull");
+        float held = 0;
+        for (int i = 0; i < 60; ++i)
+            held += quick.update(dt, true, level, hands(open)) ? dt : 0;
+        check(held > .15f && held < .32f, "a short pull did not hold for its time");
+        // At most for so long, both buttons down or not.
+        WebPull stuck;
+        stuck.update(dt, true, level, hands(open));
+        stuck.update(dt, true, level, hands(pressed));
+        yank(stuck, true, true, true);
+        int frames = 0;
+        while (frames < 2000 && stuck.update(dt, true, level, hands(drawn)))
+            ++frames;
+        check(frames * dt > 3 && frames * dt < 4.1f, "a held pull did not end");
+        // Where a web would hold (no red cross), or with one hand only, a yank is the swing's.
+        WebPull holds;
+        holds.update(dt, true, level, hands(open));
+        holds.update(dt, true, level, hands({{true, true}, {false, false}, {0, 0}}));
+        check(!holds.aimed() && !yank(holds, true, true, true, false), "a web that holds was pulled as a door");
+        WebPull single;
+        single.update(dt, true, level, hands(open));
+        single.update(dt, true, level, hands({{true, false}, {true, true}, {0, 0}}));
+        bool any{};
+        for (int i = 1; i <= 9; ++i)
+            any = single.update(dt, true, level, hands({{true, false}, {true, true}, {i * 3 * dt, 0}})) || any;
+        check(!any, "one web button pulled");
+        // A slow draw back is no yank, nor is a push toward the door.
+        WebPull slow;
+        slow.update(dt, true, level, hands(open));
+        slow.update(dt, true, level, hands(pressed));
+        any = false;
+        for (int i = 1; i <= 90; ++i)
+            any = slow.update(dt, true, level, hands({{true, true}, {true, true}, {i * .4f * dt, i * .4f * dt}})) || any;
+        for (int i = 1; i <= 9; ++i)
+            any = slow.update(dt, true, level,
+                              hands({{true, true}, {true, true}, {.4f - i * 3 * dt, .4f - i * 3 * dt}})) ||
+                  any;
+        check(!any, "a slow draw or a push pulled");
+        // Not while the game does not have the player on the ground, and web
+        // buttons held from then on aim at nothing.
+        WebPull away;
+        away.update(dt, false, level, hands(open));
+        away.update(dt, false, level, hands(pressed));
+        check(!yank(away, false, true, true), "a yank pulled while the game did not have the player");
+        check(!away.update(dt, true, level, hands(pressed)) && !away.aimed() && !yank(away, true, true, true),
+              "web buttons held from a swing pulled on landing");
+        // Two hands on things far apart, or on one out of reach, pull nothing.
+        WebPull apart;
+        apart.update(dt, true, level, hands(open));
+        auto wide = hands(pressed);
+        wide[1].point = {9, 1.2f, -3};
+        apart.update(dt, true, level, wide);
+        check(!apart.aimed(), "two things were one");
+        WebPull far;
+        far.update(dt, true, level, hands(open));
+        auto distant = hands(pressed);
+        distant[0].point = {-.4f, 1.2f, -40};
+        distant[1].point = {.4f, 1.2f, -40};
+        far.update(dt, true, level, distant);
+        check(!far.aimed(), "a thing out of reach was aimed at");
+        // The tracking space turned a quarter: the same yank, away from the door there.
+        WebPull turned;
+        const Quat quarter = Quat::yaw(1.5707963f);
+        const auto turnedHands = [&](const Step& s) {
+            auto out = hands(s);
+            for (int i = 0; i < 2; ++i) {
+                out[i].point = quarter.rotate(door[i]);
+                out[i].position = head + quarter.rotate(out[i].motion);
+            }
+            return out;
+        };
+        turned.update(dt, true, quarter, turnedHands(open));
+        turned.update(dt, true, quarter, turnedHands(pressed));
+        any = false;
+        for (int i = 1; i <= 9; ++i)
+            any = turned.update(dt, true, quarter,
+                                turnedHands({{true, true}, {true, true}, {i * 3 * dt, i * 3 * dt}})) ||
+                  any;
+        check(any, "a yank in a turned tracking space did not pull");
     });
     test("the render allocator gets a larger ring only where the game creates it", [] {
         using namespace native_render_memory;

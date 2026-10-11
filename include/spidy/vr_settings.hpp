@@ -5,9 +5,9 @@
 
 // Spidy's VR settings. The launcher (or the command line) gives a session
 // the values it starts with; during play the game's own Settings change
-// them: pause, Settings, then SPIDY VR after the game's last tab (game_menu),
-// and X switches the aim markers. The session reports the last ones, and the
-// launcher starts the next session with them.
+// them: pause, Settings, then SPIDY VR after the game's last tab (game_menu).
+// The session reports the last ones, and the launcher starts the next
+// session with them.
 namespace spidy::vr_settings {
 struct Values {
     bool aimMarkers = true;

@@ -221,14 +221,16 @@ class ProtocolTests(unittest.TestCase):
         self.assertIsNone(body_snapshot(Reader(*([torn, struct.pack('<q', 7)]*8)), 0))
 
     def test_punch_feedback_decodes_each_hand_and_the_latest_blow(self):
-        raw = bytearray(160)
-        struct.pack_into('<4Iq4Q2I', raw, 0, 0x53505544, 1, 160, 2, 4, 5000, 3, 3, 1, 2, 0)
+        raw = bytearray(168)
+        struct.pack_into('<4Iq4Q2I', raw, 0, 0x53505544, 1, 168, 2, 4, 5000, 3, 3, 1, 2, 0)
         # Hands (32 bytes): punches, last target, last strength, speed, last knockback, busy.
         struct.pack_into('<2Q2f2I', raw, 64, 1, 0x1c517822940, .25, .5, 2, 0)
         struct.pack_into('<2Q2f2I', raw, 96, 2, 0x1c517822a00, 1., 9.5, 5, 1)
-        struct.pack_into('<3f3f2f', raw, 128, 1.5, 95.25, 2393.75, 0, 0, -1, 40, 8.25)
+        struct.pack_into('<3f3f2fQ', raw, 128, 1.5, 95.25, 2393.75, 0, 0, -1, 40, 8.25, 2)
         result = punch_snapshot(Reader(raw, struct.pack('<q', 4)), 0)
         self.assertEqual((result['punches'], result['issued'], result['dropped'], result['bots']), (3, 3, 1, 2))
+        # Two of the three issued went out without their damager.
+        self.assertEqual(result['unnamed'], 2)
         self.assertEqual((result['hands'][0]['punches'], result['hands'][0]['last_knockback']), (1, 2))
         self.assertEqual(result['hands'][1]['last_target'], '0x1c517822a00')
         self.assertEqual((result['hands'][1]['speed'], result['hands'][1]['busy']), (9.5, True))
@@ -696,7 +698,7 @@ class ProtocolTests(unittest.TestCase):
                                      (swing_snapshot,0x53574441,272),(timing_snapshot,0x5358544d,344),
                                      (appearance_snapshot,0x53415044,328),(eye_snapshot,0x53455353,112),
                                      (grab_snapshot,0x53475244,368),(body_snapshot,0x53424453,144),
-                                     (punch_snapshot,0x53505544,160),(shooter_snapshot,0x53484f44,192)):
+                                     (punch_snapshot,0x53505544,168),(shooter_snapshot,0x53484f44,192)):
             raw = bytearray(size)
             struct.pack_into('<4IQ', raw, 0, magic, 99, size, 2, 4)
             with self.assertRaisesRegex(RuntimeError, 'protocol mismatch'):
@@ -841,15 +843,19 @@ class ProtocolTests(unittest.TestCase):
         result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
         self.assertEqual((result['gate'], result['camera_mover']), (['no_player', 'no_camera_commit'], '0x3999999'))
 
-    def test_xr_counts_interacts_and_aim_markers(self):
+    def test_xr_counts_interacts_dodges_and_aim_markers(self):
         raw = bytearray(800)
         struct.pack_into('<4IQ', raw, 0, 0x53585244, 20, 800, 3, 4)
         result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
         self.assertEqual((result['interacts'], result['aim_markers'], result['markers']), (0, False, 0))
-        # Three B presses reached the game as its Y; markers on, 5000 drawn so far.
+        self.assertEqual(result['dodges'], 0)
+        # Three Y presses reached the game as its Y; markers on, 5000 drawn so far.
         struct.pack_into('<2IQ', raw, 648, 3, 1, 5000)
+        # Seven B presses reached it as its B, the dodge, while VR showed play.
+        struct.pack_into('<2I', raw, 576, 2, 7)
         result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
         self.assertEqual((result['interacts'], result['aim_markers'], result['markers']), (3, True, 5000))
+        self.assertEqual(result['dodges'], 7)
 
     def test_xr_reports_the_vr_settings_and_the_settings_tab(self):
         raw = bytearray(800)

@@ -1038,7 +1038,7 @@ void App::optionsCard(ImVec2 size) {
            });
     option("Webs hold in open air", "With nothing in reach, a web still holds 100 m out; off, it misses.", S(40),
            [&] { changed |= toggle("##air", &o.airWebs); });
-    option("Aim markers", "Show where each hand's web would land; X switches them in VR.", S(40),
+    option("Aim markers", "Show where each hand's web would land.", S(40),
            [&] { changed |= toggle("##aim", &o.aimMarkers); });
     // Percent of the headset's own size, so no choice looks sharper than it is; with the headset checked,
     // the pixels it makes.
@@ -1331,8 +1331,7 @@ void App::controls(ImVec2 origin, ImVec2 size) {
          {{"Squeeze a grip", "Shoot that hand's web where the controller points; hold to swing"},
           {"Release the grip", "Let go"},
           {"Trigger", "Reel in while the web is attached"},
-          {"Pull the hand sharply", "Zip toward the web's anchor"},
-          {"X", "Show or hide the aim markers: where each hand's web would land"}}},
+          {"Pull the hand sharply", "Zip toward the web's anchor"}}},
         {"GRABBING",
          {{"Grip, aimed at a prop or thug", "Catch it with your web"},
           {"Trigger", "Reel it in"},
@@ -1341,9 +1340,11 @@ void App::controls(ImVec2 origin, ImVec2 size) {
         {"MOVING",
          {{"Left stick", "Walk and run"},
           {"A", "Jump"},
-          {"B", "Interact: the game's Y (backpacks, doors, prompts); web strike in a fight"},
+          {"B", "Dodge, the way the left stick points: the game's B"},
+          {"Y", "Interact: the game's Y (backpacks, doors, prompts); web strike in a fight"},
+          {"Click the right stick", "The game's LB + RB: pull a door or a grate where the game shows the two"},
           {"Menu button", "Pause; VR settings are in Settings > SPIDY VR"},
-          {"Y", "Game menu: map, suits, skills"},
+          {"X", "Game menu: map, suits, skills"},
           {"Click both sticks", "Switch between VR and a flat game screen"}}},
         {"MENUS AND CUTSCENES",
          {{"Left stick", "Move through menus (they show on a screen in the headset)"},
@@ -1408,7 +1409,8 @@ void App::controls(ImVec2 origin, ImVec2 size) {
         ImGui::TextUnformatted("Aim markers, blue for the left hand and orange for the right: a ring where a web would "
                                "hold, a faint dashed ring where it would hold in open air, a red cross where it would "
                                "miss, and a turning ring of three arcs around a prop or thug it would catch. The marker "
-                               "tightens as you squeeze the grip.");
+                               "tightens as you squeeze the grip. AIM MARKERS in Settings > SPIDY VR, or in "
+                               "the options here, hides them.");
         ImGui::PopTextWrapPos();
         ImGui::PopStyleColor();
     }

@@ -41,6 +41,13 @@ using DirectDamage = uint8_t* (*)(void*, const uint32_t*, const Vec3*, const Vec
 // action count; -1 leaves the count unset), as the game's shot damage adds one.
 constexpr uintptr_t addStatusRva = 0x1ed20e0;
 using AddStatus = void (*)(void*, float, int32_t, float, float);
+// A record's component of a type, as the game looks one up: in the record's
+// table at +0x80 when it has one (its size at +0x88), else in its list at
+// +0x58. BotAttackResponseManager's type, and the name its type holds at
+// +0x60.
+constexpr uintptr_t findInTableRva = 0x16799a0, findInListRva = 0x167ab40, attackResponses = 0x6c74b40,
+                    attackResponsesName = 0x3836df0;
+using FindComponent = uintptr_t (*)(void*, const void*);
 constexpr uint16_t debris = 3; // the mode the game's own throws use
 constexpr int activate = 0;    // hknpActivationMode::ACTIVATE
 constexpr unsigned maxSystemBodies = 16;
@@ -175,12 +182,47 @@ uint32_t actorHandle(uintptr_t record) {
         return 0;
     return static_cast<uint32_t>(generation) << 20 | index;
 }
-// One direct damage request, filled with the fields asked for.
-bool damageNow(const Damage& d) {
+// The component a handle names in the registry, as the game resolves one
+// (16798f0); 0 when it names none now.
+uintptr_t resolved(uint32_t handle) {
+    const auto entries = pointer(base + registryTable);
+    const auto count = value<int32_t>(base + registryCount);
+    const uint32_t index = handle & 0xfffff;
+    return (handle >> 20) && entries && count > 0 && index < static_cast<uint32_t>(count) &&
+                   value<uint32_t>(entries + index * 16ull + 8) == handle >> 20
+               ? pointer(entries + index * 16ull)
+               : 0;
+}
+uintptr_t componentOf(uintptr_t record, uintptr_t type) {
+    const bool hashed = value<uint16_t>(record + 0x88) != 0;
+    __try {
+        return reinterpret_cast<FindComponent>(base + (hashed ? findInTableRva : findInListRva))(
+            reinterpret_cast<void*>(record + (hashed ? 0x80 : 0x58)), reinterpret_cast<void*>(base + type));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+// Whether a blow to this victim may say whom it comes from. A bot's
+// BotAttackResponseManager, one of the damage modifiers the DamageSystem
+// runs a request through (313420), asks the bot's AwarenessDB how aware he
+// is of the damager, through the handle it took at +0xa4 when the bot was
+// set up (313150), and uses what that resolves to unchecked (314c70, the
+// read at 314d3e). A bot can be without one: on October 11 a web yanked a
+// thug in the first second of the first mission's first fight, and the game
+// crashed there. With no damager that function leaves before the lookup.
+bool namesDamager(uintptr_t victim) {
+    const auto responses = componentOf(victim, attackResponses);
+    return !responses || resolved(value<uint32_t>(responses + 0xa4));
+}
+// One direct damage request, filled with the fields asked for. unnamed: it
+// went out without the damager asked for (namesDamager).
+bool damageNow(const Damage& d, bool& unnamed) {
     const uint32_t victim = actorHandle(d.victim);
     const Vec3 direction = normalized(d.direction), normal = normalized(d.normal);
     if (!victim || !finite(d.point) || length(direction) < .5f || !std::isfinite(d.amount))
         return false;
+    const uint32_t damager = d.damager ? actorHandle(d.damager) : 0;
+    unnamed = damager && !namesDamager(d.victim);
     const auto system = reinterpret_cast<void*>(base + damageSystem);
     uint8_t* request{};
     __try {
@@ -196,7 +238,7 @@ bool damageNow(const Damage& d) {
         std::memcpy(request + offset, v, 4);
         fields |= 1ull << bit;
     };
-    if (const uint32_t damager = d.damager ? actorHandle(d.damager) : 0)
+    if (damager && !unnamed)
         set(0x138, &damager, 8);
     set(0x13c, &d.type, 9);
     set(0x144, &d.amount, 11);
@@ -222,13 +264,7 @@ bool damageNow(const Damage& d) {
 }
 // A registered component of this vtable whose record is `record`.
 bool registered(uintptr_t component, uintptr_t vtable, uintptr_t record) {
-    const auto handle = value<uint32_t>(component + 0x14);
-    const auto entries = pointer(base + registryTable);
-    const auto count = value<int32_t>(base + registryCount);
-    const uint32_t index = handle & 0xfffff;
-    return component && entries && count > 0 && index < static_cast<uint32_t>(count) &&
-           pointer(entries + index * 16ull) == component &&
-           value<uint32_t>(entries + index * 16ull + 8) == handle >> 20 &&
+    return component && resolved(value<uint32_t>(component + 0x14)) == component &&
            pointer(component) == base + vtable && pointer(component + 8) == record;
 }
 // The actor's PhysicsComponent, still registered on it.
@@ -377,14 +413,18 @@ void apply(uintptr_t world, const void* input) {
     pendingDamages = 0;
     ReleaseSRWLockExclusive(&lock);
     if (blowCount) {
-        uint64_t issued{}, dropped{}, last{};
+        uint64_t issued{}, dropped{}, unnamed{}, last{};
         for (unsigned i = 0; i < blowCount; ++i) {
-            (damageNow(blows[i].damage) ? issued : dropped)++;
+            bool nobodys{};
+            const bool out = damageNow(blows[i].damage, nobodys);
+            (out ? issued : dropped)++;
+            unnamed += out && nobodys;
             last = blows[i].ticket;
         }
         AcquireSRWLockExclusive(&lock);
         totals.damages += issued;
         totals.damageDropped += dropped;
+        totals.damageUnnamed += unnamed;
         issuedTicket = std::max(issuedTicket, last);
         ReleaseSRWLockExclusive(&lock);
     }
@@ -626,6 +666,11 @@ uint32_t native_bodies::start(uintptr_t gameBase) {
                                      0x74, 0x24, 0x18, 0x48}) ||
             !entry(addStatusRva, {0x48, 0x89, 0x5c, 0x24, 0x10, 0x57, 0x48, 0x83, 0xec, 0x40, 0x0f, 0x29, 0x74,
                                   0x24, 0x30, 0x41}) ||
+            !entry(findInTableRva, {0x44, 0x0f, 0xb7, 0x49, 0x08, 0x4c, 0x8b, 0xc2, 0x4c, 0x8b, 0x11, 0x41,
+                                    0xff, 0xc9, 0x49, 0xc1}) ||
+            !entry(findInListRva, {0x48, 0x89, 0x5c, 0x24, 0x08, 0x57, 0x48, 0x83, 0xec, 0x20, 0x48, 0x8b,
+                                   0xda, 0x48, 0x8b, 0xf9}) ||
+            pointer(base + attackResponses + 0x60) != base + attackResponsesName ||
             pointer(base + damageSystem) != base + 0x4f5db58) {
             result = 8001;
             break;

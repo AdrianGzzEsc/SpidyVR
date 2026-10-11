@@ -52,7 +52,7 @@ session through a named event that `run_game_vr.py --stop-event` treats as
 Ctrl+C, so the hooks come out and the report is written as before. Options
 and the game's hash are remembered in `%APPDATA%\Spidy\launcher.ini`. A session
 that ends with other VR settings than it began with (the SPIDY VR tab in the
-game's Settings, or X for the aim markers) prints them on its last line, "VR settings
+game's Settings) prints them on its last line, "VR settings
 from the headset: ...", and the launcher saves them as its options. The
 first start offers desktop and Start menu shortcuts.
 
@@ -452,11 +452,20 @@ X and Y are the game's X and Y, the grips are the bumpers (menu tabs), the
 triggers are the triggers, the right thumbstick and the stick clicks are the
 same on both, and the menu button is Start. The game shows Xbox prompts, which
 sit where the Touch controller buttons are. In immersive VR the menu button
-pauses the game, Y opens the game menu (map, suits, skills), and B is the
-game's Y, its interact button (backpacks, doors, consoles, prompts; web strike
-in a fight), except while a web carries you. Every other control stays with
+pauses the game, X opens the game menu (map, suits, skills), and B and Y are
+the game's own: B its dodge, the way the left stick points, and Y its interact
+button (backpacks, doors, consoles, prompts; web strike in a fight), both
+except while a web carries you (`game_pad::Walk`; XrData `dodges` and
+`interacts` count the presses that reached the game). The right thumbstick's
+click is the game's LB + RB together, its web pull where it shows the two (a
+door, a grate), under the same condition (`game_pad::PullPress`,
+`Walk::pull`): the grips shoot webs in VR and are no bumpers there. Until
+October 11 B was the interact, Y the game menu and X switched the aim
+markers, which are a setting only now. Every other control stays with
 VR, which walks and jumps through the same virtual controller. A held from the
-screen (Resume, Continue) does not jump, nor B held from it interact. A real
+screen (Resume, Continue) does not jump. B, X and Y stay what they were
+pressed as until let go (`game_pad::PressOrigins`): held from the screen they
+do nothing in play, and held from play nothing on the screen. A real
 gamepad keeps working. The keyboard does not: once the virtual controller has
 pressed a button, the game ignores the keyboard for the player. The screen has the size of the
 game's desktop window, small when the launcher starts the game;
@@ -465,7 +474,7 @@ game's desktop window, small when the launcher starts the game;
 Click **both thumbsticks** to switch between immersive VR and a flat screen
 inside the headset. Release both before clicking again. Flat mode uses the
 stock game camera and the game's own controls on a real gamepad (not the
-keyboard, as above; the Touch controllers pass only the menu button and Y);
+keyboard, as above; the Touch controllers pass only the menu button and X);
 VR movement and web input are released. In immersive VR the monitor shows your
 left eye, cut to the window's shape (the game does not render a view of its
 own then: see [Graphics settings in VR](#graphics-settings-in-vr)); in flat
@@ -589,7 +598,7 @@ reattaching after a stopped session or a rebuilt DLL.
 | `-NoWebGrab` | Webs swing only; they do not catch props or thugs |
 | `-NoAirWebs` | A web that meets nothing within 100 m misses instead of holding in open air |
 | `-NoWebShooter` | The trigger only reels |
-| `-NoAimMarkers` | Start with the aim markers hidden (X shows them) |
+| `-NoAimMarkers` | Start with the aim markers hidden (AIM MARKERS in the SPIDY VR tab shows them) |
 | `-Flips` | Experimental flips on (off by default): in the air the left stick turns you over, and a tap of A flips you |
 | `-FlipSpeed 240` | How fast a flip turns you at full tilt of the left stick, degrees a second (90-480, default 180) |
 | `-TriggerWebs` | The trigger shoots and holds webs, and the grip reels them in and shoots web balls (WEB BUTTON: TRIGGER) |

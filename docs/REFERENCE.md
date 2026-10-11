@@ -126,6 +126,8 @@ disassembly, then traced and tried at a street crime with a research DLL:
 | `MoverConfig` (0x78 bytes) with a `MoverBodySize` at +0x58 (`BodyBottom`, `BodyTop`, `BodyRadius`) | vtable `0x500e950`; constructor `0x22c9300` | A thug's mover manager names his at +0x48: the same values |
 | MSVC x64 RTTI: complete object locator at vtable -8 (signature 1, offset, type descriptor, class hierarchy, its own image offset); the hierarchy's base count +8 and base array +0xc; each base names its type descriptor first, whose name is at +0x10 | — | Spidy's scan in the game counted the same 74 props and bots as the same rules read from the executable |
 | `Team` component (red and blue teams) | vtable `0x4f62ec0` | No actor had one in the running game: no hostility test there |
+| A record's component of a type: through its table at +0x80 when it has one (size at +0x88), else its list at +0x58; a type holds its name at +0x60 | `0x16799a0`, `0x167ab40` | Disassembly; the game's own lookups (`0x3437f0`) |
+| `BotAttackResponseManager` (type `0x6c74b40`): a damage modifier in the bot's `CommonComponentStash`; its response to a request's damager reads the bot's `AwarenessDB` (type `0x7bf4e30`) through the handle at +0xa4 unchecked | vtable `0x3836d88`; slot 11 `0x313420`, `0x314c70`, set-up `0x313150` | The October 11 minidump: a null read at `0x314d3e` for a kinetic blow with the hero as damager; 9 such blows sent without a damager in the next session, no crash |
 
 For the SPIDY VR tab in the game's Settings (October 7;
 `include/spidy/game_menu.hpp`), found from the executable's strings, RTTI and

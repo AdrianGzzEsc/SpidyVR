@@ -184,7 +184,7 @@ controller turn green while that arm is in place, and the rings fill with
 the bar. After 1.5 s held, the panel says CALIBRATED with the eye height and
 arm length for 3.5 s and both controllers buzz. B skips it. From its start
 until each is let go after it, the triggers, grips, A and B do nothing in the
-game (no web, web ball, jump or interact); the sticks, the menu button and Y
+game (no web, web ball, jump or dodge); the sticks, the menu button, X and Y
 work. A pause, a cutscene or the flat screen holds it until play returns.
 Settings > SPIDY VR > CALIBRATE BODY: ON RESUME asks for it again when play
 resumes (the row shows NO again once it starts).

@@ -29,8 +29,11 @@ struct Data {
     Hand hands[2];
     Vec3 lastPoint{}, lastDirection{};
     float lastDamage{}, lastSpeed{};
+    // Of the issued (the web's and the web shooter's blows among them), those
+    // that went out as nobody's: native_bodies::Counters::damageUnnamed.
+    uint64_t unnamed{};
 };
-static_assert(sizeof(Hand) == 32 && sizeof(Data) == 160);
+static_assert(sizeof(Hand) == 32 && sizeof(Data) == 168);
 // Starts the bot watch and the main-thread damage requests.
 uint32_t start(uintptr_t base);
 uint32_t stop();

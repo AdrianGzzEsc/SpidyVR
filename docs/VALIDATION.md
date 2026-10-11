@@ -1,6 +1,157 @@
 # Validation — 2026-10-11
 
-## The reflections restored: the shared half-size targets are needed — current build
+## The first mission's crash; the game's LB + RB by a two-hand web pull — current build
+
+The user, October 11: "game crashes on first mission, theres a chase sequence
+mixed with a tutorial ... at some point during one of the steps it crashes
+for everyone"; then "there is a door that cant be opened to proceed - it
+prompts me to rb+lb and i cant target it with webs"; then "why cant we use
+the existing grip webshooting with both hands to to physically pull objects
+that need rb + lb".
+
+**The crash** (session `game-vr-20261011-144923`, a new game; the game's
+minidump of 14:54:32 and its log). The game's record: access violation at
+`0xda9c4d3e`, with the module at `7ff6da6b0000` `Spider-Man.exe+314d3e`, a
+read of address 0 on the main thread. Unwound with the executable's own
+unwind data (every frame in `Spider-Man.exe`, down to the thread's start):
+
+| Frame | Function | What it is |
+|---|---|---|
+| 0 | `314c70` (+`314d3e`) | `BotAttackResponseManager`: its response to a request's damager |
+| 1 | `313420` | its vtable slot 11 (vtable `3836d88`): a damage modifier's turn at a request |
+| 2 | `1ed1110` | the victim's `CommonComponentStash` runs its damage modifiers |
+| 3-5 | `1eb7a70`, `1eb9b30`, `1eb8cf0` | DamageSystem: delivery, request processing |
+| 6 | `1eb7d50` | DamageSystem's update |
+
+`314c70` takes the damager's record from the request (`+0x138`), then
+resolves the component handle at the manager's `+0xa4` (`16798f0`) and reads
+the result's vtable without a test. That handle is set when the bot is set
+up (`313150`, the tenth of ten sibling components it looks up on its own
+record): the type at `7bf4e30`, whose name is `AwarenessDB`; 0 when the bot
+has none. The call that follows (vtable +0x50, with the damager's handle)
+returns an entry whose first byte is compared with 3, and the damager is then
+tested for `JobManagerExplosionWarning`, `ProximityMine`, `SpiderDrone` and
+`WebBomb`. With no damager the function returns before all of it (`15a0560`
+gives 0). In the dump `rbx` is the session's `player_record` (the damager)
+and `r14` the left hand's grab target.
+
+The session's samples: the first fight began at 296.9 s; both hands caught a
+thug each at 298.36 s; the right hand's yank at 298.41 s sent its kinetic
+blow (`launches` 1) and that thug was in the game's flight by 298.47 s
+(`flown` 1); the left hand's yank at 298.47 s sent the second, and the game's
+camera commits and controller reads stop there. The game's log has its crash
+record 10 s later (it collects memory figures first). So some thugs of that
+fight have an `AwarenessDB` and some, in its first second, have not; why not
+is not known (the fists counted 11 bots within reach for a moment, then 2).
+
+**The change.** `native_bodies::damageNow` (every blow of Spidy's: punches,
+web balls, the web's knock-downs and strikes) looks the victim's
+`BotAttackResponseManager` up as the game does (type `6c74b40`; `16799a0`
+through the record's table at +0x80 when it has one, else `167ab40` through
+its list at +0x58: the pattern at `3437f0`) and resolves the handle at its
++0xa4 through the registry. A manager whose handle names nothing gets the
+blow without its damager (`Counters::damageUnnamed`, a report's
+`punch.unnamed`). `start` checks the two lookups' first bytes and the type's
+name.
+
+**The door** (session `game-vr-20261011-142032`, another save: Fisk Tower).
+After its fights the player stood at (-531.6, 160.0, -599.1) and within 2 m
+of it: 16 grip presses in a row missed, no web attached; 16 interact presses
+and 23 web balls. In `Mapping::gameplay` the virtual controller had no LB or RB
+at all, and on the flat screen during play it has the same mapping.
+
+**The change.** `include/spidy/web_pull.hpp` (`WebPull`): both web buttons
+pressed while each hand's aim is `AimKind::blocked` (a web would miss on what
+it points at) within 12 m of the hand and 4 m of the other hand's point, the
+game having the player on the ground (`steering`, not `owned`, `grounded`, no
+web attached, no grab, no calibration input); then either hand moving away
+from its point as the swing's zip has it (0.14 m within 0.25 s at 1.3 m/s or
+more). From then the game's LB + RB (`Walk::pull`) stay down while both web
+buttons do, 0.3 s at least and 4 s at most. `game_pad::PullPress`: the right
+thumbstick's click is the same two buttons, held from 0.12 s on (not half of
+clicking both sticks), a shorter click for 0.2 s. The aim preview is sampled
+whether the markers are drawn or not. The swing's own code is unchanged.
+
+**In the headset** (the user, session `game-vr-20261011-152435`, 570 s, the
+build of 15:23, continued from the autosave before the first fight):
+
+| | |
+|---|---|
+| The game | no crash record; closed normally at 15:34 |
+| Blows | 359 issued, 0 dropped, 9 as nobody's: at 19.0 s (the first fight began at 15.7 s), six between 104.4 s and 110.6 s, one each at 115.3 s and 167.9 s |
+| Fists and webs | 29 punches; 99 grabs, 80 yanks, 66 knock-downs, 35 impacts; 456 web balls, 226 webbing blows |
+| The door | two grip presses missed at (-535.2, 160.0, -604.1), then "Web pull" at 404.7 s, LB + RB (`pad_buttons` `0x300`) down for 1.4 s; the player's next position on record is a floor up (y 170) |
+| Later | LB + RB down four more times a floor up, near (-538, 170.0, -594): at 503.1 s, 505.9 s, 550.5 s and 551.3 s, 0.3 to 0.5 s each, each within a second of two grip misses; a cutscene began at 517.4 s and at 553.4 s. "Web pull" is on the console for 503.1 s and 550.5 s; a repeated line is printed once, so the other two are pulls or the right stick |
+| Between | seven grip presses missed between 521 s and 547 s, one hand at a time but for one pair, and pulled nothing; the report has no hand speeds, so whether that pair was yanked is not known |
+
+Not shown: that each of the nine would have crashed (one did, in the 14:49
+session); what the game does with a nobody's blow in other fights; a pull
+where the game shows no prompt; an LB + RB prompt on a thing a web holds on
+(a yank zips there; the right stick's click is for that). No run in the
+running game without the headset was made for this build.
+
+**Tests.** Core 239/239 (2 new: the right stick's click, and the two-hand
+pull; the Xbox-controller test has the pull and the grips), launcher 23/23,
+Python 109 (the punch data's `unnamed`, 168 bytes).
+
+## Dodge on B; Y interacts, X opens the game menu — preceding build
+
+The user, October 11: "add a dodge button and ability (you can remap some
+stuff - no need for a flip button when flips are enabled".
+
+**The buttons in VR play.** B is the game's B (its dodge), Y the game's Y
+(interact, web strike; B before) and X the game menu (Back; Y before). The
+aim markers have no button now (X before): AIM MARKERS in the SPIDY VR tab
+and in the launcher's options stay. A dodge needs the left stick for its way
+and so a button under the right thumb, and with it A, B and Y are the
+buttons the game's own prompts name. Flips keep A in the air as before. B
+and Y reach the game while it has the player (`steering && !swingState.owned`,
+as the interact did): not while a web or Spidy's own flight carries him.
+
+**What the game does with that B** (`tools/probe_dodge.py`, the rooftop save
+in its mission, no headset, module build of 14:34; presses of 200 ms on the
+virtual controller, the player followed for 1.5 s after each):
+
+| Press | Over the ground | Fastest | Gate open | Camera |
+|---|---|---|---|---|
+| none (1 s) | 0.00 m | 0 m/s | 100% | follow |
+| left stick to the left | 0.23 m | 1.6 m/s | 100% | follow |
+| B, left stick to the right | 2.46 m (and 3.0 m down, off the perch) | 8.6 m/s with the drop | 100% | follow |
+| B alone | 0.99 m, level | 6.0 m/s | 100% | follow |
+
+The speeds of this run are between two camera commits, the drop included.
+A second run from where that left the player, with the ground speed taken
+over a tenth of a second: the stick alone 0 m (a crate in the way), B with
+the stick 8.4 m at up to 6.7 m/s, over the roof's edge (1.25 m up, 16 m
+down), B alone after it 4.36 m; the gate open in every sample and the
+follow camera throughout, the fall included. So the game dodges on the
+virtual controller's B, further with the stick than without, and the
+player's camera stays the one VR needs. The game rewrote its autosave during
+the check, as in every check; the save folder as it was is in
+`reports/backups/save-before-dodge-20261011`.
+
+Not shown: the XR worker's way from the controller's B to that press (it
+needs a headset; the core tests below cover the mapping), a dodge in a fight
+or just before a hit, and how the dodge's leap feels in the headset. Not run
+in the headset.
+
+**Changes.** `include/spidy/game_pad.hpp`: `Walk::dodge` (the game's B),
+Back from X instead of Y in `Mapping::gameplay`, and `PressOrigins` (B, X and
+Y stay what they were pressed as between the game screen and VR play; before,
+only B did). `src/game_xr.cpp`: the worker sends them; X no longer switches
+the aim markers; XrData `dodges` where `reserved` was (version 20 still: 0
+from older modules), `interacts` counts Y. During the T-pose calibration B
+skips and does not dodge; Y interacts there. `tools/run_game_vr.py`:
+`dodges` in a sample. `tools/probe_dodge.py` is new. The launcher's CONTROLS
+page, its options' texts, `tools/launch-game-vr.ps1`, `docs/PLAYERS.md`,
+`README.md`, `docs/DEVELOPMENT.md`, `docs/BODY.md` and `docs/AUTOMATION.md`
+name the new buttons.
+
+**Tests.** Core 237/237 (1 new: B, X and Y across the game screen and VR;
+the Xbox-controller test has the dodge and the new Back), launcher 23/23,
+Python 109 (the XR sample's `dodges`).
+
+## The reflections restored: the shared half-size targets are needed — preceding build
 
 The user, October 11, after a session on the cable with the build below:
 "preformance was good again, but no ssr visible (turned it off and on in the

@@ -25,6 +25,7 @@
 #include "spidy/slow_motion.hpp"
 #include "spidy/vr_settings.hpp"
 #include "spidy/vr_shortcut.hpp"
+#include "spidy/web_pull.hpp"
 #include "spidy/xr_session.hpp"
 #include <algorithm>
 #include <atomic>
@@ -49,7 +50,7 @@ struct XrConfig {
     // bit 4: no eye occlusion (each eye draws everything in its view, hidden or not);
     // bit 5: no body (the hero stays hidden in VR, the overlay draws gloves);
     // bit 6: no punching (fists pass through thugs);
-    // bit 7: aim markers start hidden (X shows them in VR);
+    // bit 7: aim markers start hidden (the SPIDY VR tab shows them);
     // bit 8: no webs in open air (a web that meets nothing within reach misses);
     // bit 9: no web shooter (a free hand's trigger shoots nothing);
     // bit 10: no T-pose calibration at the first gameplay of a session without
@@ -113,9 +114,11 @@ struct XrData {
     char message[256]{};
     uint64_t uniqueSubmitted{}, reusedSubmitted{};
     uint32_t flatScreen{}, toggles{}, eyeWidth{}, eyeHeight{};
-    // What the last frame showed (Presentation), and frames that showed the
-    // game's presented frame on the screen because gameplay was unavailable.
-    uint32_t presentation{}, reserved{};
+    // What the last frame showed (Presentation); B presses that reached the
+    // game as its B (the dodge; 0 from builds before it, where this was
+    // reserved); and frames that showed the game's presented frame on the
+    // screen because gameplay was unavailable.
+    uint32_t presentation{}, dodges{};
     uint64_t screenSubmitted{};
     // GateReason bits of the last frame, and the vtable (image offset) of the
     // camera mover that last committed: which camera a scene without VR used.
@@ -131,13 +134,13 @@ struct XrData {
     // accepted camera. Both rising while the gate says other_camera: two
     // cameras commit each frame and the other one commits last.
     uint64_t cameraCommits{}, playerCommits{};
-    // B presses that reached the game as its Y (interact, web strike); whether
-    // the aim markers show now (X switches them in VR); markers drawn so far,
-    // one per hand per headset frame that shows one.
+    // Y presses that reached the game as its Y (interact, web strike; B
+    // presses until October 11); whether the aim markers show now; markers
+    // drawn so far, one per hand per headset frame that shows one.
     uint32_t interacts{}, aimMarkers{};
     uint64_t markers{};
     // The VR settings now: the SPIDY VR tab in the game's Settings changes
-    // them during play (X the aim markers, too). settings bits: 1 web grab,
+    // them during play. settings bits: 1 web grab,
     // 2 punch, 4 body, 8 webs in open air, 16 web shooter, 32 flips, 64 the
     // trigger webs (WEB BUTTON: TRIGGER; the grip reels), 128 STAND ON WALLS.
     // Then the changes
@@ -364,15 +367,21 @@ DWORD WINAPI run(void*) {
         bool wasScreen{}, jumpFromScreen{};
         // A pressed in the air is not the game's web zip.
         AirJumpFilter airJump;
-        // Where B went down: on the game screen it is Back, in VR the game's Y
-        // (interact). Held across a switch it stays what it was until let go:
-        // Back held into play is no interact, and an interact held into a menu
-        // or scene the game opened is no Back there.
-        enum class Origin { none, screen, play } interactOrigin{};
-        bool interacting{};
-        uint32_t interacts{};
+        // Where B, X and Y went down: on the game screen they are the game's
+        // own, in VR B dodges, Y interacts and X opens the game menu
+        // (game_pad::PressOrigins).
+        game_pad::PressOrigins origins;
+        // The game's LB + RB (its web pull): both web buttons on a thing no
+        // web holds on, then a yank (WebPull); or the right thumbstick's
+        // click. aimed: what each hand's web button would do, markers or not.
+        WebPull webPull;
+        game_pad::PullPress pullPress;
+        game_swing::AimData aimed{};
+        uint64_t pullsBefore{};
+        bool interacting{}, dodging{};
+        uint32_t interacts{}, dodges{};
         // The VR settings: the launch options, then the SPIDY VR tab in the
-        // game's Settings (and X for the aim markers) during play.
+        // game's Settings during play.
         vr_settings::Values values;
         values.aimMarkers = !(config.options & 128);
         values.webGrab = !(config.options & 8);
@@ -394,9 +403,7 @@ DWORD WINAPI run(void*) {
         values = vr_settings::sanitized(values);
         game_menu::publish(values);
         uint32_t settingChanges{};
-        // X switches the aim markers in immersive VR; it must be released
-        // between switches. aims are each hand's latest preview.
-        bool aimSwitchHeld = true;
+        // aims are each hand's latest preview.
         uint64_t markersDrawn{};
         game_swing::AimData aims{};
         // Each hand's aim marker, steadied from eye image to eye image.
@@ -742,31 +749,15 @@ DWORD WINAPI run(void*) {
                     else
                         gameScreen.reset();
                     wasScreen = screen;
-                    if (!(frame.buttons & buttonB))
-                        interactOrigin = Origin::none;
-                    else if (interactOrigin == Origin::none)
-                        interactOrigin = screen ? Origin::screen : Origin::play;
                     // On the screen the controllers are the game's Xbox
-                    // controller; in VR it gets Start (menu), Back (Y) and
-                    // the native walking and jumping (submitted below).
+                    // controller; in VR it gets Start (menu), Back (X) and
+                    // the native walking, jumping, dodge and interact
+                    // (submitted below).
                     const auto mapping = !viewing ? game_pad::Mapping::none
                                          : screen ? game_pad::Mapping::menus
                                                   : game_pad::Mapping::gameplay;
-                    // X shows or hides the aim markers in immersive VR. On the
-                    // game screen it is the game's X; held from there, it waits
-                    // for a release.
-                    const bool aimSwitch = (frame.buttons & buttonX) != 0;
-                    if (aimSwitch && !aimSwitchHeld && mapping == game_pad::Mapping::gameplay && motion.active &&
-                        !flatScreen) {
-                        values.aimMarkers = !values.aimMarkers;
-                        runtime.haptic(0, .25f);
-                        message(3, 0,
-                                values.aimMarkers ? "Aim markers on - X hides them"
-                                                  : "Aim markers off - X shows them");
-                    }
-                    aimSwitchHeld = aimSwitch;
-                    // A change in the SPIDY VR tab takes effect at once; the tab
-                    // shows what X switched.
+                    origins.update(frame.buttons, mapping == game_pad::Mapping::gameplay);
+                    // A change in the SPIDY VR tab takes effect at once.
                     if (game_menu::take(values)) {
                         ++settingChanges;
                         applySettings();
@@ -942,15 +933,17 @@ DWORD WINAPI run(void*) {
                         if (!sampleGrab || sampleGrab(&grabState))
                             grabState = {};
                         // What each free hand's web button would do: the aim markers.
-                        aims = {};
-                        if (values.aimMarkers && sampleAim && input.focused) {
+                        aims = aimed = {};
+                        if (sampleAim && input.focused) {
                             game_swing::AimData sample;
                             const game_swing::AimData expected;
                             if (!sampleAim(&sample) && sample.magic == expected.magic &&
                                 sample.version == expected.version && sample.bytes == expected.bytes &&
                                 sample.status == 2)
-                                aims = sample;
+                                aimed = sample;
                         }
+                        if (values.aimMarkers)
+                            aims = aimed;
                         bool trails[2]{};
                         Vec3 trailEnds[2]{};
                         for (unsigned i = 0; i < 2; ++i) {
@@ -1057,21 +1050,48 @@ DWORD WINAPI run(void*) {
                         // controller: after the VR menus, the game plays the
                         // player with it and ignores the bridge's keys.
                         game_pad::Walk walk;
-                        if (steering && !swingState.owned) {
+                        const bool playing = steering && !swingState.owned;
+                        if (playing) {
                             walk.right = mounting ? 0 : motion.walkRight;
                             walk.forward = mounting ? 0 : motion.walkForward;
-                            // B is the game's Y: interact, or web strike in a fight.
-                            // Not while a web carries the player, nor while it skips
-                            // the calibration.
-                            walk.interact = interactOrigin == Origin::play && !calibrationInput;
+                            // Y is the game's Y: interact, or web strike in a fight.
+                            // B is its B: the dodge, the way the stick points. Not
+                            // while a web carries the player, nor while B skips the
+                            // calibration.
+                            walk.interact = (origins.play() & buttonY) != 0;
+                            walk.dodge = (origins.play() & buttonB) && !calibrationInput;
                         }
+                        // The game's LB + RB, its web pull where it shows the two
+                        // (a door, a grate): both web buttons on the thing, which
+                        // no web holds on, and a yank; or the right stick's click.
+                        std::array<WebPullHand, 2> pulling{};
+                        bool free = swingStarted && swingState.grounded && !calibrationInput;
+                        for (unsigned i = 0; i < 2; ++i) {
+                            const auto& hand = motion.swing.hands[i];
+                            const auto& aim = aimed.hands[i];
+                            free = free && !swingState.webs[i].attached && !grabPhases[i];
+                            pulling[i] = {hand.tracked && hand.grip > .5f,
+                                          aim.kind == static_cast<uint32_t>(game_swing::AimKind::blocked), aim.point,
+                                          hand.aim.position, hand.gripRelativeToHead};
+                        }
+                        const bool yanked =
+                            webPull.update(frame.seconds, playing && free, trackingTurn(motion.swing), pulling);
+                        if (webPull.pulls() != pullsBefore) {
+                            pullsBefore = webPull.pulls();
+                            runtime.haptic(0, 1);
+                            runtime.haptic(1, 1);
+                            message(3, 0, "Web pull - the game's LB + RB, for as long as you hold both web buttons");
+                        }
+                        walk.pull = pullPress.update(frame.seconds, playing, frame.hands[1].stickClick,
+                                                     frame.hands[0].stickClick) ||
+                                    (yanked && playing);
                         walk.jump = (keys & swingJumpKey) != 0;
-                        auto pad = game_pad::fromControllers(frame, mapping, walk);
-                        if (interactOrigin == Origin::play)
-                            pad.buttons = static_cast<uint16_t>(pad.buttons & ~game_pad::b);
-                        game_pad::submit(pad, 200);
+                        const auto buttons = origins.filtered(frame, mapping);
+                        game_pad::submit(game_pad::fromControllers(buttons, mapping, walk), 200);
                         interacts += walk.interact && !interacting;
                         interacting = walk.interact;
+                        dodges += walk.dodge && !dodging;
+                        dodging = walk.dodge;
                     }
                     {
                         std::lock_guard lock(telemetry);
@@ -1095,6 +1115,7 @@ DWORD WINAPI run(void*) {
                         d.cameraCommits = game.cameraCalls;
                         d.playerCommits = game.matched;
                         d.interacts = interacts;
+                        d.dodges = dodges;
                         d.aimMarkers = values.aimMarkers;
                         d.settings = (values.webGrab ? 1u : 0u) | (values.punch ? 2u : 0u) | (values.body ? 4u : 0u) |
                                      (values.airWebs ? 8u : 0u) | (values.webShooter ? 16u : 0u) |
@@ -1617,9 +1638,9 @@ DWORD WINAPI run(void*) {
                                   "controller, VR settings are in Settings > SPIDY VR - VR resumes with gameplay"
                             : drawn == Presentation::flat
                                 ? "Flat screen - click both thumbsticks for VR"
-                                : "VR active - B interacts, Y opens the game menu, the menu button pauses, "
-                                  "X shows or hides aim markers, the left thumbstick's click slows time; "
-                                  "click both thumbsticks for flat screen");
+                                : "VR active - B dodges, Y interacts, X opens the game menu, the menu button "
+                                  "pauses, the left thumbstick's click slows time, the right one's is the "
+                                  "game's LB + RB (web pull); click both thumbsticks for flat screen");
                 }
             }
             {

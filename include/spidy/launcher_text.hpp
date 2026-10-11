@@ -492,7 +492,7 @@ struct SessionOptions {
     bool stockMonitorView = false;
     int renderScale = 100; // eye resolution in percent of the headset's recommendation, per side
     int swingSpeed = 32;
-    bool aimMarkers = true; // markers where each hand's web would land (X switches them in VR)
+    bool aimMarkers = true; // markers where each hand's web would land
     bool airWebs = true;    // a web that meets nothing within reach holds in open air there
     int snapTurn = 30;  // degrees per flick of the right stick; 0: no snap turning
     int haptics = 100;  // controller vibration, percent
@@ -591,8 +591,8 @@ inline std::vector<std::wstring> sessionArguments(const SessionOptions& options,
 }
 
 // The line tools/run_game_vr.py prints when a session ends with other VR
-// settings than it began with (the SPIDY VR tab in the game's Settings,
-// X for the aim markers, a T-pose calibration made or skipped):
+// settings than it began with (the SPIDY VR tab in the game's Settings, a
+// T-pose calibration made or skipped):
 //   VR settings from the headset: aim_markers=1 web_grab=1 air_webs=0 ...
 // Applies the ones the launcher offers to `options` for the next session
 // (web_grab, web_shooter, punch and body it ignores); false when the line is

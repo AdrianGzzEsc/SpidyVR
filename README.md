@@ -110,15 +110,17 @@ Spidy changes nothing in the game's folder.
 | Walls | Walk at one, or fly or jump into it, and you stay on it: at speed you run along it, then stop. **Left stick** walks it (pushed at the wall: up it), **A** jumps off, a web pulls you off. Walking it or stopped, your view turns so the wall is your floor (STAND ON WALLS in VR settings or the launcher) |
 | Flip (experimental, off by default: FLIPS and FLIP SPEED in VR settings or the launcher) | **Left stick** in the air: turns you over, as fast as you tilt it; let go to come back level. Tap **A** in the air: one flip toward where the stick points. Hold **A**: you stay turned while the stick rests |
 | Turn | **Right stick**: snap 30° (adjustable or off), or hold to turn smoothly with SMOOTH TURN on in VR settings |
-| Interact (the game's Y) | **B** |
+| Dodge (the game's B) | **B**, the way the **left stick** points; not while a web carries you |
+| Interact (the game's Y) | **Y** |
+| Pull a door or a grate (the game's LB + RB) | Click the **right stick**, or hold it; not while a web carries you |
 | Pause (VR settings: Settings > SPIDY VR) | **Menu** button |
-| Game menu (map, suits, skills) | **Y** |
-| Show or hide aim markers | **X** |
+| Game menu (map, suits, skills) | **X** |
 | Switch between VR and a flat screen | Click **both sticks** |
 
 **Aim markers** show where each free hand's web would go, blue for the left
 hand and orange for the right: a ring holds, a dashed ring holds in open air,
 a red cross misses, a turning ring of three arcs catches a prop or thug.
+AIM MARKERS in VR settings (or *Aim markers* in the launcher) hides them.
 
 ## Troubleshooting
 

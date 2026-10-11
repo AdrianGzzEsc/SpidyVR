@@ -111,7 +111,7 @@ const std::array<Row, 18>& rows() {
         {Item::none, "WEBS", nullptr, {}},
         {Item::webButton, "WEB BUTTON",
          "Which button shoots and holds a web; the other reels in and shoots web balls.", webButtonChoices},
-        {Item::aimMarkers, "AIM MARKERS", "Show where each web would land. X also switches them during play.", {}},
+        {Item::aimMarkers, "AIM MARKERS", "Show where each web would land.", {}},
         {Item::airWebs, "WEBS HOLD IN OPEN AIR",
          "With nothing in reach, a web still holds in open air, 100 m out.", {}},
         {Item::swingSpeed, "SWING SPEED LIMIT", "How fast a swing can carry you.", swingChoices},

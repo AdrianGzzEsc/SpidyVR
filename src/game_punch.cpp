@@ -48,6 +48,7 @@ template <class F> void publish(F change) {
     const auto bodies = native_bodies::counters();
     SpidyPunchData.issued = bodies.damages;
     SpidyPunchData.dropped = bodies.damageDropped;
+    SpidyPunchData.unnamed = bodies.damageUnnamed;
     InterlockedIncrement64(&SpidyPunchData.sequence);
     ReleaseSRWLockExclusive(&output);
 }

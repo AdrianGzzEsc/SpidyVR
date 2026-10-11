@@ -141,7 +141,8 @@ the screen names the camera the gate is missing), `camera_commits` and
 `player_commits` (the bridge's commits, and those the gate accepts), `players` and
 `player_record` (each player the worker followed), and `pad_buttons`,
 `pad_installed` and `pad_reads` (the virtual controller and the game's reads of
-it). The native mover controls collision; requests expire if the swing
+it), and `interacts` and `dodges` (Y and B presses in VR play that reached the
+game as its Y and its B). The native mover controls collision; requests expire if the swing
 or XR worker stops renewing them. Owned movement synchronizes the native airborne
 velocity and clears the mover's duplicate fall accumulator. This correction
 still needs an in-game handoff test. Reports now include native movement samples
@@ -576,6 +577,24 @@ module starts once per game process, so each run needs a fresh game (a
 crashed or stalled run included); the clock part can repeat. Report:
 `reports/slow-motion-probe.json`. A run took about 12 s after the save
 loaded (October 8).
+
+### The dodge
+
+`python tools/probe_dodge.py` after `tools/probe_menu_pad.py start` and
+`pad a --until-player` (a loaded save, the player on open ground or a roof).
+In VR the controllers' B is the game's B, its dodge (`game_pad::Walk::dodge`);
+the probe presses that B on the same virtual controller and follows the
+player through the input bridge's camera commits for 1.5 s after each of
+three presses of 200 ms: the left stick alone, B with the stick the other way
+(`--way X Y`, to the right unless given), and B alone. For each it prints how
+far the player went over the ground, the fastest tenth of a second, the rise
+and the drop, and how often the gameplay gate was open and on which camera.
+It fails unless B with the stick took the player at least 1.5 m and twice as
+far as the stick alone, and the gate stayed open through both dodges. A
+dodge covers metres: on the rooftop save's perch the second run took the
+player over the roof's edge, so one run per game there. It does not show the
+XR worker's way from the controller to that B (`PressOrigins` and
+`fromControllers` in the core tests), nor a dodge in a fight.
 
 ## Performance comparison
 
