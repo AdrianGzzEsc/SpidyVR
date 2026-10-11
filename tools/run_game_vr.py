@@ -205,18 +205,26 @@ def eye_reflections(setting, refused=False, ray_traced=0):
                   'Reflections setting, as it is when VR starts).')
 
 
+def command_text(command, timeout=10):
+    """What a Windows command printed, '' where it could not run. Its text is in the console's code page,
+    not Python's (UTF-8 under the launcher): read as Python's, one letter outside ASCII in it (a Windows
+    in another language, an adapter's or a network's name) left no output at all, and no session of 0.2.13
+    started on such a PC. A byte that is no letter there either becomes a question mark."""
+    try:
+        printed = subprocess.run(command, capture_output=True, timeout=timeout,
+                                 creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ''
+    return (printed or b'').decode('oem', 'replace')
+
+
 def network_links(wlan=None, addresses=None):
     """How this PC is on the network: the Wi-Fi network it is connected to (None without one) and whether
     a cable carries an address too. `wlan` and `addresses` are `netsh wlan show interfaces` and `ipconfig`
-    output (run here when not given)."""
-    def said(command):
-        try:
-            return subprocess.run(command, capture_output=True, text=True, timeout=10,
-                                  creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)).stdout
-        except (OSError, subprocess.SubprocessError):
-            return ''
-    wlan = said(['netsh', 'wlan', 'show', 'interfaces']) if wlan is None else wlan
-    addresses = said(['ipconfig']) if addresses is None else addresses
+    output (run here when not given). Both are read by their English words: a Windows in another language
+    shows neither."""
+    wlan = command_text(['netsh', 'wlan', 'show', 'interfaces']) if wlan is None else wlan
+    addresses = command_text(['ipconfig']) if addresses is None else addresses
     wifi = None
     if re.search(r'^\s*State\s*:\s*connected\s*$', wlan, re.M):
         name = re.search(r'^\s*SSID\s*:\s*(.*?)\s*$', wlan, re.M)

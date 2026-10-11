@@ -123,13 +123,15 @@ def probe(manifest, timeout=60, program=PROBE):
     """
     if not program.is_file():
         raise RuntimeError('Build the headset probe first')
+    # OpenXR's names are UTF-8; a runtime's own lines in between may be in any code page, and a byte that
+    # is not UTF-8 must not cost the answer (read strictly, it leaves no output at all).
     try:
         result = subprocess.run([str(program)], env={**os.environ, 'XR_RUNTIME_JSON': str(manifest)},
-                                capture_output=True, text=True, timeout=timeout)
+                                capture_output=True, encoding='utf-8', errors='replace', timeout=timeout)
     except subprocess.TimeoutExpired:
         return False, f'no answer within {timeout} seconds'
     said = result.stdout if result.returncode == 0 else (result.stderr or result.stdout)
-    return result.returncode == 0, said.strip()
+    return result.returncode == 0, (said or '').strip()
 
 
 def candidates(installed, running):

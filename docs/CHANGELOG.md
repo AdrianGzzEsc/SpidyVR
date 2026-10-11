@@ -3,7 +3,39 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 11, ninth build): cutscenes in 3D on the game
+**Latest build (October 11, tenth build): 0.2.13 started no session on a
+Windows in another language.** A player's report: "2.13 bug, didnt happen
+with 2.12", VR would not start.
+
+- **What happened.** Since the fourth build a session asks Windows, before it
+  starts the game, whether the PC is on Wi-Fi (`netsh wlan show interfaces`
+  and `ipconfig`). Those two print in the console's code page. Python under
+  the launcher reads text as UTF-8, and one letter outside English in what
+  they printed (the player's `ipconfig` had the byte 0x84, an `ä` in a
+  Western console) made the read fail and leave nothing. The next line then stopped the session: `TypeError: expected
+  string or bytes-like object, got 'NoneType'`, after the headset was found
+  and before the game started.
+- **Who it hit.** Any PC whose Windows is in a language with such letters in
+  those two commands' words, and an English Windows with one in a network
+  adapter's or a Wi-Fi network's name. 0.2.12 and earlier never ran them.
+- **The fix.** Their output is read in the console's code page, and a byte
+  that is no letter there becomes a question mark instead of an error
+  (`command_text` in `tools/run_game_vr.py`). The headset probe's answer was
+  read the same strict way, where a runtime's own line could have done the
+  same; it is read leniently too (`probe` in `tools/xr_runtime.py`).
+- **Still so:** the Wi-Fi warning reads those commands by their English
+  words. On a Windows in another language it stays silent, as before the
+  fourth build; it only no longer stops anything.
+
+Reproduced here before the fix: a command printing the byte 0x84 under
+`-X utf8` gives no output and the player's error. One new Python check and one
+extended one: both fail on 0.2.13's tools and pass now, with and without
+`-X utf8`. Not run on a Windows in another language: I have none.
+
+`run_game_vr.py` and `xr_runtime.py` changed, no module and no protocol. 110
+Python checks pass (1 new). Not in your play folder.
+
+**Earlier build (October 11, ninth build): cutscenes in 3D on the game
 screen.** You asked: "lets keep cutscenes in a virtual screen but with proper
 3d stereoscopic depth".
 

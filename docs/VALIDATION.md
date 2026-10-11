@@ -1,6 +1,50 @@
 # Validation — 2026-10-11
 
-## Cutscenes in stereo on the game screen — current build
+## No session on a Windows in another language (0.2.13) — current build
+
+A player (pepie87, Pimax Crystal Super), October 11, in #spidy-bugs: "2.13
+bug, didnt happen with 2.12", "wont start". Their console log ends, after the
+headset probe's lines:
+
+```
+Exception in thread Thread-5 (_readerthread):
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0x84 in position 802: invalid start byte
+  File "tools\run_game_vr.py", line 1122, in session
+    links = network_links()
+  File "tools\run_game_vr.py", line 225, in network_links
+    for block in re.split(r'^(?=\S)', addresses, flags=re.M):
+TypeError: expected string or bytes-like object, got 'NoneType'
+```
+
+**Cause.** `network_links` (the fourth build's Wi-Fi check) ran `netsh wlan
+show interfaces` and `ipconfig` with `subprocess.run(..., text=True)`. The
+launcher starts Python with `-X utf8`, so their output was decoded as UTF-8;
+they print in the console's code page (0x84 is `ä` in code pages 437 and
+850). `subprocess`'s reader thread raised, `run` returned `stdout=None`, and
+`re.split` raised on it. Line 1122 is before `starting the game`.
+
+| Check | Result |
+|---|---|
+| A command printing `b'   L\x84nklokal IPv6-adress'`, read with `text=True` under `python -X utf8` (3.12.10, as packaged) | the reader thread's `UnicodeDecodeError`, `stdout` `None`: the player's failure |
+| The same bytes read as bytes and decoded `'oem'` | `'   Länklokal IPv6-adress'` (this PC: OEM 850, ANSI 1252) |
+| New check `command_text` on a command printing 0x81 (no letter in UTF-8 or in code page 1252), `tests/game_vr_protocol_tests.py` | passes with and without `-X utf8`; 0.2.13's own read of that command gives `None` in both |
+| New check `test_a_probe_answer_with_a_byte_that_is_not_utf8_is_still_read`, `tests/runtime_protocol_tests.py` | on 0.2.13's tools: `AttributeError: 'NoneType' object has no attribute 'strip'`; passes now, with and without `-X utf8` |
+| `network_links()` with this PC's real `netsh` and `ipconfig` under `-X utf8` | cable found, no Wi-Fi, 714 characters of `ipconfig` read |
+| The six `*_protocol_tests.py` suites | 110 checks pass (2, 50, 27, 5, 13, 13) |
+
+**Not checked:** a session on a Windows in another language (none here), and
+that both commands print in the OEM code page on every Windows. The second
+no longer matters for starting: a byte the code page lacks becomes `?`. The
+packaged tools read no other program's output (`vr_launcher.py` starts Steam
+and reads nothing). `tools/probe_link.py`, a developer's probe that is not
+packaged, still reads the same two commands the strict way.
+
+**Left as it was:** `network_links` matches English words (`State :
+connected`, `Ethernet adapter`, `IPv4 Address`), so the warning is silent on
+a Windows in another language. Asking Windows itself (`GetAdaptersAddresses`,
+the WLAN API) would not depend on the language.
+
+## Cutscenes in stereo on the game screen — preceding build
 
 The user, October 11: "lets keep cutscenes in a virtual screen but with proper
 3d stereoscopic depth".

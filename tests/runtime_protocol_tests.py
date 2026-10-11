@@ -141,6 +141,16 @@ class RuntimeTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'Build the headset probe first'):
             xr_runtime.probe(self.vd,program=pathlib.Path(self.folder.name)/'missing.exe')
 
+    def test_a_probe_answer_with_a_byte_that_is_not_utf8_is_still_read(self):
+        # A runtime's own line among the probe's, in the PC's code page (0x81): read strictly, it left no
+        # answer at all.
+        program=pathlib.Path(self.folder.name)/'probe.cmd'
+        program.write_text('@"%s" -c "import sys; sys.stdout.buffer.write(b\'Headset available: T\\x81st HMD.\')"\n'
+                           % sys.executable)
+        found,said=xr_runtime.probe(self.vd,program=program)
+        self.assertTrue(found)
+        self.assertRegex(said,r'^Headset available: T.st HMD\.$')
+
     def test_preflight_reports_the_runtime_it_used(self):
         detected=(self.steamvr,'Headset available: Test HMD; position tracking=1.\nRecommended eye 0: 2528x2704')
         with unittest.mock.patch.object(xr_runtime,'detect',return_value=detected) as detect, \

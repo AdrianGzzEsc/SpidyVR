@@ -13,7 +13,7 @@ from run_game_vr import (snapshot as xr_snapshot, accepted as accepted_xr, timin
                          game_memory, keep_game_log, body_snapshot,
                          punch_snapshot, shooter_snapshot, start_settings, settings_line, SETTINGS_LINE,
                          scaled_eye_size, rendering_line, eye_render_size, eye_reflections, XR_STAGES,
-                         network_links, link_warning, stream_stalls,
+                         command_text, network_links, link_warning, stream_stalls,
                          slow_motion_snapshot, hud_snapshot, GAME_HOOKS)
 from probe_collision import snapshot as collision_snapshot
 from probe_movement import snapshot as movement_snapshot
@@ -446,6 +446,14 @@ class ProtocolTests(unittest.TestCase):
         self.assertIn("Wi-Fi off", link_warning(dict(wifi='Home 5G', cable=True), 'Virtual Desktop'))
         self.assertIsNone(link_warning(dict(wifi=None, cable=True), 'Virtual Desktop'))
         self.assertIsNone(link_warning(dict(wifi='Home 5G', cable=False), 'Oculus'))
+        # A Windows in another language: netsh's German word for encryption with the console's 0x81 for its
+        # u-umlaut, which is a letter neither in UTF-8 (Python's under the launcher) nor in Windows' own code
+        # page here. Read as either, the command left no output and 0.2.13 started no session on such a PC.
+        german = command_text([sys.executable, '-c',
+                               r"import sys; sys.stdout.buffer.write(b'    Verschl\x81sselung : CCMP\r\n')"])
+        self.assertRegex(german, r'^    Verschl.sselung : CCMP\r?\n$')
+        self.assertEqual(network_links(german, german), dict(wifi=None, cable=False))
+        self.assertEqual(command_text(['a command no Windows has']), '')
         # xr_ms: frame, wait_frame, ..., end_frame. A held round is sampled twice; a slow copy is not one.
         held = [100.1, 6.9, .2, 0, 0, .1, .1, 0, 92.9]
         samples = [dict(frames=10, xr_ms=[13.9, 0, .2, 0, 0, .1, .1, 0, 13.2]), dict(frames=11, xr_ms=held),
