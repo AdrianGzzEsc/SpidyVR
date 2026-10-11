@@ -46,6 +46,9 @@ SwingTakeoff takeoffTransition;
 // of the game's crawl (Swing::mounting): the wall takes the body as it leaves.
 SwingTakeoff mountTakeoff;
 LARGE_INTEGER frequency{};
+// When the web strike (game_punch::fly) last had its say over a step: the
+// real time between two is the step it flies the player through.
+int64_t strikeQpc{};
 // Aim previews are made while sampled before this tick, once per input
 // command; the latest was made at aimMadeMs.
 std::atomic<uint64_t> aimDeadline{};
@@ -74,6 +77,8 @@ void relinquishMotion() {
 // there); otherwise the body may be anywhere by the next step.
 void cancelSwing(bool keepWall = false) {
     relinquishMotion();
+    game_punch::cancelStrike();
+    strikeQpc = 0;
     coasting = false;
     takeoffTransition.reset();
     mountTakeoff.reset();
@@ -117,6 +122,7 @@ void coast() {
     mountTakeoff.reset();
     solver.releaseAll();
     inputClock.reset();
+    game_punch::cancelStrike();
     game_grab::cancel();
     game_shooter::cancel();
     grabInputClock.reset();
@@ -247,14 +253,35 @@ void visit(const native_rays::QueryContext& world) {
         if (game_grab::due(grabDt))
             game_grab::step(grabDt, world, config.record);
         // Fists take the same samples. A hand whose web holds a target or
-        // swings the player does not punch.
+        // carries the player does not punch; one whose web only hangs from a
+        // wall while the player stands (a clenched fist shoots one) does.
+        // Until October 11 any attached web kept its hand from punching:
+        // in that day's 14:49 session both hands moved at 4.4 m/s with their
+        // webs out and landed nothing.
         if (game_punch::running()) {
             const auto grab = game_grab::data();
-            uint32_t busy{};
-            for (unsigned i = 0; i < 2; ++i)
-                if (grab.hands[i].phase || solver.webs()[i].attached)
-                    busy |= 1u << i;
-            game_punch::update(sampleSeconds, in, config.record, busy, world);
+            game_punch::Player fighter;
+            fighter.record = config.record;
+            fighter.feet = at;
+            fighter.grounded = motion.grounded != 0;
+            for (unsigned i = 0; i < 2; ++i) {
+                const bool carried = solver.webs()[i].attached && (owned || !motion.grounded);
+                fighter.swinging |= carried;
+                if (grab.hands[i].phase || carried)
+                    fighter.busy |= 1u << i;
+                if (grab.hands[i].phase && grab.hands[i].kind == static_cast<uint32_t>(game_targets::Kind::bot))
+                    fighter.holds[i] = grab.hands[i].target;
+            }
+            // A web strike is the player's whole motion: the webs let go, and
+            // the web that held the one struck with them.
+            const auto opened = game_punch::update(sampleSeconds, in, fighter, world);
+            if (opened.strike) {
+                solver.releaseAll();
+                takeoffTransition.reset();
+                mountTakeoff.reset();
+                if (opened.held)
+                    game_grab::cancel();
+            }
         }
         if (world.error()) {
             fault(world.error());
@@ -385,11 +412,15 @@ void visit(const native_rays::QueryContext& world) {
     for (const auto& web : solver.webs())
         overhead |= web.attached && web.anchor.y > body.position.y + .5f;
     const bool wantsLift = requested.y > .25f || (newAttachment && overhead) || in.jump || pointLaunched;
+    // A web strike that goes up from the ground (at a thug an uppercut
+    // lifted, at one on a ledge) leaves it as a web does: by the game's jump.
+    const bool strikeLift = body.grounded && game_punch::lifting(body.position - Vec3{0, 1, 0});
     // Takeoff follows the native jump's measured progress.
     const auto transition =
-        takeoffTransition.update(GetTickCount64(), attached, body.grounded, collidable, wantsLift,
-                                 zipped || pointLaunched || newAttachment, harness, motion.achievedVelocity,
-                                 (zipped || pointLaunched) ? predicted.velocity : Vec3{}, pointLaunched);
+        takeoffTransition.update(GetTickCount64(), attached || strikeLift, body.grounded, collidable,
+                                 wantsLift || strikeLift, zipped || pointLaunched || newAttachment, harness,
+                                 motion.achievedVelocity, (zipped || pointLaunched) ? predicted.velocity : Vec3{},
+                                 pointLaunched);
     if (transition.resumed)
         requested = limited(requested + transition.launchVelocity - body.velocity, cap);
     // A player who walks at a wall, or whom the game has on one in its crawl,
@@ -401,8 +432,26 @@ void visit(const native_rays::QueryContext& world) {
     // A player the game's own jump or fall brought into a wall is the swing's
     // from there: on the wall, then in flight off it.
     const auto wall = solver.wall();
-    const bool drive = collidable && !body.grounded && !transition.waiting &&
-                       (attached || owned || transition.resumed || wall.on);
+    // A web strike has the player for its flight, and holds him in the air
+    // for a moment after its blow: on the ground too, where the swing
+    // otherwise leaves him to the game. It flies in real time, and the
+    // mover's step is the game's, shorter by its time scale while slow motion
+    // or a blow's stop slows the world: the request is that much faster.
+    const float timeScale = game_punch::worldScale();
+    const float sinceStrike =
+        strikeQpc && now.QuadPart > strikeQpc
+            ? std::min(static_cast<float>(static_cast<double>(now.QuadPart - strikeQpc) / frequency.QuadPart), .1f)
+            : motion.dt / timeScale;
+    strikeQpc = now.QuadPart;
+    const auto flight = game_punch::fly(sinceStrike, body.position - Vec3{0, 1, 0}, body.grounded,
+                                        strikeLift && transition.waiting);
+    const bool striking = flight.drive && collidable;
+    if (striking)
+        requested = limited(flight.velocity / timeScale,
+                            std::min(motionSpeedLimit * (1.f - 1e-6f),
+                                     .875f * native_movement::farthestStep / motion.dt));
+    const bool drive = striking || (collidable && !body.grounded && !transition.waiting &&
+                                    (attached || owned || transition.resumed || wall.on));
     if (drive) {
         native_movement::Command request;
         request.enabled = 1;
@@ -421,9 +470,11 @@ void visit(const native_rays::QueryContext& world) {
             return;
         }
         // The solver's velocity at the end of this command, with the same
-        // speed cap and takeoff launch applied to it as to the request.
+        // speed cap and takeoff launch applied to it as to the request; a
+        // strike's own in real time, at rest once it has arrived.
         inFlight.issued(request.serial, requested,
-                        limited(predicted.velocity + requested - average, config.maxSpeed));
+                        striking ? limited(flight.velocity, config.maxSpeed)
+                                 : limited(predicted.velocity + requested - average, config.maxSpeed));
         owned = true;
     } else if (owned) {
         relinquishMotion();

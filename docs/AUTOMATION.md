@@ -417,6 +417,15 @@ nearest target not tried yet:
 - `punch`: a scripted fist through his chest at 6 m/s, through the swing's
   input.
 - `pull`: a scripted grip catches him, yanks, carries, winds up and throws.
+- `strike`: a scripted fist thrown from the player's own shoulder at him (he
+  must stand within 10 m, in sight): the web strike it opens, the player's
+  path to him and the blow that lands.
+- `heavy`: the punch at 9 m/s, a blow that sends him flying, and how far.
+- `launch`: an uppercut through his chest, then a fist down through him where
+  he is 0.45 s later: how high he was lifted and how he came down.
+
+The last three are not in the default `--phases` and had not run in the game
+when they were written (October 11: Steam was offline).
 
 It records his states, health, webbing and path, and the modules' telemetry.
 It fails if a hook entry was patched before it started; it reports whether

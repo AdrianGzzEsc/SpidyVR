@@ -41,7 +41,9 @@ class XrRuntime {
     const XrFrameTiming& lastFrameTiming() const {
         return frameTiming_;
     }
-    void haptic(int hand, float strength);
+    // One pulse: 25 ms unless `seconds` says longer (up to half a second: a
+    // landed blow's kick).
+    void haptic(int hand, float strength, float seconds = .025f);
     // Scales every haptic pulse: 0 none, 1 as asked (the VR settings' controller vibration).
     void hapticStrength(float scale) {
         hapticScale_ = std::isfinite(scale) ? std::clamp(scale, 0.f, 1.f) : 1.f;

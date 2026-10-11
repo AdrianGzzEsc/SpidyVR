@@ -1,6 +1,96 @@
 # Validation — 2026-10-11
 
-## No session on a Windows in another language (0.2.13) — current build
+## Fighting across the room: web strikes, flow, blows that are felt — current build, tried in the headset
+
+The user, October 11 evening: "check how Batman: Arkham Shadow combat works
+and reimagine our current combat with it in mind build v1 for me to test";
+while it was built: "i think our swinging and acrobatics could allow for airal
+combat. also punches have zero feedback now and feel bad"; after a session
+with the build: "i like the direction".
+
+**Arkham Shadow**, as its coverage describes it (Road to VR's hands-on and
+review, UploadVR's review, MIXED's preview, the abstract of the GDC session
+"Punching Across the Room in 'Batman: Arkham Shadow'"; the talk itself was
+not readable): a punch thrown at a targeted enemy slides the player to him
+while time slows; follow-up blows are asked for in given directions; a
+warning icon is countered by swinging an arm toward it; a cape gesture stuns
+armoured enemies; the player vaults over some; a combo counts up to special
+moves; harder punches score more and flash.
+
+**Why punches felt like nothing.** A landed punch was one haptic pulse of
+25 ms at 0.5 + 0.5 x strength (`XrRuntime::haptic`) and nothing else, and the
+game answers kMelee with kFlyBack, kSuperFlyBack or kAirborne by
+`BotStateHitReactGame` alone (the October 8 table below). In the user's
+20:20 session that day 29 punches landed, strengths 0.07 to 1.0. In the 14:49
+session both hands moved at 4.4-4.5 m/s with `busy` set and landed nothing:
+an attached web kept its hand from punching, and a clenched fist shoots one.
+
+**What was built** (`include/spidy/web_strike.hpp` holds every number with
+its reason; `src/game_punch.cpp` runs it in the game, `src/game_swing.cpp`
+flies the player, `src/game_xr.cpp` gives the feedback):
+
+| Part | How |
+|---|---|
+| Web strike | A free fist at 2.6 m/s or more relative to the player, going out from the base of the neck (cosine 0.3), for 40 ms, within 37 degrees of an enemy 1.3-10 m from the chest with nothing fixed in between (one ray, the last metre his own cover): the player is flown to 0.95 m from his axis at 26 m/s, no hop shorter than 0.12 s, and the opening fist's blow (no weaker than strength 0.5) lands on arrival. Not within 0.35 s of the hand's web letting go, nor within 0.3 s of its web button going down; one per swing. The swing's webs are let go |
+| The flight | `game_punch::fly` each step of the player's mover, in real time: the request is the velocity over the game's clock scale, capped at the movement module's 65 m/s. On the ground too, where the swing otherwise leaves the player to the game. A flight more than 0.6 m up from a standing player waits for the game's jump (`SwingTakeoff`), 0.7 s at most. It ends 0.25 s after it should have arrived (the blow lands within 1.8 m), or after 0.3 s without a step |
+| Along the web | A hand whose web holds an enemy bot strikes him alone, within 66 degrees; the grab lets go |
+| In the air | After a blow landed off the ground and off a web the player is held still for 0.45 s, 3 s in all between two landings |
+| Delivery | A blow of strength 0.85 or more, an uppercut, a blow at a thug in `BotStateFlung` and a finisher go out as kKinetic with kFlyBack, KnockbackAmount 10 and ImpactImpulse 30 (the web grab's knock), and his flight is given a velocity (`native_bodies::fling` for five samples once he is on it; asked for once after 0.4 s if he is not): heavy 9-14 m/s along the blow and 3 up, uppercut 8.5 up, in the air 4.5 up, down at a thug in the air 24 down with 1.6 times the damage, finisher 18 along and 5 up with 2.5 times. Other blows stay kMelee; a firm one down onto a standing thug is a kKnockdown |
+| Flow | Blows within 3.5 s count up; damage x (1 + 0.1 per blow, 1.5 at most); every fifth a finisher |
+| Feedback | Haptics 60-140 ms at 0.6-1 for a plain blow, 180 ms for a heavy one and 320 ms for a finisher with the other hand too; the game's time at 0.1 for 30-100 ms (0.2 for 0.4 s for a finisher), easing back over 0.14 s (`HitStop`, the smaller of it and slow motion); a burst at the blow (`appendImpact`: flash, ring, rays, the count from the second blow on); a sound through `PlaySound` from memory (`impactWave`: 0.12-0.42 s, peaks 0.42-0.86 of full scale, and a 0.22 s rush for a strike) |
+| A standing hand's web | A hand is busy when its web holds a target or carries the player (`owned`, or not grounded); a web hanging from a wall beside a standing player no longer keeps the hand from punching |
+| Targets | Enemy bots only, and not one whose health component (BotHealth `3839e98`, else Health `3839e08`, a float at +0x88) reads 0 or less |
+
+**The user's session** (`dist/Spidy-0.2.12/reports/game-vr-20261011-213953.json`,
+a fight on the ground; the report's new `strikes` and `strike_samples`, and
+its swing samples):
+
+| Measure | Result |
+|---|---|
+| Strikes opened / landed / ended without a blow | 13 / 12 / 1 (opened 1.45 m off, it never took a step and ended 0.8 s later) |
+| Blows | 21: 12 strikes' and 9 fists'; 2 heavy, 2 finishers (108.2 and 77.0 damage asked), no uppercut, no blow at a thug in the air, no slam |
+| Flow | reached 7 twice; finishers at the fifth blow both times |
+| The flights, from the swing samples (12 driven stretches, all on the ground) | 0.38-7.40 m in 0.15-0.63 s; height changed by -0.11 to +0.04 m; no web attached |
+| Their speed | 9.7-11.7 m/s over the six longest (3.6-7.4 m), with 65 m/s requested: the cap. 26 m/s was designed |
+| Why | The mover's step there was 3.4-3.7 ms at about 57 steps a second (0.197 s of mover time per real second), where a swing's flight in the 20:20 session stepped 14-15 ms (real speed 0.97 of nominal, 74 pairs). The game's clock scale as `worldScale` read it was about 0.2 too (requests of 18-49 m/s for flight velocities of 3.7-9.6), so the request was the velocity times five, up to the cap. `slow_motion` in the report: game scale 1.0, no slow motion used |
+| Thugs sent flying | 4 blows asked for a flight; `flown` 0, `unflown` 4: none was in `BotStateFlung` within 0.4 s |
+| Enemies alive within 13 m | 14 at the first strike, 9 at the last |
+
+**Checks.** 262 core checks (19 new): a strike across the room and where it
+stops, its time and speed; what opens none (slow, wide, short, far, busy, a
+hand that just let go, a hand drawn back, three fast samples, a web button
+just pressed); the thug pointed at of two, the nearer of two in line, none
+behind a wall; the held thug alone; one strike per swing; a hop's minimum
+time; a flight that cannot arrive, a target gone, a cancel, a player who takes
+no steps; waiting for the jump; up to a thug in the air and the hang, its
+restart and its limit; a dive; the flow's count, window, finisher and damage;
+each kind of blow's delivery; the hit stop's hold, ease, finisher and
+overlap; the sounds' WAV headers, lengths, peaks, attack and ends; the burst's
+plane, spread, colour, count and fade; rejected tunings; and a spent swing
+(`Punches::spend`). 111 Python checks (1 new: `strike_snapshot`, with a torn
+read). `tools/probe_combat.py` has new phases `strike`, `heavy` and `launch`
+for the game without a headset.
+
+**Unproven.**
+- Nothing ran in the game without a headset: Steam was offline (its bar read
+  "NO CONNECTION") and stopped the launch with "Unable to Sync ... Play
+  anyway / Cancel", which was left for the user. The new probe phases have
+  never run.
+- Uppercut launches, blows at a thug in the air, slams, the hang, and a
+  strike that leaves the ground by the game's jump: none happened in the
+  session.
+- Whether a thug sent flying flies: none was seen in `BotStateFlung`. Each
+  such blow asked for 49 damage or more (a street thug had 50 health in the
+  October 9 probe); what a thug the blow knocks out does was not looked at.
+- What the short step of a standing player's mover is (3.4 ms against a
+  frame's 18), and whether the clock scale of about 0.2 is the eyes' own
+  frames. Until that is known a strike on the ground goes at about a fifth of
+  65 m/s.
+- How the bursts, the hit stop and the sounds look, feel and sound: the user
+  said only "i like the direction". Comfort of the flight at its designed
+  speed is untried, since it never reached it.
+
+## No session on a Windows in another language (0.2.13) — preceding build
 
 A player (pepie87, Pimax Crystal Super), October 11, in #spidy-bugs: "2.13
 bug, didnt happen with 2.12", "wont start". Their console log ends, after the

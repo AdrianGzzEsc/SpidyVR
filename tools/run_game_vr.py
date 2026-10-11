@@ -617,6 +617,43 @@ def body_snapshot(game, address):
     return None
 
 
+BLOW_KINDS = ('hit', 'heavy', 'launch', 'juggle', 'slam', 'finisher')
+STRIKE_PHASES = ('idle', 'flying', 'hanging')
+
+
+def strike_snapshot(game, address):
+    """Fighting across the room (game_punch::Strikes): the web strikes opened, landed and missed, every blow
+    landed (fists' and strikes') and of what kind, the thugs' flights given a blow's velocity, the strike in
+    progress, the flow's count, and the latest strike and blow."""
+    for _ in range(8):
+        raw = game.read(address, 216)
+        if len(raw) != 216:
+            return None
+        if struct.unpack_from('<3I', raw) != (0x53535452, 1, 216):
+            raise RuntimeError('Strike protocol mismatch')
+        if struct.unpack_from('<Q', raw, 16)[0] & 1 or raw[16:24] != game.read(address+16, 8):
+            continue
+        opened, landed, missed, held = struct.unpack_from('<4Q', raw, 24)
+        blows, heavies, launches, juggles, slams, finishers, flown, unflown = struct.unpack_from('<8Q', raw, 56)
+        phase, hand, flow, enemies = struct.unpack_from('<4I', raw, 120)
+        distance, seconds = struct.unpack_from('<2f', raw, 156)
+        strength, damage = struct.unpack_from('<2f', raw, 188)
+        kind, count, last_hand, by_strike = struct.unpack_from('<4I', raw, 196)
+        return dict(status=struct.unpack_from('<I', raw, 12)[0], opened=opened, landed=landed, missed=missed,
+                    held=held, blows=blows, heavies=heavies, launches=launches, juggles=juggles, slams=slams,
+                    finishers=finishers, flown=flown, unflown=unflown,
+                    phase=STRIKE_PHASES[phase] if phase < len(STRIKE_PHASES) else phase, hand=hand, flow=flow,
+                    enemies=enemies, target=hex(struct.unpack_from('<Q', raw, 136)[0]),
+                    destination=[round(x, 3) for x in struct.unpack_from('<3f', raw, 144)],
+                    distance=round(distance, 2), flight_seconds=round(seconds, 3),
+                    last_point=[round(x, 3) for x in struct.unpack_from('<3f', raw, 164)],
+                    last_direction=[round(x, 3) for x in struct.unpack_from('<3f', raw, 176)],
+                    last_strength=round(strength, 3), last_damage=round(damage, 1),
+                    last_kind=BLOW_KINDS[kind] if kind < len(BLOW_KINDS) else kind, last_count=count,
+                    last_hand=last_hand, last_by_strike=bool(by_strike))
+    return None
+
+
 def punch_snapshot(game, address):
     """Punches (game_punch::Data): landed per hand, the game's damage requests issued and dropped, the bots
     within reach of a fist, and the latest punch. unnamed: the issued requests (punches, web pulls and web
@@ -1209,7 +1246,7 @@ def session(a, startup):
         rays, ray_hash = prepare(game.pid, process, ROOT/'build/windows-ninja/spidy_ray_bridge.dll',
             ROOT/'reports/ray-modules', ('SpidyRayStart', 'SpidyRaySubmit', 'SpidyRayStop',
                                        'SpidyRaySample', 'SpidyRayData', 'SpidySwingData', 'SpidyGrabData',
-                                       'SpidyPunchData', 'SpidyShooterData'))
+                                       'SpidyPunchData', 'SpidyStrikeData', 'SpidyShooterData'))
         # Imported here: probe_game_grab imports from this module.
         from probe_game_grab import grab_snapshot
         ray_module = next(m['base'] for m in modules(game.pid) if m['name'].lower() == 'spidy_ray_bridge.dll')
@@ -1260,6 +1297,7 @@ def session(a, startup):
         # The player's body and fists: the latest of each, and a sample when punches land.
         body = punch = None
         punch_samples = deque(maxlen=2000)
+        strikes, strike_samples = None, deque(maxlen=2000)
         # The web shooter: the latest, and a sample when a shot is asked for, fired or dropped.
         shooter = None
         shooter_samples = deque(maxlen=2000)
@@ -1306,7 +1344,8 @@ def session(a, startup):
                         xr_hash=xr_hash, ray_hash=ray_hash, samples=list(samples),
                         swing_samples=list(swing_samples), motion_samples=list(motion_samples),
                         grab_samples=list(grab_samples), body=body, punch=punch,
-                        punch_samples=list(punch_samples), shooter=shooter, shooter_samples=list(shooter_samples),
+                        punch_samples=list(punch_samples), strikes=strikes, strike_samples=list(strike_samples),
+                        shooter=shooter, shooter_samples=list(shooter_samples),
                         slow_motion=slow_motion, slow_motion_samples=list(slow_motion_samples), hud=hud_last,
                         ray_samples=list(ray_samples), appearance=appearance, eye_jobs=eye_jobs,
                         render_memory=render_memory, timing=timing, network=links,
@@ -1366,6 +1405,12 @@ def session(a, startup):
                         if any(landed[k] != (punch or {}).get(k) for k in ('punches', 'dropped', 'unnamed')):
                             punch_samples.append(dict(landed, seconds=round(time.monotonic()-started, 3)))
                         punch = landed
+                    fight = strike_snapshot(game, rays['SpidyStrikeData'])
+                    if fight:
+                        # One row per web strike opened or ended and per blow landed.
+                        if any(fight[k] != (strikes or {}).get(k) for k in ('opened', 'landed', 'missed', 'blows')):
+                            strike_samples.append(dict(fight, seconds=round(time.monotonic()-started, 3)))
+                        strikes = fight
                     shots = shooter_snapshot(game, rays['SpidyShooterData'])
                     if shots:
                         sample['shooter'] = {k: shots[k] for k in ('status', 'fired', 'dropped', 'bots', 'collisions',
@@ -1515,6 +1560,7 @@ def session(a, startup):
             grab_samples=list(grab_samples), grab=grab_snapshot(game, rays['SpidyGrabData']),
             body=body_snapshot(game, xr['SpidyBodyData']) or body,
             punch=punch_snapshot(game, rays['SpidyPunchData']) or punch, punch_samples=list(punch_samples),
+            strikes=strike_snapshot(game, rays['SpidyStrikeData']) or strikes, strike_samples=list(strike_samples),
             shooter=shooter_snapshot(game, rays['SpidyShooterData']) or shooter,
             shooter_samples=list(shooter_samples),
             slow_motion=slow_motion_snapshot(game, xr['SpidySlowMotionData']) or slow_motion,

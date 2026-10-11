@@ -35,7 +35,8 @@ endfunction()
 
 add_library(spidy_core src/swing.cpp src/web_grab.cpp src/lab_world.cpp src/lab_props.cpp src/game_tracking.cpp
             src/web_visual.cpp src/body_ik.cpp src/punch.cpp src/shooter.cpp src/vr_settings.cpp
-            src/body_calibration.cpp src/overlay_text.cpp src/slow_motion.cpp)
+            src/body_calibration.cpp src/overlay_text.cpp src/slow_motion.cpp src/web_strike.cpp
+            src/impact_sound.cpp)
 target_include_directories(spidy_core PUBLIC include)
 if(MSVC)
   target_compile_options(spidy_core PRIVATE /W4 /permissive-)
@@ -82,7 +83,7 @@ if(SPIDY_BUILD_OBSERVER)
   target_include_directories(spidy_stereo_probe PRIVATE include)
   target_compile_definitions(spidy_stereo_probe PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
   target_compile_options(spidy_stereo_probe PRIVATE /W4 /permissive-)
-  target_link_libraries(spidy_stereo_probe PRIVATE minhook d3d12 d3dcompiler spidy_core)
+  target_link_libraries(spidy_stereo_probe PRIVATE minhook d3d12 d3dcompiler winmm spidy_core)
   add_library(spidy_render_probe SHARED src/render_probe.cpp)
   target_compile_definitions(spidy_render_probe PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
   target_compile_options(spidy_render_probe PRIVATE /W4 /permissive-)

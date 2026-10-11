@@ -3,7 +3,69 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 11, tenth build): 0.2.13 started no session on a
+**Latest build (October 11, eleventh build): fighting across the room.** You
+asked: "check how Batman: Arkham Shadow combat works and reimagine our current
+combat with it in mind build v1 for me to test", and while it was built: "i
+think our swinging and acrobatics could allow for airal combat. also punches
+have zero feedback now and feel bad". After a session with it: "i like the
+direction".
+
+- **What Arkham Shadow does.** A punch thrown at an enemy anywhere in the room
+  slides you to him while time slows; each blow answers with a flash and a
+  kick in the hand; a warning icon is countered by swinging an arm at it;
+  blows in a row build a combo toward special moves. Its makers call it
+  punching across the room.
+- **The web strike.** Throw a fist at a thug up to 10 m away, in sight, and
+  you fly to him; the blow lands as you arrive, 0.95 m from him. From the
+  ground you slide along it; from a jump, a fall or a swing it is a dive, and
+  your webs let go. The fist: 2.6 m/s or faster, going out from your body,
+  within 37 degrees of him, for 40 ms. A hand drawn back, a hook, a twitch of
+  the tracking and an arm thrown out as its web button goes down open none.
+- **Along your web.** A hand whose web holds a thug strikes him with a punch
+  toward him, and the web lets go. A sharp pull still yanks him to you.
+- **In the air.** An uppercut lifts a thug off his feet. A strike at a thug
+  above you leaves the ground by the game's own jump and then flies up to him,
+  and after every blow you land off the ground you hang there for 0.45 s (3 s
+  in all between two landings). A blow down at a thug in the air slams him.
+- **Blows that carry.** The game answers its melee damage with a flinch,
+  however hard the blow (measured October 8). A hard blow, an uppercut, a
+  blow at a thug in the air and a finisher now go out as its kinetic blow,
+  which sends him flying, and his flight is given the blow's velocity.
+- **Flow.** Blows within 3.5 s of one another count up, each a tenth harder
+  than the first (half again at most), and every fifth is a finisher: two and
+  a half times as hard, and he flies far.
+- **What a blow feels like.** It was one 25 ms pulse at half strength and
+  nothing else: in your 20:20 session 29 punches landed, some at full
+  strength, and felt like nothing. Now the hand kicks for 60 to 320 ms (both
+  hands for a heavy blow), the game's time stops for 30 to 100 ms (0.4 s for
+  a finisher) and eases back, a burst shows where the blow landed with its
+  count in the flow (X2, X3...), and it sounds: four blows and a strike's
+  rush, each made from a falling tone and a burst of noise, no files.
+- **Clenched fists.** A hand whose web only hangs from a wall while you stand
+  punches and strikes now. Before, any attached web kept its hand from
+  punching: in your 14:49 session both hands moved at 4.4 m/s with their webs
+  out and landed nothing. A hand whose web holds a prop or carries you
+  through the air still does neither.
+- **Not in it:** the counter (Spidy cannot tell yet when an attack is coming),
+  a marker on the thug a punch would strike, and a switch for the strike or
+  its sounds.
+
+Your session with it (21:39, from `dist/Spidy-0.2.12`): 13 strikes opened, 12
+landed; 21 blows, 2 of them heavy and 2 finishers. The strikes slid you 0.4 to
+7.4 m along the ground, level within 0.11 m, at about 11 m/s and not the 26
+asked for: a standing player's mover stepped in a fifth of the frame's time
+there, and a request is capped at 65 m/s of that. One strike ended without a
+step. No uppercut, air blow or slam happened in it, and none of the four thugs
+sent flying was seen in the game's flight within 0.4 s: both are unproven.
+Not run in the game without a headset: Steam was offline and asked whether to
+play without the cloud saves. [VALIDATION.md](VALIDATION.md) has the numbers.
+
+`spidy_ray_bridge.dll`, `spidy_stereo_probe.dll`, the launcher (a FIGHTING
+group on its CONTROLS page), `run_game_vr.py` (the report's `strikes`) and
+README.txt changed. 262 core checks (19 new) and 111 Python checks (1 new)
+pass. In your play folder (`dist/Spidy-0.2.12`) since 21:26.
+
+**Earlier build (October 11, tenth build): 0.2.13 started no session on a
 Windows in another language.** A player's report: "2.13 bug, didnt happen
 with 2.12", VR would not start.
 

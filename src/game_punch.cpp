@@ -1,7 +1,9 @@
 // Punches in the game: fists from the swing's input samples, bots from the
-// target watch, blows as the game's own melee damage (game_punch.hpp).
+// target watch, blows as the game's own damage; and fighting across the
+// room, the web strike and the flow (game_punch.hpp).
 #include "spidy/game_punch.hpp"
 #include "spidy/game_targets.hpp"
+#include "spidy/game_time.hpp"
 #include "spidy/native_bodies.hpp"
 #include <algorithm>
 #include <atomic>
@@ -13,12 +15,26 @@ using namespace spidy;
 using namespace spidy::game_punch;
 extern "C" {
 __declspec(dllexport) Data SpidyPunchData;
+__declspec(dllexport) Strikes SpidyStrikeData;
 }
 namespace {
 // A street thug from the feet up (other bots by their size, as
 // game_targets::Size carries it over), and how far from a fist one of his
 // height may stand to be worth testing this sample.
 constexpr float botHeight = 1.8f, botRadius = .3f, reach = 3;
+// The kinetic blow the game answers with its flight, as the web grab deals
+// it (game_grab.cpp's knock): KnockbackAmount and ImpactImpulse.
+constexpr float flingAmount = 10, flingImpulse = 30;
+// A blow's velocity goes to his flight in this many samples once the game
+// has him on it: the blow is issued at the next physics step and the flight
+// starts with the game's own velocity, away from the hero, a frame or two
+// later. A thug not on one flightWait after the blow is asked onto it once
+// (a fighting thug's AI may refuse: native_bodies::fling).
+constexpr int flightWrites = 5;
+constexpr float flightWait = .4f;
+// Enemies this much beyond a strike's reach stay known, so one knocked out
+// of it during a flight is still its target.
+constexpr float beyondReach = 3;
 uintptr_t base{};
 std::atomic<bool> enabled{};
 SRWLOCK lifecycle = SRWLOCK_INIT, updating = SRWLOCK_INIT, output = SRWLOCK_INIT;
@@ -31,6 +47,26 @@ Punches punches{PunchConfig{}};
 // it, a flip tilts it.
 Quat lastTurn{};
 bool turnSeen{};
+// Fighting across the room. The enemies alive within a strike's reach at the
+// latest sample; every bot near the player or a fist then, with the state
+// machine his flight is steered through; and the blows' velocities waiting
+// for their thugs' flights.
+WebStrike strike{WebStrikeConfig{}};
+Flow flow{FlowConfig{}};
+std::vector<FightTarget> enemies;
+struct Near {
+    uint64_t record{}, machine{};
+};
+std::vector<Near> nearby;
+struct Launch {
+    uint64_t record{}, machine{};
+    Vec3 velocity{};
+    float age{};
+    int writes{};
+};
+std::vector<Launch> launches;
+Player fighter;
+Strikes tally;
 bool read(uintptr_t p, void* out, size_t n) {
     __try {
         if (p < 0x10000)
@@ -52,6 +88,105 @@ template <class F> void publish(F change) {
     InterlockedIncrement64(&SpidyPunchData.sequence);
     ReleaseSRWLockExclusive(&output);
 }
+// The tally as it stands, with the strike's and the flow's state.
+void publishStrikes(uint32_t status) {
+    tally.status = status;
+    tally.phase = static_cast<uint32_t>(strike.phase());
+    tally.hand = static_cast<uint32_t>(strike.hand());
+    tally.flow = static_cast<uint32_t>(flow.count());
+    tally.enemies = static_cast<uint32_t>(enemies.size());
+    tally.target = strike.phase() == WebStrike::Phase::Flying ? strike.target() : 0;
+    tally.destination = strike.destination();
+    tally.seconds = strike.elapsed();
+    AcquireSRWLockExclusive(&output);
+    // Odd while it changes, as a reader outside the game expects.
+    tally.sequence = InterlockedIncrement64(&SpidyStrikeData.sequence);
+    SpidyStrikeData = tally;
+    InterlockedIncrement64(&SpidyStrikeData.sequence);
+    ReleaseSRWLockExclusive(&output);
+}
+void resetFight() {
+    punches.reset();
+    turnSeen = false;
+    strike.cancel();
+    flow.reset();
+    enemies.clear();
+    nearby.clear();
+    launches.clear();
+    fighter = {};
+}
+// The thugs' flights that wait for a blow's velocity.
+void steerFlights(float seconds) {
+    for (auto it = launches.begin(); it != launches.end();) {
+        it->age += seconds;
+        bool done{};
+        if (native_bodies::flung(it->machine)) {
+            native_bodies::fling(it->machine, it->record, it->velocity, false);
+            tally.flown += !it->writes;
+            done = ++it->writes >= flightWrites;
+        } else if (it->writes) {
+            done = true; // down again already
+        } else if (it->age >= flightWait) {
+            native_bodies::fling(it->machine, it->record, it->velocity);
+            ++tally.unflown;
+            done = true;
+        }
+        it = done ? launches.erase(it) : it + 1;
+    }
+}
+// One blow, a fist's or a strike's, into the flow and to the game.
+void land(const PunchEvent& e, bool byStrike) {
+    uint64_t machine{};
+    for (const auto& n : nearby)
+        if (n.record == e.target)
+            machine = n.machine;
+    const bool airborne = machine && native_bodies::flung(machine);
+    const int count = flow.hit();
+    const auto d = deliver(e, airborne, count, flow);
+    native_bodies::Damage request;
+    request.victim = e.target;
+    request.damager = fighter.record;
+    request.point = e.point;
+    request.direction = e.direction;
+    request.normal = e.direction * -1.f;
+    request.amount = d.damage;
+    if (d.kinetic) {
+        request.type = 7; // kKinetic
+        request.knockback = static_cast<int32_t>(Knockback::FlyBack);
+        request.knockbackAmount = flingAmount;
+        request.impulse = flingImpulse;
+    } else {
+        request.type = 1; // kMelee
+        request.knockback = static_cast<int32_t>(d.knockback);
+        request.knockbackAmount = 2 + 6 * e.strength;
+    }
+    native_bodies::damage(request);
+    if (d.fly && machine) {
+        const auto waiting = std::find_if(launches.begin(), launches.end(),
+                                          [&](const Launch& l) { return l.record == e.target; });
+        if (waiting != launches.end())
+            *waiting = {e.target, machine, d.velocity};
+        else
+            launches.push_back({e.target, machine, d.velocity});
+    }
+    // Off the ground and on no web, the player stays up for the next blow.
+    if (!fighter.grounded && !fighter.swinging)
+        strike.hangOn(false);
+    ++tally.blows;
+    tally.heavies += d.kind == BlowKind::Heavy;
+    tally.launches += d.kind == BlowKind::Launch;
+    tally.juggles += d.kind == BlowKind::Juggle;
+    tally.slams += d.kind == BlowKind::Slam;
+    tally.finishers += d.kind == BlowKind::Finisher;
+    tally.lastPoint = e.point;
+    tally.lastDirection = e.direction;
+    tally.lastStrength = e.strength;
+    tally.lastDamage = d.damage;
+    tally.lastKind = static_cast<uint32_t>(d.kind);
+    tally.lastCount = static_cast<uint32_t>(count);
+    tally.lastHand = static_cast<uint32_t>(e.hand);
+    tally.lastStrike = byStrike;
+}
 } // namespace
 
 uint32_t game_punch::start(uintptr_t gameBase) {
@@ -64,8 +199,8 @@ uint32_t game_punch::start(uintptr_t gameBase) {
         result = native_bodies::start(base);
         if (!result) {
             AcquireSRWLockExclusive(&updating);
-            punches.reset();
-            turnSeen = false;
+            resetFight();
+            tally = {};
             ReleaseSRWLockExclusive(&updating);
             watch.start(base, 1u << static_cast<unsigned>(game_targets::Kind::bot));
             enabled = true;
@@ -77,6 +212,7 @@ uint32_t game_punch::start(uintptr_t gameBase) {
             d.status = result ? 3 : 1;
             d.error = result;
         });
+        publishStrikes(result ? 3 : 1);
     }
     ReleaseSRWLockExclusive(&lifecycle);
     return result;
@@ -86,8 +222,8 @@ uint32_t game_punch::stop() {
     enabled = false;
     // An update in flight finishes first.
     AcquireSRWLockExclusive(&updating);
-    punches.reset();
-    turnSeen = false;
+    resetFight();
+    publishStrikes(0);
     ReleaseSRWLockExclusive(&updating);
     watch.stop();
     publish([](Data& d) { d.status = 0; });
@@ -97,17 +233,25 @@ uint32_t game_punch::stop() {
 bool game_punch::running() {
     return enabled.load(std::memory_order_relaxed);
 }
-void game_punch::update(float seconds, const Input& in, uint64_t hero, uint32_t busy, const WorldQueries&) {
+float game_punch::worldScale() {
+    double clock{};
+    if (!base || !read(base + game_time::clockScaleRva, &clock, sizeof(clock)) || !std::isfinite(clock) || clock <= 0)
+        return 1;
+    return static_cast<float>(std::clamp(clock, .05, 1.));
+}
+Opened game_punch::update(float seconds, const Input& in, const Player& player, const WorldQueries& world) {
+    Opened opened;
     if (!enabled.load(std::memory_order_relaxed) || seconds <= 0 || !TryAcquireSRWLockShared(&updating))
-        return;
+        return opened;
     struct Release {
         ~Release() {
             ReleaseSRWLockShared(&updating);
         }
     } release;
     if (!enabled)
-        return;
+        return opened;
     watch.current(bots);
+    fighter = player;
     // The fist at the aim pose (the knuckles); its motion relative to the
     // player is the grip relative to the head, turned from tracking space.
     std::array<PunchHand, 2> hands{};
@@ -120,12 +264,24 @@ void game_punch::update(float seconds, const Input& in, uint64_t hero, uint32_t 
         lastTurn = toWorld;
         turnSeen = true;
     }
+    // The head: each tracked hand's place, less where it is from the head.
+    Vec3 head{};
+    int tracked{};
     for (int i = 0; i < 2; ++i) {
         const auto& h = in.hands[i];
         hands[i] = {in.focused && h.tracked, h.aim.position, toWorld.rotate(h.gripRelativeToHead),
-                    ((busy >> i) & 1) != 0};
+                    ((player.busy >> i) & 1) != 0};
+        if (hands[i].tracked) {
+            head += hands[i].fist - hands[i].relative;
+            ++tracked;
+        }
     }
+    head = tracked ? head / static_cast<float>(tracked) : player.feet + Vec3{0, 1.6f, 0};
     inReach.clear();
+    enemies.clear();
+    nearby.clear();
+    const Vec3 chest = player.feet + Vec3{0, strike.config().chest, 0};
+    const float striking = strike.config().maxDistance + beyondReach;
     for (const auto& b : bots) {
         Vec3 feet{};
         if ((b.traits & game_targets::neutral) || !game_targets::position(b, feet))
@@ -135,23 +291,44 @@ void game_punch::update(float seconds, const Input& in, uint64_t hero, uint32_t 
         bool close{};
         for (const auto& h : hands)
             close |= h.tracked && length(h.fist - middle) < reach + std::max(0.f, top - bottom - botHeight);
-        if (close && game_targets::live(base, b))
-            inReach.push_back({b.record, feet + Vec3{0, bottom, 0}, top - bottom, b.size.width(botRadius)});
+        const bool ranged = game_targets::enemy(b) && length(middle - chest) <= striking;
+        if ((!close && !ranged) || !game_targets::live(base, b))
+            continue;
+        const PunchTarget target{b.record, feet + Vec3{0, bottom, 0}, top - bottom, b.size.width(botRadius)};
+        nearby.push_back({b.record, b.machine});
+        if (close)
+            inReach.push_back(target);
+        // A strike goes to an enemy who still stands, or flies: not to one
+        // knocked out (no hit points left).
+        float points{};
+        if (ranged && !(game_targets::health(b, points) && points <= 0))
+            enemies.push_back({target.id, target.feet, target.height, target.radius,
+                               b.machine && native_bodies::flung(b.machine)});
     }
     events.clear();
     punches.update(seconds, hands, inReach, events);
+    flow.update(seconds);
+    steerFlights(seconds);
     for (const auto& e : events) {
-        native_bodies::Damage d;
-        d.victim = e.target;
-        d.damager = hero;
-        d.point = e.point;
-        d.direction = e.direction;
-        d.normal = e.direction * -1.f;
-        d.amount = e.damage;
-        d.type = 1; // kMelee
-        d.knockback = static_cast<int32_t>(e.knockback);
-        d.knockbackAmount = 2 + 6 * e.strength;
-        native_bodies::damage(d);
+        // The swing that landed a punch opens no strike behind it.
+        strike.spent(e.hand);
+        land(e, false);
+    }
+    std::array<FightFist, 2> fists{};
+    for (int i = 0; i < 2; ++i)
+        fists[i] = {hands[i].tracked, hands[i].fist, punches.velocity(i), !hands[i].busy, player.holds[i],
+                    in.hands[i].grip};
+    const bool flying = strike.phase() == WebStrike::Phase::Flying;
+    if (const auto strikeOpened = strike.open(seconds, fists, head, player.feet, enemies, world)) {
+        // The blow lands as the player arrives: not on the way, off a fist
+        // the flight carries through him.
+        punches.spend(strikeOpened->hand);
+        opened = {true, strikeOpened->held};
+        ++tally.opened;
+        tally.held += strikeOpened->held;
+        tally.distance = strikeOpened->distance;
+    } else if (flying && strike.phase() == WebStrike::Phase::Idle) {
+        ++tally.missed; // the player took no steps: perched, or held by the game
     }
     publish([&](Data& d) {
         d.status = 2;
@@ -160,7 +337,7 @@ void game_punch::update(float seconds, const Input& in, uint64_t hero, uint32_t 
         d.bots = static_cast<uint32_t>(inReach.size());
         for (int i = 0; i < 2; ++i) {
             d.hands[i].speed = punches.speed(i);
-            d.hands[i].busy = (busy >> i) & 1;
+            d.hands[i].busy = (player.busy >> i) & 1;
         }
         for (const auto& e : events) {
             auto& h = d.hands[e.hand];
@@ -174,10 +351,86 @@ void game_punch::update(float seconds, const Input& in, uint64_t hero, uint32_t 
             d.lastSpeed = e.speed;
         }
     });
+    publishStrikes(2);
+    return opened;
+}
+bool game_punch::lifting(Vec3 feet) {
+    if (!enabled.load(std::memory_order_relaxed) || !TryAcquireSRWLockShared(&updating))
+        return false;
+    const bool up = strike.lifting(feet);
+    ReleaseSRWLockShared(&updating);
+    return up;
+}
+Flight game_punch::fly(float seconds, Vec3 feet, bool grounded, bool waiting) {
+    Flight out;
+    if (!enabled.load(std::memory_order_relaxed) || !TryAcquireSRWLockShared(&updating))
+        return out;
+    struct Release {
+        ~Release() {
+            ReleaseSRWLockShared(&updating);
+        }
+    } release;
+    if (!enabled || strike.phase() == WebStrike::Phase::Idle)
+        return out;
+    if (waiting && strike.phase() == WebStrike::Phase::Flying) {
+        strike.wait(seconds);
+        if (strike.phase() == WebStrike::Phase::Idle) {
+            ++tally.missed; // the game did not jump
+            publishStrikes(2);
+        }
+        return out;
+    }
+    const FightTarget* target{};
+    for (const auto& e : enemies)
+        if (e.id == strike.target())
+            target = &e;
+    const bool flying = strike.phase() == WebStrike::Phase::Flying;
+    const int hand = strike.hand();
+    const auto step = strike.step(seconds, feet, grounded, flying ? target : nullptr);
+    out.drive = step.drive;
+    out.velocity = step.velocity;
+    if (step.landed && target) {
+        // The blow: along the line from the chest to his middle, as fast as
+        // the fist that opened the strike, and no weaker than a strike's.
+        const Vec3 chest = feet + Vec3{0, strike.config().chest, 0};
+        Vec3 way = normalized(target->middle() - chest);
+        if (length(way) < .5f)
+            way = strike.direction();
+        auto e = punches.blow(way, std::max(strike.fistSpeed(),
+                                            speedOf(punches.config(), strike.config().minStrength)));
+        e.hand = hand;
+        e.target = target->id;
+        e.point = target->middle() - way * target->radius;
+        punches.spend(hand);
+        fighter.feet = feet;
+        fighter.grounded = grounded;
+        land(e, true);
+        ++tally.landed;
+    }
+    tally.missed += step.missed;
+    if (step.landed || step.missed)
+        publishStrikes(2);
+    return out;
+}
+void game_punch::cancelStrike() {
+    if (!TryAcquireSRWLockShared(&updating))
+        return;
+    if (strike.phase() != WebStrike::Phase::Idle) {
+        tally.missed += strike.phase() == WebStrike::Phase::Flying;
+        strike.cancel();
+        publishStrikes(enabled ? 2u : 0u);
+    }
+    ReleaseSRWLockShared(&updating);
 }
 Data game_punch::data() {
     AcquireSRWLockShared(&output);
     auto out = SpidyPunchData;
+    ReleaseSRWLockShared(&output);
+    return out;
+}
+Strikes game_punch::strikes() {
+    AcquireSRWLockShared(&output);
+    auto out = SpidyStrikeData;
     ReleaseSRWLockShared(&output);
     return out;
 }
@@ -194,6 +447,16 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyPunchStop(void*) {
 }
 extern "C" __declspec(dllexport) DWORD WINAPI SpidyPunchSample(void* out) {
     const auto sample = game_punch::data();
+    __try {
+        std::memcpy(out, &sample, sizeof(sample));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 9503;
+    }
+    return 0;
+}
+// The web strikes and the blows landed (game_punch::Strikes).
+extern "C" __declspec(dllexport) DWORD WINAPI SpidyStrikeSample(void* out) {
+    const auto sample = game_punch::strikes();
     __try {
         std::memcpy(out, &sample, sizeof(sample));
     } __except (EXCEPTION_EXECUTE_HANDLER) {

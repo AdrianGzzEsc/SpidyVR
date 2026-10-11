@@ -11,7 +11,8 @@ from probe_stereo_gpu import snapshot as gpu_snapshot, save_eye_images
 from run_game_vr import (snapshot as xr_snapshot, accepted as accepted_xr, timing_snapshot, frame_rates,
                          appearance_snapshot, eye_snapshot, save_eye_snapshot, rgb_rows, crop_origin,
                          game_memory, keep_game_log, body_snapshot,
-                         punch_snapshot, shooter_snapshot, start_settings, settings_line, SETTINGS_LINE,
+                         punch_snapshot, strike_snapshot, shooter_snapshot, start_settings, settings_line,
+                         SETTINGS_LINE,
                          scaled_eye_size, rendering_line, eye_render_size, eye_reflections, XR_STAGES,
                          command_text, network_links, link_warning, stream_stalls,
                          slow_motion_snapshot, hud_snapshot, GAME_HOOKS)
@@ -239,6 +240,31 @@ class ProtocolTests(unittest.TestCase):
         torn = bytearray(raw)
         struct.pack_into('<q', torn, 16, 5)
         self.assertIsNone(punch_snapshot(Reader(*([torn, struct.pack('<q', 5)]*8)), 0))
+
+    def test_strike_feedback_decodes_the_strikes_the_blows_and_the_latest_of_each(self):
+        raw = bytearray(216)
+        struct.pack_into('<4Iq', raw, 0, 0x53535452, 1, 216, 2, 8)
+        # Opened, landed, missed, held; blows and their kinds; thugs' flights given and refused.
+        struct.pack_into('<4Q', raw, 24, 7, 5, 2, 1)
+        struct.pack_into('<8Q', raw, 56, 19, 3, 2, 4, 1, 3, 9, 1)
+        # Phase, hand, flow, enemies; the strike's target and where the player stops.
+        struct.pack_into('<4IQ3f2f', raw, 120, 1, 1, 4, 6, 0x1c517822940, 10.5, 2.25, -40, 6.5, .25)
+        struct.pack_into('<3f3f2f5I', raw, 164, 11, 3.5, -41, 0, 0, -1, .75, 62.5, 5, 5, 1, 1, 0)
+        result = strike_snapshot(Reader(raw, struct.pack('<q', 8)), 0)
+        self.assertEqual((result['opened'], result['landed'], result['missed'], result['held']), (7, 5, 2, 1))
+        self.assertEqual((result['blows'], result['heavies'], result['launches'], result['juggles'],
+                          result['slams'], result['finishers']), (19, 3, 2, 4, 1, 3))
+        self.assertEqual((result['flown'], result['unflown']), (9, 1))
+        self.assertEqual((result['phase'], result['hand'], result['flow'], result['enemies']), ('flying', 1, 4, 6))
+        self.assertEqual((result['target'], result['destination']), ('0x1c517822940', [10.5, 2.25, -40]))
+        self.assertEqual((result['distance'], result['flight_seconds']), (6.5, .25))
+        self.assertEqual((result['last_point'], result['last_direction']), ([11, 3.5, -41], [0, 0, -1]))
+        self.assertEqual((result['last_strength'], result['last_damage']), (.75, 62.5))
+        self.assertEqual((result['last_kind'], result['last_count'], result['last_hand'],
+                          result['last_by_strike']), ('finisher', 5, 1, True))
+        torn = bytearray(raw)
+        struct.pack_into('<q', torn, 16, 9)
+        self.assertIsNone(strike_snapshot(Reader(*([torn, struct.pack('<q', 9)]*8)), 0))
 
     def test_slow_motion_decodes_presses_focus_and_the_games_time_and_rejects_torn_reads(self):
         raw = bytearray(96)
@@ -706,7 +732,8 @@ class ProtocolTests(unittest.TestCase):
                                      (swing_snapshot,0x53574441,272),(timing_snapshot,0x5358544d,344),
                                      (appearance_snapshot,0x53415044,328),(eye_snapshot,0x53455353,112),
                                      (grab_snapshot,0x53475244,368),(body_snapshot,0x53424453,144),
-                                     (punch_snapshot,0x53505544,168),(shooter_snapshot,0x53484f44,192)):
+                                     (punch_snapshot,0x53505544,168),(shooter_snapshot,0x53484f44,192),
+                                     (strike_snapshot,0x53535452,216)):
             raw = bytearray(size)
             struct.pack_into('<4IQ', raw, 0, magic, 99, size, 2, 4)
             with self.assertRaisesRegex(RuntimeError, 'protocol mismatch'):

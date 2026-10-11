@@ -70,11 +70,17 @@ struct Candidate {
     uint64_t physics{}, machine{};
     uint32_t traits{}; // Trait bits
     Size size{};       // a bot's, as his mover manager says; a street thug's otherwise
+    // The actor's health component (BotHealth, else Health), 0 for none.
+    uint64_t health{};
 };
 // The two components the web moves an actor through, by their own classes
 // (image offsets of their vtables), and the class of a mover's body.
 constexpr uint64_t physicsComponent = 0x3d0a460, syncStaticStateMachine = 0x4f843d0,
                    moverBodySize = 0x500e870;
+// The classes that keep an actor's hit points (a float at +0x88): a bot's own
+// and the plain one (tools/probe_combat.py: a street thug's 50 went to 19.34
+// with one punch, October 9).
+constexpr uint64_t botHealth = 0x3839e98, plainHealth = 0x3839e08;
 // A bot the hero fights: every bot but the civilians, his side and the
 // neutral ones, so every enemy class there is (ThugBot and the bosses derived
 // from it, GrenadierBot, SlayerBot, SwordsmanBot, CorruptedBot, DroneBot and
@@ -101,6 +107,9 @@ uint64_t resolve(uintptr_t base, uint32_t handle);
 uint64_t botMover(uintptr_t base, const Candidate&);
 // Position of the candidate's actor (its transform's translation).
 bool position(const Candidate&, Vec3& out);
+// The candidate's hit points: false, and `out` left as it was, for an actor
+// without a health component or with one that cannot be read.
+bool health(const Candidate&, float& out);
 
 class Watch {
   public:

@@ -22,6 +22,11 @@ nearest target not tried yet, the first one when all are.
          input: the punch module's punches and the target hit, its health and states before and after.
   pull   a scripted hand next to the player webs the target (grip), yanks it over, carries it, winds up and throws
          it: the grab's catches, knock-backs, steered flight steps, impacts, and the target's states and path.
+  strike a scripted fist thrown from the player's own shoulder at the target across the room (it must stand within
+         10 m, in sight): the web strike it opens, the player's path to the target, and the blow that lands.
+  heavy  the punch at 9 m/s: a blow that sends the target flying (the game's kinetic blow), and how far he went.
+  launch an uppercut through the target's chest, then a fist down through him where he is 0.45 s later: how high
+         the uppercut lifted him, and how the blow down brought him back (a slam).
 
 Writes reports/combat-probe.json and window captures in reports/grab-probe/.
 """
@@ -39,7 +44,7 @@ from inspect_game import PE
 from observe_game import call_remote, call_with_payload, modules
 from probe_game_grab import HERO_LOCAL, HERO_MOVERS, grab_snapshot, hand_command, registry, resolve, shot
 from probe_game_screen import user32
-from run_game_vr import punch_snapshot, shooter_snapshot
+from run_game_vr import punch_snapshot, shooter_snapshot, strike_snapshot
 from vr_launcher import bring_to_front
 
 # Spidy's scan's rules (src/game_targets.cpp): a class, or one it derives from, marks a bot or gives a trait.
@@ -276,7 +281,8 @@ def main():
                                            ('SpidyRayStart', 'SpidyRayStop', 'SpidySwingStart', 'SpidySwingSubmit',
                                             'SpidySwingStop', 'SpidyGrabData', 'SpidyShooterStart',
                                             'SpidyShooterStop', 'SpidyShooterTest', 'SpidyShooterData',
-                                            'SpidyPunchStart', 'SpidyPunchStop', 'SpidyPunchData'))
+                                            'SpidyPunchStart', 'SpidyPunchStop', 'SpidyPunchData',
+                                            'SpidyStrikeData'))
 
         def invoke(name, payload, stop=None):
             code = call_with_payload(process, rays[name], payload)
@@ -359,6 +365,99 @@ def main():
                               target=after['hands'][0]['last_target'],
                               hit_target=int(after['hands'][0]['last_target'], 16) == bot['record'],
                               damage=after['last_damage'], speed=after['last_speed'])
+            elif phase in ('strike', 'heavy', 'launch'):
+                before = strike_snapshot(game, rays['SpidyStrikeData'])
+                issued = punch_snapshot(game, rays['SpidyPunchData'])
+                at = world.state(bot)['position'] or bot['position']
+                track = []
+
+                def note(step):
+                    fight = strike_snapshot(game, rays['SpidyStrikeData']) or {}
+                    state = world.state(bot)
+                    rows.append(dict(t=round(time.monotonic()-start, 3), **state))
+                    track.append(dict(t=round(time.monotonic()-start, 3), step=step,
+                                      player=world.position(seen['hero']), bot=state['position'],
+                                      states=state['states'], hp=state['hp'],
+                                      **{k: fight.get(k) for k in ('phase', 'opened', 'landed', 'missed', 'blows',
+                                                                   'flow', 'enemies', 'flown', 'unflown')}))
+
+                def through(begin, end, speed, step, lead=30):
+                    """A fist held at `begin`, driven to `end` at `speed`, and held there: the arm's own motion."""
+                    way = norm(sub(end, begin))
+                    count = max(1, int(round(math.dist(begin, end)/speed*90)))
+                    for k in [0]*lead+list(range(1, count+1))+[count]*30:
+                        position = add(begin, scale(sub(end, begin), k/count))
+                        submit(position, way, add([.25, -.35, -.3], sub(position, begin)))
+                        note(step)
+                        time.sleep(1/90)
+                if phase == 'strike':
+                    here = world.position(seen['hero'])
+                    middle = [at[0], at[1]+height(bot, .9), at[2]]
+                    flat = norm([middle[0]-here[0], 0, middle[2]-here[2]])
+                    # From the head: a quarter of a metre ahead and under it, where a guard holds a fist.
+                    offset = [flat[0]*.25, -.3, flat[2]*.25]
+                    head = [here[0], here[1]+1.65, here[2]]
+                    way = norm(sub(middle, add(head, offset)))
+                    reach = dict(distance=round(math.dist(middle, [here[0], here[1]+1.2, here[2]]), 2))
+                    out = 0.
+                    for frame in range(54+8+270):
+                        # At rest for 0.6 s, thrown out 0.53 m at 6 m/s, then held out; the hand goes with the player.
+                        if 54 <= frame < 62:
+                            out += 6/90
+                        now = world.position(seen['hero']) or here
+                        relative = add(offset, scale(way, out))
+                        submit(add([now[0], now[1]+1.65, now[2]], relative), way, relative)
+                        note('rest' if frame < 54 else 'throw' if frame < 62 else 'follow')
+                        time.sleep(1/90)
+                    flown = [r for r in track if r['phase'] == 'flying' and r['player']]
+                    end = track[-1]['player']
+                    reach.update(player_start=here, player_end=end, target_end=track[-1]['bot'],
+                                 moved=round(math.dist(here, end), 2) if end else None,
+                                 short_of_target=round(math.dist(end, track[-1]['bot']), 2)
+                                 if end and track[-1]['bot'] else None,
+                                 flight_rows=len(flown),
+                                 flight_seconds=round(flown[-1]['t']-flown[0]['t'], 3) if flown else None,
+                                 height=[round(min(r['player'][1] for r in track if r['player']), 2),
+                                         round(max(r['player'][1] for r in track if r['player']), 2)])
+                elif phase == 'heavy':
+                    chest = [at[0], at[1]+height(bot, FIST), at[2]]
+                    way = norm(sub(chest, hand))
+                    through(sub(chest, scale(way, 1.1)), add(chest, scale(way, .1)), 9, 'punch')
+                    idle(2.5, rows, bot, start)
+                    note('after')
+                    reach = dict(knocked=round(math.dist(at, track[-1]['bot']), 2) if track[-1]['bot'] else None)
+                else:
+                    chest = [at[0], at[1]+height(bot, FIST), at[2]]
+                    flat = norm([chest[0]-hand[0], 0, chest[2]-hand[2]])
+                    through([chest[0]-flat[0]*.3, chest[1]-.75, chest[2]-flat[2]*.3],
+                            [chest[0], chest[1]+.5, chest[2]], 7, 'uppercut', lead=20)
+                    # 0.45 s after the fist went through him: wherever he is now, down through him.
+                    for _ in range(10):
+                        submit(hand, (0, 0, -1))
+                        note('rise')
+                        time.sleep(1/90)
+                    up = world.state(bot)['position'] or at
+                    top = [up[0], up[1]+height(bot, FIST), up[2]]
+                    through([top[0]-flat[0]*.2, top[1]+.8, top[2]-flat[2]*.2],
+                            [top[0], top[1]-.5, top[2]], 7, 'slam', lead=4)
+                    for _ in range(180):
+                        submit(hand, (0, 0, -1))
+                        note('after')
+                        time.sleep(1/90)
+                    heights = [r['bot'][1]-at[1] for r in track if r['bot']]
+                    reach = dict(lifted=round(max(heights), 2), lowest=round(min(heights), 2),
+                                 airborne_at_slam=next((r['states'] for r in track if r['step'] == 'slam'), None))
+                after = strike_snapshot(game, rays['SpidyStrikeData'])
+                landed = punch_snapshot(game, rays['SpidyPunchData'])
+                result = dict(reach, track=track[::3],
+                              issued=landed['issued']-issued['issued'], dropped=landed['dropped']-issued['dropped'],
+                              **{k: after[k]-before[k] for k in ('opened', 'landed', 'missed', 'held', 'blows',
+                                                                 'heavies', 'launches', 'juggles', 'slams',
+                                                                 'finishers', 'flown', 'unflown')},
+                              flow=after['flow'], last={k: after[k] for k in ('last_kind', 'last_count',
+                                                                                'last_strength', 'last_damage',
+                                                                                'last_by_strike', 'distance',
+                                                                                'flight_seconds')})
             elif phase == 'pull':
                 at = world.state(bot)['position'] or bot['position']
                 centre = [at[0], at[1]+height(bot, CENTRE), at[2]]
@@ -437,7 +536,8 @@ def main():
                                                           default=None)],
                           rows=rows[::5], screenshot=shot(game, f'combat-{phase}'))
             report['phases'][phase] = result
-            print(phase, json.dumps({k: v for k, v in result.items() if k not in ('rows', 'steps', 'shots')}),
+            print(phase, json.dumps({k: v for k, v in result.items()
+                                     if k not in ('rows', 'steps', 'shots', 'track')}),
                   flush=True)
     finally:
         for name in started:

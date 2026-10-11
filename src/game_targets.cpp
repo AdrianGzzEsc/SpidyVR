@@ -128,7 +128,7 @@ bool game_targets::scan(uintptr_t base, uint32_t kinds, std::vector<Candidate>& 
     int32_t count{};
     if (!table || !read(base + registryCount, &count, 4) || count <= 0 || count > 0x100000)
         return false;
-    std::unordered_map<uint64_t, uint64_t> physics, machines;
+    std::unordered_map<uint64_t, uint64_t> physics, machines, healths;
     std::unordered_map<uint64_t, uint32_t> traits;
     const auto size = imageSize(base);
     std::lock_guard lock(classesLock);
@@ -156,6 +156,15 @@ bool game_targets::scan(uintptr_t base, uint32_t kinds, std::vector<Candidate>& 
             machines[head.record] = entry.address;
             continue;
         }
+        // A bot's own health goes before the plain one.
+        if (head.vtable == base + botHealth) {
+            healths[head.record] = entry.address;
+            continue;
+        }
+        if (head.vtable == base + plainHealth) {
+            healths.emplace(head.record, entry.address);
+            continue;
+        }
         if (head.vtable - base >= size)
             continue;
         const uint32_t bits = lookup(base, head.vtable);
@@ -174,6 +183,8 @@ bool game_targets::scan(uintptr_t base, uint32_t kinds, std::vector<Candidate>& 
             c.machine = m->second;
         if (const auto t = traits.find(c.record); t != traits.end())
             c.traits = t->second;
+        if (const auto h = healths.find(c.record); h != healths.end())
+            c.health = h->second;
     }
     return true;
 }
@@ -231,6 +242,13 @@ bool game_targets::position(const Candidate& c, Vec3& out) {
         return false;
     out = {m[12], m[13], m[14]};
     return finite(out) && length(out) < 1e6f;
+}
+bool game_targets::health(const Candidate& c, float& out) {
+    float points{};
+    if (!c.health || !read(c.health + 0x88, &points, sizeof(points)) || !std::isfinite(points))
+        return false;
+    out = points;
+    return true;
 }
 void Watch::start(uintptr_t base, uint32_t kinds) {
     stop();

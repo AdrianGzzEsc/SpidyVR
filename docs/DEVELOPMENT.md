@@ -443,9 +443,13 @@ You are Spider-Man's body: look down to see it, your arms and hands follow the
 controllers, and the body turns with you once you look far enough to the side.
 A squeezed grip, or a hand moving fast, closes into a fist. Punch a thug with a
 fist moving 2.2 m/s or more and he takes the game's melee damage and reacts as
-hard as you hit him; the controller kicks. `-NoBody` hides the hero and draws
-gloves instead; `-NoPunch` lets fists pass through. See
-[docs/BODY.md](BODY.md).
+hard as you hit him; the controller kicks, time stops for a moment, a burst
+shows where the blow landed and it sounds. A fist thrown at a thug up to 10 m
+away flies you to him and lands as you arrive (the web strike), blows in a row
+count up to a finisher, an uppercut lifts him and you can follow him up
+(`include/spidy/web_strike.hpp`). `-NoBody` hides the hero and draws
+gloves instead; `-NoPunch` lets fists pass through and switches the strike off
+with them. See [docs/BODY.md](BODY.md).
 
 The intro, menus, loading, the map, hint cards, cutscenes, finishers and death
 appear on a screen in front of you, as the game shows them on the monitor; VR
@@ -1025,6 +1029,8 @@ still requires a running game or headset.
 | `src/body_ik.cpp`, `src/native_body.cpp` | The player's body: the solver, and the hero's joints turned after the game's pose writer |
 | `src/body_calibration.cpp`, `src/overlay_text.cpp` | The T-pose calibration (the player's eye height and arm length, and its panel in the headset); the overlay's stroke font |
 | `src/punch.cpp`, `src/game_punch.cpp` | Punching: fists against characters, and the game's own melee damage for each punch |
+| `src/web_strike.cpp` | Fighting across the room: the web strike that flies the player to the thug a fist is thrown at, the flow's count and finisher, how each blow is delivered (melee, or the kinetic blow that sends him flying), and the hit stop; `game_punch.cpp` runs it and `game_swing.cpp` flies the player |
+| `src/impact_sound.cpp` | The blows' sounds and a strike's rush, synthesized as WAVs in memory |
 | `src/shooter.cpp`, `src/game_shooter.cpp` | The web shooter: trigger pulls and their aim, and the game's own web-shooter shot fired from the hand |
 | `src/slow_motion.cpp`, `src/game_time.cpp` | Slow motion: the left stick's click, focus and the eased time scale; the game's own time system slowed to it (its look: `D3D12Renderer::Grade`, the meter in `web_visual.cpp`) |
 | `src/game_grab.cpp`, `src/native_bodies.cpp`, `src/game_targets.cpp` | Web grab in the game: candidates, freed Havok props, flung bots |

@@ -1,6 +1,7 @@
 #pragma once
 #include "slow_motion.hpp"
 #include "vertex.hpp"
+#include "web_strike.hpp"
 #include <cstdint>
 #include <vector>
 
@@ -157,4 +158,19 @@ Vec3 onAimLine(Vec3 point, Vec3 normal, Vec3 origin, Vec3 direction);
 // pulse. pixelAngle as for appendWeb.
 void appendSlowMotionMeter(std::vector<Vertex>& out, const SlowMotionView& view, Pose hand, Vec3 viewer,
                            float pixelAngle, float seconds);
+// A landed blow where the fist met him (web_strike.hpp), facing the viewer:
+// a white flash, a ring bursting out of it and rays thrown past the ring,
+// gone in a quarter of a second; the harder the blow, the wider, and warmer
+// in colour (a finisher's is red and twice as long). Above it the blow's
+// count in the flow, from the second on ("X3"), rising as it fades.
+struct ImpactView {
+    static constexpr float seconds = .75f; // until the count has faded too
+    Vec3 point{};
+    float strength{}; // 0..1
+    BlowKind kind{};
+    int count{};
+    float age = -1; // seconds since it landed; below 0, or past `seconds`: nothing
+};
+// pixelAngle as for appendWeb.
+void appendImpact(std::vector<Vertex>& out, const ImpactView& impact, Vec3 viewer, float pixelAngle);
 } // namespace spidy

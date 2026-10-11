@@ -1343,6 +1343,16 @@ void App::controls(ImVec2 origin, ImVec2 size) {
           {"Trigger", "Reel it in"},
           {"Pull the hand sharply", "Yank it to your hand"},
           {"Release the grip", "Throw it: the harder you swing, the faster it flies"}}},
+        {"FIGHTING",
+         {{"Punch a thug", "A fist that meets him fast lands a blow, as hard as it moved. You feel it, hear it and see "
+                           "it, and time stops for a moment"},
+          {"Punch at a thug across the room", "Web strike: you fly to him and the blow lands as you arrive. Up to "
+                                              "10 m, from the ground, a jump or a swing"},
+          {"Punch along your web at the thug it holds", "The same: you go to him. A sharp pull still yanks him to you"},
+          {"Uppercut", "Lifts him into the air. Strike up after him: you hang beside him while your blows land"},
+          {"Punch down at a thug in the air", "Slams him into the ground"},
+          {"Blows in a row", "Count up (X2, X3...): each hits harder, and every fifth is a finisher that sends him "
+                             "flying"}}},
         {"MOVING",
          {{"Left stick", "Walk and run"},
           {"A", "Jump"},
@@ -1368,7 +1378,7 @@ void App::controls(ImVec2 origin, ImVec2 size) {
     const float contentWidth = ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ScrollbarSize - S(4);
     const float columnWidth = (contentWidth - gap) * 0.5f;
     columnY[0] = columnY[1] = base.y;
-    for (int g = 0; g < 4; ++g) {
+    for (int g = 0; g < static_cast<int>(std::size(groups)); ++g) {
         const int column = g % 2;
         ImGui::SetCursorScreenPos(ImVec2(base.x + column * (columnWidth + gap), columnY[column]));
         ImGui::PushID(g);

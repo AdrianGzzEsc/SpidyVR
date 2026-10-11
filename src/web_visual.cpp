@@ -1,4 +1,6 @@
 #include "spidy/web_visual.hpp"
+#include "spidy/overlay_text.hpp"
+#include <string>
 
 namespace spidy {
 namespace {
@@ -355,6 +357,68 @@ void appendSlowMotionMeter(std::vector<Vertex>& out, const SlowMotionView& view,
         for (const auto& shape : {upper, lower})
             softTriangle(out, shape, view3, shadow ? shadowColor : mix(glass, fill, .35f),
                          opacity * (shadow ? .55f : .9f), shadow ? 1.2f * px : 0.f, shadow ? 1.6f * px : soft);
+}
+void appendImpact(std::vector<Vertex>& out, const ImpactView& impact, Vec3 viewer, float pixelAngle) {
+    const float distance = length(viewer - impact.point);
+    if (!finite(impact.point) || !finite(viewer) || !std::isfinite(pixelAngle) || pixelAngle <= 0 ||
+        !std::isfinite(impact.age) || impact.age < 0 || impact.age > ImpactView::seconds ||
+        !(distance >= .12f && distance <= 60))
+        return;
+    // Level and upright across the line of sight, as the aim markers are.
+    const Vec3 view = (viewer - impact.point) / distance;
+    Vec3 right = cross(Vec3{0, 1, 0}, view);
+    right = length(right) > .1f ? normalized(right) : perpendicular(view);
+    const Vec3 up = cross(view, right);
+    const Vec3 c = impact.point;
+    const float px = pixelAngle * distance, soft = std::max(1.2f * px, .0015f);
+    const float strength = std::isfinite(impact.strength) ? std::clamp(impact.strength, 0.f, 1.f) : 0.f;
+    const bool finisher = impact.kind == BlowKind::Finisher, heavy = impact.kind != BlowKind::Hit;
+    // How wide the burst gets and how long it lasts; a jab's is the size of
+    // the fist, a finisher's of his chest.
+    const float reach = finisher ? .26f : heavy ? .16f : .07f + .08f * strength;
+    const float life = finisher ? .45f : heavy ? .28f : .22f;
+    constexpr Vec3 white{1, 1, 1}, pale{1.f, .93f, .62f}, orange{1.f, .55f, .12f}, red{1.f, .2f, .08f};
+    const Vec3 color = finisher ? red : heavy ? orange : mix(white, pale, strength);
+    const float t = impact.age / life;
+    if (t < 1) {
+        const float fade = 1 - t, out3 = 1 - fade * fade * fade; // bursting out, slowing
+        const float ring = reach * out3;
+        // The flash: bright and gone in the first third.
+        if (t < .35f) {
+            const float flash = 1 - t / .35f;
+            softArc(out, c, right, up, 0, reach * (.25f + .3f * t), 0, 2 * pi, white, .9f * flash * flash,
+                    reach * .25f, 24);
+        }
+        const float half = std::max((.012f + .02f * strength) * fade * (finisher ? 1.6f : 1), .6f * px);
+        softArc(out, c, right, up, std::max(ring - half, 0.f), ring + half, 0, 2 * pi, color, fade, soft, 40);
+        // Rays past the ring, each its own length, turned by where the blow landed.
+        const int rays = finisher ? 12 : heavy ? 10 : 7;
+        const float seed = impact.point.x * 3.1f + impact.point.y * 5.3f + impact.point.z * 7.7f;
+        for (int i = 0; i < rays; ++i) {
+            const float angle = 2 * pi * (static_cast<float>(i) + hash(seed, i)) / static_cast<float>(rays);
+            const Vec3 way = right * std::cos(angle) + up * std::sin(angle);
+            const float from = ring * .7f + reach * .08f, to = ring * (1.15f + .45f * hash(seed, i + 40));
+            softBar(out, c + way * from, c + way * std::max(to, from + .004f), view,
+                    std::max(.0035f * fade * (heavy ? 1.5f : 1), .5f * px), mix(color, white, .5f), fade * .9f, soft);
+        }
+    }
+    // The count: in at once, there for most of its time, out over the last third.
+    if (impact.count >= 2) {
+        const float u = impact.age / ImpactView::seconds;
+        const float opacity = std::min(1.f, impact.age / .05f) * std::clamp((1 - u) * 3, 0.f, 1.f);
+        const std::string text = "X" + std::to_string(std::min(impact.count, 999));
+        TextStyle style;
+        style.height = (finisher ? .075f : .05f) * std::clamp(distance / .7f, .8f, 3.f);
+        style.weight = .16f;
+        const Vec3 origin = c + up * (reach * .6f + .05f + .09f * u) - right * (textWidth(text, style.height) / 2);
+        for (const bool shadow : {true, false}) {
+            const size_t first = out.size();
+            style.color = shadow ? shadowColor : finisher ? red : pale;
+            appendText(out, text, shadow ? origin + (right - up) * (style.height * .06f) : origin, right, up, style);
+            for (size_t i = first; i < out.size(); ++i)
+                out[i].alpha = opacity * (shadow ? .7f : 1.f);
+        }
+    }
 }
 void AimMarkerMotion::reset() {
     *this = {};

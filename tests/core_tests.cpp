@@ -27,6 +27,8 @@
 #include "spidy/punch.hpp"
 #include "spidy/shooter.hpp"
 #include "spidy/slow_motion.hpp"
+#include "spidy/impact_sound.hpp"
+#include "spidy/web_strike.hpp"
 #include <algorithm>
 #include <cstring>
 #include <functional>
@@ -4909,6 +4911,469 @@ int main() {
         check(bad([](PunchConfig& c){c.maxDamage=1;}),"less damage at full strength accepted");
         check(bad([](PunchConfig& c){c.minSpeed=std::numeric_limits<float>::quiet_NaN();}),"NaN speed accepted");
         check(!bad([](PunchConfig&){}),"defaults rejected");
+    });
+    test("punch: a swing spent some other way lands nothing until the fist has slowed", [] {
+        Swing s;
+        // Thrown from further back at 6 m/s, and spent on the way, before it reaches him.
+        for(int i=0;i<=24;++i){
+            s.at({0,1.4f,.6f-6.f*i/90});
+            if(i==6)s.punches.spend(1);
+        }
+        check(s.out.empty(),"a spent swing punched");
+        near(s.punches.velocity(1).z,-6,.5f);
+        s.move({0,1.4f,-.8f},{0,1.4f,-.2f},.8f);
+        s.move({0,1.4f,-.2f},{0,1.4f,-1.f},6);
+        check(s.out.size()==1,"a fist that slowed after a spent swing did not punch");
+    });
+    // Fighting across the room (web_strike.hpp). The player stands at `feet`,
+    // head 1.65 m up; the right fist is thrown from the shoulder.
+    struct Open : WorldQueries {
+        std::optional<RayHit> raycast(Vec3,Vec3,float) const override { return {}; }
+        bool exists(std::uint64_t) const override { return true; }
+    };
+    // A fixed wall across the room at z = -3.
+    struct Walled : WorldQueries {
+        std::optional<RayHit> raycast(Vec3 o,Vec3 d,float distance) const override {
+            if(d.z>=-1e-4f||o.z<=-3)return {};
+            const float t=(-3-o.z)/d.z;
+            return t<=distance?std::optional<RayHit>{RayHit{o+d*t,{0,0,1},5,true}}:std::nullopt;
+        }
+        bool exists(std::uint64_t) const override { return true; }
+    };
+    struct Fight {
+        WebStrike strike;
+        Open open;
+        Vec3 feet{};
+        std::vector<FightTarget> targets{{7,{0,0,-6},1.8f,.3f,false}};
+        Vec3 head() const { return feet+Vec3{0,1.65f,0}; }
+        float web{}; // the right hand's web button
+        std::optional<WebStrike::Opening> sample(Vec3 fist,Vec3 velocity,bool free,std::uint64_t holds,const WorldQueries* world){
+            std::array<FightFist,2> fists{};
+            fists[1]={true,fist,velocity,free,holds,web};
+            return strike.open(1.f/90,fists,head(),feet,targets,world?*world:static_cast<const WorldQueries&>(open));
+        }
+        // The fist at rest by the shoulder for `seconds`.
+        void rest(float seconds=.5f,bool free=true){
+            for(int i=0;i<std::lround(seconds*90);++i)sample(feet+Vec3{.2f,1.4f,-.15f},{},free,0,nullptr);
+        }
+        // Thrown from the shoulder along `way` at `speed` for a tenth of a second: the strike it opened, if any.
+        std::optional<WebStrike::Opening> punch(Vec3 way,float speed,const WorldQueries* world=nullptr,bool free=true,std::uint64_t holds=0){
+            std::optional<WebStrike::Opening> opened;
+            way=normalized(way);
+            for(int i=0;i<=9;++i)
+                if(const auto o=sample(feet+Vec3{.2f,1.4f,-.15f}+way*(speed*i/90.f),way*speed,free,holds,world);o&&!opened)opened=o;
+            return opened;
+        }
+        struct Flown { bool landed{},missed{}; float seconds{},fastest{}; };
+        // The flight, 90 steps a second; `moving`: the body goes where the strike sends it.
+        Flown fly(bool grounded=true,bool moving=true){
+            Flown f;
+            while(strike.phase()==WebStrike::Phase::Flying&&f.seconds<3){
+                const auto s=strike.step(1.f/90,feet,grounded,targets.empty()?nullptr:&targets[0]);
+                if(s.drive&&moving)feet+=s.velocity*(1.f/90);
+                f.fastest=std::max(f.fastest,length(s.velocity));
+                f.landed|=s.landed;f.missed|=s.missed;f.seconds+=1.f/90;
+            }
+            return f;
+        }
+    };
+    test("web strike: a fist thrown at a thug across the room takes the player to him", [] {
+        Fight f;
+        f.rest();
+        const auto opened=f.punch({0,0,-1},5);
+        check(opened&&opened->hand==1&&opened->target==7&&!opened->held,"a punch at a thug six metres off opened no strike");
+        near(opened->distance,6,.05f);
+        check(f.strike.phase()==WebStrike::Phase::Flying,"the strike did not fly");
+        near(f.strike.fistSpeed(),5,.01f);
+        const auto flown=f.fly();
+        check(flown.landed&&!flown.missed,"the strike's blow did not land");
+        // 0.95 m short of him, on his ground, in a fifth of a second at 26 m/s.
+        near(f.feet.z,-5.05f,.09f);
+        near(f.feet.x,0,.02f);
+        near(f.feet.y,0,.02f);
+        check(flown.seconds>.15f&&flown.seconds<.25f,"the flight took the wrong time");
+        check(flown.fastest>20&&flown.fastest<=26*1.25f+.01f,"the flight went at the wrong speed");
+        check(f.strike.phase()==WebStrike::Phase::Idle,"a strike that landed on the ground went on");
+    });
+    test("web strike: slow, short, wide, busy and drawn-back fists open none", [] {
+        const auto opens=[](auto prepare,Vec3 way,float speed,bool free=true){Fight f;f.rest();prepare(f);return f.punch(way,speed,nullptr,free).has_value();};
+        const auto same=[](Fight&){};
+        check(opens(same,{0,0,-1},5),"the plain case opened nothing");
+        check(!opens(same,{0,0,-1},2.3f),"a fist slower than a strike's opened one");
+        check(!opens(same,{1,0,-.8f},5),"a fist thrown past him opened a strike");
+        check(!opens(same,{0,0,-1},5,false),"a hand whose web holds something opened a strike");
+        check(!opens([](Fight& f){f.targets[0].feet={0,0,-1};},{0,0,-1},5),"a thug within the fist's reach was flown at");
+        check(!opens([](Fight& f){f.targets[0].feet={0,0,-14};},{0,0,-1},5),"a thug beyond reach was flown at");
+        check(!opens([](Fight& f){f.targets.clear();},{0,0,-1},5),"a strike opened at nobody");
+        // A hand that let go of its web a moment ago: the throw's follow-through.
+        check(!opens([](Fight& f){f.rest(.2f,false);f.rest(.1f);},{0,0,-1},5),"a hand that just let go opened a strike");
+        check(opens([](Fight& f){f.rest(.2f,false);f.rest(.4f);},{0,0,-1},5),"a hand free for a while opened none");
+        // An arm stretched out ahead, drawn back toward the head, with a thug behind the player's back.
+        Fight back;back.rest();back.targets[0].feet={0,0,6};
+        std::optional<WebStrike::Opening> opened;
+        for(int i=0;i<=6;++i)
+            if(const auto o=back.sample({.2f,1.4f,-.75f+5*i/90.f},{0,0,5},true,0,nullptr))opened=o;
+        check(!opened,"a hand drawn back opened a strike at the thug behind");
+    });
+    test("web strike: a twitch opens none, nor a hand that just pressed its web button, unless the web caught him", [] {
+        // Three samples at speed: a jolt of the tracking.
+        Fight twitch;twitch.rest();
+        std::optional<WebStrike::Opening> opened;
+        for(int i=0;i<3;++i)
+            if(const auto o=twitch.sample({.2f,1.4f,-.15f-5.f*i/90},{0,0,-5},true,0,nullptr))opened=o;
+        for(int i=0;i<5;++i)
+            if(const auto o=twitch.sample({.2f,1.4f,-.3f},{},true,0,nullptr))opened=o;
+        check(!opened,"three fast samples opened a strike");
+        // The arm thrown out as the web button goes down: a web shot.
+        Fight shot;shot.rest();
+        shot.web=1;
+        check(!shot.punch({0,0,-1},5),"an arm thrown out to shoot a web opened a strike");
+        // Clenched a while ago, the same throw is a punch.
+        Fight clenched;clenched.web=1;clenched.rest();
+        check(clenched.punch({0,0,-1},5).has_value(),"a fist clenched before the punch opened none");
+        // The web that just went out caught him: the throw goes on as a strike along it.
+        Fight caught;caught.rest();
+        caught.web=1;
+        check(caught.punch({0,0,-1},5,nullptr,false,7).has_value(),"a punch along the web that just caught him opened none");
+    });
+    test("web strike: a player who takes no steps is not flown later, out of nowhere", [] {
+        Fight f;f.rest();
+        check(f.punch({0,0,-1},5).has_value(),"no strike");
+        // Perched: input samples go on, the body takes no step.
+        f.rest(.15f);
+        check(f.strike.phase()==WebStrike::Phase::Flying,"a strike ended before its player could step");
+        f.rest(.25f);
+        check(f.strike.phase()==WebStrike::Phase::Idle,"a strike waited for a player who takes no steps");
+        check(!f.strike.step(1.f/90,f.feet,true,&f.targets[0]).drive,"a stalled strike flew after all");
+        // With steps it flies as long as it takes.
+        Fight g;g.rest();
+        check(g.punch({0,0,-1},5).has_value(),"no strike");
+        for(int i=0;i<10;++i){
+            g.strike.step(1.f/90,g.feet,true,&g.targets[0]);
+            g.rest(1.f/90);
+        }
+        check(g.strike.phase()==WebStrike::Phase::Flying,"a stepping strike stalled");
+    });
+    test("web strike: up from the ground it waits for the jump, its clock standing, and not for ever", [] {
+        Fight f;f.rest();
+        f.targets[0]={7,{0,3,-2},1.8f,.3f,true};
+        check(f.punch({0,.8f,-.6f},5).has_value(),"no strike at a thug overhead");
+        check(f.strike.lifting(f.feet),"a strike three metres up needs no jump");
+        // Half a second of the game's jump: longer than the stall and than the flight itself.
+        for(int i=0;i<45;++i){f.strike.wait(1.f/90);f.rest(1.f/90);}
+        check(f.strike.phase()==WebStrike::Phase::Flying,"the strike gave up during the jump");
+        near(f.strike.elapsed(),0);
+        // In the air now, a metre up: the flight goes on from there.
+        f.feet.y=1;
+        const auto flown=f.fly(false);
+        check(flown.landed,"the strike did not land after the jump");
+        near(f.feet.y,3,.09f);
+        // A jump that never comes ends it.
+        Fight stuck;stuck.rest();
+        stuck.targets[0]={7,{0,3,-2},1.8f,.3f,true};
+        check(stuck.punch({0,.8f,-.6f},5).has_value(),"no strike");
+        for(int i=0;i<70;++i)stuck.strike.wait(1.f/90);
+        check(stuck.strike.phase()==WebStrike::Phase::Idle,"a strike waited for ever for a jump");
+        // A thug on the same ground, or a step up: no jump.
+        Fight level;level.rest();
+        check(level.punch({0,0,-1},5).has_value()&&!level.strike.lifting(level.feet),"a strike along the ground asks for a jump");
+    });
+    test("web strike: of two thugs the one the fist points at, and none behind a wall", [] {
+        Fight f;f.rest();
+        f.targets={{7,{-2.5f,0,-6},1.8f,.3f,false},{8,{2.5f,0,-6},1.8f,.3f,false}};
+        const auto right=f.punch({2.3f,-.5f,-5.85f},5);
+        check(right&&right->target==8,"the thug the fist pointed at was not the one struck");
+        Fight g;g.rest();
+        g.targets={{7,{0,0,-9},1.8f,.3f,false},{8,{0,0,-5},1.8f,.3f,false}};
+        const auto nearer=g.punch({0,0,-1},5);
+        check(nearer&&nearer->target==8,"of two in line the farther was struck");
+        Fight walled;walled.rest();
+        const Walled wall;
+        check(!walled.punch({0,0,-1},5,&wall),"a strike opened at a thug behind a wall");
+        // Nearer than the wall: it stands behind him.
+        walled.targets[0].feet={0,0,-2.5f};
+        walled.rest();
+        check(walled.punch({0,0,-1},5,&wall).has_value(),"a thug in front of the wall was not struck");
+    });
+    test("web strike: a punch along the hand's own web strikes the thug it holds, and him alone", [] {
+        Fight f;f.rest(.5f,false);
+        // Half a right angle off him: wide of a free hand's aim.
+        const auto opened=f.punch({1,0,-1.2f},5,nullptr,false,7);
+        check(opened&&opened->held&&opened->target==7,"the held thug was not struck");
+        Fight other;other.rest(.5f,false);
+        check(!other.punch({0,0,-1},5,nullptr,false,9),"a hand holding one thug struck another");
+        Fight away;away.rest(.5f,false);
+        check(!away.punch({1,0,.3f},5,nullptr,false,7),"a hand swung away from the thug it holds struck him");
+    });
+    test("web strike: one swing opens one strike, and the next after the fist slowed", [] {
+        Fight f;f.rest();
+        f.targets.push_back({8,{0,0,-9},1.8f,.3f,false});
+        check(f.punch({0,0,-1},5).has_value(),"no strike");
+        check(f.fly().landed,"no blow");
+        // Still thrown out at 5 m/s as the player arrives, the next thug ahead.
+        check(!f.punch({0,0,-1},5),"the same swing opened a second strike");
+        f.rest(.2f);
+        const auto next=f.punch({0,0,-1},5);
+        check(next&&next->target==8,"a new swing did not strike the next thug");
+        // A hand that landed a punch by itself opens none with that swing either.
+        Fight g;g.rest();
+        g.strike.spent(1);
+        check(!g.punch({0,0,-1},5),"a swing that landed a punch opened a strike");
+    });
+    test("web strike: a step to a thug close by takes its time, and a far one is no faster than the flight", [] {
+        Fight f;f.rest();f.targets[0].feet={0,0,-2};
+        check(f.punch({0,0,-1},5).has_value(),"no strike at a thug two metres off");
+        const auto hop=f.fly();
+        check(hop.landed&&hop.seconds>=.11f&&hop.fastest<12,"a short hop was a jolt");
+        near(f.feet.z,-1.05f,.21f);
+        Fight far;far.rest();far.targets[0].feet={0,0,-9.9f};
+        check(far.punch({0,0,-1},5).has_value(),"no strike at a thug ten metres off");
+        const auto flight=far.fly();
+        check(flight.landed&&flight.fastest<=26*1.25f+.01f&&flight.seconds<.45f,"a long flight was wrong");
+    });
+    test("web strike: a flight that cannot arrive ends; its blow lands only within reach", [] {
+        // A railing: the body does not move.
+        Fight f;f.rest();
+        check(f.punch({0,0,-1},5).has_value(),"no strike");
+        const auto stuck=f.fly(true,false);
+        check(stuck.missed&&!stuck.landed,"a flight stopped six metres short landed its blow");
+        check(stuck.seconds>.3f&&stuck.seconds<.6f,"a stopped flight did not end in time");
+        check(f.strike.phase()==WebStrike::Phase::Idle,"a missed strike went on");
+        // Stopped a step short of where the player would stand: within reach.
+        Fight close;close.rest();close.targets[0].feet={0,0,-2.4f};
+        check(close.punch({0,0,-1},5).has_value(),"no strike");
+        check(close.fly(true,false).missed,"a blow landed from 2.4 m");
+        Fight reach;reach.rest();reach.targets[0].feet={0,0,-1.7f};
+        check(reach.punch({0,0,-1},5).has_value(),"no strike");
+        check(reach.fly(true,false).landed,"a blow within reach did not land");
+        // His actor gone during the flight.
+        Fight gone;gone.rest();
+        check(gone.punch({0,0,-1},5).has_value(),"no strike");
+        gone.strike.step(1.f/90,gone.feet,true,&gone.targets[0]);
+        gone.targets.clear();
+        const auto lost=gone.fly();
+        check(lost.missed&&!lost.landed,"a strike at nobody landed");
+        // Cancelled: idle, no blow.
+        Fight stop;stop.rest();
+        check(stop.punch({0,0,-1},5).has_value(),"no strike");
+        stop.strike.cancel();
+        check(stop.strike.phase()==WebStrike::Phase::Idle&&!stop.strike.step(1.f/90,stop.feet,true,&stop.targets[0]).drive,
+              "a cancelled strike drove the body");
+    });
+    test("web strike: up to a thug in the air, and the player hangs there after each blow", [] {
+        Fight f;f.rest();
+        f.targets[0]={7,{0,4,-3},1.8f,.3f,true};
+        const auto opened=f.punch({0,.75f,-.66f},5);
+        check(opened.has_value(),"no strike at a thug in the air");
+        const auto flown=f.fly(false);
+        check(flown.landed,"the blow in the air did not land");
+        // Beside him, his middle at the player's chest.
+        near(f.feet.y,4,.21f);
+        near(f.feet.z,-2.05f,.21f);
+        check(f.strike.phase()==WebStrike::Phase::Hanging,"the player did not hang after a blow in the air");
+        float hung{};
+        while(f.strike.phase()==WebStrike::Phase::Hanging&&hung<2){
+            const auto s=f.strike.step(1.f/90,f.feet,false,nullptr);
+            check(!s.drive||length(s.velocity)==0,"the hang moved the player");
+            hung+=1.f/90;
+        }
+        near(hung,.45f,.03f);
+        // Each further blow in the air starts it again, for three seconds in all.
+        float total=hung;
+        for(int blow=0;blow<20;++blow){
+            f.strike.hangOn(false);
+            for(int i=0;i<27&&f.strike.phase()==WebStrike::Phase::Hanging;++i){f.strike.step(1.f/90,f.feet,false,nullptr);total+=1.f/90;}
+        }
+        check(total>2.8f&&total<3.2f,"the hang did not end at its limit");
+        check(f.strike.phase()==WebStrike::Phase::Idle,"the hang went on past its limit");
+        // On the ground it starts none, and landing ends one and its count.
+        f.strike.hangOn(true);
+        check(f.strike.phase()==WebStrike::Phase::Idle,"a blow on the ground hung the player");
+        f.strike.step(1.f/90,f.feet,true,nullptr);
+        f.strike.hangOn(false);
+        check(f.strike.phase()==WebStrike::Phase::Hanging,"no hang after landing in between");
+        check(!f.strike.step(1.f/90,f.feet,true,nullptr).drive&&f.strike.phase()==WebStrike::Phase::Idle,"the hang held a player on the ground");
+    });
+    test("web strike: the dive from above lands beside him on his ground", [] {
+        Fight f;f.feet={0,8,0};f.rest();
+        f.targets[0].feet={0,0,-5};
+        check(f.punch({0,-.8f,-.6f},5).has_value(),"no dive at a thug below");
+        const auto dive=f.fly(false);
+        check(dive.landed,"the dive's blow did not land");
+        near(f.feet.y,0,.21f);
+        near(f.feet.z,-4.05f,.21f);
+    });
+    test("flow: blows in a row count up to a finisher, and a pause starts over", [] {
+        Flow flow;
+        for(int i=1;i<=4;++i){
+            check(flow.hit()==i&&!flow.finisher(i),"the flow miscounted");
+            flow.update(1);
+        }
+        check(flow.hit()==5&&flow.finisher(5)&&!flow.finisher(6)&&flow.finisher(10),"the fifth blow was no finisher");
+        near(flow.damage(1),1);
+        near(flow.damage(3),1.2f);
+        near(flow.damage(40),1.5f);
+        flow.update(3.4f);
+        check(flow.count()==5,"the flow ended early");
+        flow.update(.2f);
+        check(flow.count()==0&&flow.hit()==1,"the flow went on after a pause");
+        bool refused{};
+        try{FlowConfig c;c.finisher=1;Flow bad(c);}catch(const std::invalid_argument&){refused=true;}
+        check(refused,"a finisher on every blow accepted");
+    });
+    test("blows: light ones are the game's melee; hard ones, uppercuts, air blows and finishers send him flying", [] {
+        const Punches punches;
+        const Flow flow;
+        const auto blow=[&](Vec3 way,float speed){return punches.blow(way,speed);};
+        const auto jab=deliver(blow({0,0,-1},3),false,1,flow);
+        check(jab.kind==BlowKind::Hit&&!jab.kinetic&&!jab.fly&&jab.knockback==Knockback::Stagger,"a jab was no plain hit");
+        near(jab.damage,blow({0,0,-1},3).damage);
+        // The same jab third in a flow: a fifth harder.
+        near(deliver(blow({0,0,-1},3),false,3,flow).damage,blow({0,0,-1},3).damage*1.2f);
+        const auto hard=deliver(blow({0,0,-1},7),false,1,flow),harder=deliver(blow({0,0,-1},9),false,1,flow);
+        check(hard.kind==BlowKind::Heavy&&hard.kinetic&&hard.fly&&hard.knockback==Knockback::FlyBack,"a hard blow did not send him flying");
+        check(hard.velocity.z<-9&&hard.velocity.y>2.9f&&harder.velocity.z<hard.velocity.z-2,"a hard blow's flight was wrong");
+        near(harder.velocity.z,-14,.01f);
+        const auto upper=deliver(blow({0,.9f,-.44f},7),false,1,flow);
+        check(upper.kind==BlowKind::Launch&&upper.kinetic&&upper.velocity.y>8&&std::abs(upper.velocity.z)<2,"an uppercut did not lift him");
+        const auto juggle=deliver(blow({0,0,-1},3),true,1,flow);
+        check(juggle.kind==BlowKind::Juggle&&juggle.fly&&juggle.velocity.y>4&&juggle.velocity.z<-2.9f,"a blow at a thug in the air did not keep him up");
+        const auto slam=deliver(blow({0,-.9f,-.44f},5),true,1,flow);
+        check(slam.kind==BlowKind::Slam&&slam.velocity.y<-20,"a blow down at a thug in the air did not slam him");
+        near(slam.damage,blow({0,-.9f,-.44f},5).damage*1.6f);
+        const auto hammer=deliver(blow({0,-.9f,-.44f},5),false,1,flow);
+        check(hammer.kind==BlowKind::Hit&&!hammer.kinetic&&hammer.knockback==Knockback::Knockdown,"a blow down onto a standing thug did not knock him down");
+        // The fifth of a flow, whatever the blow: far, and two and a half times as hard on top of the flow's 1.4.
+        const auto finish=deliver(blow({0,0,-1},3),false,5,flow);
+        check(finish.kind==BlowKind::Finisher&&finish.kinetic&&finish.velocity.z<-17&&finish.velocity.y>4.9f,"the finisher was weak");
+        near(finish.damage,blow({0,0,-1},3).damage*1.4f*2.5f,.01f);
+        check(deliver(blow({0,-.9f,-.44f},5),true,5,flow).kind==BlowKind::Finisher,"a finisher in the air was something else");
+        near(speedOf(punches.config(),.5f),4.85f);
+    });
+    test("hit stop: the game's time stops for a blow and eases back, longer for a finisher", [] {
+        HitStop stop;
+        near(stop.timeScale(),1);
+        check(!stop.active(),"a stop before any blow");
+        stop.hit(1,false);
+        near(stop.timeScale(),.1f);
+        stop.update(.09f);
+        near(stop.timeScale(),.1f);
+        stop.update(.03f);
+        check(stop.timeScale()>.1f&&stop.timeScale()<.5f,"the stop did not ease back");
+        float before=stop.timeScale();
+        for(int i=0;i<14;++i){stop.update(.01f);check(stop.timeScale()>=before,"time went back down");before=stop.timeScale();}
+        near(stop.timeScale(),1);
+        check(!stop.active(),"the stop went on");
+        // A jab's is a third as long.
+        stop.hit(0,false);
+        stop.update(.035f);
+        check(stop.timeScale()>.1f,"a jab stopped time as long as a full blow");
+        stop.reset();
+        // A finisher: longer, less deep; a jab landed in it does not cut it short.
+        stop.hit(.3f,true);
+        near(stop.timeScale(),.2f);
+        stop.update(.2f);
+        stop.hit(0,false);
+        stop.update(.15f);
+        near(stop.timeScale(),.2f);
+        stop.update(.3f);
+        near(stop.timeScale(),1);
+        // A hard blow as a jab's stop ends takes over.
+        stop.hit(0,false);
+        stop.update(.02f);
+        stop.hit(1,false);
+        stop.update(.05f);
+        near(stop.timeScale(),.1f);
+        stop.reset();
+        near(stop.timeScale(),1);
+        bool refused{};
+        try{HitStopTuning t;t.scale=0;HitStop bad(t);}catch(const std::invalid_argument&){refused=true;}
+        check(refused,"a stop that halts the game accepted");
+    });
+    test("web strike configuration rejects invalid tuning", [] {
+        auto bad=[](auto change){WebStrikeConfig c;change(c);try{WebStrike s(c);return false;}catch(const std::invalid_argument&){return true;}};
+        check(bad([](WebStrikeConfig& c){c.maxDistance=1;}),"a reach inside the fist's own accepted");
+        check(bad([](WebStrikeConfig& c){c.speed=0;}),"a flight at no speed accepted");
+        check(bad([](WebStrikeConfig& c){c.rearmSpeed=3;}),"a rearm speed above a strike's accepted");
+        check(bad([](WebStrikeConfig& c){c.aim=std::numeric_limits<float>::quiet_NaN();}),"NaN aim accepted");
+        check(bad([](WebStrikeConfig& c){c.heldAim=.9f;}),"a held thug harder to aim at than a free one accepted");
+        check(!bad([](WebStrikeConfig&){}),"defaults rejected");
+    });
+    test("impact sounds: each a WAV in memory, the harder the blow the longer and louder", [] {
+        const auto samples=[](const std::vector<std::uint8_t>& wave){
+            std::vector<float> out;
+            for(size_t i=44;i+1<wave.size();i+=2)out.push_back(static_cast<std::int16_t>(wave[i]|wave[i+1]<<8)/32767.f);
+            return out;
+        };
+        const auto u32=[](const std::vector<std::uint8_t>& w,size_t at){return static_cast<std::uint32_t>(w[at]|w[at+1]<<8|w[at+2]<<16|w[at+3]<<24);};
+        float lastPeak{},lastEnergy{};
+        size_t lastCount{};
+        for(const auto sound:{ImpactSound::Light,ImpactSound::Firm,ImpactSound::Heavy,ImpactSound::Finisher}){
+            const auto wave=impactWave(sound);
+            check(wave.size()>44&&!std::memcmp(wave.data(),"RIFF",4)&&!std::memcmp(wave.data()+8,"WAVEfmt ",8)&&!std::memcmp(wave.data()+36,"data",4),"no WAV header");
+            check(u32(wave,4)==wave.size()-8&&u32(wave,40)==wave.size()-44&&u32(wave,24)==22050&&u32(wave,28)==44100,"the WAV's sizes are wrong");
+            const auto s=samples(wave);
+            near(static_cast<float>(s.size())/22050,impactSeconds(sound),.001f);
+            float peak{},energy{},sum{};
+            for(const float v:s){peak=std::max(peak,std::abs(v));energy+=v*v;sum+=v;}
+            check(peak>.3f&&peak<.9f,"a blow's sound is too quiet or clipped");
+            check(peak>lastPeak&&energy>lastEnergy&&s.size()>lastCount,"a harder blow was not louder and longer");
+            check(std::abs(s.front())<.01f&&std::abs(s.back())<.01f,"the sound clicks at an end");
+            check(std::abs(sum/s.size())<.02f,"the sound is off centre");
+            // The smack comes first: the first 20 ms hold more than their share.
+            float early{};
+            for(size_t i=0;i<441;++i)early+=s[i]*s[i];
+            check(early>energy*441/s.size(),"the blow has no attack");
+            lastPeak=peak;lastEnergy=energy;lastCount=s.size();
+        }
+        const auto rush=samples(impactWave(ImpactSound::Rush));
+        float peak{};
+        size_t loudest{};
+        for(size_t i=0;i<rush.size();++i)if(std::abs(rush[i])>peak){peak=std::abs(rush[i]);loudest=i;}
+        check(peak>.05f&&peak<.45f,"the rush is too quiet or too loud");
+        check(loudest>rush.size()/5&&loudest<rush.size()*4/5,"the rush does not swell and fade");
+        check(impactWave(ImpactSound::Light)==impactWave(ImpactSound::Light),"the same sound came out differently");
+        check(impactWave(ImpactSound::Firm,1).size()==44+2*static_cast<size_t>(std::lround(.16f*8000)),"an absurd rate was not limited");
+    });
+    test("impact burst: a flash, a ring and rays where the blow landed, then the flow's count alone, then nothing", [] {
+        const Vec3 viewer{0,1.6f,0};
+        const auto draw=[&](float age,BlowKind kind=BlowKind::Hit,int count=1,float strength=.5f){
+            std::vector<Vertex> out;
+            appendImpact(out,{{0,1.4f,-.7f},strength,kind,count,age},viewer,.0006f);
+            return out;
+        };
+        const auto widest=[](const std::vector<Vertex>& v){
+            float r{};
+            for(const auto& p:v)r=std::max(r,length(p.position-Vec3{0,1.4f,-.7f}));
+            return r;
+        };
+        const auto early=draw(.02f),late=draw(.15f);
+        check(!early.empty()&&early.size()%3==0,"no burst");
+        const Vec3 facing=normalized(viewer-Vec3{0,1.4f,-.7f});
+        for(const auto& v:early)check(finite(v.position)&&v.alpha>=0&&v.alpha<=1&&std::abs(dot(v.position-Vec3{0,1.4f,-.7f},facing))<1e-3f,"a burst vertex off its plane");
+        check(widest(late)>widest(early)&&widest(late)<.35f,"the burst does not spread, or spreads too far");
+        check(draw(.23f).empty()&&draw(-.01f).empty()&&draw(1).empty(),"a burst outside its time");
+        // A finisher's is wider, redder and longer.
+        const auto finisher=draw(.3f,BlowKind::Finisher,5);
+        check(!finisher.empty()&&widest(finisher)>widest(late),"a finisher's burst is no bigger");
+        bool red{};
+        for(const auto& v:finisher)red|=v.color.x>.9f&&v.color.y<.3f;
+        check(red,"a finisher's burst is not red");
+        // The count shows from the second blow on, and outlasts the burst.
+        const auto counted=draw(.4f,BlowKind::Hit,3);
+        check(!counted.empty(),"no count after the burst");
+        for(const auto& v:counted)check(v.position.y>1.4f,"the count is not above the blow");
+        check(draw(.4f,BlowKind::Hit,1).empty(),"a first blow shows a count");
+        check(draw(.76f,BlowKind::Hit,3).empty(),"the count stayed");
+        float faint{},full{};
+        for(const auto& v:draw(.72f,BlowKind::Hit,3))faint=std::max(faint,v.alpha);
+        for(const auto& v:counted)full=std::max(full,v.alpha);
+        check(faint<full*.3f,"the count does not fade");
+        // Nothing for nonsense.
+        std::vector<Vertex> none;
+        appendImpact(none,{{0,1.4f,-.7f},.5f,BlowKind::Hit,1,.02f},{0,1.4f,-.7f},.0006f);
+        appendImpact(none,{{std::numeric_limits<float>::quiet_NaN(),0,0},.5f,BlowKind::Hit,1,.02f},viewer,.0006f);
+        check(none.empty(),"a burst at the viewer's eye or nowhere");
     });
     // The right hand at eye height, aimed along -z (an identity aim pose), its trigger at `trigger`.
     const auto shooterHands = [](float trigger, bool busy = false, bool tracked = true) {

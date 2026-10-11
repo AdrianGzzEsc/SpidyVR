@@ -46,8 +46,15 @@ your body (not your swing or run):
 A blow must go into him: within about 72 degrees of the line from the fist to
 his middle or his head. A fist that grazes across his front, or is pulled back
 out of him, lands nothing. A fist lands one punch per swing; it can punch again
-once it slows below 1.2 m/s or 0.45 s later. A hand whose web holds something
-or swings you does not punch.
+once it slows below 1.2 m/s or 0.45 s later. A hand whose web holds a prop or
+a thug, or carries you through the air, does not punch; one whose web only
+hangs from a wall while you stand does (since October 11).
+
+Since October 11 a fist thrown at a thug out of reach flies you to him (the
+web strike), blows in a row count into a flow with a finisher, and the hard
+blows, uppercuts and blows at a thug in the air go out as the game's kinetic
+blow with a velocity for his flight: `include/spidy/web_strike.hpp`, and the
+Fighting section of [PLAYERS.md](PLAYERS.md).
 
 ## How the body works
 
@@ -280,8 +287,12 @@ The knockback levels (`Knockback`, from the game's own enum names): 0 kNone,
 7 kPopUp, 8 kAirJuggle, 9 kSuperFlyBack. Damage types: 1 kMelee, 7 kKinetic,
 25 kDrain among 31.
 
-The controller kicks with each landed punch (0.5 + 0.5 × strength); the web's
-tension rumble waits 40 ms for it.
+The controller kicks with each landed blow: 0.6 + 0.4 × strength for 60 to
+140 ms, full strength for 180 ms for a heavy one and 320 ms for a finisher,
+with the other hand too; the web's tension rumble waits for it. The game's
+time stops for a moment, a burst shows where the blow landed and it sounds
+(`game_xr.cpp`; until October 11 it was one 25 ms pulse at 0.5 + 0.5 ×
+strength and nothing else).
 
 ## Measured in the game without a headset
 

@@ -95,6 +95,13 @@ class Punches {
     float speed(int hand) const {
         return length(hands_[static_cast<size_t>(hand)].velocity);
     }
+    // The same motion with its direction, in the world's axes.
+    Vec3 velocity(int hand) const {
+        return hands_[static_cast<size_t>(hand)].velocity;
+    }
+    // This hand's swing has landed its blow some other way (a web strike's):
+    // it punches again once it slowed or pulled back, as after a punch.
+    void spend(int hand);
     const PunchConfig& config() const {
         return config_;
     }

@@ -16,6 +16,7 @@
 #include "spidy/game_swing.hpp"
 #include "spidy/game_time.hpp"
 #include "spidy/game_tracking.hpp"
+#include "spidy/impact_sound.hpp"
 #include "spidy/native_eye_frame.hpp"
 #include "spidy/native_eye_gpu.hpp"
 #include "spidy/native_eye_history.hpp"
@@ -35,7 +36,9 @@
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <vector>
 #include <windows.h>
+#include <mmsystem.h>
 using namespace spidy;
 struct XrConfig {
     uint32_t magic = 0x53585243, version = 23, bytes = sizeof(XrConfig), pid{};
@@ -234,7 +237,7 @@ XrConfig config;
 BridgeCall submitInput{}, sampleBridge{}, stopBridge{}, retargetBridge{};
 BridgeCall startRays{}, submitRays{}, stopRays{};
 BridgeCall startSwing{}, submitSwing{}, sampleSwing{}, stopSwing{}, retargetSwing{}, sampleGrab{}, sampleAim{};
-BridgeCall startPunch{}, samplePunch{}, stopPunch{}, swingSettings{};
+BridgeCall startPunch{}, samplePunch{}, stopPunch{}, swingSettings{}, sampleStrike{};
 BridgeCall startShooter{}, sampleShooter{}, stopShooter{};
 std::mutex lifecycle, telemetry;
 HANDLE worker{};
@@ -468,6 +471,28 @@ DWORD WINAPI run(void*) {
         // Punches each hand had landed by the previous frame.
         bool punchStarted{};
         uint64_t punchesBefore[2]{};
+        // Fighting across the room (web_strike.hpp): the blows landed and the
+        // web strikes opened by the previous frame; the game's time around a
+        // blow; the bursts still showing where the latest blows landed, each
+        // since its display time; and the sounds, made once.
+        uint64_t blowsBefore{}, strikesBefore{};
+        HitStop hitStop;
+        struct Burst {
+            ImpactView view;
+            int64_t since{};
+        };
+        std::array<Burst, 6> bursts{};
+        size_t nextBurst{};
+        // (They outlive the session: one may still be playing as it ends.)
+        static const std::vector<uint8_t> sounds[5] = {
+            impactWave(ImpactSound::Light), impactWave(ImpactSound::Firm), impactWave(ImpactSound::Heavy),
+            impactWave(ImpactSound::Finisher), impactWave(ImpactSound::Rush)};
+        // One at a time, the newest cutting the one before short: a strike's
+        // rush ends in its blow.
+        auto play = [&](ImpactSound sound) {
+            const auto& wave = sounds[static_cast<size_t>(sound)];
+            PlaySoundW(reinterpret_cast<LPCWSTR>(wave.data()), nullptr, SND_MEMORY | SND_ASYNC | SND_NODEFAULT);
+        };
         // Web-shooter shots each hand had fired by the previous frame.
         bool shooterStarted{};
         uint64_t shotsBefore[2]{};
@@ -524,7 +549,11 @@ DWORD WINAPI run(void*) {
             using Event = SlowMotion::Event;
             const bool before = slowMotion.active();
             const auto event = slowMotion.update(seconds, pressed, allowed);
-            game_time::slow(slowMotion.timeScale());
+            // A landed blow stops the game's time for a moment, in slow motion too.
+            hitStop.update(seconds);
+            if (!allowed)
+                hitStop.reset();
+            game_time::slow(std::min(slowMotion.timeScale(), hitStop.timeScale()));
             slowSteppedMs = GetTickCount64();
             if (before && std::isfinite(seconds))
                 slowCounts.seconds += std::clamp(seconds, 0.f, .1f);
@@ -1026,12 +1055,68 @@ DWORD WINAPI run(void*) {
                         }
                         wallsBefore = swingState.walls;
                         wallJumpsBefore = swingState.wallJumps;
+                        // Every landed blow, a fist's or a web strike's: the hand
+                        // that threw it kicks, as hard and as long as the blow was
+                        // (a jab 60 ms, a blow that sends him flying 180 ms and the
+                        // other hand with it); the game's time stops for a moment;
+                        // a burst shows where it landed, with its count in the
+                        // flow; and it sounds. Until October 11 a landed punch was
+                        // one 25 ms pulse at half strength and nothing else.
+                        game_punch::Strikes strikes{};
+                        const game_punch::Strikes expectedStrikes;
+                        const bool fighting =
+                            punchStarted && sampleStrike && !sampleStrike(&strikes) &&
+                            strikes.magic == expectedStrikes.magic && strikes.version == expectedStrikes.version &&
+                            strikes.bytes == expectedStrikes.bytes;
+                        if (fighting) {
+                            // Punching switched off and on again counts from nothing.
+                            blowsBefore = std::min(blowsBefore, strikes.blows);
+                            strikesBefore = std::min(strikesBefore, strikes.opened);
+                            if (strikes.opened > strikesBefore && input.focused) {
+                                // Off to him: a tick in both hands, and the rush.
+                                runtime.haptic(0, .35f, .05f);
+                                runtime.haptic(1, .35f, .05f);
+                                play(ImpactSound::Rush);
+                            }
+                            if (strikes.blows > blowsBefore && input.focused) {
+                                const auto kind = static_cast<BlowKind>(strikes.lastKind);
+                                const bool finisher = kind == BlowKind::Finisher, heavy = kind != BlowKind::Hit;
+                                const unsigned hand = strikes.lastHand & 1;
+                                const float strength =
+                                    heavy ? 1.f
+                                          : std::isfinite(strikes.lastStrength)
+                                                ? std::clamp(strikes.lastStrength, 0.f, 1.f)
+                                                : 0.f;
+                                const float kick = finisher ? .32f : heavy ? .18f : .06f + .08f * strength;
+                                runtime.haptic(hand, heavy ? 1.f : .6f + .4f * strength, kick);
+                                if (heavy)
+                                    runtime.haptic(1 - hand, finisher ? 1.f : .5f, finisher ? kick : .1f);
+                                for (unsigned i = 0; i < 2; ++i)
+                                    if (i == hand || heavy)
+                                        pulseUntil[i] = frame.predictedDisplayTime +
+                                                        static_cast<int64_t>(kick * 1e9f) + 20'000'000;
+                                hitStop.hit(strength, finisher);
+                                if (finite(strikes.lastPoint)) {
+                                    auto& burst = bursts[nextBurst++ % bursts.size()];
+                                    burst.view = {strikes.lastPoint, strength, kind,
+                                                  static_cast<int>(std::min(strikes.lastCount, 999u)), 0};
+                                    burst.since = frame.predictedDisplayTime;
+                                }
+                                play(finisher ? ImpactSound::Finisher
+                                     : heavy ? ImpactSound::Heavy
+                                     : strength >= .35f ? ImpactSound::Firm
+                                                        : ImpactSound::Light);
+                            }
+                            blowsBefore = strikes.blows;
+                            strikesBefore = strikes.opened;
+                        }
                         game_punch::Data punch{};
                         if (punchStarted && !samplePunch(&punch))
                             for (unsigned i = 0; i < 2; ++i) {
-                                // A landed punch knocks back into the hand, as hard as it was;
-                                // the web's rumble waits for it.
-                                if (punch.hands[i].punches > punchesBefore[i] && input.focused) {
+                                // With an older ray module: a landed punch knocks back
+                                // into the hand, as hard as it was; the web's rumble
+                                // waits for it.
+                                if (!fighting && punch.hands[i].punches > punchesBefore[i] && input.focused) {
                                     runtime.haptic(i, .5f + .5f * punch.hands[i].lastStrength);
                                     pulseUntil[i] = frame.predictedDisplayTime + 40'000'000;
                                 }
@@ -1653,6 +1738,15 @@ DWORD WINAPI run(void*) {
                             appendSlowMotionMeter(translucent, saved->slow, wrist, viewer, pixelAngle,
                                                   static_cast<float>(clock));
                         }
+                        // The bursts where the latest blows landed: fixed in the world.
+                        if (!saved->flatScreen)
+                            for (const auto& burst : bursts) {
+                                if (!burst.since)
+                                    continue;
+                                auto view = burst.view;
+                                view.age = static_cast<float>(static_cast<double>(shown - burst.since) * 1e-9);
+                                appendImpact(translucent, view, viewer, pixelAngle);
+                            }
                         // The T-pose calibration's panel and controller rings, moved with
                         // the player to this image as the hands are.
                         if (!saved->flatScreen && saved->calibration.phase != body_calibration::Phase::idle) {
@@ -1806,8 +1900,9 @@ DWORD WINAPI run(void*) {
     if (padInstalled)
         game_pad::uninstall();
     game_menu::uninstall();
-    // The game's own time back.
+    // The game's own time back, and no blow still sounding.
     game_time::uninstall();
+    PlaySoundW(nullptr, nullptr, 0);
     bridge::Control release;
     release.serial = ++serial;
     release.leaseMs = 0;
@@ -1912,6 +2007,8 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyXrStart(void* input) {
     // Optional too: without them the VR settings' grab, speed and punch
     // switches take effect only at the next session.
     stopPunch = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidyPunchStop"));
+    // Optional: an older ray module has no web strike, and a punch only its short pulse.
+    sampleStrike = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidyStrikeSample"));
     swingSettings = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidySwingSettings"));
     // Optional: an older ray module has no web shooter.
     startShooter = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidyShooterStart"));

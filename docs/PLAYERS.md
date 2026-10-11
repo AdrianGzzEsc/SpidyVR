@@ -142,12 +142,42 @@ now; the left hand's are blue, the right hand's orange)
 Your body and fists
   Look down ............ you are Spider-Man: his body under you, his arms
                          and hands where your controllers are
-  Punch a thug ......... a fist moving fast into him hits: the faster, the
-                         harder he is knocked back (an uppercut lifts him)
+  Punch a thug ......... a fist moving fast into him hits: see Fighting,
+                         below
   Squeeze a grip ....... closes that hand into a fist (it shoots a web too;
                          with WEB BUTTON: TRIGGER, a web ball)
   T-pose, both triggers  calibrates your body (when the panel asks): his
                          height and arms become yours. B skips it
+
+Fighting (web strikes: punching across the room, as in Batman: Arkham Shadow)
+  Punch a thug ......... a fist that meets him fast lands a blow, as hard as
+                         it moved. Every blow kicks in your hand, sounds,
+                         flashes where it landed and stops time for a moment
+  Punch at a thug ...... web strike: you fly to him and the blow lands as
+  out of reach           you arrive. He can be 10 m away, anywhere you can
+                         see him: across the street, below you, in the air.
+                         From the ground, a jump, a fall or a swing (your
+                         webs let go). Throw the fist at him; it need not
+                         be a hard punch
+  Punch along your ..... the same: you go to him, and the web lets go. A
+  web at the thug        sharp pull still yanks him to you instead
+  it holds
+  A hard punch ......... sends him flying, the harder the farther
+  Uppercut ............. lifts him into the air. Strike up after him: you
+                         hang beside him for a moment after every blow you
+                         land in the air, long enough for the next
+  Punch down at a ...... slams him into the ground
+  thug in the air
+  Punch down onto a .... knocks him down, stunned
+  thug on his feet
+  Blows in a row ....... count up (X2, X3 ... over each blow): each hits a
+                         little harder than the one before, and every fifth
+                         is a finisher that sends him flying far. Three and a
+                         half seconds without a blow and the count starts
+                         over
+  A hand whose web holds a prop, or carries you through the air, neither
+  punches nor strikes. A hand whose web only hangs from a wall while you
+  stand does both: clench your fists as you like.
 
 Moving
   Left stick ........... walk and run (with FLIPS on, in the air it flips
@@ -373,6 +403,16 @@ IF SOMETHING IS WRONG
 - The game asks for LB + RB (a door you cannot get through, a grate) and
   your webs do nothing to it: click the right stick. That is the game's
   LB + RB in VR; your grips shoot your own webs there.
+- You fly at a thug you did not mean to strike: a web strike opens with a
+  fist thrown out fast (2.6 m/s or more) toward an enemy within 10 m, about
+  35 degrees to either side. Reaching for a web slowly, or pulling a hand
+  back, opens none.
+- A punch at a thug far off does nothing: he must be an enemy on his feet or
+  in the air (not one already knocked out), within 10 m and in sight, and the
+  fist thrown at him, out from your body. A hook, or a hand whose web holds a
+  prop or swings you, opens no strike.
+- The blows are too loud or the flashes too bright: tell us; this build has
+  no switch for them yet.
 - B no longer interacts, or Y no longer opens the game menu: the buttons
   moved to make room for the dodge. B dodges, Y interacts (as the game's
   prompts say) and X opens the game menu.

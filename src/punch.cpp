@@ -75,6 +75,13 @@ Punches::Punches(PunchConfig c) : config_(c) {
 void Punches::reset() {
     hands_ = {};
 }
+void Punches::spend(int hand) {
+    if (hand < 0 || hand > 1)
+        return;
+    auto& h = hands_[static_cast<size_t>(hand)];
+    h.armed = false;
+    h.sinceHit = 0;
+}
 PunchEvent Punches::blow(Vec3 direction, float speed) const {
     PunchEvent e;
     e.direction = normalized(direction);
