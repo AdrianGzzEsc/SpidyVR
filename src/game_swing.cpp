@@ -19,10 +19,12 @@ __declspec(dllexport) AimData SpidyAimData;
 }
 namespace {
 using Call = DWORD(WINAPI*)(void*);
-// A movement command must outlast the slowest step the solver accepts (50 ms)
-// twice over, because visit() tolerates one missed observation, plus the 16 ms
-// grain of the tick count its lease is measured with.
-constexpr uint32_t motionLeaseMs = 150;
+// A movement command must outlast the longest step the solver predicts
+// (longestNativeStep) twice over, because visit() tolerates one missed
+// observation, plus the 16 ms grain of the tick count its lease is measured
+// with.
+constexpr uint32_t motionLeaseMs = static_cast<uint32_t>(2000 * longestNativeStep) + 16;
+static_assert(motionLeaseMs > 200 && motionLeaseMs <= 250, "the movement module takes leases up to 250 ms");
 Call startMotion{}, submitMotion{}, sampleMotion{}, stopMotion{}, retargetMotion{}, driveMotion{},
     sampleDriven{};
 Config config;
@@ -372,7 +374,11 @@ void visit(const native_rays::QueryContext& world) {
     // Constraint correction and world-coordinate float rounding can make the
     // requested displacement slightly exceed the solver's velocity limit.
     // Cap the actual native request instead of relinquishing control midair.
-    const float cap = std::min(config.maxSpeed * (1.f - 1e-6f), 1.75f / motion.dt);
+    // The movement module moves the body farthestStep a step at most; the
+    // command's own step may be an eighth longer than this one before that
+    // shortens it.
+    const float cap =
+        std::min(config.maxSpeed * (1.f - 1e-6f), .875f * native_movement::farthestStep / motion.dt);
     const Vec3 average = delta / motion.dt;
     Vec3 requested = limited(average, cap);
     bool overhead{};
@@ -406,7 +412,8 @@ void visit(const native_rays::QueryContext& world) {
         // longer than that ran the step without it: the game then moved the
         // body at its own fall speed for the time spent airborne (28-42 m/s
         // down in the October 5 reports), a drop of a metre followed by a
-        // snap back at the speed limit.
+        // snap back at the speed limit. The step itself may be any length:
+        // the module moves the body for all of it (native_movement::stepDelta).
         request.leaseMs = motionLeaseMs;
         request.velocity = requested;
         if (const auto error = submitMotion(&request)) {

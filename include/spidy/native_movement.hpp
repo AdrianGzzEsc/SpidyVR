@@ -37,6 +37,20 @@ struct Data {
 inline bool commandApplies(uint64_t nowMs, uint64_t leaseEndMs, uint64_t steps, uint64_t stepsAtCommand) {
     return nowMs < leaseEndMs || steps == stepsAtCommand;
 }
+// A driven step moves the body by its command's velocity for the step's own
+// length, however long the game makes it, and by farthestStep at most: a step
+// is shortened, never left to the game. One longer than 50 ms, or one that
+// would have moved the body over 2 m, used to run without its command, on
+// that same fall; the game's step is its smoothed frame time, so below 20
+// frames a second every step was such a step (October 10 headset report:
+// three dives out of a swing, each from the first step of 50.4-51.7 ms).
+constexpr float farthestStep = 2;
+inline bool drivable(float dt) {
+    return std::isfinite(dt) && dt > 0;
+}
+inline Vec3 stepDelta(Vec3 velocity, float dt) {
+    return limited(velocity * dt, farthestStep);
+}
 // MoverStandard::prequery selects its non-sweeping request at 1fbe575
 // when any of these bits are set. They do not describe ground contact.
 inline bool collisionEnabled(uint32_t flags) {

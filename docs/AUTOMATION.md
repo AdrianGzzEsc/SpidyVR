@@ -175,8 +175,16 @@ holding, done; `hint`: what the panel asks for; `progress`; `done` and
 `skipped` this session; `reach_m`, each arm at the last one) and, in
 `vr_settings`, `eye_height_mm`, `arm_length_mm` and `calibration_prompt`, so
 the session's last line hands a calibration made or skipped to the launcher;
-`body` has `arm_scale`. XrConfig and XrData are version 20 (648 and 800
-bytes; `stand_on_walls` is in `vr_settings`, off with `--no-stand-on-walls`,
+`body` has `arm_scale`. XrConfig is version 22 and XrData version 20 (656 and 800
+bytes; `run_game_vr.py --upscale 50`..`100` is the share of the eye's size, per
+side, that its scene is rendered at, 67 by default; `--no-eye-antialiasing`
+gives the eyes as they were before October 10's eighth build and
+`--game-monitor-view` has the game render its own view while immersive;
+`--monitor-rate 0`..`240` is how often the window gets the left eye, 30 a
+second by default and 0 every frame; `--own-shadows` gives each eye its own
+sun shadow maps, as before October 11; the
+report's `eyes` has `upscale`, `antialiased`, `game_monitor_view`,
+`monitor_rate`, `shared_shadows` and `render_size`; `stand_on_walls` is in `vr_settings`, off with `--no-stand-on-walls`,
 and `surface.view_tilt_deg` is how far the view leans now, 90 standing on a
 wall; `--no-wall-run` leaves walls to the game's crawl; swing samples carry
 `wall` (0 none, 1 the swing's wall, 2 the game's crawl), `wall_normal`,
@@ -238,7 +246,13 @@ input bridge and samples the gameplay gate. `tools/probe_exposure.py` (free
 roam) saves both eyes at each head pose twice, exposed each on its own
 (`SpidyEyeExposure(1)`, as before October 10's sixth build) and from the
 game's own view, and compares how bright the part of the scene both eyes see
-is in each. What they need:
+is in each (`--views 61`, the default, as a session has them: the game's view
+rests and the right eye takes the left eye's exposure; `--views 29` renders
+the game's view). `tools/probe_hud.py` takes `--views` and `--upscale` too.
+`tools/probe_render_commands.py` (the eye views live) counts the render
+commands of a frame by command and by view. `tools/close_game.py` closes the
+game after a probe and restores a launch's settings; `--keep-settings` leaves
+them for the next launch. What they need:
 
 - A fresh game process for every run. Each Spidy module (rays, movement, swing,
   eye views, GPU capture) starts once per process, and a second start is
@@ -563,9 +577,21 @@ rebuilding. Use `-Size 512` for a comparison at the original resolution, or the
 recommended dimensions times the render scale (`-RenderScale`, 50-200%).
 Native and OpenXR image checks allow up to 8192 pixels per dimension (4096
 before October 8), subject to runtime limits. `tools/probe_vr_load.py
---width 4608 --height 4896 --views 29` measures larger eyes in the game
-without a headset; its phases report video memory in use and the game's
-commit, and `--headings 1` keeps a capture run's shots phase short.
+--width 4608 --height 4896` measures larger eyes in the game
+without a headset; its phases report video memory in use, the game's
+commit and each view's GPU time, and `--headings 1` keeps a capture run's
+shots phase short. Its views and eyes are a session's by default (`--views
+61 --upscale 67`); `--views 29 --no-eye-antialiasing` measures the eyes of
+builds before October 10's eighth, and `--upscale 100` anti-aliasing alone.
+`--eye-shadows 0` and `--monitor-rate 0` are a session's `--own-shadows` and
+`--monitor-rate 0`; a phase named `vr_s0` (or `vr_s1`, `turn_s0`, ...) runs
+with that `--eye-shadows` value and `vr_m0` or `vr_m9` with every present or
+one a second, so one game compares them. Each VR phase also reports
+`pose_age_ms` (how old the pose in the newest pair handed to the GPU is),
+`pairs_waiting_on_gpu`, `presents_held` and `shadows` (`SpidyShadowData`:
+each eye's cascades, and whether it took the other's).
+Measure from about 40 s after a save has loaded: until then the game is
+still streaming the city in, and frame rates read low.
 
 The 1536-square test `game-vr-20261004-133248.json` confirmed VSync Off but still
 spent 29.76 ms of its 31.92 ms mean frame in the matching-pair wait. The staged

@@ -136,8 +136,8 @@ uintptr_t handleAir(void* self, void* event) {
     const bool drive = config.syncAirVelocity && c.enabled && !currentAir &&
                        read(config.mover + 0x750, &flags, 4) && !(flags & 0x80000000u) &&
                        read(config.mover + 0x144, &collision, 4) && collisionEnabled(collision) &&
-                       std::isfinite(dt) && dt > 0 && dt <= .05f && length(c.velocity) * dt <= 2;
-    AirOverride override{c.velocity * dt};
+                       drivable(dt);
+    AirOverride override{stepDelta(c.velocity, dt)};
     auto* previous = currentAir;
     if (drive)
         currentAir = &override;
@@ -202,12 +202,11 @@ uintptr_t queryDriven(void* self) {
         return prequery(self);
     const float dt = timestep(self);
     const bool drive = leasedNow && (collisionEnabled(collision) || (c.options & 1)) &&
-                       !(flags & 0x80000000u) && std::isfinite(dt) && dt > 0 && dt <= .05f &&
-                       length(c.velocity) * dt <= 2.f && !current;
+                       !(flags & 0x80000000u) && drivable(dt) && !current;
     Override step{self, position};
     Override* previous = current;
     if (drive) {
-        const Vec3 delta = c.velocity * dt, keepDirection{};
+        const Vec3 delta = stepDelta(c.velocity, dt), keepDirection{};
         request(self, &delta, &keepDirection, 0);
         step.target = position + delta;
         current = &step;
@@ -251,13 +250,12 @@ uintptr_t query(void* self) {
         return prequery(self);
     const float dt = timestep(self);
     const auto c = leased();
-    const bool drive = c.enabled && collisionEnabled(collision) && !(flags & 0x80000000u) &&
-                       std::isfinite(dt) && dt > 0 && dt <= .05f && length(c.velocity) * dt <= 2.f &&
+    const bool drive = c.enabled && collisionEnabled(collision) && !(flags & 0x80000000u) && drivable(dt) &&
                        !current;
     Override step{self, position};
     Override* previous = current;
     if (drive) {
-        const Vec3 delta = c.velocity * dt, keepDirection{};
+        const Vec3 delta = stepDelta(c.velocity, dt), keepDirection{};
         // This verified native function sets start/target and prepares its own bookkeeping.
         request(self, &delta, &keepDirection, 0);
         step.target = position + delta;

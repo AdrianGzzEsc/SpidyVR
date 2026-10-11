@@ -2,11 +2,12 @@
 
 The game adapts exposure (how bright the image is drawn) on the GPU from what a view shows, one view at a
 time. Until October 10's sixth build each eye had its own, so the eye with more sky in its lens was
-drawn darker than the other one, and they swapped when the head turned round. Now both eyes take
-the exposure of the game's own view (stereo_probe.cpp, shareExposure), which is on the head and covers
-both lenses. This probe drives the eye views as a VR session does (views 29) from the player's position
-and at each head pose saves both eyes twice, each exposed on its own (the old way, SpidyEyeExposure(1))
-and shared:
+drawn darker than the other one, and they swapped when the head turned round. Now both eyes take one
+exposure (stereo_probe.cpp, shareExposure): the left eye's own while the game's own view does not render
+(views 61, as a VR session since October 10's eighth build), else that of the game's view, which is on
+the head and covers both lenses (--views 29, as before). This probe drives the eye views as a VR session
+does from the player's position and at each head pose saves both eyes twice, each exposed on its own (the
+old way, SpidyEyeExposure(1)) and shared:
 
   NAME              hold the head still, then measure and save both eyes both ways (NAME-own-left.png ...)
   yaw:DEG           turn the head this far from the game camera's heading (0 at start)
@@ -108,8 +109,9 @@ def compare_light(left, right):
 def assess(captures, tolerance):
     """Shared exposure must leave the eyes alike at every pose; `reproduced`: a pose where they were not before.
 
-    shared_jobs counts the eye images that took the game view's exposure while each mode was on: none on
-    their own (a frame or two around the switch aside), every one when shared.
+    shared_jobs counts the eye images that took another view's exposure while each mode was on: none on
+    their own (a frame or two around the switch aside); when shared every one (the game view's), or every
+    right eye's (the left eye's, while the game's view does not render).
     """
     shared = [x['images']['shared']['median'] for x in captures.values()]
     own = [x['images']['own']['median'] for x in captures.values()]
@@ -139,6 +141,11 @@ def main():
     p.add_argument('--height', type=int, default=1632, help='eye height in pixels (headset: 3264)')
     p.add_argument('--hold', type=float, default=4.0, help='seconds the head holds still before measuring')
     p.add_argument('--tolerance', type=float, default=.03, help='largest left/right difference that passes')
+    p.add_argument('--views', type=int, default=61, choices=(29, 61),
+                   help="61: the game's own view does not render and the right eye takes the left's exposure, "
+                        "as a VR session; 29: it renders and both eyes take its exposure")
+    p.add_argument('--upscale', type=int, default=67,
+                   help="percent of the eye's size per side the eyes' scene is rendered at (50..100)")
     p.add_argument('--output', type=pathlib.Path, default=ROOT/'reports/exposure-probe.json')
     a = p.parse_args()
     for step in a.steps:
@@ -184,7 +191,7 @@ def main():
                               ROOT/'reports/stereo-modules',
                               ('SpidyStart', 'SpidyStop', 'SpidyStereoData', 'SpidySetEyes', 'SpidyAppearanceData',
                                'SpidyGpuStart', 'SpidyGpuStop', 'SpidyGpuData', 'SpidyGpuFreeze', 'SpidyHudSet',
-                               'SpidyEyeExposure'))
+                               'SpidyEyeExposure', 'SpidyEyeTemporal'))
         result['dll_sha256'] = digest
         # Capture mode: every eye pair is read back, so a freeze can save it.
         code = call_with_payload(process, dll['SpidyGpuStart'],
@@ -192,8 +199,12 @@ def main():
         if code:
             raise RuntimeError(f'GPU bridge start: {code}')
         stops.append(('gpu', dll['SpidyGpuStop']))
+        # Upscaled and anti-aliased as the VR worker asks (jitter, temporal anti-aliasing, its command).
+        if not 50 <= a.upscale <= 100 or call_remote(process, dll['SpidyEyeTemporal'], a.upscale | 7 << 8):
+            raise RuntimeError('Eye anti-aliasing rejected')
+        result.update(views=a.views, upscale=a.upscale)
         code = call_with_payload(process, dll['SpidyStart'],
-                                 struct.pack('<4IQ4I', 0x53534346, 1, 40, game.pid, game.base, 0, 29, a.width,
+                                 struct.pack('<4IQ4I', 0x53534346, 1, 40, game.pid, game.base, 0, a.views, a.width,
                                              a.height))
         if code:
             raise RuntimeError(f'Eye views start: {code}')

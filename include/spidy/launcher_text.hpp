@@ -4,6 +4,7 @@
 // checks in tests/launcher_tests.cpp run anywhere.
 #include "body_calibration.hpp"
 #include "eye_resolution.hpp"
+#include "monitor_rate.hpp"
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -510,6 +511,12 @@ struct SessionOptions {
     // calibrationPrompt is off (you skipped it).
     int eyeHeightMm = 0, armLengthMm = 0;
     bool calibrationPrompt = true;
+    // Upscaling: percent of the eye's size, per side, the eyes' scene is rendered at (eye_resolution.hpp);
+    // the game's temporal anti-aliasing brings it to the eye's size. 100 only anti-aliases.
+    int upscale = static_cast<int>(defaultEyeUpscale);
+    // How often the game window gets your left eye in immersive VR: pictures a second, 0 for every frame
+    // (monitor_rate.hpp). Each one costs the graphics card time the headset could have.
+    int monitorRate = static_cast<int>(defaultMonitorRate);
     bool operator==(const SessionOptions&) const = default;
 };
 
@@ -551,17 +558,22 @@ inline std::vector<std::wstring> sessionArguments(const SessionOptions& options,
     } else if (!options.calibrationPrompt) {
         args.emplace_back(L"--no-calibration-prompt");
     }
-    // The game's Settings offer these too (SPIDY VR), all but the render scale; the defaults go unsaid.
+    // The game's Settings offer these too (SPIDY VR), all but the render scale, the upscaling and the
+    // monitor's rate; the defaults go unsaid.
     const std::pair<int, std::pair<const wchar_t*, int>> settings[] = {
         {std::clamp(options.renderScale, static_cast<int>(minimumRenderScale), static_cast<int>(maximumRenderScale)),
          {L"--render-scale", 100}},
+        {std::clamp(options.upscale, static_cast<int>(minimumEyeUpscale), static_cast<int>(maximumEyeUpscale)),
+         {L"--upscale", static_cast<int>(defaultEyeUpscale)}},
         {std::clamp(options.snapTurn, 0, 90), {L"--snap-turn", 30}},
         {std::clamp(options.smoothTurn, 0, 360), {L"--smooth-turn", 0}},
         {std::clamp(options.haptics, 0, 100), {L"--haptics", 100}},
         {std::clamp(options.screenSize, 0, 2), {L"--screen-size", 1}},
         {std::clamp(options.weight, 40, 300), {L"--weight", 80}},
         {std::clamp(options.hud, 0, 3), {L"--hud", 2}},
-        {std::clamp(options.flipSpeed, 90, 480), {L"--flip-speed", 180}}};
+        {std::clamp(options.flipSpeed, 90, 480), {L"--flip-speed", 180}},
+        {std::clamp(options.monitorRate, 0, static_cast<int>(maximumMonitorRate)),
+         {L"--monitor-rate", static_cast<int>(defaultMonitorRate)}}};
     for (const auto& [value, flag] : settings)
         if (value != flag.second) {
             args.emplace_back(flag.first);

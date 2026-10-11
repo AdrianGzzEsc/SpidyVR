@@ -13,6 +13,7 @@
 #include "spidy/native_movement.hpp"
 #include "spidy/presentation_gate.hpp"
 #include "spidy/eye_resolution.hpp"
+#include "spidy/monitor_rate.hpp"
 #include "spidy/eye_snapshot.hpp"
 #include "spidy/vr_settings.hpp"
 #include "spidy/vr_shortcut.hpp"
@@ -540,6 +541,24 @@ int main() {
         // still takes it; one after that within no lease does not.
         check(commandApplies(60000,150,7,7),"the step after a pause ran without its command");
         check(!commandApplies(60000,150,8,7),"an expired command governed a second step");
+    });
+    test("a movement command moves a step of any length, 2 m at most, and is never refused for it", [] {
+        using namespace native_movement;
+        // The steps that dropped the player in the October 10 headset report,
+        // the longest of that session, and a hitch.
+        for (float dt : {.0504f, .0509f, .0517f, .0665f, .3f})
+            check(drivable(dt), "a long step ran without its command");
+        using limits = std::numeric_limits<float>;
+        check(!drivable(0) && !drivable(-.01f), "a step of no length was driven");
+        check(!drivable(limits::quiet_NaN()) && !drivable(limits::infinity()), "a step of no known length was driven");
+        const Vec3 swinging{-10.3f, 9.7f, -28.7f};
+        near(length(stepDelta(swinging, .0509f) - swinging * .0509f), 0);
+        // Faster than 2 m a step: that far the command's way, not left to the game.
+        const Vec3 far = stepDelta({0, 39, -52}, .05f);
+        near(length(far), farthestStep);
+        near(far.y / far.z, 39.f / -52);
+        check(far.x == 0 && far.z < 0, "a shortened step turned");
+        near(length(stepDelta(swinging, .3f)), farthestStep);
     });
     test("web takeoff waits for real clearance and retains a yank across landing", [] {
         SwingTakeoff t;
@@ -1702,15 +1721,18 @@ int main() {
             const auto intent = swing.predictNativeStep(dt, in, world, body, dt);
             check(intent.valid, "native prediction rejected");
             const Vec3 average = (intent.target - body.position) / dt;
-            const Vec3 requested = limited(average, swing.config().maxSpeed);
-            const Vec3 moving = controlled ? command : achieved; // command in flight this step
+            // The adapter's cap (game_swing.cpp), and the movement module's
+            // step: the command in flight, as far as the module takes it.
+            const Vec3 requested = limited(
+                average, std::min(swing.config().maxSpeed, .875f * native_movement::farthestStep / dt));
+            const Vec3 travel = controlled ? native_movement::stepDelta(command, dt) : achieved * dt;
             flight.issued(step + 1000, requested,
                           limited(intent.velocity + requested - average, swing.config().maxSpeed));
             serial = step + 1000;
             command = requested;
             controlled = true;
             last = position;
-            position += moving * dt;
+            position += travel;
             position.x = std::min(position.x, wall);
             previousDt = dt;
             return achieved;
@@ -1857,6 +1879,12 @@ int main() {
         s.settleStep(.02f, 1.f); // not a frame time
         s.settleStep(.02f, std::numeric_limits<float>::quiet_NaN());
         near(s.webs()[0].length, reeling);
+        // A 200 ms step was predicted as the longest one, half of it: the
+        // body went half the way in the 50 ms more, and the rope winds for half.
+        s.settleStep(2 * longestNativeStep, 2 * longestNativeStep + .05f);
+        near(s.webs()[0].length, reeling - s.config().reelSpeed * .025f);
+        s.settleStep(2 * longestNativeStep, 2 * longestNativeStep - .05f);
+        near(s.webs()[0].length, reeling);
         for (int i = 0; i < 100; ++i)
             s.update(.01f, in, w);
         near(s.webs()[0].length, s.config().minRope);
@@ -1926,6 +1954,87 @@ int main() {
         check(lowest > -.01f && mover.command.x < .01f, "solver kept pushing into or away from the wall");
         check(mover.command.y < -2, "sliding down the wall stopped falling");
         near(mover.position.x, 1);
+    });
+    test("a swing goes on through physics steps longer than 50 ms", [] {
+        // The game's step is its smoothed frame time. In the October 10
+        // headset report it crossed 50 ms three times in mid-swing: the
+        // movement module ran those steps without the command, the prediction
+        // was refused and the webs let go, and the game's own fall took the
+        // player down at 42 m/s. These are the steps of that report.
+        const float frames[] = {.0444f, .0458f, .0473f, .0495f, .0509f, .0514f, .0515f, .0508f, .0562f,
+                                .0542f, .0529f, .0538f, .0557f, .0556f, .0582f, .0626f, .0658f, .0665f,
+                                .0665f, .0655f, .0612f, .0533f, .0481f, .0469f, .0450f, .0412f};
+        const auto config = game_swing::physicsConfig({});
+        TestWorld world;
+        world.anchor = {0, 60, 0};
+        Swing swing(config);
+        NativeMover mover;
+        mover.dt = mover.previousDt = .0444f;
+        mover.last = mover.position - Vec3{20, 0, 0} * mover.dt;
+        const auto in = aimed();
+        float roughest = 0, lowest = 0;
+        Vec3 previous{20, 0, 0};
+        for (float dt : frames) {
+            mover.dt = dt;
+            const Vec3 observed = mover.run(swing, in, world); // checks that the prediction is valid
+            check(swing.webs()[0].attached, "a long step let go of the web");
+            check(length(mover.position - world.anchor) < swing.webs()[0].length + .05f,
+                  "the body left its rope in a long step");
+            roughest = std::max(roughest, length(observed - previous));
+            lowest = std::min(lowest, observed.y);
+            previous = observed;
+        }
+        // The rope turns 20 m/s on 60 m and gravity 6 m/s^2 by under 1 m/s a step.
+        check(roughest < 1, "a long step jolted the swing");
+        check(lowest > -.5f, "the swing dived");
+        check(length(previous) > 15 && mover.position.x > 20, "the swing lost its speed in the long steps");
+    });
+    test("a step the movement module shortens takes no speed from the flight", [] {
+        // At the speed limit a command asks for 1.75 m of the step observed.
+        // The step it governs can be a quarter longer (the October 10 report
+        // has 16.0 then 20.1 ms): the module moves the body 2 m in it, never
+        // more. That is no wall the body met.
+        game_swing::InFlightStep flight;
+        flight.predict({1, 0, {0, 0, 0}, {40, 0, 0}, .04f, false}, false);
+        flight.issued(5, {40, 0, 0}, {40, 0, 0});
+        auto body = flight.predict({2, 5, {1.6f, 0, 0}, {40, 0, 0}, .0665f, true}, false);
+        near(body.position.x, 1.6f + native_movement::farthestStep);
+        near(body.velocity.x, 40);
+        flight.issued(6, {26, 0, 0}, {39, -1, 0});
+        body = flight.predict({3, 6, {3.6f, 0, 0}, {2 / .0665f, 0, 0}, .0665f, true}, false);
+        near(body.velocity.x, 39);
+        near(body.velocity.y, -1);
+        near(body.position.x, 3.6f + 26 * .0665f);
+        // A wall still takes what it blocked: here all of the same command.
+        game_swing::InFlightStep blocked;
+        blocked.predict({1, 0, {0, 0, 0}, {40, 0, 0}, .04f, false}, false);
+        blocked.issued(5, {40, 0, 0}, {40, 0, 0});
+        blocked.predict({2, 5, {1.6f, 0, 0}, {40, 0, 0}, .0665f, true}, false);
+        blocked.issued(6, {26, 0, 0}, {39, -1, 0});
+        body = blocked.predict({3, 6, {1.6f, 0, 0}, {0, 0, 0}, .0665f, true}, false);
+        near(body.velocity.x, 0);
+        near(body.velocity.y, -1);
+        // In flight: free fall at 60 m/s with the speed limit at 65, the
+        // step a quarter longer from one frame to the next.
+        auto config = game_swing::physicsConfig({});
+        config.maxSpeed = 65;
+        TestWorld world;
+        world.enabled = false;
+        Swing swing(config);
+        NativeMover mover;
+        mover.dt = mover.previousDt = .028f;
+        mover.position = {0, 500, 0};
+        mover.last = mover.position - Vec3{60, 0, 0} * mover.dt;
+        Input none;
+        Vec3 observed{};
+        for (unsigned i = 0; i < 12; ++i) {
+            if (i == 6)
+                mover.dt = .035f;
+            observed = mover.run(swing, none, world);
+            check(observed.x > 49, "a shortened step stopped the flight");
+        }
+        // The longer step's own cap is 1.75 m a step: 50 m/s.
+        near(observed.x, 1.75f / .035f, .5f);
     });
     test("swept collision stops tunneling and slides", [] {
         LabWorld w({{{-1, -10, -10}, {1, 10, 10}, {}, 1}});
@@ -2712,15 +2821,33 @@ int main() {
         near(length(request.velocity-before),0);
         near(length(request.target-(actual.position+before*.01f)),0);
     });
-    test("external prediction relinquishes stale or unfocused input", [] {
+    test("external prediction keeps its web through a long step and relinquishes unfocused input", [] {
         TestWorld world; Swing swing;
         auto in=aimed(); Body actual{{0,0,0},{},false};
         check(swing.predictNativeStep(.01f,in,world,actual).valid,"initial native step rejected");
         check(swing.webs()[0].attached,"no web to release");
-        check(!swing.predictNativeStep(.051f,in,world,actual).valid,"stale native frame accepted");
-        check(!swing.webs()[0].attached,"stale input held web");
+        // A slow game: the steps of the October 10 headset report, and longer.
+        for(float dt:{.051f,.0665f,longestNativeStep,.25f}) {
+            check(swing.predictNativeStep(dt,in,world,actual).valid,"a long native step was refused");
+            check(swing.webs()[0].attached,"a long native step let go of the web");
+        }
         in.focused=false;
         check(!swing.predictNativeStep(.01f,in,world,actual).valid,"unfocused native frame accepted");
+        check(!swing.webs()[0].attached,"unfocused input held web");
+        in.focused=true;
+        check(!swing.predictNativeStep(0,in,world,actual).valid,"a step of no length accepted");
+        check(!swing.predictNativeStep(std::numeric_limits<float>::quiet_NaN(),in,world,actual).valid,
+              "a step of no known length accepted");
+    });
+    test("a native step longer than the longest moves the body as far as the longest", [] {
+        TestWorld world; world.enabled=false;
+        Swing swing(inert());
+        Input in; Body actual{{0,0,0},{5,0,0},false};
+        near(swing.predictNativeStep(.0665f,in,world,actual).target.x,5*.0665f);
+        near(swing.predictNativeStep(longestNativeStep,in,world,actual).target.x,5*longestNativeStep);
+        const auto request=swing.predictNativeStep(.25f,in,world,actual);
+        near(request.target.x,5*longestNativeStep);
+        near(request.velocity.x,5);
     });
     test("native input after a gap keeps the webs and makes no yank of the gap", [] {
         TestWorld world;
@@ -2846,6 +2973,38 @@ int main() {
               "an unusable recommendation or limit gave a usable size");
         check(validRenderScale(50) && validRenderScale(100) && validRenderScale(200) && !validRenderScale(49) &&
               !validRenderScale(201) && !validRenderScale(0),"render scale range");
+    });
+    test("upscaling sizes the eyes' scene in multiples of 8", [] {
+        // The October 10 measurement: 3072 x 3264 eyes at 67% rendered 2064 x 2192.
+        check(validEyeUpscale(50) && validEyeUpscale(67) && validEyeUpscale(100) && !validEyeUpscale(49) &&
+              !validEyeUpscale(101) && !validEyeUpscale(0) && validEyeUpscale(defaultEyeUpscale),"upscale range");
+        check(eyeRenderSize(3072, 3264, 100) == std::array<uint32_t, 2>{3072, 3264} &&
+              eyeRenderSize(3072, 3264, 67) == std::array<uint32_t, 2>{2064, 2192} &&
+              eyeRenderSize(3072, 3264, 50) == std::array<uint32_t, 2>{1536, 1632} &&
+              eyeRenderSize(2496, 2688, 77) == std::array<uint32_t, 2>{1928, 2072} &&
+              eyeRenderSize(100, 100, 50) == std::array<uint32_t, 2>{64, 64},"upscaled scene sizes");
+    });
+    test("the monitor gets the left eye at its rate, whatever the game's", [] {
+        check(validMonitorRate(0) && validMonitorRate(30) && validMonitorRate(240) && !validMonitorRate(241) &&
+              validMonitorRate(defaultMonitorRate),"monitor rate range");
+        // 0: every present. Otherwise the first one, then those on the rate's grid.
+        int64_t due{};
+        check(monitorPresentDue(5, due, 1000, 0) && due == 0,"every present with no rate");
+        // 66 frames a second, 30 presents a second wanted (ticks of 1/66000 s): the first frame, then 30 of
+        // the second after it.
+        check(monitorPresentDue(1000, due, 66000, 30) && due == 2200,"the first present");
+        int presents{};
+        for (int frame = 1; frame <= 66; ++frame)
+            presents += monitorPresentDue(1000 + frame * 1000, due, 66000, 30);
+        check(presents == 30,"30 of a second's 66 frames");
+        // A game slower than the rate: every frame.
+        due = 0;
+        presents = 0;
+        for (int frame = 0; frame < 20; ++frame)
+            presents += monitorPresentDue(1000 + frame * 3300, due, 66000, 30);
+        check(presents == 20,"every frame of a slower game");
+        // After a pause (a menu, the game screen) the next present goes out at once.
+        check(monitorPresentDue(10'000'000, due, 66000, 30) && due == 10'000'000 + 2200,"at once after a pause");
     });
     test("both thumbsticks toggle once and require full release after focus loss", [] {
         VrShortcut chord;

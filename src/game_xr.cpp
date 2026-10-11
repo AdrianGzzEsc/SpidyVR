@@ -4,6 +4,7 @@
 // The input bridge remains a separately verified, separately stoppable module.
 #include "spidy/body_calibration.hpp"
 #include "spidy/eye_resolution.hpp"
+#include "spidy/monitor_rate.hpp"
 #include "spidy/eye_snapshot.hpp"
 #include "spidy/game_bridge_protocol.hpp"
 #include "spidy/game_grab.hpp"
@@ -36,7 +37,7 @@
 #include <windows.h>
 using namespace spidy;
 struct XrConfig {
-    uint32_t magic = 0x53585243, version = 20, bytes = sizeof(XrConfig), pid{};
+    uint32_t magic = 0x53585243, version = 22, bytes = sizeof(XrConfig), pid{};
     // record and mover are no longer used: VR starts with the game, before
     // there is a player, and finds each new player itself (game_player).
     uint64_t base{}, queue{}, bridgeModule{}, rayModule{}, motionModule{}, record{}, mover{};
@@ -57,7 +58,15 @@ struct XrConfig {
     // bit 12: the trigger webs and the grip reels (WEB BUTTON: TRIGGER);
     // bit 13: the view stays upright on walls (STAND ON WALLS: OFF);
     // bit 14: walls are the game's (its wall crawl takes a player who flies
-    // into one, as before the swing's own walls)
+    // into one, as before the swing's own walls);
+    // bit 15: no anti-aliasing for the eyes (each eye is its scene as rendered,
+    // at the eye's size, as before October 10's eighth build: upscale is not used);
+    // bit 16: the game renders its own view on the head in immersive VR too,
+    // for the monitor (as before October 10's eighth build; without it the monitor shows the
+    // left eye);
+    // bit 17: each eye makes its own set of the key light's shadow cascades,
+    // as before October 11 (without it both use one set, fitted to a lens
+    // covering both: SpidyEyeShadows)
     uint32_t options{};
     // OpenXR runtime manifest the launcher chose; empty: Virtual Desktop's if
     // installed, else Windows' active runtime.
@@ -79,8 +88,14 @@ struct XrConfig {
     // (native_hud.hpp); how fast a flip turns the player at full tilt of the
     // left stick, degrees a second (90-480; FlipMotion::speed).
     uint32_t hud = 2, flipSpeed = 180;
+    // Percent of the eye's size, per side, the eyes' scene is rendered at
+    // (50-100; eye_resolution.hpp): the engine's temporal anti-aliasing brings
+    // it to the eye's size. And how often the game's window gets the left eye
+    // while the game renders no view of its own: presents a second (1-240), 0
+    // every frame (monitor_rate.hpp).
+    uint32_t upscale = defaultEyeUpscale, monitorRate = defaultMonitorRate;
 };
-static_assert(sizeof(XrConfig) == 648);
+static_assert(sizeof(XrConfig) == 656);
 // Why the last frame had no gameplay (XrData::gate bits).
 enum GateReason : uint32_t {
     gateNoPlayer = 1,     // no save loaded, or a level change in progress
@@ -193,6 +208,9 @@ __declspec(dllexport) SlowMotionData SpidySlowMotionData;
 __declspec(dllexport) XrTimingData SpidyXrTimingData;
 __declspec(dllexport) EyeSnapshot SpidyXrSnapshot;
 DWORD WINAPI SpidyStart(void*);
+DWORD WINAPI SpidyEyeTemporal(void*);
+DWORD WINAPI SpidyEyeShadows(void*);
+DWORD WINAPI SpidyMonitorRate(void*);
 DWORD WINAPI SpidyStop(void*);
 DWORD WINAPI SpidySetEyes(void*);
 float SpidyFlatAspect();
@@ -1162,7 +1180,23 @@ DWORD WINAPI run(void*) {
                         // Flag 16: each eye culls what its own previous frame hid, as the
                         // game's views do; without it the render thread did 2-4 times the
                         // work and held VR at 40-65 frames a second.
-                        const uint32_t flags = ((config.options & 4) ? 5 : 13) | ((config.options & 16) ? 0 : 16);
+                        // Flag 32: the game's own view, on the head for that work, is not
+                        // rendered as well; it cost as much as an eye and only the monitor
+                        // showed it, which gets the left eye instead.
+                        const uint32_t flags = ((config.options & 4) ? 5 : 13) | ((config.options & 16) ? 0 : 16) |
+                                               ((config.options & (4 | 0x10000)) ? 0 : 32);
+                        // The eyes' scene at `upscale` percent of their size, with a
+                        // jittered lens and the engine's temporal anti-aliasing (bits 1,
+                        // 2, 4): taken when the views are made.
+                        const bool antialiased = !(config.options & 0x8000);
+                        check(SpidyEyeTemporal(reinterpret_cast<void*>(static_cast<uintptr_t>(
+                                  antialiased ? config.upscale | 7u << 8 : 100u))),
+                              "Eye anti-aliasing");
+                        check(SpidyEyeShadows(reinterpret_cast<void*>(
+                                  static_cast<uintptr_t>((config.options & 0x20000) ? 0 : 1))),
+                              "Eye shadows");
+                        check(SpidyMonitorRate(reinterpret_cast<void*>(static_cast<uintptr_t>(config.monitorRate))),
+                              "Monitor rate");
                         NativeConfig views{
                             0x53534346, 1, 40, config.pid, config.base, moduleDuration, flags, dimensions[0],
                             dimensions[1]};
@@ -1682,11 +1716,12 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyXrStart(void* input) {
     if (worker)
         return 1000; // one bounded XR session per process during validation
     if (!read(reinterpret_cast<uintptr_t>(input), &config, sizeof(config)) || config.magic != 0x53585243 ||
-        config.version != 20 || config.bytes != sizeof(config) || config.pid != GetCurrentProcessId() ||
+        config.version != 22 || config.bytes != sizeof(config) || config.pid != GetCurrentProcessId() ||
         config.runtime[std::size(config.runtime) - 1] ||
         config.base != reinterpret_cast<uint64_t>(GetModuleHandleW(nullptr)) ||
         !GetModuleHandleW(L"Spider-Man.exe") || !config.queue || !config.bridgeModule || !config.rayModule ||
-        !config.motionModule || config.options > 32767 || config.snapTurn > 90 || config.haptics > 100 ||
+        !config.motionModule || config.options > 0x3ffff || config.snapTurn > 90 || config.haptics > 100 ||
+        !validEyeUpscale(config.upscale) || !validMonitorRate(config.monitorRate) ||
         config.screenSize > 2 || config.smoothTurn > 360 || config.hud > 3 || config.flipSpeed < 90 ||
         config.flipSpeed > 480 || !std::isfinite(config.swingSpeed) || config.swingSpeed < 1 ||
         config.swingSpeed > 65 || (config.durationMs && config.durationMs < 2000) || config.durationMs > 25000 ||

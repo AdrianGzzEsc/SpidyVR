@@ -3,23 +3,27 @@
 At the player's current spot, in phases:
 
     stock      the game alone
-    vr         Spidy's two eye views at the headset's resolution and the game's own view moved to the
-               head (views 13), as a VR session renders them, looking where the game camera looks
+    vr         Spidy's two eye views at the headset's resolution, their scene upscaled and anti-aliased
+               (--upscale), the game's own view moved to the head and not rendered itself (views 61), as a
+               VR session renders them, looking where the game camera looks
     turn       the same while the head turns a full circle
     narrow     the same eyes with a 60-degree lens: fewer objects in view, the same pixels
     after      the game alone again, once the eyes have left the render list
 
 Each phase reports the game's frame rate (frames counted by spidy_render_memory.dll), its per-frame
-render memory, GPU utilization and video memory in use from nvidia-smi, what Windows has committed to
+render memory, GPU utilization and video memory in use from nvidia-smi, the GPU time of the game's own
+view and of each eye (the engine's own timestamps around each view's work), what Windows has committed to
 the game, the game's busiest threads (CPU time of each, in percent of one core), the whole PC's CPU use,
 and the game's disk reads. A thread near 100% of a core
 while the GPU is well below 100% means the game waits on that thread; a GPU near 100% means pixels or
 draw work on the GPU set the frame rate.
 
-Start the game with tools/vr_launcher.py (or probe_menu_pad.py start), load a save, and run this with
-the game window in front. The eye size cannot change within one game process.
+Start the game with tools/vr_launcher.py (or probe_menu_pad.py start), load a save, wait half a minute
+for its streaming to settle, and run this with the game window in front. The eye size and the upscale
+cannot change within one game process.
 """
 import argparse
+import statistics
 import ctypes as c
 from ctypes import wintypes as w
 import json
@@ -271,6 +275,22 @@ def eye_command(serial, eyes, feet):
     return raw+struct.pack('<3fI', *feet, 1)
 
 
+def view_gpu_ms(game):
+    """GPU milliseconds of the game's own view and of each offscreen view's last finished frame: the float
+    at *(view+0x1690), which the engine's end-of-job (189e3a0) fills from the GPU timestamps around the
+    view's commands. None for a view that has none (the game's view while it does not render keeps its
+    last one)."""
+    views = [game.pointer(game.base+0x7a34dd0)]+[game.pointer(game.base+0x7a34e00+slot*8) for slot in range(8)]
+    found = []
+    for view in views[:1]+[v for v in views[1:] if v]:
+        try:
+            slot = game.pointer(view+0x1690) if view else 0
+            found.append(struct.unpack('<f', game.read(slot, 4))[0]*1000 if slot else None)
+        except OSError:
+            found.append(None)
+    return found
+
+
 def summarize(name, samples, gpu, threads, cores, settle):
     """Rates over a phase's samples after `settle` seconds."""
     start = samples[0]['t']+settle
@@ -300,6 +320,10 @@ def summarize(name, samples, gpu, threads, cores, settle):
         gpu_clock_mhz=round(sum(s[2] for s in used)/len(used)) if used else None,
         gpu_power_w=round(sum(s[3] for s in used)/len(used)) if used else None,
         gpu_memory_mb=round(max(s[4] for s in used)) if used else None,
+        # The game's own view, then each eye: the median over the phase.
+        view_gpu_ms=[round(statistics.median(column), 2) if (column := [v for v in values if v and v < 500])
+                     else None for values in zip(*(s['view_gpu_ms'] for s in kept
+                                                   if len(s['view_gpu_ms']) == len(kept[-1]['view_gpu_ms'])))],
         game_commit_mb=max((s['commit_mb'] for s in kept if s['commit_mb'] is not None), default=None),
         game_cpu_percent_of_pc=round(sum(p for p, _ in per_thread)/cores, 1),
         pc_cpu_percent=round(100*(total-idle)/total, 1) if total else None,
@@ -308,18 +332,57 @@ def summarize(name, samples, gpu, threads, cores, settle):
                          for p, tid in per_thread[:8]])
 
 
+def shadow_snapshot(game, address):
+    """SpidyShadowData: what each eye's scene submit made or took of the other's shadow sets."""
+    for _ in range(8):
+        raw = game.read(address, 736)
+        if struct.unpack_from('<q', raw, 16)[0] % 2 == 0 and game.read(address+16, 8) == raw[16:24]:
+            break
+    else:
+        return None
+    if struct.unpack_from('<3I', raw) != (0x53534844, 1, 736):
+        return None
+    passes, compared, covered = struct.unpack_from('<3Q', raw, 24)
+    deltas = struct.unpack_from('<4f', raw, 48)
+    eyes = []
+    for offset in (64, 400):
+        submits, taken, flags, thread = struct.unpack_from('<2Q2I', raw, offset)
+        static, moving, may_take, second, lights, slot = struct.unpack_from('<4B2H', raw, offset+24)
+        eyes.append(dict(submits=submits, taken=taken, flags=flags, cascades=[static, moving], may_take=may_take,
+                         second=second, lights=lights, shadow_map=slot,
+                         extent=[list(struct.unpack_from('<3f', raw, offset+32+k*12)) for k in range(4)],
+                         position=[list(struct.unpack_from('<3f', raw, offset+80+k*64+48)) for k in range(4)]))
+    return dict(mode=struct.unpack_from('<I', raw, 12)[0], passes=passes, compared=compared, covered=covered,
+                pose_delta=deltas[0], extent_delta=deltas[1], pose_delta_most=deltas[2],
+                extent_delta_most=deltas[3], eyes=eyes)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--width', type=int, default=3072, help='eye width in pixels (headset: 3072)')
     p.add_argument('--height', type=int, default=3264, help='eye height in pixels (headset: 3264)')
-    p.add_argument('--views', type=int, default=13, choices=(5, 13, 21, 29),
-                   help="13 moves the game's own view to the head, as a VR session does; +16 gives each eye "
-                        "occlusion culling")
+    p.add_argument('--views', type=int, default=61, choices=(5, 13, 21, 29, 45, 61),
+                   help="13 moves the game's own view to the head; +16 gives each eye occlusion culling; +32 "
+                        "(61, as a VR session does) the game's own view is not rendered itself")
+    p.add_argument('--upscale', type=int, default=67,
+                   help="percent of the eye's size per side the eyes' scene is rendered at (50..100, as a VR "
+                        "session's --upscale); 100 only anti-aliases")
+    p.add_argument('--no-eye-antialiasing', action='store_true',
+                   help="the eyes as before October 10's eighth build: no anti-aliasing, no upscaling")
+    p.add_argument('--eye-shadows', type=int, default=1, choices=range(8),
+                   help="what the eye submitted second takes of the first one's shadow sets instead of making "
+                        'its own (bits): 1 the key light\'s cascades, as a VR session, 2 the light set, 4 the part '
+                        'at +30; 0 none (--own-shadows)')
+    p.add_argument('--monitor-rate', type=int, default=30,
+                   help="presents a second the game's window gets while it shows the left eye, as a VR session's "
+                        '--monitor-rate (0: every one)')
     p.add_argument('--seconds', type=float, default=12, help='measured seconds per phase')
     p.add_argument('--phases', default='stock,vr,turn,narrow,after',
                    help="stock, vr, turn, narrow, after; vr_off, turn_off and narrow_off take the eyes' "
-                        'occlusion away for the phase (views 21/29); shots saves eye images at four headings '
-                        'with and without it (--gpu capture)')
+                        'occlusion away for the phase (views 21/29); vr_s0 to vr_s7 (turn_, narrow_ too) run the '
+                        'phase with that --eye-shadows value, vr_m0 with every present and vr_m9 with one a '
+                        'second; shots saves eye images at four headings with and without occlusion '
+                        '(--gpu capture)')
     p.add_argument('--profile-threads', default='',
                    help='comma-separated thread ids to sample during the vr phase (from an earlier report)')
     p.add_argument('--headings', type=int, choices=(1, 2, 3, 4), default=4,
@@ -331,8 +394,12 @@ def main():
     a = p.parse_args()
     phases = a.phases.split(',')
     known = {'stock', 'vr', 'turn', 'narrow', 'after', 'vr_off', 'turn_off', 'narrow_off', 'shots'}
+    known |= {f'{name}_s{mode}' for name in ('vr', 'turn', 'narrow') for mode in range(8)}
+    known |= {f'{name}_m{rate}' for name in ('vr', 'turn', 'narrow') for rate in (0, 9)}
     if not all(64 <= x <= MAX_EYE_SIZE for x in (a.width, a.height)) or not set(phases) <= known:
         p.error(f'Eye sizes are 64..{MAX_EYE_SIZE}; phases are ' + ', '.join(sorted(known)))
+    if not 50 <= a.upscale <= 100:
+        p.error('The upscale is 50..100 percent')
     if ('shots' in phases) != (a.gpu == 'capture'):
         p.error('The shots phase and --gpu capture go together')
     game = Game(find_game())
@@ -341,7 +408,9 @@ def main():
     threads = Threads(game.pid, game.base)
     gpu = Gpu()
     cores = __import__('os').cpu_count()
-    result = dict(width=a.width, height=a.height, views=a.views, cores=cores, phases=[])
+    result = dict(width=a.width, height=a.height, views=a.views, eye_shadows=a.eye_shadows,
+                  monitor_rate=a.monitor_rate, upscale=a.upscale,
+                  antialiased=not a.no_eye_antialiasing, cores=cores, phases=[])
     try:
         window = game_window(game.pid)
         if user32.GetForegroundWindow() != window:
@@ -367,7 +436,9 @@ def main():
         eyes_dll, digest = prepare(game.pid, process, ROOT/'build/windows-ninja/spidy_stereo_probe.dll',
                                    ROOT/'reports/stereo-modules',
                                    ('SpidyStart', 'SpidyStop', 'SpidyStereoData', 'SpidySetEyes', 'SpidyStereoFrames',
-                                    'SpidyGpuStart', 'SpidyGpuStop', 'SpidyGpuData', 'SpidyGpuFreeze'))
+                                    'SpidyGpuStart', 'SpidyGpuStop', 'SpidyGpuData', 'SpidyGpuFreeze',
+                                    'SpidyEyeTemporal', 'SpidyEyeShadows', 'SpidyShadowData',
+                                    'SpidyMonitorRate', 'SpidyPresentCount'))
         result['dll_sha256'] = digest
         io = IoCounters()
         # Eye commands must outnumber any earlier run's in this game process.
@@ -380,7 +451,7 @@ def main():
             k32.GetProcessIoCounters(game.handle, c.byref(io))
             return dict(t=time.perf_counter(), frames=memory['frames'] if memory else 0,
                         frame_mb=memory['last_frame_mb'] if memory else None, commit_mb=process_commit_mb(game.pid),
-                        pairs=frames['left_copies'] if frames else None,
+                        pairs=frames['left_copies'] if frames else None, view_gpu_ms=view_gpu_ms(game),
                         threads=threads.sample(), system=system_times(), read_bytes=io.read_bytes)
 
         profile_ids = [int(x) for x in a.profile_threads.split(',') if x.strip()]
@@ -388,6 +459,9 @@ def main():
         def run(name, seconds, look=None):
             nonlocal serial
             samples = []
+            # When each eye command went out, for the age of the pose in the newest pair handed to the GPU;
+            # and how many handed-over pairs the GPU had not finished.
+            sent, ages, waiting = {}, [], []
             profiler = None
             if profile_ids and name == 'vr':
                 profiler = Profiler(game, profile_ids, modules(game.pid))
@@ -402,6 +476,13 @@ def main():
                                              eye_command(serial, look(now-began), feet))
                     if code and code != 4003:
                         raise RuntimeError(f'Eye command: {code}')
+                    sent[serial] = now
+                    pair = gpu_snapshot(game, eyes_dll['SpidyGpuData']) if a.gpu == 'staged' else None
+                    if pair and now-began >= 2:
+                        if pair['captured_serial'] in sent:
+                            ages.append(1000*(now-sent[pair['captured_serial']]))
+                        if pair['completed'] != 0xffffffffffffffff:
+                            waiting.append(pair['fence']-pair['completed'])
                 if now >= next_sample:
                     samples.append(sample())
                     next_sample += .5
@@ -421,6 +502,11 @@ def main():
                     print(f'    outside the game, called from {found["outside_game_from"][:6]}', flush=True)
             settle = 2 if name != 'stock' else 1
             summary = summarize(name, samples, gpu, threads, cores, settle)
+            if len(ages) > 20:
+                ages.sort()
+                summary['pose_age_ms'] = dict(median=round(ages[len(ages)//2], 1), ninth_decile=round(ages[len(ages)*9//10], 1))
+            if waiting:
+                summary['pairs_waiting_on_gpu'] = dict(mean=round(sum(waiting)/len(waiting), 2), most=max(waiting))
             result['phases'].append(summary)
             print(json.dumps({k: v for k, v in summary.items() if k != 'busiest_threads'}), flush=True)
             for t in summary.get('busiest_threads', [])[:5]:
@@ -520,6 +606,16 @@ def main():
                     if code:
                         raise RuntimeError(f'GPU bridge start: {code}')
                     stops.append(('gpu', eyes_dll['SpidyGpuStop']))
+                # The eyes' scene at --upscale percent of their size with a jittered lens and the engine's
+                # temporal anti-aliasing (bits 1, 2, 4), as the VR worker asks; taken when the views are made.
+                code = call_remote(process, eyes_dll['SpidyEyeTemporal'],
+                                   100 if a.no_eye_antialiasing else a.upscale | 7 << 8)
+                if code:
+                    raise RuntimeError(f'Eye anti-aliasing: {code}')
+                code = call_remote(process, eyes_dll['SpidyEyeShadows'], a.eye_shadows) or \
+                    call_remote(process, eyes_dll['SpidyMonitorRate'], a.monitor_rate)
+                if code:
+                    raise RuntimeError(f'Eye shadows or monitor rate: {code}')
                 code = call_with_payload(process, eyes_dll['SpidyStart'],
                                          struct.pack('<4IQ4I', 0x53534346, 1, 40, game.pid, game.base, 0, a.views,
                                                      a.width, a.height))
@@ -549,8 +645,24 @@ def main():
             off = name.endswith('_off')
             if off:
                 occlusion(False)
+            rate = {'_m0': 0, '_m9': 1}.get(name[-3:])
+            if rate is not None:
+                call_remote(process, eyes_dll['SpidyMonitorRate'], rate)
+                time.sleep(.5)
+            shadows = int(name[-1]) if name[-3:-1] == '_s' else None
+            if shadows is not None:
+                call_remote(process, eyes_dll['SpidyEyeShadows'], shadows)
+                time.sleep(.5)
             run(name, a.seconds+(2 if name != 'stock' else 1),
-                {'vr': straight, 'turn': turning, 'narrow': narrow}.get(name.removesuffix('_off')))
+                {'vr': straight, 'turn': turning, 'narrow': narrow}.get(name.split('_')[0]))
+            if eyes_on:
+                result['phases'][-1]['shadows'] = shadow_snapshot(game, eyes_dll['SpidyShadowData'])
+            if shadows is not None:
+                call_remote(process, eyes_dll['SpidyEyeShadows'], a.eye_shadows)
+            if eyes_on:
+                result['phases'][-1]['presents_held'] = call_remote(process, eyes_dll['SpidyPresentCount'], 2)
+            if rate is not None:
+                call_remote(process, eyes_dll['SpidyMonitorRate'], a.monitor_rate)
             if off:
                 occlusion(True)
         result['render_memory'] = render_memory_snapshot(game, render['SpidyRenderMemoryData'])

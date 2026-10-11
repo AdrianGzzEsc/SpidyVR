@@ -88,7 +88,8 @@ windows. If the headset shows a still picture, click the game window once.
 - Finds the OpenXR runtime your headset is connected to (or the one you choose) and checks the headset.
 - Checks the Visual C++ runtime and Spidy's own files.
 - Starts the game with the larger render memory VR needs, in a small window that
-  saves GPU time, and puts your window settings back afterwards.
+  saves GPU time, without frame generation or vertical sync, and puts your settings back afterwards.
+- Gives each eye the game's own anti-aliasing and upscaling (*Upscaling* in its options; the game's DLSS setting does not reach the headset), and shows your left eye in the game window while you are in VR.
 - Remembers your options, and saves a report of every session in `reports\`.
 - Offers each new Spidy release when it starts, and updates itself in place with one click.
 
@@ -127,8 +128,8 @@ a red cross misses, a turning ring of three arcs catches a prop or thug.
 | The headset is not found | Connect it first, check the VR runtime in the launcher, press *Check*. |
 | "VR needs administrator rights" (0.2.9 and older: "[WinError 5] Access is denied", then "No loaded player within three minutes") | Steam or the game runs as administrator, and Windows keeps other programs out of such a game. Choose *Restart as administrator* when the launcher asks (older versions: right-click Spidy Launcher > *Run as administrator*), close the game, press **START VR**. If that changes nothing, allow the Spidy folder in your antivirus. |
 | The picture breaks up | Close the game and start it from the launcher, which gives it the render memory VR needs. |
-| Low frame rate | Lower *Render resolution* in the launcher, or the streaming quality in Virtual Desktop. 90 Hz paces more evenly than 120 Hz. |
-| Blurry or jagged edges | Raise *Render resolution* in the launcher above 100% (try 125%); it costs frame rate and memory. |
+| Low frame rate | Set *Upscaling* in the launcher to Balanced or Performance, then lower *Render resolution* or the streaming quality in Virtual Desktop. On a laptop, plug it in and choose its highest performance mode. 90 Hz paces more evenly than 120 Hz. |
+| Blurry edges | Set *Upscaling* in the launcher to High or Off, then raise *Render resolution* above 100% (try 125%); both cost frame rate and memory. |
 | Web balls fly when you meant to reel | The trigger (the grip with WEB BUTTON: TRIGGER) reels only while that hand's web is attached; on a hand without a web it shoots. |
 
 More fixes are in the [players' guide](docs/PLAYERS.md). When you report a

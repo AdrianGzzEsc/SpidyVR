@@ -50,6 +50,20 @@ struct Screen {
     uint64_t frame{};
 };
 void wantScreen(bool wanted);
+// Whether the screen's copies are wanted now (wantScreen).
+bool screenRequested();
+// Presents of any swapchain in the process since start() (diagnostic).
+uint32_t presents();
+// While wanted and no screen copy is, each Present of the game's swapchain
+// first draws the newest left eye over its back buffer, cut to the window's
+// shape: the game's window in immersive VR while the game renders no view of
+// its own. mirrored() counts those presents (diagnostic).
+void mirror(bool wanted);
+// At most this many presents a second reach the window while it mirrors the
+// left eye (monitor_rate.hpp), and how many were held back.
+void monitorRate(uint32_t rate);
+uint32_t heldPresents();
+uint32_t mirrored();
 // The newest copied frame, if one was copied within maxAgeMs.
 bool latestScreen(Screen& out, uint64_t maxAgeMs);
 // How the copy is read: the encoded format of the back buffer's family, or

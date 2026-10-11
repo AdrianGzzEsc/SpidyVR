@@ -39,7 +39,38 @@ struct Data {
     EyeSample eyes[2];
 };
 static_assert(sizeof(Config) == 40 && sizeof(EyeSample) == 144 && sizeof(Data) == 352);
+// Diagnostic (SpidyCommandTrace): render commands queued, by command and by
+// the view whose list took them (0 none of these, 1 the game's view, 2 and 3
+// the eyes).
+struct CommandData {
+    uint32_t magic = 0x53434d44, version = 1, bytes = sizeof(CommandData), tracing{};
+    uint64_t frames{};
+    uint64_t counts[4][256]{};
+};
+// The eyes' shadow sets (SpidyEyeShadows): what each eye's scene submit made or
+// took, how far the eyes' own key-light cascades were apart when last
+// compared (the largest difference of a transform's and a half size's number),
+// and how many cascade sets were fitted to the lens covering both eyes. An
+// eye's `slot` is its nearest cascade's shadow map size.
+struct ShadowEye {
+    uint64_t submits{}, taken{};
+    uint32_t flags{}, thread{};
+    uint8_t cascades[2]{}, mayTake{}, order{};
+    uint16_t lights{}, slot{};
+    float extent[4][3]{};
+    float pose[4][16]{};
+};
+struct ShadowData {
+    uint32_t magic = 0x53534844, version = 1, bytes = sizeof(ShadowData), mode{};
+    volatile LONG64 sequence{};
+    uint64_t passes{}, compared{}, covered{};
+    float poseDelta{}, extentDelta{}, poseDeltaMost{}, extentDeltaMost{};
+    ShadowEye eyes[2];
+};
+static_assert(sizeof(ShadowEye) == 336 && sizeof(ShadowData) == 736);
 extern "C" {
+__declspec(dllexport) CommandData SpidyCommandData;
+__declspec(dllexport) ShadowData SpidyShadowData;
 __declspec(dllexport) Data SpidyStereoData;
 __declspec(dllexport) native_eyes::FrameData SpidyStereoFrames;
 __declspec(dllexport) native_appearance::Data SpidyAppearanceData;
@@ -107,6 +138,74 @@ std::atomic<bool> ownExposure{};
 using InitBuffers = bool (*)(void*, const void*, const char*);
 InitBuffers originalInitBuffers{};
 void* initBuffersHook{};
+// The eyes' temporal anti-aliasing and upsampling (eyeTemporal below).
+// 1874f40 sizes a buffer set: the render size (+12bf0, +12bf4) from its
+// arguments, and the size its anti-aliased image has (+12bf8 to +12c04, where
+// kTaaTarget0/1, kResolved and their kind are made) from the game's display
+// (7a2ef00), whatever the view. An eye's set gets the eye's own size there.
+using SizeBuffers = void (*)(void*, const char*, uint32_t, uint32_t, uint32_t, uint8_t);
+SizeBuffers originalSizeBuffers{};
+void* sizeBuffersHook{};
+// The eye whose buffers 1873470 is sizing on this thread: its image's size.
+thread_local uint32_t sizingEye[2]{};
+// Percent of the eye's size, per side, its scene is rendered at (100: all of
+// it), and what the eyes get (bits): 1 a jittered lens, 2 the engine's
+// temporal anti-aliasing (which upsamples a smaller scene to the eye's size),
+// 4 its render command where the game's settings leave it out. The percent is
+// read when an eye's buffers are made.
+std::atomic<uint32_t> eyeRenderPercent{100}, eyeTemporal{};
+// A view's scene submit, 19206a0(view, parent, flags, last), returns what it
+// made for the frame (0x58 bytes: +18 the view's light set with its shadow
+// records, +28 its KeyLightContext, the key light's shadow cascades, +30,
+// ...). Given another view's as parent, a view whose +120a is set (every
+// view's is, from 189d3d2) copies the parent's KeyLightContext and takes its
+// light set instead of making its own (1920eeb, 19212e9): it then renders no
+// shadow maps and samples the parent's. The game passes no such parent to an
+// offscreen view (186d72a), so each eye rendered every cascade again, 6 cm
+// from the other eye's. eyeShadows (bits): the eye submitted second in a
+// frame takes from the first 1 the key light's cascades, 2 the light set,
+// 4 the part at +30.
+// A view's cascades are fitted to the view: 1716270 calls 170fbc0(context,
+// view, ...), which reads the pose and the lens from the view's descriptor
+// (the view's first 0x440 bytes) and places each cascade's box about that
+// lens's part of the scene. Two eyes with mirrored lenses got boxes most of
+// a half size apart (13.0 m of 13.2 for the nearest). So the eye submitted
+// first fits its cascades to shadowLens, the head's lens covering both eyes
+// (placeEyes), and the second takes those.
+// The covering lens is wider than an eye's, and its boxes larger (15% a side
+// for the load probe's lenses, 54 degrees out and 44 in) over shadow maps of
+// the same size: 170fbc0 asks the atlas (774c4d0) for each cascade's map with
+// 1740890(atlas, key, size), the size the atlas's first word (1792 here). A
+// texel of the shared set so covers 15% more a side than one of an eye's own.
+// Asking for larger maps was tried on October 11: the atlas had no room for
+// all six, and the game's render code reads a cascade's map without checking
+// that it has one (16364df).
+using SubmitScene = void* (*)(void*, void*, uint32_t, uint8_t);
+using FitCascades = void (*)(void*, void*, void*, void*, void*);
+SubmitScene originalSubmitScene{};
+FitCascades originalFitCascades{};
+void* submitSceneHook{};
+void* fitCascadesHook{};
+std::atomic<uint32_t> eyeShadows{};
+// This frame's offscreen job setup (main thread), and the eye submitted first in it.
+uint64_t offscreenPass{};
+struct ShadowDonor {
+    uint64_t pass{};
+    void* view{};
+    bool covers{};
+    uintptr_t part[11]{};
+} shadowDonor;
+Descriptor shadowLens{};
+uint64_t shadowLensPass = UINT64_MAX;
+// Both eyes have one lens and pose this frame (the flat screen): each keeps
+// its own set there (sharing it is untried).
+bool shadowLensSame{};
+// The eye whose scene submit is fitting its cascades to shadowLens.
+void* shadowFitting{};
+// Diagnostic (SpidyCommandTrace): the newest render job of the game's view and of each eye.
+std::atomic<uintptr_t> tracedJobs[3]{};
+// The game's own view while this module keeps it from rendering (restGameView).
+std::atomic<uintptr_t> rested{};
 // The HUD panel (native_hud.hpp): PlayerModelHudFollower's placement 73ab80,
 // on the main thread after the camera submits and before 1920240. It ends in
 // SetTransform 191c0e0 on the panel's render instance, which writes the
@@ -616,8 +715,36 @@ void setupDisplay(void* view, void* settings, void* profile, uint32_t flags) {
             reinterpret_cast<Enqueue>(base + 0x187e130)(reinterpret_cast<void*>(address + 0x15b0), 0x88, 0,
                                                         nullptr);
             appearanceEvent(eye, false);
+            // 19203c2 queues TemporalAa (0x8a) unless the profile's +68c is set.
+            uint8_t left{};
+            if ((eyeTemporal.load() & 4) && read(reinterpret_cast<uintptr_t>(profile) + 0x68c, &left, 1) && left)
+                reinterpret_cast<Enqueue>(base + 0x187e130)(reinterpret_cast<void*>(address + 0x1630), 0x8a, 1,
+                                                            nullptr);
             break;
         }
+}
+// The size an eye's scene is rendered at: the eye's own, or eyeRenderPercent of
+// it per side, in multiples of 8 as the engine's own scaled sizes are.
+std::array<uint32_t, 2> eyeRenderSize() {
+    const uint32_t percent = std::clamp<uint32_t>(eyeRenderPercent.load(), 25, 100);
+    return spidy::eyeRenderSize(config.width, config.height, (eyeTemporal.load() & 2) ? percent : 100);
+}
+void sizeBuffers(void* buffers, const char* name, uint32_t width, uint32_t height, uint32_t kind, uint8_t align) {
+    originalSizeBuffers(buffers, name, width, height, kind, align);
+    if (!sizingEye[0])
+        return;
+    // +12bf0: render width, height; the anti-aliased image's width, height;
+    // those in multiples of 8; ... flags at +12c2c, 2 among them where the two
+    // sizes are equal.
+    const auto sizes = reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(buffers) + 0x12bf0);
+    sizes[2] = sizingEye[0];
+    sizes[3] = sizingEye[1];
+    sizes[4] = (sizingEye[0] + 7) & ~7u;
+    sizes[5] = (sizingEye[1] + 7) & ~7u;
+    if (sizes[0] == sizes[2] && sizes[1] == sizes[3])
+        sizes[15] |= 2;
+    else
+        sizes[15] &= ~2u;
 }
 bool initBuffers(void* buffers, const void* description, const char* name) {
     const auto view = reinterpret_cast<uintptr_t>(buffers) - 0x1f80;
@@ -629,11 +756,32 @@ bool initBuffers(void* buffers, const void* description, const char* name) {
         // needs private scene buffers at its own resolution.
         alignas(16) uint8_t local[32]{};
         if (read(reinterpret_cast<uintptr_t>(description), local, sizeof(local))) {
-            std::memcpy(local, &config.width, 4);
-            std::memcpy(local + 4, &config.height, 4);
+            const auto render = eyeRenderSize();
+            std::memcpy(local, &render[0], 4);
+            std::memcpy(local + 4, &render[1], 4);
             const uint64_t noParent{};
             std::memcpy(local + 0x18, &noParent, 8);
-            return originalInitBuffers(buffers, local, name);
+            if (!(eyeTemporal.load() & 2))
+                return originalInitBuffers(buffers, local, name);
+            // An offscreen view's buffer set (kind 2) has no targets for
+            // temporal anti-aliasing: 1875270 makes kTaaTarget0/1 and
+            // kTaaDepth0/1 only where the kind's mask (3d11b18) has bit 4. The
+            // eye's set is made with them, at the eye's size (sizeBuffers).
+            sizingEye[0] = config.width;
+            sizingEye[1] = config.height;
+            const auto mask = reinterpret_cast<uint32_t*>(base + 0x3d11b18 + 2 * 4);
+            DWORD protection{};
+            const bool writable = VirtualProtect(mask, 4, PAGE_READWRITE, &protection);
+            const uint32_t stock = *mask;
+            if (writable)
+                *mask = stock | 4;
+            const bool made = originalInitBuffers(buffers, local, name);
+            if (writable) {
+                *mask = stock;
+                VirtualProtect(mask, 4, protection, &protection);
+            }
+            sizingEye[0] = sizingEye[1] = 0;
+            return made;
         }
     }
     return originalInitBuffers(buffers, description, name);
@@ -651,16 +799,24 @@ bool initBuffers(void* buffers, const void* description, const char* name) {
 // eyes take the exposure of the game's own view, which is on the head and
 // covers both lenses while immersive. The eye still adapts its own buffer,
 // which nothing reads.
-bool shareExposure(uintptr_t job) {
+bool shareExposure(uintptr_t job, unsigned eye) {
     uint64_t pool{};
     const auto primary = pointer(base + 0x7a34dd0);
     if (ownExposure || !(config.createViews & 4) || !read(base + 0x7a34dd8, &pool, 8) || !(pool & 1) ||
         !primary || !pointer(job + 0x16f0))
         return false;
+    // A resting game view (restGameView) adapts nothing: the left eye keeps
+    // its own exposure and the right eye takes the left's.
+    auto source = primary;
+    if (rested.load()) {
+        source = reinterpret_cast<uintptr_t>(eyes[0].load());
+        if (!eye || !source)
+            return false;
+    }
     // As 189c710 picks it: the view's own buffer, else its render buffers'.
-    const auto buffers = pointer(primary + 0x1640);
+    const auto buffers = pointer(source + 0x1640);
     const auto shared =
-        pointer(primary + 0x16f0) ? pointer(primary + 0x16f8) : buffers ? pointer(buffers + 0x12ae8) : 0;
+        pointer(source + 0x16f0) ? pointer(source + 0x16f8) : buffers ? pointer(buffers + 0x12ae8) : 0;
     if (!shared)
         return false;
     std::memcpy(reinterpret_cast<void*>(job + 0x16f8), &shared, 8);
@@ -670,12 +826,30 @@ void copyJob(void* view, void* settings, void* a, void* b, bool c) {
     originalCopyJob(view, settings, a, b, c);
     if (!enabled)
         return;
+    if (SpidyCommandData.tracing) {
+        const auto job = pointer(reinterpret_cast<uintptr_t>(settings) + 0x4b0);
+        if (reinterpret_cast<uintptr_t>(view) == pointer(base + 0x7a34dd0))
+            tracedJobs[0] = job;
+        for (unsigned i = 0; i < 2; ++i)
+            if (view == eyes[i].load())
+                tracedJobs[i + 1] = job;
+    }
     for (unsigned i = 0; i < 2; ++i)
         if (view == eyes[i].load()) {
             const auto job = reinterpret_cast<void*>(pointer(reinterpret_cast<uintptr_t>(settings) + 0x4b0));
             if (!job)
                 return;
-            if (shareExposure(reinterpret_cast<uintptr_t>(job))) {
+            // The job's render context (0x7a0 bytes, copied to 7a2e200 while its
+            // commands run): +40c is its anti-aliasing, 1 the engine's temporal
+            // one, the only value at which TemporalAa (1842e10) runs. With an
+            // upscaler chosen in the game's settings it is 0 for every view,
+            // and the upscaler (1849e80) leaves offscreen views out: the eyes
+            // then had no anti-aliasing at all.
+            if (eyeTemporal.load() & 2) {
+                const uint32_t temporal = 1;
+                std::memcpy(static_cast<uint8_t*>(settings) + 0x40c, &temporal, 4);
+            }
+            if (shareExposure(reinterpret_cast<uintptr_t>(job), i)) {
                 AcquireSRWLockExclusive(&telemetry);
                 InterlockedIncrement64(&SpidyAppearanceData.sequence);
                 ++SpidyAppearanceData.exposureShared;
@@ -771,9 +945,12 @@ void update(void* view) {
         // The tone mapper's constants and the game's own code read them. The
         // eyes take the main view's, as their images do (shareExposure); what
         // each eye measured for itself stays in +1720 and +1724.
-        const auto primary = pointer(base + 0x7a34dd0);
+        // (With the game's view resting, the left eye's own, for the right eye.)
+        auto source = pointer(base + 0x7a34dd0);
+        if (rested.load())
+            source = view == eyes[1].load() ? reinterpret_cast<uintptr_t>(eyes[0].load()) : 0;
         float exposure[2]{};
-        if (read(primary + 0x1708, exposure, sizeof(exposure)) && std::isfinite(exposure[0]) &&
+        if (read(source + 0x1708, exposure, sizeof(exposure)) && std::isfinite(exposure[0]) &&
             std::isfinite(exposure[1]) && exposure[0] > 0 && exposure[1] > 0 && exposure[0] < 1e6f &&
             exposure[1] < 1e6f)
             std::memcpy(static_cast<uint8_t*>(view) + 0x1708, exposure, sizeof(exposure));
@@ -898,6 +1075,77 @@ bool retiring() {
     return stopRequested || GetTickCount64() >= deadline ||
            (!config.durationMs && GetTickCount64() >= commandDeadline);
 }
+// This frame's lens jitter for both eyes, as the game's camera gives its own
+// view (descriptor +428, +42c): a Halton (2, 3) point within the pixel, twice
+// the offset over the render size. Temporal anti-aliasing gathers the samples;
+// a scene rendered smaller than the eye needs more of them per eye pixel.
+std::array<float, 2> eyeJitter() {
+    if (!(eyeTemporal.load() & 1))
+        return {0, 0};
+    const auto render = eyeRenderSize();
+    const float ratio = static_cast<float>(config.width) / render[0];
+    const uint32_t phases = std::clamp<uint32_t>(static_cast<uint32_t>(std::ceil(8 * ratio * ratio)), 8, 32);
+    const auto halton = [](uint32_t index, uint32_t radix) {
+        float value = 0, fraction = 1.f / radix;
+        for (; index; index /= radix, fraction /= radix)
+            value += fraction * (index % radix);
+        return value;
+    };
+    const uint32_t phase = static_cast<uint32_t>(frameIndex % phases) + 1;
+    return {2 * (halton(phase, 2) - .5f) / render[0], 2 * (halton(phase, 3) - .5f) / render[1]};
+}
+// While immersive the game renders three scene views: the eyes and its own,
+// which Spidy moved to the head (activeView) for the work the game does for
+// its active view alone. That work needs the view's camera, not its image:
+// the image only went to the monitor, and cost as much as an eye (5.1 of a
+// 19.6 ms frame on the GPU, and three of every ten render commands). 19206a0
+// (SubmitScene) leaves at once for a view whose +1208 is clear, as the engine
+// itself has it for a view that is not ready; the frame then has no job for
+// the view, and everything queued on the view itself still runs (the HUD's
+// Scaleform command, effects' readback, streaming video). The view's camera
+// stays where activeView put it. The game still presents its window every
+// frame, so the GPU bridge draws the left eye there (native_gpu::mirror).
+// `rested` (above) is the view whose +1208 this module cleared.
+bool writeByte(uintptr_t p, uint8_t value) {
+    __try {
+        *reinterpret_cast<volatile uint8_t*>(p) = value;
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+void restGameView(uintptr_t primary, bool rest) {
+    if (const auto was = rested.load(); was && (was != primary || !rest)) {
+        // A load replaces the pool's views: only the same view is given back.
+        if (was == primary)
+            writeByte(was + 0x1208, 1);
+        rested = 0;
+    }
+    uint8_t renders{};
+    if (rest && primary && !rested.load() && read(primary + 0x1208, &renders, 1) && renders == 1 &&
+        writeByte(primary + 0x1208, 0))
+        rested = primary;
+    native_gpu::mirror(rested.load() != 0);
+}
+// Diagnostic: 187e130 queues a render command (rdx) on a view's list (rcx).
+using EnqueueCommand = void (*)(void*, uint32_t, uint64_t, void*);
+EnqueueCommand originalEnqueue{};
+void* enqueueHook{};
+void enqueueCommand(void* list, uint32_t command, uint64_t order, void* payload) {
+    if (SpidyCommandData.tracing && command < 256) {
+        const auto at = reinterpret_cast<uintptr_t>(list);
+        const uintptr_t views[3] = {pointer(base + 0x7a34dd0), reinterpret_cast<uintptr_t>(eyes[0].load()),
+                                    reinterpret_cast<uintptr_t>(eyes[1].load())};
+        unsigned owner = 0;
+        for (unsigned i = 0; i < 3 && !owner; ++i) {
+            const auto job = tracedJobs[i].load(std::memory_order_relaxed);
+            if ((views[i] && at >= views[i] && at < views[i] + 0x1f70) || (job && at >= job && at < job + 0x1f70))
+                owner = i + 1;
+        }
+        InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&SpidyCommandData.counts[owner][command]));
+    }
+    originalEnqueue(list, command, order, payload);
+}
 // Places both eyes for the frame whose render jobs are about to be set up.
 // The frame function 175a060 shifts every view's camera history (18a13c0 ->
 // 189ee00: previous = current), runs gameplay, sets up the offscreen views'
@@ -933,6 +1181,9 @@ void placeEyes() {
         ReleaseSRWLockShared(&commandLock);
     }
     latchedImmersive = render && enabled && controlled && desired.enabled == 1;
+    // The game's view is on the head and both eyes render: it need not.
+    restGameView(primary, latchedImmersive && (config.createViews & 32) && live.load() == 2 &&
+                              !native_gpu::screenRequested());
     // The HUD's second movie goes on its panel while the eyes are shown.
     if (render && enabled && controlled && (config.createViews & 4))
         native_hud::eyesShown();
@@ -984,7 +1235,8 @@ void placeEyes() {
     // monitor too, before either view's render job is copied. Otherwise the
     // desktop can look into the back while the eyes are already at the head.
     // Do not replace the deliberately selected stock monitor or flat screen.
-    if (latchedImmersive && (config.createViews & 8)) {
+    shadowLensSame = controlled && desired.enabled == 2;
+    if (latchedImmersive) {
         Mat4 pose{};
         native_eyes::Bounds lens{};
         if (native_eyes::headView(desired, pose, lens)) {
@@ -997,8 +1249,13 @@ void placeEyes() {
                 0, 0, main.values[0x428 / 4], main.values[0x42c / 4], false, false);
             reinterpret_cast<SetPose>(base + 0x187ca10)(&aligned, pose.data());
             if (native_view::valid(aligned)) {
-                originalSubmit(reinterpret_cast<void*>(primary), &aligned);
-                activeAligned = true;
+                // Covers both eyes: what the first eye fits its shadow cascades to.
+                shadowLens = aligned;
+                shadowLensPass = offscreenPass;
+                if (config.createViews & 8) {
+                    originalSubmit(reinterpret_cast<void*>(primary), &aligned);
+                    activeAligned = true;
+                }
             }
         }
     }
@@ -1009,6 +1266,14 @@ void placeEyes() {
             auto descriptor = main;
             const unsigned index = eye == eyes[0].load() ? 0 : 1;
             if (controlled && desired.enabled == 2) {
+                // The stock camera's jitter is in its own render size's pixels.
+                if (eyeTemporal.load() & 1) {
+                    const auto jitter = eyeJitter();
+                    reinterpret_cast<Lens>(base + 0x187bb00)(
+                        &descriptor, main.nearZ(), main.farZ(), main.values[0x400 / 4], main.values[0x404 / 4],
+                        main.values[0x408 / 4], main.values[0x40c / 4], 0, 0, jitter[0], jitter[1], false, false);
+                    reinterpret_cast<SetPose>(base + 0x187ca10)(&descriptor, main.pose().data());
+                }
                 reinterpret_cast<Submit>(base + 0x1899ab0)(eye, &descriptor);
                 continue;
             }
@@ -1023,16 +1288,111 @@ void placeEyes() {
             // derived matrices through the verified native lens constructor.
             const float aspect = static_cast<float>(config.width) / config.height;
             const auto& fov = desired.eyes[index].fov;
+            const auto jitter = eyeJitter();
             reinterpret_cast<Lens>(base + 0x187bb00)(
                 &descriptor, main.nearZ(), main.farZ(), controlled ? std::tan(fov[0]) : -aspect,
                 controlled ? std::tan(fov[1]) : aspect, controlled ? -std::tan(fov[3]) : -1,
-                controlled ? -std::tan(fov[2]) : 1, 0, 0, 0, 0, false, false);
+                controlled ? -std::tan(fov[2]) : 1, 0, 0, jitter[0], jitter[1], false, false);
             reinterpret_cast<SetPose>(base + 0x187ca10)(&descriptor, pose.data());
             reinterpret_cast<Submit>(base + 0x1899ab0)(eye, &descriptor);
         }
 }
+// A KeyLightContext's cascades: +d and +f count them, +150 holds one each
+// 0x3e0 bytes, with its box's half sizes at +170 and its transform at +198.
+unsigned cascades(uintptr_t context, uint8_t counts[2]) {
+    return context && read(context + 0xd, &counts[0], 1) && read(context + 0xf, &counts[1], 1)
+               ? std::min<unsigned>(counts[0] + counts[1], 15)
+               : 0;
+}
+void fitCascades(void* context, void* view, void* third, void* fourth, void* fifth) {
+    if (!view || view != shadowFitting) {
+        originalFitCascades(context, view, third, fourth, fifth);
+        return;
+    }
+    Descriptor own;
+    std::memcpy(&own, view, sizeof(own));
+    std::memcpy(view, &shadowLens, sizeof(shadowLens));
+    originalFitCascades(context, view, third, fourth, fifth);
+    std::memcpy(view, &own, sizeof(own));
+    ++SpidyShadowData.covered;
+}
+void* submitScene(void* view, void* parent, uint32_t flags, uint8_t last) {
+    const int eye = !view ? -1 : view == eyes[0].load() ? 0 : view == eyes[1].load() ? 1 : -1;
+    if (eye < 0)
+        return originalSubmitScene(view, parent, flags, last);
+    const auto mode = eyeShadows.load();
+    const bool second = shadowDonor.pass == offscreenPass && shadowDonor.view != view;
+    const bool cover = (mode & 1) && (flags & 2) && shadowDonor.pass != offscreenPass && !shadowLensSame &&
+                       shadowLensPass == offscreenPass;
+    uintptr_t given[11]{};
+    const bool take = (mode & 7) && (flags & 2) && second && shadowDonor.part[5] && shadowDonor.covers &&
+                      (!parent || read(reinterpret_cast<uintptr_t>(parent), given, sizeof(given)));
+    if (take) {
+        if (mode & 1)
+            given[5] = shadowDonor.part[5];
+        if (mode & 2)
+            given[3] = shadowDonor.part[3];
+        if (mode & 4)
+            given[6] = shadowDonor.part[6];
+    }
+    shadowFitting = cover ? view : nullptr;
+    const auto result = originalSubmitScene(view, take ? given : parent, flags, last);
+    shadowFitting = nullptr;
+    uintptr_t made[11]{};
+    const bool have = result && read(reinterpret_cast<uintptr_t>(result), made, sizeof(made));
+    auto& data = SpidyShadowData;
+    auto& sample = data.eyes[eye];
+    InterlockedIncrement64(&data.sequence);
+    ++sample.submits;
+    sample.taken += take;
+    sample.flags = flags;
+    sample.thread = GetCurrentThreadId();
+    sample.order = second;
+    read(reinterpret_cast<uintptr_t>(view) + 0x120a, &sample.mayTake, 1);
+    uint16_t lights{}, slot{};
+    sample.lights = have && made[3] && read(made[3] + 0x34, &lights, 2) ? lights : 0;
+    const auto count = have ? cascades(made[5], sample.cascades) : 0;
+    const auto map = count ? pointer(made[5] + 0x150 + 0x3c8) : 0;
+    sample.slot = map && read(map + 0x10, &slot, 2) ? slot & 0x7fff : 0;
+    for (unsigned i = 0; i < 4 && i < count; ++i) {
+        const auto entry = made[5] + 0x150 + i * 0x3e0;
+        read(entry + 0x170, sample.extent[i], sizeof(sample.extent[i]));
+        read(entry + 0x198, sample.pose[i], sizeof(sample.pose[i]));
+    }
+    if (have && !take && second && shadowDonor.part[5] && !shadowDonor.covers) {
+        // Both eyes made their own: how far apart are their cascades?
+        uint8_t counts[2]{};
+        const auto both = std::min(count, cascades(shadowDonor.part[5], counts));
+        float poseDelta{}, extentDelta{};
+        for (unsigned i = 0; i < both; ++i) {
+            float mine[19]{}, other[19]{};
+            const auto a = made[5] + 0x150 + i * 0x3e0, b = shadowDonor.part[5] + 0x150 + i * 0x3e0;
+            if (!read(a + 0x198, mine, 64) || !read(b + 0x198, other, 64) || !read(a + 0x170, mine + 16, 12) ||
+                !read(b + 0x170, other + 16, 12))
+                continue;
+            for (unsigned k = 0; k < 19; ++k)
+                (k < 16 ? poseDelta : extentDelta) =
+                    std::max(k < 16 ? poseDelta : extentDelta, std::fabs(mine[k] - other[k]));
+        }
+        ++data.compared;
+        data.poseDelta = poseDelta;
+        data.extentDelta = extentDelta;
+        data.poseDeltaMost = std::max(data.poseDeltaMost, poseDelta);
+        data.extentDeltaMost = std::max(data.extentDeltaMost, extentDelta);
+    }
+    InterlockedIncrement64(&data.sequence);
+    if (have && !take && !second && (flags & 2)) {
+        shadowDonor.pass = offscreenPass;
+        shadowDonor.view = view;
+        shadowDonor.covers = cover;
+        std::memcpy(shadowDonor.part, made, sizeof(made));
+    }
+    return result;
+}
 // 1920240 sets up this frame's render jobs for the offscreen views.
 uint8_t renderOffscreen() {
+    ++offscreenPass;
+    ++SpidyShadowData.passes;
     native_body::renderFrame();
     if (!lateEyes && (enabled || live.load() || hiddenHero.load()))
         placeEyes();
@@ -1131,6 +1491,8 @@ void maintain(void* manager) {
     if (!ours)
         return;
     ++frameIndex;
+    if (SpidyCommandData.tracing)
+        ++SpidyCommandData.frames;
     AcquireSRWLockExclusive(&telemetry);
     auto& d = SpidyStereoData;
     InterlockedIncrement64(&d.sequence);
@@ -1221,13 +1583,16 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyStart(void* value) {
         config = incoming;
         // createViews bits: 1 eye views, 2 native readback, 4 display/VR path,
         // 8 (VR path only) move the engine's active view to the head while immersive,
-        // 16 (VR path only) occlusion culling for each eye (giveOcclusion).
-        const auto views = config.createViews & ~16u;
+        // 16 (VR path only) occlusion culling for each eye (giveOcclusion),
+        // 32 (with 8) the game's own view is not rendered while immersive
+        // (restGameView): the left eye goes to the game's window instead.
+        const auto views = config.createViews & ~(16u | 32u);
         if (!GetModuleHandleW(L"Spider-Man.exe") || config.magic != 0x53534346 || config.version != 1 ||
             config.bytes != sizeof(config) || config.pid != GetCurrentProcessId() || config.base != base ||
             config.durationMs > 30000 || (config.durationMs && config.durationMs < 500) ||
             (views != 0 && views != 1 && views != 3 && views != 5 && views != 7 && views != 13) ||
-            ((config.createViews & 16) && !(views & 4)) || !validEyeSize(config.width) ||
+            ((config.createViews & 16) && !(views & 4)) || ((config.createViews & 32) && !(views & 8)) ||
+            !validEyeSize(config.width) ||
             !validEyeSize(config.height)) {
             result = 1001;
             break;
@@ -1243,6 +1608,14 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyStart(void* value) {
         const unsigned char copyJobBytes[] = {0x48, 0x89, 0x5c, 0x24, 0x20, 0x55, 0x56, 0x57};
         const unsigned char beginJobBytes[] = {0x48, 0x89, 0x5c, 0x24, 0x08, 0x57, 0x48, 0x83, 0xec, 0x30};
         const unsigned char initBuffersBytes[] = {0x40, 0x53, 0x48, 0x83, 0xec, 0x30, 0x44, 0x8b, 0x4a, 0x04};
+        // A buffer set's sizes; the test for which targets its kind gets, and
+        // the kinds' masks it reads (3d11b18: an offscreen view's is 0x20);
+        // TemporalAa up to its test of the render context's anti-aliasing.
+        const unsigned char sizeBuffersBytes[] = {0x48, 0x89, 0x5c, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24,
+                                                  0x10, 0x48, 0x89, 0x7c, 0x24, 0x18, 0x55, 0x41, 0x54};
+        const unsigned char targetKindBytes[] = {0x44, 0x0f, 0xb6, 0xd2, 0x41, 0xb1, 0x01, 0x0f, 0xba, 0xe2, 0x0e};
+        const unsigned char kindMaskBytes[] = {0xff, 0, 0, 0, 0xff, 0, 0, 0, 0x20, 0, 0, 0, 0x28, 0, 0, 0};
+        const unsigned char temporalBytes[] = {0x48, 0x8b, 0xc4, 0x55, 0x48, 0x8d, 0xa8, 0xf8, 0xfe, 0xff, 0xff};
         const unsigned char renderActorBytes[] = {0x48, 0x8b, 0xc4, 0x44, 0x88, 0x40, 0x18, 0x48,
                                                   0x89, 0x50, 0x10, 0x48, 0x89, 0x48, 0x08};
         const unsigned char setupDisplayBytes[] = {0x4d, 0x85, 0xc0, 0x0f, 0x84, 0x7f, 0x03, 0, 0};
@@ -1263,6 +1636,10 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyStart(void* value) {
         const unsigned char renderOffscreenBytes[] = {0x48, 0x89, 0x5c, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24,
                                                       0x10, 0x57, 0x48, 0x83, 0xec, 0x20, 0x40, 0xb7, 0x01};
         const unsigned char frameOffscreenBytes[] = {0xe8, 0x92, 0x57, 0x1c, 0x00};
+        const unsigned char submitSceneBytes[] = {0x44, 0x88, 0x4c, 0x24, 0x20, 0x44, 0x89, 0x44, 0x24, 0x18, 0x48,
+                                                  0x89, 0x54, 0x24, 0x10, 0x55, 0x53, 0x56, 0x57, 0x41, 0x54};
+        const unsigned char fitCascadesBytes[] = {0x48, 0x8b, 0xc4, 0x4c, 0x89, 0x48, 0x20, 0x4c, 0x89, 0x40, 0x18, 0x48,
+                                                  0x89, 0x50, 0x10, 0x48, 0x89, 0x48, 0x08, 0x55, 0x53, 0x56, 0x57};
         const unsigned char historyBytes[] = {0x48, 0x89, 0x5c, 0x24, 0x08, 0x57, 0x48, 0x83, 0xec, 0x20,
                                               0x48, 0x8b, 0xf9, 0x41, 0xb8, 0x30, 0x05, 0x00, 0x00};
         // A view's occlusion builder, up to its test of +1ba0.
@@ -1281,6 +1658,8 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyStart(void* value) {
             !entry(0x164703f, cameraSubmitBytes, sizeof(cameraSubmitBytes)) ||
             !entry(0x187ca10, poseBytes, sizeof(poseBytes)) ||
             !entry(0x1920240, renderOffscreenBytes, sizeof(renderOffscreenBytes)) ||
+            !entry(0x19206a0, submitSceneBytes, sizeof(submitSceneBytes)) ||
+            !entry(0x170fbc0, fitCascadesBytes, sizeof(fitCascadesBytes)) ||
             !entry(0x175aaa9, frameOffscreenBytes, sizeof(frameOffscreenBytes)) ||
             !entry(0x189ee00, historyBytes, sizeof(historyBytes)) ||
             !entry(0x18a09c0, createBytes, sizeof(createBytes)) ||
@@ -1294,6 +1673,10 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyStart(void* value) {
             !entry(0x189e310, beginJobBytes, sizeof(beginJobBytes)) ||
             !entry(0x189e3a0, beginJobBytes, sizeof(beginJobBytes)) ||
             !entry(0x1873470, initBuffersBytes, sizeof(initBuffersBytes)) ||
+            !entry(0x1874f40, sizeBuffersBytes, sizeof(sizeBuffersBytes)) ||
+            !entry(0x1875270, targetKindBytes, sizeof(targetKindBytes)) ||
+            !entry(0x3d11b18, kindMaskBytes, sizeof(kindMaskBytes)) ||
+            !entry(0x1842e10, temporalBytes, sizeof(temporalBytes)) ||
             !entry(0x17991a0, renderActorBytes, sizeof(renderActorBytes)) ||
             !entry(0x1920310, setupDisplayBytes, sizeof(setupDisplayBytes)) ||
             !entry(0x187e130, enqueueBytes, sizeof(enqueueBytes)) ||
@@ -1318,11 +1701,14 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyStart(void* value) {
             beginJobHook = reinterpret_cast<void*>(base + 0x189e310);
             endJobHook = reinterpret_cast<void*>(base + 0x189e3a0);
             initBuffersHook = reinterpret_cast<void*>(base + 0x1873470);
+            sizeBuffersHook = reinterpret_cast<void*>(base + 0x1874f40);
             renderActorHook = reinterpret_cast<void*>(base + 0x17991a0);
             setupDisplayHook = reinterpret_cast<void*>(base + 0x1920310);
             submitHook = reinterpret_cast<void*>(base + 0x1899ab0);
             renderOffscreenHook = reinterpret_cast<void*>(base + 0x1920240);
             hudPlaceHook = reinterpret_cast<void*>(base + 0x73ab80);
+            submitSceneHook = reinterpret_cast<void*>(base + 0x19206a0);
+            fitCascadesHook = reinterpret_cast<void*>(base + 0x170fbc0);
             s = MH_CreateHook(maintainHook, reinterpret_cast<void*>(maintain),
                               reinterpret_cast<void**>(&originalMaintain));
             if (s == MH_OK)
@@ -1347,6 +1733,9 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyStart(void* value) {
                 s = MH_CreateHook(initBuffersHook, reinterpret_cast<void*>(initBuffers),
                                   reinterpret_cast<void**>(&originalInitBuffers));
             if (s == MH_OK)
+                s = MH_CreateHook(sizeBuffersHook, reinterpret_cast<void*>(sizeBuffers),
+                                  reinterpret_cast<void**>(&originalSizeBuffers));
+            if (s == MH_OK)
                 s = MH_CreateHook(renderActorHook, reinterpret_cast<void*>(renderActor),
                                   reinterpret_cast<void**>(&originalRenderActor));
             if (s == MH_OK)
@@ -1361,11 +1750,17 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyStart(void* value) {
             if (s == MH_OK)
                 s = MH_CreateHook(hudPlaceHook, reinterpret_cast<void*>(hudPlace),
                                   reinterpret_cast<void**>(&originalHudPlace));
+            if (s == MH_OK)
+                s = MH_CreateHook(submitSceneHook, reinterpret_cast<void*>(submitScene),
+                                  reinterpret_cast<void**>(&originalSubmitScene));
+            if (s == MH_OK)
+                s = MH_CreateHook(fitCascadesHook, reinterpret_cast<void*>(fitCascades),
+                                  reinterpret_cast<void**>(&originalFitCascades));
             if (s != MH_OK) {
                 result = 1200 + s;
                 for (auto hook : {maintainHook, updateHook, copyFinalHook, toneHook, copyJobHook, beginJobHook,
-                                  endJobHook, initBuffersHook, renderActorHook, setupDisplayHook, submitHook,
-                                  renderOffscreenHook, hudPlaceHook})
+                                  endJobHook, initBuffersHook, sizeBuffersHook, renderActorHook, setupDisplayHook, submitHook,
+                                  renderOffscreenHook, hudPlaceHook, submitSceneHook, fitCascadesHook})
                     MH_RemoveHook(hook);
                 break;
             }
@@ -1379,16 +1774,16 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyStart(void* value) {
             s = MH_EnableHook(copyFinalHook);
         if (s == MH_OK)
             s = MH_EnableHook(toneHook);
-        for (auto hook : {copyJobHook, beginJobHook, endJobHook, initBuffersHook, renderActorHook,
-                          setupDisplayHook, submitHook, renderOffscreenHook, hudPlaceHook})
+        for (auto hook : {copyJobHook, beginJobHook, endJobHook, initBuffersHook, sizeBuffersHook, renderActorHook,
+                          setupDisplayHook, submitHook, renderOffscreenHook, hudPlaceHook, submitSceneHook, fitCascadesHook})
             if (s == MH_OK)
                 s = MH_EnableHook(hook);
         if (s == MH_OK)
             s = MH_EnableHook(maintainHook);
         if (s != MH_OK) {
             for (auto hook : {updateHook, copyFinalHook, toneHook, copyJobHook, beginJobHook, endJobHook,
-                              initBuffersHook, renderActorHook, setupDisplayHook, submitHook, renderOffscreenHook,
-                              hudPlaceHook})
+                              initBuffersHook, sizeBuffersHook, renderActorHook, setupDisplayHook, submitHook, renderOffscreenHook,
+                              hudPlaceHook, submitSceneHook, fitCascadesHook})
                 MH_DisableHook(hook);
             result = 1300 + s;
             break;
@@ -1424,6 +1819,8 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyStop(void*) {
     const auto limit = GetTickCount64() + 5000;
     while ((live || hiddenHero.load()) && GetTickCount64() < limit)
         Sleep(10);
+    // The game's own view renders again (placeEyes no longer runs).
+    restGameView(pointer(base + 0x7a34dd0), false);
     // The HUD's texture goes back to the game's size while frames still run
     // (SpidyHudData's restored says whether it did).
     native_hud::stop(1000);
@@ -1432,8 +1829,8 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyStop(void*) {
     else if (hooked) {
         enabled = false;
         for (auto hook : {maintainHook, updateHook, copyFinalHook, toneHook, copyJobHook, beginJobHook,
-                          endJobHook, initBuffersHook, renderActorHook, setupDisplayHook, submitHook, renderOffscreenHook,
-                          hudPlaceHook}) {
+                          endJobHook, initBuffersHook, sizeBuffersHook, renderActorHook, setupDisplayHook, submitHook, renderOffscreenHook,
+                          hudPlaceHook, submitSceneHook, fitCascadesHook}) {
             auto s = MH_DisableHook(hook);
             if (s != MH_OK && s != MH_ERROR_DISABLED)
                 result = 1500 + s;
@@ -1482,6 +1879,56 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyEyePlacement(void* late) {
 // tools/probe_exposure.py compares the two in the running game.
 extern "C" __declspec(dllexport) DWORD WINAPI SpidyEyeExposure(void* own) {
     ownExposure = own != nullptr;
+    return 0;
+}
+// Diagnostic: 1 counts the render commands queued from now on (SpidyCommandData,
+// cleared first); 0 stops. The hook stays in place once made.
+extern "C" __declspec(dllexport) DWORD WINAPI SpidyCommandTrace(void* on) {
+    if (!base)
+        return 4201;
+    if (on && !enqueueHook) {
+        enqueueHook = reinterpret_cast<void*>(base + 0x187e130);
+        auto s = MH_CreateHook(enqueueHook, reinterpret_cast<void*>(enqueueCommand),
+                               reinterpret_cast<void**>(&originalEnqueue));
+        if (s == MH_OK)
+            s = MH_EnableHook(enqueueHook);
+        if (s != MH_OK) {
+            enqueueHook = nullptr;
+            return 4200 + s;
+        }
+    }
+    SpidyCommandData.tracing = 0;
+    if (on) {
+        std::memset(SpidyCommandData.counts, 0, sizeof(SpidyCommandData.counts));
+        SpidyCommandData.frames = 0;
+        SpidyCommandData.tracing = 1;
+    }
+    return 0;
+}
+// The eyes' render size and temporal anti-aliasing: bits 0-7 the percent of
+// the eye's size per side its scene is rendered at (25-100; taken when the
+// eyes are made, 0 leaves it), bits 8-15 eyeTemporal's bits. The VR worker
+// sets them before it starts the views, as tools/probe_vr_load.py does.
+// The eyes' shadow sets (eyeShadows above): 0 each eye makes its own, as
+// before October 11; bits 1, 2 and 4 give the eye submitted second the first
+// one's key-light cascades, light set and +30 part. Takes effect at the next
+// frame. SpidyShadowData has what each eye made or took.
+extern "C" __declspec(dllexport) DWORD WINAPI SpidyEyeShadows(void* mode) {
+    const auto value = reinterpret_cast<uintptr_t>(mode);
+    if (value > 7)
+        return 4301;
+    eyeShadows = static_cast<uint32_t>(value);
+    SpidyShadowData.mode = static_cast<uint32_t>(value);
+    return 0;
+}
+extern "C" __declspec(dllexport) DWORD WINAPI SpidyEyeTemporal(void* packed) {
+    const auto value = reinterpret_cast<uintptr_t>(packed);
+    const uint32_t percent = value & 0xff;
+    if (percent && (percent < 25 || percent > 100))
+        return 4101;
+    if (percent)
+        eyeRenderPercent = percent;
+    eyeTemporal = (value >> 8) & 0xff;
     return 0;
 }
 extern "C" float SpidyFlatAspect() {

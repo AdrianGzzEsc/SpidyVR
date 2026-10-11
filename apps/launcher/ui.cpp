@@ -62,6 +62,13 @@ constexpr const char* kSmoothTurns[] = {"Off",          "60\xC2\xB0/s",  "90\xC2
 constexpr int kSmoothValues[] = {0, 60, 90, 120, 180, 240};
 constexpr const char* kHaptics[] = {"Off", "25%", "50%", "75%", "100%"};
 constexpr int kHapticValues[] = {0, 25, 50, 75, 100};
+// Upscaling: the percent of the eye's size, per side, the scene is rendered at (SessionOptions::upscale).
+constexpr const char* kUpscales[] = {"Off (100%)", "High (77%)", "Quality (67%)", "Balanced (58%)",
+                                     "Performance (50%)"};
+constexpr int kUpscaleValues[] = {100, 77, 67, 58, 50};
+// The monitor in VR: how often the game window gets the left eye (SessionOptions::monitorRate).
+constexpr const char* kMonitorRates[] = {"Every frame", "60 a second", "30 a second", "15 a second", "5 a second"};
+constexpr int kMonitorRateValues[] = {0, 60, 30, 15, 5};
 constexpr const char* kScreenSizes[] = {"Small", "Medium", "Large"};
 constexpr const char* kHudSizes[] = {"Off", "Small", "Medium", "Large"};
 // The button that shoots and holds webs (SessionOptions::triggerWebs: the second).
@@ -1052,6 +1059,23 @@ void App::optionsCard(ImVec2 size) {
         }
         ImGui::PopFont();
     });
+    // What the scene is rendered at before the game's anti-aliasing brings it to the eye's size; with the
+    // headset checked, in pixels.
+    std::string upscaleHelp = "The scene is rendered smaller and brought to the eye's size, anti-aliased. Lower is "
+                              "faster and softer.";
+    if (headset_.eye()) {
+        const auto rendered = eyeSize();
+        const auto scene = spidy::eyeRenderSize(rendered[0], rendered[1], static_cast<uint32_t>(o.upscale));
+        upscaleHelp = o.upscale >= 100
+                          ? format("The scene is rendered at the eye's %u x %u, anti-aliased. Lower is faster.",
+                                   rendered[0], rendered[1])
+                          : format("The scene is rendered at %u x %u and brought to %u x %u, anti-aliased. Lower "
+                                   "is faster and softer.",
+                                   scene[0], scene[1], rendered[0], rendered[1]);
+    }
+    option("Upscaling", upscaleHelp.c_str(), S(150), [&] {
+        stepCombo("##upscale", kUpscales, kUpscaleValues, static_cast<int>(std::size(kUpscaleValues)), &o.upscale);
+    });
     option("Swing speed limit", "How fast a swing can carry you.", S(150), [&] {
         ImGui::PushFont(fonts_.semibold, 13.5f);
         changed |= ImGui::SliderInt("##speed", &o.swingSpeed, 10, 65, "%d m/s");
@@ -1088,8 +1112,15 @@ void App::optionsCard(ImVec2 size) {
     });
     option("Small game window", "Saves GPU time while you play in VR.", S(40),
            [&] { changed |= toggle("##small", &o.smallWindow); });
-    option("Normal camera on the monitor", "Off: the monitor shows your head's view.", S(40),
+    option("Normal camera on the monitor", "Off: the monitor shows your left eye.", S(40),
            [&] { changed |= toggle("##stock", &o.stockMonitorView); });
+    option("Monitor frame rate",
+           "How often the monitor gets your left eye in VR. Each picture costs the graphics card time the "
+           "headset could have.",
+           S(150), [&] {
+               stepCombo("##monitor", kMonitorRates, kMonitorRateValues,
+                         static_cast<int>(std::size(kMonitorRateValues)), &o.monitorRate);
+           });
     if (link("Reset options")) {
         // Your body's measurements are not options: they stay.
         const SessionOptions kept = o;

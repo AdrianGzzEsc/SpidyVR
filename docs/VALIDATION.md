@@ -1,6 +1,500 @@
-# Validation — 2026-10-10
+# Validation — 2026-10-11
 
-## Desktop mirror and small facade ledges — current build
+## The monitor's presents, and one shadow set for both eyes — current build
+
+The user, October 11, after running `python tools\vr_display.py --restore`:
+"i ran the command. continue with the rest". Later: "why do we need it as
+settings?", "dont do another measure just let me test", "monitor mirror can
+be a setting".
+
+**Setting.** The same PC and rooftop as the section below. The game's display
+settings are the user's own again (full screen, 3840 x 2400), and this shell
+cannot write the game's registry settings, so every measurement here is of
+the full-screen game, not of the launcher's 1920 x 1080 window. Moving the
+window to 1920 x 1080 with `SetWindowPos` changed nothing (42.8 frames a
+second, `reports/perf/final-win1.json`): the swapchain kept its size. Eyes
+3072 x 3264 at 67%, views 61, a fresh game for each run, measured from 40 s
+after the load.
+
+**The baseline moved** (`reports/perf/final-base2.json`, October 10's build):
+43.2 frames a second ahead and 42.0 turning (61.0 and 59.6 in the small
+window on October 10), GPU 99% busy, the eyes' GPU time 5.4 and 6.0 ms of a
+23.2 ms frame.
+
+**Presents.** `SpidyPresentEvery` (an experiment in this morning's build:
+while the window mirrors the left eye, only every nth of the game's presents
+reaches DXGI), switched between phases of one game
+(`reports/perf/final-pr1.json`):
+
+| Presents reaching DXGI | Frames/s | Frame | Eyes' GPU ms |
+|---|---|---|---|
+| every one | 43.1 | 23.2 ms | 5.6, 6.2 |
+| every second | 52.7 | 19.0 ms | 6.5, 7.2 |
+| every fourth | 58.8 | 17.0 ms | 6.5, 7.5 |
+| one in a thousand | 66.2 | 15.1 ms | 7.0, 7.7 |
+| every one, again | 42.8 | 23.4 ms | 5.7, 6.2 |
+| every one, turning | 42.5 | 23.5 ms | 5.5, 6.3 |
+| one in a thousand, turning | 65.5 | 15.3 ms | 6.9, 7.7 |
+
+A present is 8.1 ms of the frame. The eyes' own GPU time rises as presents
+go (the card, held at 80 W, runs them slower when it has no pauses), and with
+none the eyes are the frame. The game did not stall without presents in any
+phase. Latency (`reports/perf/final-lat1.json`; `pose_age_ms` is the time
+since the eye command whose pose the newest pair handed to the GPU carries
+was sent, `pairs_waiting_on_gpu` the bridge's fence less what the GPU had
+finished): median 65.8 ms and 1.46 pairs with every present, 43.8 ms and 0.53
+with one in a thousand; turning 66.5 and 44.3 ms.
+
+**Shadows.** From the executable and the running game:
+
+- `19206a0(view, parent, flags, last)` (the scene submit) returns a 0x58-byte
+  record of what it made for the frame: `+18` the view's light set, `+28` its
+  KeyLightContext (0x3de0 bytes: `+d` and `+f` count the cascades, `+150`
+  holds one each 0x3e0 bytes, with the box's half sizes at `+170`, its
+  transform at `+198` and its shadow map's atlas slot at `+3c8`), `+30`, and
+  others. Given such a record as `parent`, a view whose `+120a` is set
+  (`189d3d2` sets every view's) takes the parent's light set (`1920eeb`) and
+  copies its KeyLightContext (`19212e9`), and then skips `1716390`, which
+  queues the cascades' SetShadowMapTarget passes (through `1715880` and
+  `1747140`) and their casters. The game's callers pass no shadow sets: the
+  offscreen views' (`186d72a`) passes a record with `+48` alone.
+- `1716270` builds a view's KeyLightContext: `170fbc0(context, view, ...)`
+  fits the cascades, reading the view's pose (`+10`, `+20`, `+30`) and lens
+  (`+330`, `+3fc`, `+400`..) from the view's descriptor, its first 0x440
+  bytes (`1899ab0`, a view's descriptor submit, is a copy of those); then
+  `1715e10` starts each cascade's caster queries.
+- Each eye's own set, compared in the game (`SpidyShadowData`,
+  `reports/perf/final-sh2.json`): six cascades each; the first four boxes'
+  half sizes 13.24, 33.08, 82.69 and 206.73 m for both eyes; the two eyes'
+  nearest boxes 13.0 m apart along the box's first axis (32.3, 80.7 and
+  201.6 m for the next three). The probe's lenses: 54 degrees out, 44 in.
+- A cascade's shadow map: `1740890(atlas, key, size)` on the atlas at
+  `774c4d0`, the size the atlas's first word, 1792 here.
+
+**Changes.**
+
+- `src/stereo_probe.cpp`: hooks on `19206a0` (`submitScene`) and `170fbc0`
+  (`fitCascades`). With `eyeShadows` bit 1 (`SpidyEyeShadows`; the VR worker
+  sets it unless options bit 17), the eye submitted first in a frame has its
+  descriptor replaced by `shadowLens` for the length of `170fbc0`, and the
+  second eye's submit gets a parent record holding the first one's
+  KeyLightContext. `shadowLens` is the head's lens covering both eyes, built
+  in `placeEyes` as the game view's has been (now also when that view keeps
+  the stock camera). Each eye keeps its own set on the flat screen, when
+  the eyes are not commanded, and when the first eye made none.
+  `SpidyShadowData` reports what each eye made or took.
+- `src/native_eye_gpu.cpp`, `include/spidy/monitor_rate.hpp`: while the
+  window mirrors the left eye and no game screen is wanted, a present beyond
+  the monitor's rate returns before DXGI (`holdPresent`,
+  `monitorPresentDue`; `SpidyMonitorRate`, 30 a second from the VR worker by
+  default, 0 every one). `SpidyPresentCount(2)` counts those held back.
+- `src/game_xr.cpp`: XrConfig 22: `monitorRate` (0-240) where the spare word
+  was, options bit 17 (each eye its own shadow set).
+- `tools/run_game_vr.py` (`--monitor-rate`, `--own-shadows`; `eyes` in
+  reports has `monitor_rate` and `shared_shadows`),
+  `tools/launch-game-vr.ps1` (`-MonitorRate`, `-OwnShadows`), the launcher
+  (Monitor frame rate: Every frame, 60, 30, 15, 5 a second; `monitor_rate=`
+  in launcher.ini).
+- `tools/probe_vr_load.py`: `--eye-shadows`, `--monitor-rate`, phases
+  `vr_s0`..`vr_s7`, `vr_m0`, `vr_m9` (and for `turn`, `narrow`),
+  `pose_age_ms`, `pairs_waiting_on_gpu`, `presents_held`, and each phase's
+  `shadows`.
+
+**Measured with shared shadows** (presents one in a thousand throughout; own
+and shared in alternating phases of one game):
+
+| Eyes | Phase | Own | Shared | Render MB/frame | GPU busy |
+|---|---|---|---|---|---|
+| 3072 x 3264 at 67% (`final-sh2.json`) | ahead | 66.4, 65.7 | 66.7, 66.7 | 5.3 to 4.2 | 98% |
+| | turning | 65.7, 65.8 | 67.4, 67.3 | 8.9 to 6.5 | 96-98% |
+| 1536 x 1632 at 50% (`final-sh3.json`) | ahead | 98.4, 98.2 | 104.0, 101.7 | 5.4 to 4.3 | 48-50% |
+| | turning | 78.9, 80.5 | 87.1, 86.0 | 8.4 to 6.5 | 44-45% |
+
+Shared, both eyes report the same boxes, the first four 15.23, 38.06, 95.15
+and 237.86 m half a side: 15% larger than an eye's own, over shadow maps of
+the same 1792 pixels.
+
+**The picture** (`tools`' capture bridge, both eyes at one pose, own and
+shared in turn; `reports/perf/shadow-ab2`, `shadow-ab3`). The scene has the
+player's arms and enemies' laser sights moving through it, so whole-image
+differences say nothing (own against own: blocks up to 119 levels apart).
+Crops of sunlit roofs with tree shadows, at full size and enlarged twice
+(`shadow-ab3/side-2560-1850-left.png`, own left, shared right): the same
+shadow shapes in the same places, the shared ones' edges slightly softer. No
+missing or misplaced shadow was found in the crops looked at; the edges of
+the eyes' images were not examined separately.
+
+**Tried and taken out.** Larger shadow maps for the covering set (a hook on
+`1740890` asking for 15% more): the game crashed within seconds
+(`Marvel's Spider-Man Remastered-v4.630.0.0 2026-10-11-09-20-11.mdmp`: a
+read of `[rax+c]` with `rax` 0 at `Spider-Man.exe+16364df`, where the render
+code takes a cascade's map from `[r10+278]`). The atlas had no room for all
+six, and a cascade without a map is not survived.
+
+**The graphics card.** `nvidia-smi --query-gpu=power.default_limit,
+power.max_limit`: 80 W and 150 W. Every measurement of these two days ran at
+74-80 W.
+
+**Checks.** 236 core checks (1 new: the monitor's rate), 23 launcher checks
+(the `--monitor-rate` argument), 107 Python checks (1 new: `--monitor-rate`'s
+range) and the GPU test pass.
+
+**Not verified.**
+
+- This build in the game. The measurements are of this morning's builds:
+  presents held back by count (`SpidyPresentEvery`), shared shadows switched
+  by `SpidyEyeShadows` from the probe. Holding presents by the clock
+  (`monitorPresentDue`), the VR worker's two calls and XrConfig 22 were built
+  after the user asked to test it themselves, and have only their unit checks.
+- The headset, as before; and with it what the monitor's rate is worth in
+  the launcher's small window, where a present is smaller (the frame there
+  was 16.4 ms on October 10 with 13.4 ms of it the eyes').
+- Shared shadows at the edges of the eyes' images, at night (the scene had
+  no shadow-casting local lights: both eyes' light sets were empty, and they
+  are not shared), and through a long session.
+- The player's hands or body in front of the head: the capture probe does
+  not drive them.
+
+**In the play folder** (`Documents\Spidy-0.2.11`, October 11, 09:45):
+`build\windows-ninja\spidy_stereo_probe.dll`, `tools\run_game_vr.py`,
+`Spidy Launcher.exe` and `README.txt`, the files they replaced in its
+`reports\backups\play-folder-before-shared-shadows-20261011-094525`. With the play folder's Python its modules
+load and export every entry `run_game_vr.py` names. Nothing was started from
+there.
+
+## Anti-aliased, upscaled eyes and a resting game view — preceding build
+
+The user, October 10: "now that spidyvr is pretty stable and far along, our
+preformance in vr sucks with memory hogging, lag spikes and overall pretty
+bad performance for a very well optimized base game. get us to 90 fps without
+visual quality or feautres loss, there should be plenty of easy wins and
+massive gain (for example dlss doesnt work)".
+
+**What the report shows.** `game-vr-20261010-193410.json` (Quest 3 through
+Virtual Desktop at 72 Hz, 3072 x 3264 per eye, render scale 100): while
+immersive, 20 to 31 new eye pairs a second per 5 s (2,645 new, 5,012 reused);
+73 submissions a second throughout. `free_commit_mb` 11,269 at the start,
+5,095 at its lowest; the game's own log: 15.1 GB committed, 7.9 of 11.2 GB of
+video memory. The game's log also has the session's settings: `Window mode:
+Fullscreen`, 2560 x 1440 (the console log has no "Desktop view" line, and
+`hud.texture` is 2560 x 1440: the small window was not in use), `VSync: On`
+at 120 Hz until the user turned it off in the menu two minutes in, upscaling
+DLSS Quality, anti-aliasing TAA.
+
+**This PC.** RTX 4080 Laptop GPU (12 GB), Core Ultra 9 185H, 32 GB; plugged
+in, Windows' Balanced plan. `nvidia-smi` reported 74-80 W at 97-99%
+utilization in every measurement below. (The RTX 5090 figures elsewhere in
+these documents are another PC's.)
+
+**Baseline** (`tools/probe_vr_load.py --views 29 --no-eye-antialiasing`, the
+user's save on its rooftop, a fresh game, measured from 40 s after the load
+so that streaming has settled; `reports/perf/final-old.json`):
+
+| Phase | Frames/s | Frame | Render MB/frame | GPU busy | GPU ms: game view, left, right |
+|---|---|---|---|---|---|
+| Game alone (1920 x 1080 window) | 111.0 | 9.0 ms | 2.1 | 67% | 6.1 |
+| VR views, looking ahead | 35.6 | 28.1 ms | 7.6 | 99% | 5.1, 10.4, 10.1 |
+| VR views, turning a full circle | 36.9 | 27.1 ms | 11.6 | 97% | 4.9, 9.8, 9.8 |
+
+The per-view GPU times are the engine's own: `189e3a0` (a view job's end)
+divides the GPU timestamps around the job's commands by the timestamp
+frequency (`609ca78`) into the float at `*(view+1690)`. Frame time against
+the eyes' pixels, with the game's view still rendering and the eyes
+anti-aliased (`reports/perf/m-scale100`, `m-scale67`, `m-scale50`: 28.9, 20.1
+and 17.0 ms; eyes of 2064 x 2192 and 1536 x 1632 at 100%, `m-out2064`,
+`m-out1536`: 18.5 and 15.2 ms): 0.7 to 0.8 ms per million pixels rendered,
+0.12 to 0.14 ms per million pixels of eye image, and about 11 ms that no eye
+size changes.
+
+**Cause 1: the eyes had no anti-aliasing.** From the executable and the
+running game:
+
+- A view's commands run with its render context (0x7a0 bytes, the job
+  setup's `settings`; `1886ea0` copies it to `7a2e200`). Its anti-aliasing is
+  `+40c` (`7a2e60c`). TemporalAa (command 0x8a, handler `1842e10`) returns at
+  once unless it is 1. Sampled in the game with DLSS chosen: 0 for every
+  view, the game's and both eyes'.
+- Upscale (command 0x8b, handler `1849e80`) is queued for every view, but
+  leaves for the plain copy at `184a82a` when the view's id (`+f90`) is
+  negative, as every offscreen view's is. Its upscaler (`NxUpscalerImpl`,
+  `1d05510`: Streamline's DLSS with viewport 0, or NGX, FSR, XeSS) holds one
+  instance, sized for the game's view.
+- The eyes' lenses were built with no jitter (`placeEyes`, the `Lens` call).
+- A view's buffer set is made from a table of 132 render targets
+  (`609b060`, 0x30 bytes each; `1873af0` makes those `1875270` allows). A
+  target with a kind in its flags' low byte is made only where the buffer
+  set's kind mask (`3d11b18`: 0xff for the game's sets, 0x20 for an offscreen
+  view's kind 2) has it: an eye's set had no `kTaaTarget0/1` or
+  `kTaaDepth0/1` (kind 4), and, incidentally, none of the SSR history (1),
+  motion blur (2), shared half-size (0x11), volumetric fog (8) or ray
+  tracing (0x80) targets. Listed in the game (the records from the set's
+  `+14a0`, 0x1e8 bytes each, size at `+1cc`): `kMrtTaaTarget0` 1920 x 1080 in
+  the game's set, 0 x 0 in an eye's.
+- `1874f40` sizes a set: the render size from its arguments (times the
+  temporal upscale ratio at `+12c68`, which `ce71b0` sets for the game's
+  set), and the size of the anti-aliased image (`+12bf8`..`+12c04`:
+  `kResolved`, `kTaaTarget0/1`) from the game's display (`7a2ef00`),
+  whatever the view: `kMrtResolved` was 1920 x 1080 in a 3072 x 3264 eye's
+  set.
+
+**Cause 2: three scene views.** Per-view GPU time above: the game's own view
+took 5.1 ms of each frame, as much as an eye at 67%. It follows the game's
+dynamic resolution (968 x 544 when the frame took 28 ms, 1840 x 1032 at
+19.6 ms: `Dynamic Render Buffers`) and has every effect. Render commands a
+frame by view (`tools/probe_render_commands.py`, a hook on `187e130`):
+with the game's view, 8,556 `ModelShadowCasters`, 481 `ModelGBufferBatch`,
+585 `ModelAlpha`, 261 `ModelForward`; each view queues its own
+`SetShadowMapTarget` (5 or 6) and so its own shadow maps.
+
+**Changes.**
+
+- `src/stereo_probe.cpp`:
+  - `eyeTemporal` / `eyeRenderPercent` (`SpidyEyeTemporal`: percent in bits
+    0-7, bits 8 up: 1 jitter, 2 temporal anti-aliasing, 4 its command where
+    the profile leaves it out). The VR worker sets 7 and the session's
+    `upscale` before it starts the views.
+  - `initBuffers` (hook on `1873470`): an eye's set is sized at
+    `spidy::eyeRenderSize` (percent of the eye per side, multiples of 8),
+    and made with the kind mask's bit 4 set for the call (`3d11b18`, entry
+    bytes checked, restored after).
+  - `sizeBuffers` (new hook on `1874f40`): the anti-aliased image's size in
+    an eye's set is the eye's, and flag 2 ("both sizes equal") follows.
+  - `copyJob`: an eye's render context gets anti-aliasing 1.
+  - `setupDisplay`: queues TemporalAa where the profile's `+68c` leaves it
+    out (it did not, with these settings).
+  - `eyeJitter`: a Halton (2, 3) point per frame, as the game's camera gives
+    its own view (descriptor `+428`, `+42c`: twice the pixel offset over the
+    render size); 8 phases at 100%, 18 at 67%, 32 at 50%. The flat screen
+    (the eyes copy the stock camera) takes the eyes' jitter on the stock
+    lens.
+  - `restGameView` (views option 32, with 8): while immersive, both eyes
+    live and no game screen wanted, the game view's `+1208` is cleared, at
+    which `19206a0` (SubmitScene) leaves at once; set again as soon as any
+    of those ends, at `SpidyStop`, and never on a view that replaced it.
+  - `shareExposure` / `update`: while the game's view rests, the right eye
+    takes the left eye's adapted luminance (buffer and processor copy) and
+    the left keeps its own.
+  - Diagnostics: `SpidyCommandTrace` / `SpidyCommandData`.
+- `src/native_eye_gpu.cpp`: `mirror()`; in the Present hook, while wanted and
+  no screen copy is, `mirrorEye` draws the newest staged left eye over the
+  back buffer (one triangle, one linear sample, the eye cut to the window's
+  shape about its middle; display-encoded values through unchanged; a float
+  back buffer is left alone). `SpidyPresentCount` (presents, or with 1 the
+  mirrored ones).
+- `src/game_xr.cpp`: XrConfig 21 (656 bytes): `upscale` (50-100, default 67)
+  and a spare word; options bit 15 (no eye anti-aliasing) and 16 (the game
+  renders its own view); views flags 13|16|32 by default.
+- `include/spidy/eye_resolution.hpp`: `validEyeUpscale`, `eyeRenderSize`.
+- `tools/run_game_vr.py` (`--upscale`, `--no-eye-antialiasing`,
+  `--game-monitor-view`; the console's rendering line; `eyes` in reports),
+  `tools/launch-game-vr.ps1` (`-Upscale`, `-NoEyeAntialiasing`,
+  `-GameMonitorView`), the launcher (Upscaling: Off, High 77%, Quality 67%,
+  Balanced 58%, Performance 50%; `upscale=` in launcher.ini).
+- `tools/vr_display.py`: `VSync` 0 among a session's settings, restored with
+  the others.
+- `tools/probe_vr_load.py` (views 61 and `--upscale` by default, per-view GPU
+  time), `tools/probe_exposure.py` and `tools/probe_hud.py` (`--views`,
+  `--upscale`), `tools/probe_render_commands.py`, `tools/close_game.py`.
+
+**Measured with them** (the same spot and eye size, a fresh game for each;
+`reports/perf/final-new100.json`, `-new67`, `-new50`):
+
+| Upscale | Scene | Ahead | Turning | GPU busy | GPU ms: left, right | Video memory | Committed |
+|---|---|---|---|---|---|---|---|
+| 0.2.11 | 3072 x 3264 | 35.6 | 36.9 | 99% | 10.4, 10.1 (+5.1 game view) | 6,378 MB | 13,785 MB |
+| 100% | 3072 x 3264 | 39.4 | 39.2 | 99% | 11.0, 11.8 | 6,744 MB | 14,195 MB |
+| 67% | 2064 x 2192 | 61.0 | 59.6 | 99% / 97% | 6.3, 7.1 | 5,766 MB | 13,186 MB |
+| 50% | 1536 x 1632 | 77.1 | 69.6 | 97% / 86% | 4.7, 5.4 | 5,367 MB | 12,810 MB |
+
+Render commands fell from 7.6 to 5.6 MB a frame (11.6 to 8.4 turning). The
+game's view resting, everything else equal (67%, anti-aliased;
+`reports/perf/m-scale67` and `e9-rest`): 49.8 to 61.2 frames a second ahead,
+48.1 to 59.8 turning.
+
+The table and the checks below are of the module as built before 22:38
+(`dll_sha256` a6fe634e...). Comments in `stereo_probe.cpp` and `game_xr.cpp`
+were edited after them and the module built again at 22:56 (86938153...,
+the one in the play folder); that one, measured the same way at 67%
+(`reports/perf/final-ship67.json`): 60.4 frames a second ahead, 60.0
+turning, eyes rendered at 2064 x 2192, 5,756 MB of video memory, 13,183 MB
+committed. The exposure and HUD probes were not run again on it.
+
+**Checks in the game.**
+
+- Images, left eye, one viewpoint, a crop at full size
+  (`reports/perf/q-old`, `q-100`, `q-67`, `q-50`): 0.2.11's beams are
+  stair-stepped and its scaffold breaks into moire; at 100% and 67% the
+  edges are clean and the scaffold whole, 67% slightly softer; 50% softer
+  again; the HUD and subtitles are as sharp at every setting. A frame taken
+  while the head turned 26 degrees a second at 67% (`q-67`, `-moving`): a
+  window grid with no trails.
+- The game's view resting: `+1208` 0, back at 1 after the stop; the game
+  goes on presenting, each present with the left eye drawn over
+  (`SpidyPresentCount`); the window shows the left eye's middle band with the
+  HUD (`reports/perf/win-rest.png`). Render commands a frame, on and off
+  (`reports/perf/trace-main-on.json`, `-off`): the view's own lists fall
+  from 677 to 7 (Scaleform, VisualEffectsCPUReadback and
+  SceneObjectRegistryFixup stay), the lists no view owns from 10,106 to 6,518
+  (ModelShadowCasters 8,556 to 5,604), the eyes' own stay. The eyes' images
+  with it on and off, each eye exposed on its own: mean colour
+  (93.3, 85.8, 94.9) and (93.5, 85.8, 94.8).
+- `tools/probe_exposure.py` (views 61, eyes of 1536 x 1632;
+  `reports/perf/exposure-rest.json`): the right eye's image over the left's,
+  median of the blocks compared, 0.9989 to 1.0011 at five poses (level, the
+  head on either side, a quarter turn, looking up); each eye on its own,
+  0.44 to 2.26.
+- `tools/probe_hud.py` (views 61, eyes of 1536 x 1632 at 67%;
+  `reports/perf/hud-rest.json`): `ahead flat:1 flatview flat:0 back
+  screen:menu resumed turn:90 turning`: the panel placed in every frame, 0
+  rejected; the flat screen shows the stock camera, anti-aliased; with the
+  eyes' lease lapsed the window shows the game's own view again
+  (`menu-window.png`); the eyes resume as before.
+- 235 core checks (1 new: the upscaled sizes), 23 launcher checks (the
+  `--upscale` argument), 106 Python checks (3 new: the upscaled sizes and
+  console line, `--upscale`'s range, vertical sync saved and restored) and
+  the GPU test pass.
+
+**Not verified.**
+
+- The headset: nothing here went through OpenXR. The frame rate there (the
+  runtime's encoding shares the GPU), the upscaled image in motion, and the
+  monitor during play.
+- The picture's brightness with the head on its side: it now follows the
+  left eye alone (the exposure probe's left eye adapted to 0.30 and 0.59
+  looking the same way with the head on either side); the game's view,
+  covering both lenses, was one value for both. `-GameMonitorView` is the
+  old way.
+- SSR and volumetric fog in the eyes: an eye's buffer set never had their
+  targets (above), before this build or in it.
+- Other graphics cards, and the game's other settings (TAA without an
+  upscaler, SMAA, DLAA, ray tracing): the eyes' context is set to temporal
+  anti-aliasing whatever the game's is.
+- One game crashed while it sat between measurements with only the input
+  bridge and the pad module started (`Spider-Man.exe+2fde47d`, a null
+  `[rbx+148]` on one of the game's own threads); not seen again in the
+  launches after it.
+
+**Left for later.** Each view renders its own shadow maps; the eyes could
+share one set. DLSS in place of the engine's upscaler needs an instance per
+eye (the game's Streamline calls use viewport 0). The XR worker copies the
+staged pair into the headset's images at every headset frame, new or not.
+
+**In the play folder** (`Documents\Spidy-0.2.11`, October 10, 23:12):
+`build\windows-ninja\spidy_stereo_probe.dll`, `tools\run_game_vr.py`,
+`tools\vr_display.py`, `Spidy Launcher.exe` and `README.txt` (this build's
+`docs/PLAYERS.md`), the files they replaced in its
+`reports\backups\play-folder-before-upscaling-20261010-231248`. Its other
+modules are as they were (the movement and ray modules are the seventh
+build's). With the play folder's Python (3.12.10) its six modules load and
+export every entry `run_game_vr.py` names, and `run_game_vr.py --help` lists
+`--upscale`. Nothing was started from the play folder: the launcher there,
+and a session from it, are untried.
+
+## Dives on physics steps over 50 ms — preceding build
+
+The user, October 10: "I get pulled down strongly mid swings sometimes, which
+stops the web and drops me to the ground super fast, happened last session at
+least twice".
+
+**What the report shows.** `game-vr-20261010-193410.json` (the play folder
+`Spidy-0.2.11`, Quest 3 through Virtual Desktop, 3072 x 3264 per eye, swing
+speed 32, weight 80): 161 s of `motion_samples`, the mover's step (`dt`, the
+game's smoothed frame time: steps 114, 174 and 223 ms apart in wall time
+carry a `dt` of 43 to 45 ms) at a median 38.6 ms. Three handoffs, by the
+samples' `qpc` from the first one:
+
+| At | Step | Before (driven) | After | Fall |
+| --- | --- | --- | --- | --- |
+| 140.48 s | 50.9 ms | both webs, +9.7 m/s up | -42.0 m/s, `air_vertical` -42.8 | 10.05 to 1.00 m in 0.24 s |
+| 153.39 s | 50.4 ms | both webs, +6.5 m/s up | -42.0 m/s, `air_vertical` -42.8 | 24.91 to 1.32 m in 0.52 s |
+| 159.81 s | 51.7 ms | both webs, on a wall run, +1.6 m/s | -42.0 m/s, `air_vertical` -42.8 | 28.54 to 1.31 m in 0.77 s |
+
+In each, the last step sampled before it was 46.2 to 49.5 ms and driven
+(status 2), and the step itself is status 1 with serial 0: it ran without the
+command. The swing's samples stop there and come back with no webs and
+`owned` 0. The retained samples have 22 steps over 50 ms: these three falls
+and the standing after the last. None is driven.
+
+**Why.** Two limits, both from the first native swing builds:
+
+- `native_movement.cpp` (`query`, `handleAir`, `queryDriven`) drove a step
+  only when `dt <= .05f` and `length(c.velocity) * dt <= 2`. Otherwise the
+  step ran stock: in midair on the game's airborne state, at the fall speed it
+  keeps counting (the "Midair drops" section below).
+- `Swing::predictNativeStep` returned an invalid prediction for
+  `seconds > .05f` after `releaseAll()`, and `game_swing.cpp` cancels the
+  swing on an invalid prediction (webs released, movement relinquished).
+
+The October 7 changes kept every other let-go from handing the player over
+in midair and left "an invalid prediction still cancel[s]"; a step over
+50 ms was such a prediction, and the module's own refusal came a step earlier.
+
+**Changes.**
+
+- `native_movement.hpp`: `drivable(dt)` (finite and positive) and
+  `stepDelta(velocity, dt)` (`velocity * dt`, limited to `farthestStep`, 2 m).
+  The three hooks drive every drivable step by `stepDelta`; the airborne
+  event's displacement override is the same vector. A request of the size the
+  module already accepted, for a step of any length.
+- `Swing::predictNativeStep`: no upper limit on `seconds`; a step over
+  `longestNativeStep` (100 ms) is predicted as one of that length. A step of
+  no length, a non-finite one and unfocused input are invalid as before.
+  `Swing::settleStep` winds the rope for the share of a longer step that was
+  predicted.
+- `game_swing::InFlightStep`: the travel of the step in flight and the
+  velocity the previous command should have produced both go through
+  `stepDelta`, with the previous step's own length, so a step the module
+  shortened is not taken for a collision (which removes the velocity into the
+  "surface": here all of it).
+- `game_swing.cpp`: the movement lease is `2 * longestNativeStep` plus the
+  16 ms tick grain, 216 ms (the module accepts up to 250). The request's cap
+  is unchanged (1.75 m a step, written as 0.875 of `farthestStep`): under
+  18.3 steps a second it is below 32 m/s.
+
+**Checks.** Full observer/XR build with the Visual Studio 2022 Build Tools
+(MSVC 14.44), no compiler warnings: 234/234 core checks, launcher checks,
+103/103 Python checks. New core checks:
+
+- "a swing goes on through physics steps longer than 50 ms": the report's
+  steps (44.4 to 66.5 ms and back to 41.2) through the simulated mover
+  (`NativeMover`, which now moves by `stepDelta` and caps its request as
+  `game_swing.cpp` does), from 20 m/s at the bottom of a 60 m rope. Every
+  prediction valid, the web held, the body within 5 cm of its rope (1 mm
+  measured), the observed velocity changing by under 1 m/s a step (0.44
+  measured, the rope's turn and gravity), never downward, 18.2 m/s at the end.
+- "a step the movement module shortens takes no speed from the flight":
+  `InFlightStep` alone (shortened: the solver's velocity kept; blocked by a
+  wall: removed, as before), and free flight at 60 m/s under a 65 m/s limit
+  with the step going from 28 to 35 ms: never under 49 m/s, then the longer
+  step's cap of 50.
+- "a movement command moves a step of any length, 2 m at most, and is never
+  refused for it"; "a native step longer than the longest moves the body as
+  far as the longest".
+- Changed: "external prediction keeps its web through a long step and
+  relinquishes unfocused input" (was: "relinquishes stale or unfocused
+  input", which required a 51 ms step to release the web); the rope
+  correction check gains the share of a 200 ms step.
+
+With 0.2.11's logic under the new names (`drivable` with the 50 ms limit,
+`stepDelta` unlimited, `predictNativeStep` and `settleStep` as released),
+built with clang (Emscripten, where 232 of the 234 checks build), those six
+checks fail and the other 226 pass.
+
+The two modules from this build load in the play folder's Python and export
+every entry `run_game_vr.py` asks for. They are in the play folder
+(`Spidy-0.2.11\build\windows-ninja`) since 20:02, the released ones in its
+`reports\backups\play-folder-before-long-steps-20261010-200244`.
+
+**Not verified.** Anything in the game or the headset: no probe ran, and the
+game was not started. That the native request behaves the same in a 51 to
+67 ms step as in a shorter one rests on its being the same call with a
+displacement inside the range used before. The web grab still stops stepping
+when its step passes 50 ms (`game_grab::due`, `game_grab::step`,
+`WebGrab::step`): a held prop or thug is let go there, which the report does
+not exercise (no grabs). A session below 20 steps a second is the check: in
+its report, `motion_samples` with `dt` over 0.05 should stay at status 2.
+
+## Desktop mirror and small facade ledges — preceding build
 
 The user reports the camera behind the body in the desktop mirror only,
 and falling off buildings while walking across small ledges.
@@ -33,7 +527,7 @@ The exact mirror failure and the ledges still need an in-game/headset check.
 `probe_game_body.py` now saves desktop images alongside the eyes and records
 the desktop camera's distance from the actual eye-view midpoint.
 
-## One exposure for both eyes — current build
+## One exposure for both eyes — preceding build
 
 The user, October 10: "there is a visual bug where a discrepancy happens in
 brightness and shadow rendering between left and right eye. there's an auto

@@ -103,6 +103,9 @@ struct MotionIntent {
     Vec3 target{}, velocity{};
     bool valid{};
 };
+// The longest step predictNativeStep predicts. A longer one counts as this
+// long: the body goes less far in it, and keeps its webs and its flight.
+constexpr float longestNativeStep = .1f;
 struct Web {
     bool attached{};
     Vec3 anchor{};

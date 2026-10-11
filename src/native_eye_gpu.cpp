@@ -1,6 +1,7 @@
 #include "spidy/native_eye_gpu.hpp"
 #include "spidy/copy_eye_texture.hpp"
 #include "spidy/eye_pair_state.hpp"
+#include "spidy/monitor_rate.hpp"
 #include "spidy/presentation_gate.hpp"
 #include <MinHook.h>
 #include <array>
@@ -8,6 +9,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
+#include <d3dcompiler.h>
 #include <dxgi1_4.h>
 #include <mutex>
 #include <stdexcept>
@@ -86,13 +88,16 @@ struct CopyCommands {
     ComPtr<ID3D12GraphicsCommandList> list;
     uint64_t fence{};
 };
-std::array<CopyCommands, 3> captureCommands, presentCommands, screenCommands;
+std::array<CopyCommands, 3> captureCommands, presentCommands, screenCommands, mirrorCommands;
 std::array<ComPtr<ID3D12Resource>, 2> stagedEyes;
 EyePairState::Stamp capturedStamp;
 uint64_t capturedPairs{}, reusedPairs{}, capturedMs{};
 // The game's presented frame (submission lock). A texture replaced by a new
 // size stays alive for a few seconds, for draws still reading it.
 std::atomic<bool> screenWanted{};
+bool screenWantedFlag() {
+    return screenWanted.load();
+}
 Screen screen;
 uint64_t screenMs{};
 struct Retired {
@@ -102,6 +107,24 @@ struct Retired {
 std::vector<Retired> retiredScreens;
 std::vector<uint8_t> screenPixels; // probe readback of the newest copy
 std::atomic<uint64_t> screenPresents{};
+// Every Present of any swapchain in the process since the hooks went in.
+std::atomic<uint32_t> presentCalls{};
+// The left eye on the game's window (mirrorEye): wanted while the game does
+// not render its own view, and how many presents got it.
+std::atomic<bool> mirrorWanted{};
+std::atomic<uint32_t> mirrorCalls{};
+// While the window shows the left eye, at most this many of the game's
+// presents a second reach DXGI (monitor_rate.hpp; 0: all of them), the time
+// the next one is due, and how many were held back.
+std::atomic<uint32_t> mirrorRate{}, presentsHeld{};
+std::atomic<int64_t> mirrorDue{};
+struct MirrorPipeline {
+    ComPtr<ID3D12RootSignature> root;
+    ComPtr<ID3D12PipelineState> state;
+    ComPtr<ID3D12DescriptorHeap> source, target;
+    DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
+    bool failed{};
+} mirrorPipeline;
 std::atomic<uint32_t> screenSkipped{}, backBufferFormat{};
 void publishScreen(uint32_t status, const void* rows, uint32_t rowBytes) {
     std::lock_guard lock(telemetry);
@@ -583,21 +606,231 @@ ScreenSkip copyScreen(IDXGISwapChain* swapchain) {
     screenMs = now;
     return screenCopied;
 }
+// The pipeline that draws a part of one texture over a whole target of
+// `format`: a screen-covering triangle and one linear sample (submission lock).
+bool prepareMirror(DXGI_FORMAT format) {
+    auto& m = mirrorPipeline;
+    if (m.failed)
+        return false;
+    if (m.state && m.format == format)
+        return true;
+    m.failed = true; // cleared at the end: a failure is not tried again every frame
+    if (!m.root) {
+        D3D12_DESCRIPTOR_RANGE range{D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, 0};
+        D3D12_ROOT_PARAMETER parameters[2]{};
+        parameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        parameters[0].DescriptorTable = {1, &range};
+        parameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+        parameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+        parameters[1].Constants.Num32BitValues = 8;
+        parameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+        D3D12_STATIC_SAMPLER_DESC sampler{};
+        sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+        sampler.AddressU = sampler.AddressV = sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        sampler.MaxLOD = D3D12_FLOAT32_MAX;
+        sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+        D3D12_ROOT_SIGNATURE_DESC rs{2, parameters, 1, &sampler, D3D12_ROOT_SIGNATURE_FLAG_NONE};
+        ComPtr<ID3DBlob> signature, error;
+        D3D12_DESCRIPTOR_HEAP_DESC views{};
+        views.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        views.NumDescriptors = 1;
+        views.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        D3D12_DESCRIPTOR_HEAP_DESC targetsHeap{};
+        targetsHeap.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+        targetsHeap.NumDescriptors = 1;
+        if (FAILED(D3D12SerializeRootSignature(&rs, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error)) ||
+            FAILED(device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(),
+                                               IID_PPV_ARGS(&m.root))) ||
+            FAILED(device->CreateDescriptorHeap(&views, IID_PPV_ARGS(&m.source))) ||
+            FAILED(device->CreateDescriptorHeap(&targetsHeap, IID_PPV_ARGS(&m.target)))) {
+            m.root.Reset();
+            return false;
+        }
+    }
+    // Both images hold display-encoded values and neither view is sRGB, so
+    // what is sampled is what is stored.
+    const char* shader = R"(
+Texture2D source : register(t0);
+SamplerState scaled : register(s0);
+cbuffer Part : register(b0) { float2 targetPixel; float2 offset; float2 scale; float2 unused; };
+float4 vs(uint id : SV_VertexID) : SV_POSITION {
+    const float2 corner = float2((id << 1) & 2, id & 2);
+    return float4(corner * float2(2, -2) + float2(-1, 1), 0, 1);
+}
+float4 ps(float4 position : SV_POSITION) : SV_TARGET {
+    return float4(source.SampleLevel(scaled, offset + position.xy * targetPixel * scale, 0).rgb, 1);
+}
+)";
+    ComPtr<ID3DBlob> vs, ps, error;
+    if (FAILED(D3DCompile(shader, std::strlen(shader), "spidy_mirror", nullptr, nullptr, "vs", "vs_5_0",
+                          D3DCOMPILE_ENABLE_STRICTNESS, 0, &vs, &error)) ||
+        FAILED(D3DCompile(shader, std::strlen(shader), "spidy_mirror", nullptr, nullptr, "ps", "ps_5_0",
+                          D3DCOMPILE_ENABLE_STRICTNESS, 0, &ps, &error)))
+        return false;
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC d{};
+    d.pRootSignature = m.root.Get();
+    d.VS = {vs->GetBufferPointer(), vs->GetBufferSize()};
+    d.PS = {ps->GetBufferPointer(), ps->GetBufferSize()};
+    d.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    d.NumRenderTargets = 1;
+    d.RTVFormats[0] = format;
+    d.SampleDesc.Count = 1;
+    d.SampleMask = UINT_MAX;
+    d.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+    d.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+    d.RasterizerState.DepthClipEnable = TRUE;
+    auto& blend = d.BlendState.RenderTarget[0];
+    blend.SrcBlend = blend.SrcBlendAlpha = D3D12_BLEND_ONE;
+    blend.DestBlend = blend.DestBlendAlpha = D3D12_BLEND_ZERO;
+    blend.BlendOp = blend.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+    blend.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+    m.state.Reset();
+    if (FAILED(device->CreateGraphicsPipelineState(&d, IID_PPV_ARGS(&m.state))))
+        return false;
+    m.format = format;
+    m.failed = false;
+    return true;
+}
+// Present thread: the newest left eye over the back buffer about to be shown,
+// on the game's queue. While the game does not render its own view (the stereo
+// module's views option 32), nothing else draws there, and the window would
+// show whichever old frames its buffers still hold. The eye fills the window's
+// width or height and is cut to its shape about the middle; it is not
+// stretched. A float (HDR) back buffer is left alone.
+void mirrorEye(IDXGISwapChain* swapchain) {
+    ComPtr<IDXGISwapChain3> chain;
+    ComPtr<ID3D12Resource> buffer;
+    if (FAILED(swapchain->QueryInterface(IID_PPV_ARGS(&chain))) ||
+        FAILED(chain->GetBuffer(chain->GetCurrentBackBufferIndex(), IID_PPV_ARGS(&buffer))))
+        return;
+    ComPtr<ID3D12Device> owner;
+    ComPtr<IUnknown> ownerIdentity, gameIdentity;
+    if (FAILED(buffer->GetDevice(IID_PPV_ARGS(&owner))) || FAILED(owner.As(&ownerIdentity)) ||
+        FAILED(device.As(&gameIdentity)) || ownerIdentity.Get() != gameIdentity.Get())
+        return;
+    const auto desc = buffer->GetDesc();
+    bool linear{};
+    const auto view = screenView(desc.Format, linear);
+    if (view == DXGI_FORMAT_UNKNOWN || linear || desc.Dimension != D3D12_RESOURCE_DIMENSION_TEXTURE2D ||
+        desc.SampleDesc.Count != 1 || !desc.Width || !desc.Height)
+        return;
+    std::lock_guard submitLock(submission);
+    std::lock_guard recordLock(recording);
+    const auto now = GetTickCount64();
+    if (!enabled || fault || now >= deadline || !staged || !stagedEyes[0] || !capturedStamp.serial ||
+        now - capturedMs > imageHoldMs || !width || !height || !prepareMirror(view))
+        return;
+    auto* slot = readyCommands(mirrorCommands);
+    if (!slot)
+        return; // earlier draws still in flight: this present keeps what the buffer holds
+    auto* eye = stagedEyes[0].Get();
+    D3D12_SHADER_RESOURCE_VIEW_DESC sv{};
+    sv.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    sv.Texture2D.MipLevels = 1;
+    device->CreateShaderResourceView(eye, &sv, mirrorPipeline.source->GetCPUDescriptorHandleForHeapStart());
+    D3D12_RENDER_TARGET_VIEW_DESC rv{};
+    rv.Format = view;
+    rv.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+    const auto rtv = mirrorPipeline.target->GetCPUDescriptorHandleForHeapStart();
+    device->CreateRenderTargetView(buffer.Get(), &rv, rtv);
+    D3D12_RESOURCE_BARRIER b[2]{};
+    b[0].Type = b[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    b[0].Transition = {buffer.Get(), D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, D3D12_RESOURCE_STATE_PRESENT,
+                       D3D12_RESOURCE_STATE_RENDER_TARGET};
+    b[1].Transition = {eye, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, D3D12_RESOURCE_STATE_COPY_SOURCE,
+                       D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE};
+    auto* list = slot->list.Get();
+    originalBarrier(list, 2, b);
+    // The part of the eye with the window's shape, about its middle.
+    const float window = static_cast<float>(desc.Width) / static_cast<float>(desc.Height);
+    const float image = static_cast<float>(width) / static_cast<float>(height);
+    const float across = window < image ? window / image : 1, down = window < image ? 1 : image / window;
+    const float part[8] = {1.f / static_cast<float>(desc.Width), 1.f / static_cast<float>(desc.Height),
+                           (1 - across) / 2, (1 - down) / 2, across, down, 0, 0};
+    list->SetPipelineState(mirrorPipeline.state.Get());
+    list->SetGraphicsRootSignature(mirrorPipeline.root.Get());
+    ID3D12DescriptorHeap* heaps[] = {mirrorPipeline.source.Get()};
+    list->SetDescriptorHeaps(1, heaps);
+    list->SetGraphicsRootDescriptorTable(0, mirrorPipeline.source->GetGPUDescriptorHandleForHeapStart());
+    list->SetGraphicsRoot32BitConstants(1, 8, part, 0);
+    list->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+    const D3D12_VIEWPORT viewport{0, 0, static_cast<float>(desc.Width), static_cast<float>(desc.Height), 0, 1};
+    const D3D12_RECT rect{0, 0, static_cast<LONG>(desc.Width), static_cast<LONG>(desc.Height)};
+    list->RSSetViewports(1, &viewport);
+    list->RSSetScissorRects(1, &rect);
+    list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    list->DrawInstanced(3, 1, 0, 0);
+    for (auto& barrier : b)
+        std::swap(barrier.Transition.StateBefore, barrier.Transition.StateAfter);
+    originalBarrier(list, 2, b);
+    if (submitCommands(*slot))
+        ++mirrorCalls;
+}
 void captureScreen(IDXGISwapChain* swapchain) {
     ++screenPresents;
     screenSkipped = copyScreen(swapchain);
     publishScreen(0, nullptr, 0);
 }
-HRESULT STDMETHODCALLTYPE present(IDXGISwapChain* swapchain, UINT interval, UINT flags) {
-    if (enabled && screenWanted && !(flags & DXGI_PRESENT_TEST))
+// Present reaches Present1 in some DXGI builds: one of them handles a frame.
+thread_local bool presenting{};
+void presentFrame(IDXGISwapChain* swapchain, UINT flags) {
+    if (!enabled || (flags & DXGI_PRESENT_TEST))
+        return;
+    if (screenWanted)
         captureScreen(swapchain);
-    return originalPresent(swapchain, interval, flags);
+    else if (mirrorWanted)
+        mirrorEye(swapchain);
+}
+// The game presents once a frame whether or not it rendered a view of its
+// own. While it does not, the window only mirrors the left eye, and a present
+// costs GPU time the eyes could have: hold back those beyond the monitor's rate.
+// The game goes on without them (it paces itself by its own fences), and a
+// held present draws no mirror either.
+bool holdPresent(UINT flags) {
+    const auto rate = mirrorRate.load();
+    if (!rate || !enabled || !mirrorWanted || screenWanted || (flags & DXGI_PRESENT_TEST))
+        return false;
+    LARGE_INTEGER now{}, frequency{};
+    QueryPerformanceCounter(&now);
+    QueryPerformanceFrequency(&frequency);
+    auto due = mirrorDue.load();
+    if (spidy::monitorPresentDue(now.QuadPart, due, frequency.QuadPart, rate)) {
+        mirrorDue = due;
+        return false;
+    }
+    ++presentsHeld;
+    return true;
+}
+HRESULT STDMETHODCALLTYPE present(IDXGISwapChain* swapchain, UINT interval, UINT flags) {
+    ++presentCalls;
+    const bool outer = !presenting;
+    if (outer && holdPresent(flags))
+        return S_OK;
+    if (outer) {
+        presenting = true;
+        presentFrame(swapchain, flags);
+    }
+    const auto result = originalPresent(swapchain, interval, flags);
+    if (outer)
+        presenting = false;
+    return result;
 }
 HRESULT STDMETHODCALLTYPE present1(IDXGISwapChain1* swapchain, UINT interval, UINT flags,
                                    const DXGI_PRESENT_PARAMETERS* parameters) {
-    if (enabled && screenWanted && !(flags & DXGI_PRESENT_TEST))
-        captureScreen(swapchain);
-    return originalPresent1(swapchain, interval, flags, parameters);
+    ++presentCalls;
+    const bool outer = !presenting;
+    if (outer && holdPresent(flags))
+        return S_OK;
+    if (outer) {
+        presenting = true;
+        presentFrame(swapchain, flags);
+    }
+    const auto result = originalPresent1(swapchain, interval, flags, parameters);
+    if (outer)
+        presenting = false;
+    return result;
 }
 // Every swapchain in the process shares DXGI's Present methods. A throwaway
 // 64-pixel swapchain on a hidden window, on a queue of its own, gives their
@@ -665,8 +898,26 @@ DXGI_FORMAT screenView(DXGI_FORMAT backBuffer, bool& linear) {
         return DXGI_FORMAT_UNKNOWN;
     }
 }
+uint32_t presents() {
+    return presentCalls.load();
+}
+void mirror(bool wanted) {
+    mirrorWanted = wanted;
+}
+void monitorRate(uint32_t rate) {
+    mirrorRate = rate;
+}
+uint32_t heldPresents() {
+    return presentsHeld.load();
+}
+uint32_t mirrored() {
+    return mirrorCalls.load();
+}
 void wantScreen(bool wanted) {
     screenWanted = wanted;
+}
+bool screenRequested() {
+    return screenWantedFlag();
 }
 bool latestScreen(Screen& out, uint64_t maxAgeMs) {
     std::lock_guard submitLock(submission);
@@ -1016,6 +1267,22 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyGpuStart(void* input) {
 }
 extern "C" __declspec(dllexport) DWORD WINAPI SpidyGpuStop(void*) {
     return native_gpu::stop();
+}
+// Diagnostic: how many times the game presented since the GPU bridge started
+// (Present and Present1 each count); with 1 how many presents got the left
+// eye on the game's window, with 2 how many were held back from the window.
+extern "C" __declspec(dllexport) DWORD WINAPI SpidyPresentCount(void* which) {
+    return which == reinterpret_cast<void*>(2)   ? native_gpu::heldPresents()
+           : which ? native_gpu::mirrored() : native_gpu::presents();
+}
+// While the window shows the left eye, at most this many of the game's
+// presents a second reach it (1-240; 0: every one). Takes effect at once.
+extern "C" __declspec(dllexport) DWORD WINAPI SpidyMonitorRate(void* rate) {
+    const auto value = reinterpret_cast<uintptr_t>(rate);
+    if (!spidy::validMonitorRate(static_cast<uint32_t>(std::min<uintptr_t>(value, UINT32_MAX))))
+        return 3911;
+    native_gpu::monitorRate(static_cast<uint32_t>(value));
+    return 0;
 }
 extern "C" __declspec(dllexport) DWORD WINAPI SpidyGpuFreeze(void*) {
     return native_gpu::freeze();

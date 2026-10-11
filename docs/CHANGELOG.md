@@ -3,7 +3,232 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 10, sixth build): both eyes get one brightness.** You
+**Latest build (October 11, first build): the monitor takes fewer of the
+headset's frames, and both eyes share one set of sun shadows.** You ran
+`vr_display.py --restore` and said to continue with the rest. With your own
+settings back, the game runs full screen (3840 x 2400) when started outside
+the launcher, and the same rooftop measurement that gave 61 frames a second
+in the launcher's small window gave 43. That difference turned out to be one
+thing:
+
+- **Every picture sent to the monitor cost the headset.** The game presents
+  its window once a frame, also while the window only mirrors your left eye.
+  On this laptop (the screen hangs on the Intel adapter, the game renders on
+  the NVIDIA one) each present of the full-screen window took 8 ms of a 23 ms
+  frame. Held back, measured in one game: 43.1 frames a second with every
+  present, 52.7 with every second, 58.8 with every fourth, 66.2 with none
+  (turning: 42.5 and 65.5). The game needs none of them: it paces itself. The
+  pose in the newest eye pair was also fresher without them (a median 44 ms
+  old where it was 66), with half a pair waiting on the graphics card where
+  1.4 did.
+  **The monitor now gets your left eye 30 times a second**, whatever the
+  game's rate; the other presents never reach Windows. The launcher's new
+  **Monitor frame rate** option chooses Every frame, 60, 30, 15 or 5 a second
+  (`-MonitorRate 0`..`240` for `Launch Spidy VR.cmd`, 0 every frame). Menus,
+  cutscenes and the flat screen present every frame as before.
+- **Each eye rendered the sun's shadow maps again.** The game has a way for
+  one view to use another's: a view given another view's frame as its parent
+  copies that one's shadow cascades and renders none (`19206a0`). It never
+  uses it for an offscreen view. The eyes now do: the second eye takes the
+  first one's. One thing had to change for that. The game fits each view's
+  six cascades to the view's own lens, and the two eyes' lenses mirror each
+  other: their nearest boxes sat 13.0 m apart, for boxes of 13.2 m half a
+  side. So the first eye fits its cascades to the lens that covers both eyes
+  (the one the game's own view has on your head) and both use those.
+  Measured: a frame's render commands fell from 5.3 to 4.2 MB (8.9 to 6.5
+  turning). Where the graphics card is the limit, as on this laptop, that is
+  66.4 to 66.7 frames a second looking ahead and 65.7 to 67.4 turning. Where
+  the processor is (small eyes, the card half idle): 98 to 104 looking ahead
+  and 79 to 87 turning.
+  What it costs: the covering lens is wider, its boxes 15% larger a side
+  (13.24 to 15.23 m for the nearest) over shadow maps of the same 1792
+  pixels, so a shadow's edge is that much coarser. Side by side at twice the
+  size (`reports\perf\shadow-ab3\side-2560-1850-left.png`) the shadows have
+  the same shapes and slightly softer edges. Making the maps larger to match
+  crashed the game (its shadow atlas had no room for a sixth, and its render
+  code reads a cascade's map without checking: `16364df`), so that is out.
+  `-OwnShadows` gives each eye its own again. On the flat screen each eye
+  keeps its own.
+
+What this means for 90: with presents out of the way the eyes are the whole
+frame (15.1 ms of GPU time for 15.1 ms frames at the default upscaling), and
+the graphics card decides. `nvidia-smi` says why it is slow: its power limit
+is 80 W by default here and 150 W at most. A higher performance mode in MSI
+Center is the largest step left, and yours to take; nothing I can change from
+here. The processor's own limit, measured with small eyes, is about 100
+frames a second looking ahead and 87 turning with the shared shadows.
+
+`spidy_stereo_probe.dll`, the launcher and the session tools changed;
+XrConfig is version 22 (`monitorRate` where the spare word was, options bit
+17 for each eye's own shadows). New in `tools/probe_vr_load.py`:
+`--eye-shadows`, `--monitor-rate`, phases such as `vr_s0` and `vr_m0` that
+switch them for a phase, how old the newest pair's pose is and how many pairs
+wait on the GPU. 236 core checks (1 new), 23 launcher checks, 107 Python
+checks (1 new) and the GPU test pass. It is in your play folder; see the end
+of this entry's section in [docs/VALIDATION.md](VALIDATION.md).
+Not tried: this build in the game. The measurements above are of builds
+from this morning that held back every nth present and switched the shared
+shadows by hand; the rate by the clock and the session's own settings for
+both were built after you asked to test yourself, and only their unit checks
+ran. Not the headset either, as before. And not the launcher's small window:
+my shell cannot give the game that window, so how much of the 61 there was
+the monitor's is for your session to show.
+
+**Preceding build (October 10, eighth build): anti-aliased eyes, upscaling, and
+two scene views instead of three.** You reported that VR performs badly for a
+well-optimized game (memory, lag spikes, frame rate), asked for 90 frames a
+second without losing picture quality or features, and noted that DLSS does
+not work. Your 19:34 report: the headset ran at 72 Hz and got 20 to 31 new eye
+pairs a second (the rest were repeats), and what Windows could still promise
+fell from 11.3 to 5.1 GB.
+Measured in the game on this PC without a headset (`tools/probe_vr_load.py`,
+your save's rooftop, 3072 x 3264 per eye; RTX 4080 Laptop, 12 GB, drawing
+74-80 W; Core Ultra 9 185H): 0.2.11 made 35.6 frames a second looking ahead
+and 36.9 turning, with the GPU 97-99% busy. What it was busy with:
+
+- **The eyes had no anti-aliasing at all.** With an upscaler chosen in the
+  game's settings (yours: DLSS Quality), the game leaves its temporal
+  anti-aliasing to the upscaler, and its upscaler skips every view but its
+  own. So each eye was its scene exactly as rendered: 10 million pixels, every
+  edge stair-stepped (what you called jagged on October 8), nothing gained
+  from DLSS. The eyes' lenses also had no jitter, and their buffers no targets
+  for it, so the game's anti-aliasing could not have worked on them either.
+- **The game's own view cost as much as an eye.** Spidy keeps that view on
+  your head because the game does shadow, culling and loading work for it;
+  the game also rendered it, with every effect, for the monitor: 5.1 ms of a
+  19.6 ms frame, and about three of every ten megabytes of render commands.
+
+What changed:
+
+- **The eyes are anti-aliased, and upscaled.** Each eye's lens now jitters
+  as the game's own camera does, its buffers get the game's anti-aliasing
+  targets at the eye's size, and its frames run the game's temporal
+  anti-aliasing, which also upscales: by default the scene is rendered at 67%
+  of the eye's size per side (2064 x 2192 for a 3072 x 3264 eye, the ratio of
+  DLSS Quality) and brought to the eye's full size from the last frames'
+  samples. It is the game's own and needs no RTX card. The launcher's new
+  **Upscaling**
+  option chooses Off (100%, anti-aliasing only), High (77%), Quality (67%),
+  Balanced (58%) or Performance (50%); `-Upscale 50`..`100` for
+  `Launch Spidy VR.cmd`. The HUD, subtitles and markers are drawn at the eye's
+  full size as before.
+- **The game no longer renders its own view while you are in VR.** Its camera
+  stays on your head, so shadows, culling and loading are as before; only its
+  image is gone. The monitor shows your left eye instead, cut to the window's
+  shape (it was the head view, stretched). On the game screen (menus,
+  cutscenes) and the flat screen nothing changes. With no view of the game's
+  to measure brightness from, the right eye takes the left eye's exposure.
+- **Vertical sync is off during a session**, like frame generation, and comes
+  back afterwards. Your session started with it on at 120 Hz: the game then
+  waits for the monitor before every frame and can only run at 120, 60, 40 or
+  30 frames a second (its frames were 36-45 ms).
+
+Measured afterwards, the same spot and eye size, a fresh game for each:
+
+| | Looking ahead | Turning | Video memory | Committed |
+|---|---|---|---|---|
+| 0.2.11 | 35.6 | 36.9 | 6,378 MB | 13,785 MB |
+| Upscaling off (100%) | 39.4 | 39.2 | 6,744 MB | 14,195 MB |
+| Quality (67%, the default) | 61.0 | 59.6 | 5,766 MB | 13,186 MB |
+| Performance (50%) | 77.1 | 69.6 | 5,367 MB | 12,810 MB |
+
+Pictures of the left eye at one viewpoint (`reports\perf\q-*`): 0.2.11 has
+stair-stepped beams and a scaffold that breaks into moire; at 67% the edges
+are clean and the scaffold whole, a little softer; a frame taken while the
+head turned 26 degrees a second shows no trails; 50% is visibly softer. The
+HUD probe (immersive, flat screen, game screen and back) and the exposure
+probe (both eyes alike within 0.1% at five head poses) pass with the new
+views.
+
+**This is not 90.** On this PC the default gives 61 and Performance 77 where
+0.2.11 gave 36; in the headset Virtual Desktop's encoding takes its share
+too (your session got about 25 where this measurement gives 0.2.11 36; that
+session's game also ran full screen at 2560 x 1440 with vertical sync on: its
+console has no "Desktop view" line and its HUD texture was 2560 x 1440. "Small
+game window" is on in your launcher now).
+What still limits it:
+
+- The GPU drew 74-80 W in every run, about what this laptop gives in a quiet
+  or balanced power mode. If MSI Center has a higher performance mode, that
+  alone should add frames; it was not tried.
+- Each eye still renders its own shadow maps: 2,800 shadow-caster commands a
+  view and frame, by far the most numerous of the render thread's commands,
+  for two eyes 6 cm apart. Sharing them is the next large step for both the GPU and the CPU
+  (turning, the CPU holds 50% upscaling at 70 frames a second).
+- DLSS itself is still not used: the game has one DLSS instance, for its own
+  view. Its temporal upscaler does the same job here; whether DLSS would look
+  better at the same cost is open.
+
+`spidy_stereo_probe.dll`, the launcher and the session tools changed; XrConfig
+is version 21 (656 bytes: `upscale`, a spare word, options bits 15 and 16).
+`-NoEyeAntialiasing` gives the eyes as they were, and `-GameMonitorView` has
+the game render its own view again. New: `tools/probe_render_commands.py`
+(render commands a frame, by view), per-view GPU time in
+`tools/probe_vr_load.py`, `tools/close_game.py`. 235 core checks (1 new), 23
+launcher checks, 106 Python checks (3 new) and the GPU test pass.
+It is in your play folder (`Documents\Spidy-0.2.11`) since 23:12: the stereo
+module, `run_game_vr.py`, `vr_display.py`, the launcher and README.txt, the
+files they replaced in its
+`reports\backups\play-folder-before-upscaling-20261010-231248`. Nothing was
+started from there.
+Not tried: the headset. Nothing here ran through OpenXR, so the frame rate in
+the headset, how the upscaled picture looks in motion in it, and the monitor
+while you play are for you to see. With the head on its side (standing on a
+wall) the picture's brightness now follows the left eye alone; if that shows,
+`-GameMonitorView` is the old way. The game crashed once while it sat
+between measurements with no eye views started (a null pointer in one of the
+game's own threads, none of Spidy's code on it); it did not recur in the
+launches after it, close to thirty.
+
+**Preceding build (October 10, seventh build): no dive when the game runs
+slowly.** You reported being pulled down hard in the middle of a swing, which
+stops the web and drops you to the ground very fast, at least twice in your
+last session. That session's report (19:34, `game-vr-20261010-193410.json`)
+has it three times, in its last 21 seconds. Each time you held both webs and
+were going up (at 9.7, 6.5 and 1.6 m/s, the third time along a wall), and
+from one physics step to the next you went down at 42 m/s with no webs: 9 m to the
+ground in a quarter of a second, then 24 m in half a second, then 27 m in
+three quarters.
+It was the game's own fall again, the one from the October 7 dives: whenever
+Spidy lets go of you in midair, the game takes over at the fall speed it has
+kept counting. What let go this time was a limit on how long a physics step
+may be. The game's step is its frame time, smoothed; in that session it was
+36 to 45 ms (22 to 28 steps a second, at 3072 x 3264 per eye) and crept up as
+the game slowed. Each dive began on the first step over 50 ms: 50.9, 50.4 and
+51.7 ms. Two places treated such a step as stale. The movement module ran it
+without Spidy's command, so the game moved you at its fall speed; and the
+swing refused to predict it, which cancelled the swing and released the webs.
+So below 20 frames a second every step dropped you.
+Now a step is never handed to the game for being long. The movement module
+moves you by the command for the whole step, whatever its length, and 2 m at
+most: a step that would go further is shortened, where it used to be refused.
+The swing predicts steps up to 100 ms and counts a longer one as 100 ms, so
+below 10 frames a second you slow down instead of falling. The movement
+command stays valid for 216 ms (two such steps) instead of 150. One thing
+you may notice where you used to fall: a command still moves you 1.75 m a
+step at most, so below about 18 frames a second your top speed comes down
+with the frame rate (26 m/s at 15) until the game speeds up again.
+The same refusal had a second way in, which your report does not show
+happening: at the speed limit a command asks for up to 1.75 m a step, and a
+step a quarter longer than the one before it (your report has 16.0 then
+20.1 ms, and 38.7 then 44.5) would have asked for over 2 m. That is shortened
+now too, and the swing knows a shortened step is no wall it hit.
+`spidy_movement_bridge.dll` and `spidy_ray_bridge.dll` changed; no protocol
+changed. 234 core checks pass, 4 of them new (the steps of your report flown
+through a simulated mover: the web holds, nothing jolts, no dive; a shortened
+step keeps its speed; the module's rule; steps over 100 ms) and 2 changed; all
+six fail on 0.2.11's logic. 103 Python checks and the launcher checks pass.
+In your play folder (`Documents\Spidy-0.2.11`) since 20:02: the two modules,
+the earlier files in its
+`reports\backups\play-folder-before-long-steps-20261010-200244`.
+Not tried: the game and the headset. Nothing here ran in the game, so that
+the dives are gone is for you to see; your next report shows it either way
+(`motion_samples`: status stays 2 through steps with `dt` over 0.05). Not
+changed: a prop or thug on a web is still let go when the step passes 50 ms
+(`game_grab.cpp`, `web_grab.cpp`), and the frame rate itself; a lower Render
+resolution in the launcher raises it.
+
+**Preceding build (October 10, sixth build): both eyes get one brightness.** You
 reported that brightness and shadows differ between your eyes: standing on
 the side of a building, the eye that sees more sky and the eye nearer the
 city come out differently, and they swap when you turn round; you suspected

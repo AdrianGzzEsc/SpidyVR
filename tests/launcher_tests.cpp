@@ -195,6 +195,27 @@ int main() {
         options.renderScale = 10;
         args = sessionArguments(options, L"r.json", L"", L"");
         check(args.size() == 9 && args[7] == L"--render-scale" && args[8] == L"50", "the render scale at least 50%");
+        // Upscaling: the default goes unsaid, another choice is passed, within its range.
+        options = {};
+        options.upscale = 100;
+        args = sessionArguments(options, L"r.json", L"", L"");
+        check(args.size() == 9 && args[7] == L"--upscale" && args[8] == L"100", "no upscaling");
+        options.upscale = 20;
+        args = sessionArguments(options, L"r.json", L"", L"");
+        check(args.size() == 9 && args[7] == L"--upscale" && args[8] == L"50", "the upscale at least 50%");
+        options.renderScale = 125;
+        options.upscale = 58;
+        args = sessionArguments(options, L"r.json", L"", L"");
+        check(args.size() == 11 && args[7] == L"--render-scale" && args[9] == L"--upscale" && args[10] == L"58",
+              "the upscale after the render scale");
+        // The monitor's rate in VR: 30 a second goes unsaid, another is passed, at most 240.
+        options = {};
+        options.monitorRate = 0;
+        args = sessionArguments(options, L"r.json", L"", L"");
+        check(args.size() == 9 && args[7] == L"--monitor-rate" && args[8] == L"0", "the monitor at every frame");
+        options.monitorRate = 999;
+        args = sessionArguments(options, L"r.json", L"", L"");
+        check(args.size() == 9 && args[7] == L"--monitor-rate" && args[8] == L"240", "the monitor at most 240");
         options = {};
         options.weight = 999;
         args = sessionArguments(options, L"r.json", L"", L"");

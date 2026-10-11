@@ -300,10 +300,20 @@ of impact:
   off, and saves the game window on the wall and after the jump.
 - `tools/probe_vr_load.py`: renders the VR views at the headset's resolution
   where the player stands and reports, per phase, the game's frame rate, its
-  render commands per frame, GPU use, and the CPU time of each game thread;
+  render commands per frame, GPU use, memory and clock, the GPU time of each
+  view (the game's own, then each eye), and the CPU time of each game thread;
+  `--upscale`, `--no-eye-antialiasing` and `--views` choose what a session
+  would (`--views 29 --no-eye-antialiasing` is the eyes before October 10's
+  eighth build);
   `--profile-threads` samples where chosen threads spend their time, and
   `--gpu capture` with the `shots` phase saves eye images with the eyes'
   occlusion culling on and off. No headset is required.
+- `tools/probe_render_commands.py`: counts the render commands the game
+  queues in a frame, by command and by view (the game's own, each eye, and
+  the lists no view owns), with the engine's names for them.
+- `tools/close_game.py`: closes the game after a probe (its window first,
+  the process if that does not do it) and restores the settings a session
+  changed; `--keep-settings` leaves those alone.
 - `spidy_stereo_probe.dll`, `spidy_eye_capture.dll`, and `spidy_scene_trace.dll`:
   offscreen-view lifetime, synchronized GPU readback, and render scheduling
   diagnostics. A texture allocation alone is not evidence of a rendered eye.
@@ -403,8 +413,10 @@ and step their FLIP SPEED (90 to 480 degrees a second at full tilt of the
 left stick, 180 by default; `GameTrackingRig::flipSpeed`, XrConfig and XrData
 `flipSpeed`), and switch STAND ON WALLS (on by default: walking a wall or
 stopped on it, the view turns so the wall is the floor; `GameTrackingRig::standOnWalls`, XrConfig
-options bit 13 for off, XrData settings bit 128); XrConfig and XrData are
-version 20.
+options bit 13 for off, XrData settings bit 128); XrConfig is version 22
+(`upscale`, `monitorRate`; options bit 15 for no eye anti-aliasing, bit 16
+for the game's own monitor view, bit 17 for each eye's own shadow set) and
+XrData version 20.
 X resets a setting, Y the
 whole tab (to Spidy's defaults). Web grabbing, the web
 shooter, your body and punching are not in it or in the launcher's options
@@ -454,15 +466,20 @@ Click **both thumbsticks** to switch between immersive VR and a flat screen
 inside the headset. Release both before clicking again. Flat mode uses the
 stock game camera and the game's own controls on a real gamepad (not the
 keyboard, as above; the Touch controllers pass only the menu button and Y);
-VR movement and web input are released. In immersive VR the monitor shows your head view, horizontally
-stretched; in flat mode it shows the normal game view. Add `-StockMonitorView`
+VR movement and web input are released. In immersive VR the monitor shows your
+left eye, cut to the window's shape (the game does not render a view of its
+own then: see [Graphics settings in VR](#graphics-settings-in-vr)); in flat
+mode and on the game screen it shows the normal game view. `-GameMonitorView`
+has the game render your head view for the monitor instead, horizontally
+stretched, as before October 10's eighth build. Add `-StockMonitorView`
 to keep the normal game view on the monitor in immersive VR too, at the cost of
 culling and shading that follow the stock camera instead of your head.
 
 When the launcher starts the game, the game opens in a small 1920 x 1080 window
-(16:9, at most three quarters of the desktop's height), centred. The engine still runs culling, shadow
-setup, and auto-exposure for that view; a small window keeps that work and skips
-most of its rendering. The launcher saves the game's window settings in
+(16:9, at most three quarters of the desktop's height), centred. The engine still runs culling and
+shadow setup for that view, and renders it whenever you are not in immersive VR
+(the game screen, the flat screen); a small window keeps that rendering small,
+and the game sizes its HUD by the window. The launcher saves the game's window settings in
 `reports\desktop-view-before-vr.json` and writes them back after the game
 closes. If the launcher stops while the game is still running, they are written
 back the next time it starts the game, or run `python tools\vr_display.py
@@ -470,7 +487,11 @@ back the next time it starts the game, or run `python tools\vr_display.py
 size. Add `-FullDesktopView` to start the game with your own settings.
 
 Whatever the window, a game the launcher starts also runs without frame
-generation (`Graphics\DLSSG` and `FrameGen` 0, where the game saved them) and
+generation (`Graphics\DLSSG` and `FrameGen` 0, where the game saved them),
+without vertical sync (`Graphics\VSync` 0, since October 10's eighth build:
+with it on the game waits for the monitor before each frame, so the eyes'
+frame rate can only be the monitor's rate divided by a whole number; the
+session of October 10, 19:34 started with it on at 120 Hz) and
 without Windows.Gaming.Input (`Input\EnableWindowsGamingInput` 0, created if
 missing and deleted again afterwards); the backup's `session` entry holds the
 values to put back. Under SteamVR the game finds Steam's virtual gamepads
@@ -530,6 +551,14 @@ and memory. Scaled sizes are multiples of 8, at most the runtime's
 they are of. For an explicit square size instead, use
 `tools/launch-game-vr.ps1 -Size 2048`.
 
+That is the size of the image each eye sends to the headset. The scene inside
+it is rendered smaller and brought to that size by the game's temporal
+anti-aliasing (the launcher's "Upscaling", `-Upscale`, `--upscale`): 50% to
+100% of the eye's size per side, 67% by default (2064 x 2192 for a
+3072 x 3264 eye), in multiples of 8 (`spidy::eyeRenderSize`). 100% is
+anti-aliasing alone. The HUD, subtitles and markers are drawn at the eye's
+full size. See [Graphics settings in VR](#graphics-settings-in-vr).
+
 On this PC (RTX 5090, the user's save, without a headset, October 8) 150% of
 3072 x 3264 rendered 66 frames a second looking ahead and 71 turning, against
 90 and 103 at 100%, with the GPU 92% busy; it took 2.5 GB more video memory
@@ -555,6 +584,8 @@ reattaching after a stopped session or a rebuilt DLL.
 | `-ScreenSize Medium` | Size of the game screen in the headset: Small, Medium or Large |
 | `-RenderScale 125` | Eye resolution in percent of the runtime's recommendation, per side (50-200; 100 by default) |
 | `-Size 2048` | Square eye resolution instead of the runtime's recommendation (not with `-RenderScale`) |
+| `-Upscale 67` | The size the scene inside each eye is rendered at, in percent of the eye's size per side; the game's temporal anti-aliasing brings it to the eye's size (50-100; 67 by default, 100 is anti-aliasing alone) |
+| `-NoEyeAntialiasing` | The eyes as they were before October 10's eighth build: no anti-aliasing, no upscaling, for comparison |
 | `-NoWebGrab` | Webs swing only; they do not catch props or thugs |
 | `-NoAirWebs` | A web that meets nothing within 100 m misses instead of holding in open air |
 | `-NoWebShooter` | The trigger only reels |
@@ -569,6 +600,9 @@ reattaching after a stopped session or a rebuilt DLL.
 | `-OverlayWebs` | Spidy's overlay strands instead of the game's web lines |
 | `-FullDesktopView` | Start the game with your own window settings, not the small VR window |
 | `-StockMonitorView` | Keep the stock camera on the monitor (culling and shading follow it, not your head) |
+| `-GameMonitorView` | The game renders its own head view for the monitor while you are in VR, as before October 10's eighth build (a third scene view; the monitor otherwise shows your left eye) |
+| `-MonitorRate 30` | How often the monitor gets your left eye in VR, pictures a second (1-240; 30 by default; 0 is every frame, as before October 11). The launcher's "Monitor frame rate" |
+| `-OwnShadows` | Each eye renders its own sun shadow maps, as before October 11; without it both use one set fitted to a lens covering both |
 | `-NoEyeOcclusion` | Turn off the eyes' occlusion culling, for comparison |
 | `-XrRuntime <manifest>` | Use this OpenXR runtime manifest instead of the one the headset is connected to |
 | `-AttachOnly` | Attach to a game that is already running instead of starting it |
@@ -586,12 +620,19 @@ into VR the launcher prints either `Render memory: 512 MB for two frames (the
 game's own: 128 MB).` or a warning that the game is on its own ring. After the
 warning, close the game and start it with `Launch Spidy VR.cmd`. When the
 session ends the launcher prints the most two frames used and how many frames
-did not fit; the report has the same under `render_memory`.
+did not fit; the report has the same under `render_memory`. Since October
+10's eighth build the game's own view is not rendered while you are immersive,
+and a frame's commands fell from 7.6 to 5.6 MB at one measured spot (11.6 to
+8.4 MB turning); the ring stays at 512 MB.
 
 **Windows commit.** Windows promises each program the memory it asks for, out
 of RAM plus page file, whether or not the program then uses it. The game's GPU
 allocations count as well. In VR at 3072 x 3264 per eye the game takes about
-17 GB of promises. On October 5 this PC had 61.6 GB of RAM with half of it
+17 GB of promises (measured before the eyes' scene was upscaled; on October
+10 a laptop with an RTX 4080 Laptop GPU, 12 GB, measured 13.8 GB committed
+and 6.4 GB of video memory on a rooftop with 0.2.11, 13.2 and 5.8 GB with
+the eighth build's default upscaling, 14.2 and 6.7 GB with upscaling off).
+On October 5 this PC had 61.6 GB of RAM with half of it
 free, but other programs held about 50 GB of promises and the page file was
 4 GB, which left 14-15 GB. The game went past that. Windows enlarges a system-managed page file when this happens, and while
 it does, requests for memory can stall or fail. The report records
@@ -614,17 +655,36 @@ Spidy does not change in-game graphics options at runtime. One persistent change
 was made on October 4 for a performance comparison: the game's `VSync` registry
 value went from 1 to 0 (backup in `reports/vsync-before-performance-test.json`).
 When the VR launcher starts the game, it changes only the window settings
-(windowed, size, position) for that session and writes them back after the game
+(windowed, size, position), frame generation, vertical sync and
+Windows.Gaming.Input for that session and writes them back after the game
 closes; see [Start Spider-Man in VR](#start-spider-man-in-vr).
 
 The two eyes are extra native scene views. They inherit the game's own quality
 settings, including textures, shadows, level of detail, crowds, ray-traced
-reflections, ambient occlusion, anti-aliasing, and motion blur strength. For
-each eye, Spidy sets only:
+reflections, ambient occlusion, and motion blur strength; not its
+anti-aliasing and upscaling, which Spidy sets for them. For each eye, Spidy
+sets only:
 
 - the runtime-recommended resolution (3072 x 3264 in the latest session) times
-  the render scale, with private scene buffers at that size;
-- the tracked eye pose and asymmetric headset lens, with zero lens jitter;
+  the render scale for the eye's image, and private scene buffers at the
+  upscale's share of that (67% per side by default);
+- the tracked eye pose and asymmetric headset lens, with the sub-pixel jitter
+  the game's own camera has: a Halton (2, 3) point each frame (`eyeJitter` in
+  `src/stereo_probe.cpp`; 8 phases at 100%, 18 at 67%, 32 at 50%);
+- temporal anti-aliasing with upsampling, the game's own (since October 10's
+  eighth build). An offscreen view gets none from the game with an upscaler
+  chosen in its settings: the views' anti-aliasing mode (render context
+  `+40c`) is then 0, and the upscaler (DLSS, FSR or XeSS: one instance, sized
+  for the game's view) copies every offscreen view as it is. The eyes also
+  had no jitter and no targets for it: the game makes a buffer set's
+  `kTaaTarget0/1` and `kTaaDepth0/1` only for its own kinds of set, and sizes
+  them by the game's display. Spidy sets the mode to 1 for an eye's job
+  (`copyJob`), has the eye's set made with those targets (`initBuffers`) at
+  the eye's size (`sizeBuffers`), and jitters the lens. The game's
+  TemporalAa command then resolves the scene, rendered at the upscale's
+  share, to the eye's full size from the last frames' samples.
+  `SpidyEyeTemporal` chooses the parts and the share; the addresses are in
+  [VALIDATION.md](VALIDATION.md). DLSS itself is not used for the eyes;
 - the active post-processing profile and the main camera's display path;
 - the main camera's exposure, so both eyes are drawn equally bright. The game
   adapts exposure on the GPU, per view: a view's luminance pass (`18449f0`)
@@ -634,7 +694,9 @@ each eye, Spidy sets only:
   job reads the main view's buffer instead of its own (`shareExposure` in
   `src/stereo_probe.cpp`, since October 10's sixth build; until then each eye
   was exposed for what it alone saw). The numbers the game reads back to the
-  processor (`+1708`, `+170c`) are copied from the main view as well;
+  processor (`+1708`, `+170c`) are copied from the main view as well. While
+  the game's own view is not rendered (below) it measures nothing: the left
+  eye then keeps its own exposure and the right eye takes the left's;
 - the HUD's sRGB overlay setup pass, which the game skips for secondary views;
 - avatar visibility while immersive VR is active (this also hides the avatar
   and its shadow on the monitor).
@@ -647,7 +709,42 @@ setup and a camera position available to every shader. Moving the view lines
 that work up with the headset. That view now covers a wider field of view than
 the stock camera, which may cost some frame rate; compare with `-StockMonitorView`.
 
-The desktop view renders at the game window's size. Before the small VR window,
+Since October 10's eighth build the game does that work for its view but does
+not render it while you are immersive, both eyes are live and no game screen
+is wanted (`restGameView` in `src/stereo_probe.cpp`: the view's `+1208` is
+cleared, at which the game's SubmitScene, `19206a0`, leaves at once; views
+option 32). Rendered, it took 5.1 ms of the GPU in each 28 ms frame on an
+RTX 4080 Laptop GPU, as much as an eye at 67%, and a third of the frame's
+shadow-caster commands. The window then shows the newest left eye instead,
+cut to the window's shape about its middle (`mirrorEye` in
+`src/native_eye_gpu.cpp`, drawn over the back buffer in the Present hook).
+The view renders again the moment a game screen is wanted, in flat mode, and
+when the session stops; `-GameMonitorView` keeps it rendering throughout.
+
+The game presents its window once a frame whether or not it rendered a view
+for it, and a present is not free: on a laptop whose screen hangs on the
+other graphics adapter, each one of a 3840 x 2400 window took 8 ms of a 23 ms
+frame (October 11: 43 frames a second with every present, 66 with none).
+While the window mirrors the left eye, only the presents the monitor's rate
+asks for reach DXGI (`holdPresent` in `src/native_eye_gpu.cpp`,
+`include/spidy/monitor_rate.hpp`; 30 a second by default, the launcher's
+"Monitor frame rate", `-MonitorRate`). The game goes on without the others;
+the newest eye pair's pose was fresher for it.
+
+The sun's shadow cascades are made once for both eyes since October 11. The
+game's scene submit (`19206a0`) lets a view take another view's shadow sets
+as a parent's, which it never does for offscreen views; the second eye's
+submit now gets the first one's (`submitScene` in `src/stereo_probe.cpp`). A
+view's cascades are fitted to its own lens, and the eyes' mirrored lenses put
+their boxes most of a half size apart, so the first eye fits its set to the
+head's lens covering both (`fitCascades`, `shadowLens`). That lens is wider:
+the boxes are 15% larger a side over shadow maps of the same size, and shadow
+edges that much coarser. A frame's render commands fall by a quarter; frames
+a second by 1-3% where the graphics card is the limit and 4-10% where the
+processor is. `-OwnShadows` is the old way. The light set (local lights'
+shadows) is each eye's own still.
+
+When it renders, the desktop view does so at the game window's size. Before the small VR window,
 it rendered the full 3440 x 1440 desktop, about a fifth of the frame's pixels;
 at 1290 x 540 it was about 3%, at 1720 x 720 about 6%, and at 1920 x 1080
 (since October 9's seventh build, for the HUD: see
@@ -657,8 +754,13 @@ morning session averaged 44 new
 stereo pairs per second at
 3072 x 3264 per eye with the headset at 120 Hz; about 40% of the frames sent to
 the headset repeated an earlier pair, which doubles fast-moving scenery. The
-largest cost is eye resolution: lower Virtual Desktop's quality preset, or the
-render scale below 100%. Ray-traced
+largest cost is the number of pixels rendered: choose a lower Upscaling
+setting first (the eye's image keeps its size), then lower Virtual Desktop's
+quality preset or the render scale below 100%. On an RTX 4080 Laptop GPU
+(12 GB, drawing 74-80 W) on October 10, 3072 x 3264 per eye, without a
+headset: 36 frames a second with 0.2.11, 39 with upscaling off, 61 at 67%
+and 77 at 50% ([VALIDATION.md](VALIDATION.md)). Each view still renders its
+own shadow maps. Ray-traced
 reflections are computed for each eye. On this PC, motion blur, film grain, and
 sharpening are at their lowest stored value (1), and depth of field, vignette,
 chromatic aberration, and lens flares are off. The game also has a traversal
@@ -894,7 +996,9 @@ still requires a running game or headset.
 | `tools/inspect_game.py`, `tools/discover_render_types.py` | Offline game research |
 | `src/game_observer.cpp`, `tools/observe_game.py` | Opt-in native camera callback diagnostic |
 | `tools/game_driver.mjs` | Observed game launch, screenshots, and input workflow |
-| `tools/vr_display.py` | Small desktop window, no frame generation and no Windows.Gaming.Input for VR launches; restores the game's settings |
+| `tools/vr_display.py` | Small desktop window, no frame generation, no vertical sync and no Windows.Gaming.Input for VR launches; restores the game's settings |
+| `src/stereo_probe.cpp`, `src/native_eye_gpu.cpp`, `include/spidy/eye_resolution.hpp` | The eyes' scene views: their buffers, lenses, anti-aliasing and upscaling, exposure; the game's own view at the head and its rest; the staged eye pairs and the monitor's left eye |
+| `tools/probe_vr_load.py`, `tools/probe_render_commands.py`, `tools/probe_exposure.py` | The eyes' cost and picture in the game without a headset: frame rate, GPU time by view, render commands by view, and both eyes' brightness |
 | `tools/xr_runtime.py` | The OpenXR runtimes, and the one a headset is connected to (`--detect`) |
 | `docs/MILESTONE-1.md` | In-game acceptance criteria and remaining integration work |
 | `docs/REFERENCE.md` | Reference mechanics, executable evidence, source attribution |

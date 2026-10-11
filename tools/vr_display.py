@@ -8,10 +8,10 @@ fifth of the pixels of two 3072 x 3264 eyes). The game reads these values once a
 startup. The previous values are saved in reports/ and written back once the game
 has closed.
 
-Every VR session also turns off two game settings, whatever its window (SESSION):
-frame generation, and the game's Windows.Gaming.Input, which under SteamVR takes
-the controllers away from Spidy's XInput controller. They are saved and restored
-with the window's.
+Every VR session also turns off three game settings, whatever its window (SESSION):
+frame generation, vertical sync, and the game's Windows.Gaming.Input, which under
+SteamVR takes the controllers away from Spidy's XInput controller. They are saved
+and restored with the window's.
 """
 import argparse
 import ctypes
@@ -40,11 +40,15 @@ ASPECT = 16/9
 # - Frame generation (DLSS or FSR) off: Spidy draws the eyes itself, and generated frames change how
 #   the game presents its window (which the headset's game screen copies) on a queue of their own.
 #   Every tested session had it off.
+# - Vertical sync off: with it the game waits for the monitor before each new frame, so it runs at the
+#   monitor's rate divided by a whole number (120, 60, 40, 30 a second on a 120 Hz display) whatever the
+#   headset's: the October 10 session, started with it on, ran 36-45 ms frames. The headset's own frames
+#   do not wait for the game's.
 # - Windows.Gaming.Input off: in the Steam Link session of October 7 the game found two Steam virtual
 #   gamepads (Valve 28de:11ff) there, then logged "XInput disabled, disconnecting controller" and never
 #   read Spidy's XInput controller again (pad_reads 0): its menus did not move. At 0 the game skips
 #   Windows.Gaming.Input altogether (Spider-Man.exe 1d14c89); XInput and DualSense (libScePad) stay.
-SESSION = ((KEY, dict(DLSSG=0, FrameGen=0), False),
+SESSION = ((KEY, dict(DLSSG=0, FrameGen=0, VSync=0), False),
            (INPUT_KEY, dict(EnableWindowsGamingInput=0), True))
 
 

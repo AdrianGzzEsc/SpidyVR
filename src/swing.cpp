@@ -738,9 +738,13 @@ void Swing::update(float seconds, const Input& input, const World& world) {
     }
 }
 void Swing::settleStep(float predictedSeconds, float actualSeconds) {
-    const float extra = actualSeconds - predictedSeconds;
+    float extra = actualSeconds - predictedSeconds;
     if (!std::isfinite(extra) || std::abs(extra) > .1f)
         return;
+    // A step longer than the longest was predicted as that one: the body
+    // went that share of the way, and the rope is wound for as much.
+    if (predictedSeconds > longestNativeStep)
+        extra *= longestNativeStep / predictedSeconds;
     // Only what the winch really took in: a rope held at its shortest length
     // did not shorten, and must not start breathing with the frame time.
     const auto lengths = reeled({hands_[0].winch, hands_[1].winch}, extra);
@@ -756,12 +760,16 @@ MotionIntent Swing::predictNativeStep(float seconds, const Input& input, const W
                                       Body actual, float inputSeconds) {
     events_.clear();
     accumulator_ = 0;
-    if (!std::isfinite(seconds) || seconds <= 0 || seconds > .05f || !input.focused ||
+    if (!std::isfinite(seconds) || seconds <= 0 || !input.focused ||
         !std::isfinite(inputSeconds) || inputSeconds < 0 || !finite(actual.position) ||
         !finite(actual.velocity) || length(actual.velocity) > config_.maxSpeed * 2) {
         releaseAll();
         return {};
     }
+    // A long step is a slow game, not stale input. Over 50 ms used to be
+    // refused here: the caller let go of a swinging player, whom the game
+    // then dropped at its own fall speed (October 10 headset report).
+    seconds = std::min(seconds, longestNativeStep);
     if (actual.grounded && !body_.grounded)
         sinceLanding_ = 0;
     body_ = actual;

@@ -1,4 +1,5 @@
 #pragma once
+#include "native_movement.hpp"
 #include "presentation_gate.hpp"
 #include "swing.hpp"
 #include "swing_takeoff.hpp"
@@ -55,11 +56,17 @@ class InFlightStep {
         // observation in between, the step in flight repeats the same command.
         const Record* produced = s.step == step_ + 1 ? (controlled_ ? find(serial_) : nullptr) : flight;
         Vec3 velocity = flight ? flight->end : s.achieved;
-        Vec3 travel = (flight ? flight->requested : s.achieved) * s.dt;
-        if (produced) {
+        // The movement module moves the body as far as stepDelta says: a
+        // command it shortened (a step much longer than the one before it,
+        // at the speed limit) is no collision, and takes no speed away.
+        Vec3 travel = flight ? native_movement::stepDelta(flight->requested, s.dt) : s.achieved * s.dt;
+        // The step that produced the observed velocity: the one observed
+        // before this one, or an unobserved one about as long as this one.
+        const float took = s.step == step_ + 1 && dt_ > 0 ? dt_ : s.dt;
+        if (produced && took > 0) {
             // Collision took this part of the command away. Remove motion into
             // that surface; a projection cannot remove one contact twice.
-            const Vec3 lost = produced->requested - s.achieved;
+            const Vec3 lost = native_movement::stepDelta(produced->requested, took) / took - s.achieved;
             if (length(lost) > .25f) {
                 const Vec3 into = normalized(lost);
                 velocity -= into * std::max(0.f, dot(velocity, into));
@@ -69,6 +76,7 @@ class InFlightStep {
         step_ = s.step;
         serial_ = s.serial;
         controlled_ = s.controlled;
+        dt_ = s.dt;
         return {s.position + travel, velocity, grounded};
     }
     // A submitted command: its velocity and the solver's velocity at its end.
@@ -93,6 +101,7 @@ class InFlightStep {
     std::array<Record, 8> records_{};
     size_t next_{};
     uint64_t step_{}, serial_{};
+    float dt_{}; // length of the step observed last
     bool controlled_{};
 };
 struct Hand {

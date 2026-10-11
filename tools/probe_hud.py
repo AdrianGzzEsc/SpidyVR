@@ -2,8 +2,9 @@
 
 The game's HUD panel (health, gadgets, minimap, prompts) is a model the game hangs in front of its
 own camera; while immersive Spidy places it in front of the head instead (native_hud.hpp). This
-probe drives the eye views as a VR session does (views 29: the game's own view on the head, eye
-occlusion) from the player's position and saves both eyes at each step:
+probe drives the eye views as a VR session does (views 61: the game's own view on the head and not
+rendered itself, eye occlusion; the eyes' scene upscaled and anti-aliased) from the player's position
+and saves both eyes at each step:
 
   NAME              hold the head still for a moment, then save the eyes (NAME.png)
   yaw:DEG           turn the head this far from the game camera's heading (0 at start)
@@ -84,6 +85,10 @@ def main():
     p.add_argument('--width', type=int, default=1536, help='eye width in pixels (headset: 3072)')
     p.add_argument('--height', type=int, default=1632, help='eye height in pixels (headset: 3264)')
     p.add_argument('--hold', type=float, default=2.0, help='seconds the head holds still before a capture')
+    p.add_argument('--views', type=int, default=61, choices=(29, 61),
+                   help="61: the game's own view does not render while the eyes do, as a VR session; 29: it does")
+    p.add_argument('--upscale', type=int, default=67,
+                   help="percent of the eye's size per side the eyes' scene is rendered at (50..100)")
     p.add_argument('--output', type=pathlib.Path, default=ROOT/'reports/hud-probe.json')
     a = p.parse_args()
     for step in a.steps:
@@ -133,7 +138,7 @@ def main():
                               ROOT/'reports/stereo-modules',
                               ('SpidyStart', 'SpidyStop', 'SpidyStereoData', 'SpidySetEyes', 'SpidyStereoFrames',
                                'SpidyGpuStart', 'SpidyGpuStop', 'SpidyGpuData', 'SpidyGpuFreeze', 'SpidyHudData',
-                               'SpidyHudSet'))
+                               'SpidyHudSet', 'SpidyEyeTemporal'))
         result['dll_sha256'] = digest
         # Capture mode: every eye pair is read back, so a freeze can save it.
         code = call_with_payload(process, dll['SpidyGpuStart'],
@@ -141,8 +146,12 @@ def main():
         if code:
             raise RuntimeError(f'GPU bridge start: {code}')
         stops.append(('gpu', dll['SpidyGpuStop']))
+        # Upscaled and anti-aliased as the VR worker asks (jitter, temporal anti-aliasing, its command).
+        if not 50 <= a.upscale <= 100 or call_remote(process, dll['SpidyEyeTemporal'], a.upscale | 7 << 8):
+            raise RuntimeError('Eye anti-aliasing rejected')
+        result.update(views=a.views, upscale=a.upscale)
         code = call_with_payload(process, dll['SpidyStart'],
-                                 struct.pack('<4IQ4I', 0x53534346, 1, 40, game.pid, game.base, 0, 29, a.width,
+                                 struct.pack('<4IQ4I', 0x53534346, 1, 40, game.pid, game.base, 0, a.views, a.width,
                                              a.height))
         if code:
             raise RuntimeError(f'Eye views start: {code}')

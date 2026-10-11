@@ -2,6 +2,8 @@ param(
     [ValidateRange(0,25)][int]$Seconds=0,
     [ValidateRange(0,8192)][int]$Size=0,
     [ValidateRange(50,200)][int]$RenderScale=100,
+    [ValidateRange(50,100)][int]$Upscale=67,
+    [ValidateRange(0,240)][int]$MonitorRate=30,
     [ValidateRange(1,65)][float]$SwingSpeed=32,
     [ValidateRange(40,300)][int]$Weight=80,
     [ValidateRange(90,480)][int]$FlipSpeed=180,
@@ -27,6 +29,9 @@ param(
     [switch]$NoStandOnWalls,
     [switch]$NoWallRun,
     [switch]$NoEyeOcclusion,
+    [switch]$NoEyeAntialiasing,
+    [switch]$GameMonitorView,
+    [switch]$OwnShadows,
     [switch]$StockMonitorView,
     [switch]$FullDesktopView,
     [switch]$AttachOnly,
@@ -62,6 +67,9 @@ else { Write-Host 'VR runtime: the one your headset is connected to (add -XrRunt
 if($Size) { Write-Host "Eye resolution override: $Size x $Size." }
 elseif($RenderScale -ne 100) { Write-Host "Eye resolution: $RenderScale% of the VR runtime's recommendation, per side." }
 else { Write-Host "Eye resolution: the VR runtime's recommendation (add -RenderScale 125 for sharper, slower images)." }
+if($NoEyeAntialiasing) { Write-Host "Eyes: no anti-aliasing and no upscaling, as before October 10's eighth build (jagged and slower)." }
+elseif($Upscale -eq 100) { Write-Host 'Eyes: anti-aliased, the scene rendered at their full size (-Upscale 67 is faster).' }
+else { Write-Host "Eyes: the scene rendered at $Upscale% of their size per side, anti-aliased and upscaled (-Upscale 100: full size, slower)." }
 if($Seconds) { Write-Host "Timed test: $Seconds seconds." }
 else { Write-Host 'VR stays active until you close the game or press Ctrl+C here.' }
 Write-Host 'VR starts with the game: its intro, menus, loading and cutscenes show on a screen in the headset.'
@@ -134,11 +142,21 @@ if($NoEyeOcclusion) {
     $captureArgs+=@('--no-eye-occlusion')
     Write-Host 'Eye occlusion off: each eye draws everything in view, hidden or not (about half the frame rate).'
 }
+if($NoEyeAntialiasing) { $captureArgs+=@('--no-eye-antialiasing') }
 if($StockMonitorView) {
     $captureArgs+=@('--stock-monitor-view')
     Write-Host 'Monitor: stock game camera. The game culls and shades for it, not your head.'
 }
-else { Write-Host 'Monitor: your head view in immersive VR (add -StockMonitorView for the stock camera).' }
+elseif($GameMonitorView) {
+    $captureArgs+=@('--game-monitor-view')
+    Write-Host "Monitor: the game's own view of your head in immersive VR (a third scene view: about a fifth fewer frames)."
+}
+elseif($MonitorRate) { Write-Host "Monitor: your left eye in immersive VR, $MonitorRate pictures a second (-MonitorRate 0: every frame, slower in the headset; -StockMonitorView: the stock camera)." }
+else { Write-Host 'Monitor: your left eye in immersive VR, every frame (-MonitorRate 30 leaves the headset more).' }
+if($OwnShadows) {
+    $captureArgs+=@('--own-shadows')
+    Write-Host "Shadows: each eye makes its own sun shadow maps, as before October 11 (more work for the processor)."
+}
 if($FullDesktopView) {
     $captureArgs+=@('--full-desktop-view')
     Write-Host "Desktop window: the game's own display settings."
@@ -157,6 +175,7 @@ if($FlipSpeed -ne 180) { Write-Host "Flip speed: $FlipSpeed degrees a second at 
 $screenIndex=@{Small=0;Medium=1;Large=2}[$ScreenSize]
 $hudIndex=@{Off=0;Small=1;Medium=2;Large=3}[$Hud]
 $captureArgs+=@('--snap-turn',$SnapTurn,'--smooth-turn',$SmoothTurn,'--haptics',$Haptics,'--screen-size',$screenIndex,
-               '--render-scale',$RenderScale,'--weight',$Weight,'--hud',$hudIndex,'--flip-speed',$FlipSpeed)
+               '--render-scale',$RenderScale,'--upscale',$Upscale,'--weight',$Weight,'--hud',$hudIndex,
+               '--flip-speed',$FlipSpeed,'--monitor-rate',$MonitorRate)
 & $Python (Join-Path $PSScriptRoot 'run_game_vr.py') --seconds $Seconds --size $Size --swing-speed $SwingSpeed --output $report @captureArgs
 exit $LASTEXITCODE

@@ -69,9 +69,23 @@ VR starts once per game launch: to play in VR again after STOP VR, or after
 VR ended by itself, close the game first, then press START VR.
 
 For VR the launcher starts the game with a small desktop window, without
-frame generation, and with the game's Windows.Gaming.Input off (under
-SteamVR it would take the controllers away from Spidy). Your settings come
-back when the game closes.
+frame generation or vertical sync, and with the game's Windows.Gaming.Input
+off (under SteamVR it would take the controllers away from Spidy). Your
+settings come back when the game closes.
+
+While you swing in VR, the game window on the desktop shows your left eye,
+30 pictures a second: every picture sent to the monitor costs the graphics
+card time the headset could have. "Monitor frame rate" in the launcher's
+options chooses Every frame, 60, 30, 15 or 5 a second. On menus, cutscenes
+and the flat screen the window shows the game as usual.
+
+The picture in each eye is anti-aliased and upscaled by the game itself:
+the scene is rendered smaller and built up to the eye's full size from the
+last few frames, as DLSS does (any graphics card). "Upscaling" in the
+launcher's options chooses how much smaller: Quality (67%, the default),
+Balanced or Performance for more frames, High or Off for the sharpest
+picture. The game's own DLSS, FSR or XeSS setting does not reach the
+headset, whatever it is set to.
 
 
 CONTROLS
@@ -274,14 +288,19 @@ IF SOMETHING IS WRONG
 - The picture breaks up: start the game from the launcher with the game
   closed. Attached to a game that is already running, Spidy cannot give it
   the larger render memory VR needs.
-- Low frame rate: lower "Render resolution" in the launcher's options (below
-  100% renders fewer pixels than your headset asks for), or your streaming
-  quality in Virtual Desktop.
-- Blurry or jagged edges: raise "Render resolution" in the launcher's
-  options above 100%; try 125% first. It costs frame rate and memory: 150%
-  gave about 30% fewer frames on an RTX 5090. Press Check beside your
-  headset to see the pixels per eye. Virtual Desktop's quality setting
-  raises what 100% is.
+- Low frame rate: set "Upscaling" in the launcher's options to Balanced or
+  Performance first (the picture keeps its size and gets a little softer;
+  on an RTX 4080 laptop, Quality gave 61 frames a second and Performance 77
+  where Off gave 39). Then lower "Render resolution" (below 100% renders
+  fewer pixels than your headset asks for), or your streaming quality in
+  Virtual Desktop. On a laptop, plug it in and choose its highest
+  performance mode. A lower "Monitor frame rate" helps a little more, most
+  if the game window is large.
+- Blurry edges: set "Upscaling" in the launcher's options to High or Off,
+  then raise "Render resolution" above 100%; try 125% first. Both cost
+  frame rate and memory: 150% gave about 30% fewer frames on an RTX 5090.
+  Press Check beside your headset to see the pixels per eye. Virtual
+  Desktop's quality setting raises what 100% is.
 - The aim markers distract you: press X in VR to hide them, or switch "Aim
   markers" off in Settings > SPIDY VR.
 - Webs shot at the sky hold somewhere you can't see: switch "Webs hold in

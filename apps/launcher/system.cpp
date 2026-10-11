@@ -546,6 +546,12 @@ Settings loadSettings() {
         // eye_size (a square size, before October 8) is no longer read: 2048 x 2048 rendered one player's game
         // below the 2496 x 2688 their headset asked for, and it looked blurry.
         else if (key == "render_scale") o.renderScale = spidy::validRenderScale(number()) ? number() : 100;
+        else if (key == "upscale")
+            o.upscale = spidy::validEyeUpscale(number()) ? number() : static_cast<int>(spidy::defaultEyeUpscale);
+        else if (key == "monitor_rate")
+            o.monitorRate = number() >= 0 && spidy::validMonitorRate(static_cast<uint32_t>(number()))
+                                ? number()
+                                : static_cast<int>(spidy::defaultMonitorRate);
         else if (key == "swing_speed") o.swingSpeed = std::clamp(number(), 10, 65);
         else if (key == "snap_turn") o.snapTurn = std::clamp(number(), 0, 90);
         else if (key == "smooth_turn") o.smoothTurn = std::clamp(number(), 0, 360);
@@ -588,7 +594,8 @@ void saveSettings(const Settings& settings) {
          << "\nsmall_window=" << o.smallWindow << "\nstock_monitor_view=" << o.stockMonitorView
          << "\naim_markers=" << o.aimMarkers << "\nair_webs=" << o.airWebs << "\nflips=" << o.flips
          << "\ntrigger_webs=" << o.triggerWebs << "\nstand_on_walls=" << o.standOnWalls
-         << "\nrender_scale=" << o.renderScale
+         << "\nrender_scale=" << o.renderScale << "\nupscale=" << o.upscale
+         << "\nmonitor_rate=" << o.monitorRate
          << "\nswing_speed=" << o.swingSpeed << "\nweight_percent=" << o.weight << "\nsnap_turn=" << o.snapTurn
          << "\nsmooth_turn=" << o.smoothTurn
          << "\nhaptics=" << o.haptics << "\nscreen_size=" << o.screenSize << "\nhud=" << o.hud

@@ -43,6 +43,12 @@ GAME_HOOKS = (*HOOKS, 0x2e67010, 0x1fbe360, 0x1fbda50, 0xa7b3a0, 0x1f9db60,
               0x73ab80, 0x2104400, 0x1d2b6c0, 0x1f10ad0, 0x1f10b60)
 # The render scale's range in percent (spidy::minimumRenderScale and maximumRenderScale).
 RENDER_SCALES = (50, 200)
+# Upscaling: the percent of the eye's size, per side, the eyes' scene is rendered at, and its default
+# (spidy::minimumEyeUpscale, maximumEyeUpscale and defaultEyeUpscale).
+UPSCALES, DEFAULT_UPSCALE = (50, 100), 67
+# How often the game's window gets the left eye in immersive VR: presents a second, 0 for every frame
+# (include/spidy/monitor_rate.hpp).
+MONITOR_RATES, DEFAULT_MONITOR_RATE = (0, 240), 30
 # What a session takes as a T-pose calibration, millimetres (body_calibration.hpp): the eye height and the arm
 # length (from Spider-Man's shoulder at the player's size to the wrist) the body is sized to.
 EYE_HEIGHTS_MM, ARM_LENGTHS_MM = (1000, 2500), (250, 1200)
@@ -150,18 +156,31 @@ def scaled_eye_size(width, height, percent, limit=MAX_EYE_SIZE):
     return int(w), int(h)
 
 
-def rendering_line(width, height, percent, size, recommended):
-    """The console's line on the eye size the session renders, beside what the headset asked for."""
+def eye_render_size(width, height, percent):
+    """The size an eye's scene is rendered at for `percent` of a `width` x `height` eye, as
+    spidy::eyeRenderSize computes it: in multiples of 8."""
+    if percent >= 100:
+        return width, height
+    return max(64, (width*percent//100+7) & ~7), max(64, (height*percent//100+7) & ~7)
+
+
+def rendering_line(width, height, percent, size, recommended, upscale=100, antialiased=True):
+    """The console's line on the eye size the session renders, beside what the headset asked for, and on
+    the size the eyes' scene is rendered at where that is smaller (upscaling)."""
     line = f'Rendering {width} x {height} pixels per eye'
     if size:
-        return f'{line} (a square size instead of the headset\'s).'
-    if not recommended:
-        return f'{line}.'
-    wanted = scaled_eye_size(*recommended, percent)
-    of = f"{percent}% of the headset's {recommended[0]} x {recommended[1]}"
-    if (width, height) == wanted:
-        return f'{line} ({of}).'
-    return f'{line} ({of} would be {wanted[0]} x {wanted[1]}, more than the VR runtime takes).'
+        line += ' (a square size instead of the headset\'s)'
+    elif recommended:
+        wanted = scaled_eye_size(*recommended, percent)
+        of = f"{percent}% of the headset's {recommended[0]} x {recommended[1]}"
+        line += f' ({of})' if (width, height) == wanted else \
+            f' ({of} would be {wanted[0]} x {wanted[1]}, more than the VR runtime takes)'
+    if not antialiased:
+        return f'{line}, without anti-aliasing.'
+    scene = eye_render_size(width, height, upscale)
+    if scene == (width, height):
+        return f'{line}, anti-aliased.'
+    return f'{line}: the scene at {scene[0]} x {scene[1]} ({upscale}% per side), anti-aliased and upscaled.'
 
 
 def frame_rates(samples):
@@ -875,6 +894,25 @@ def main():
     p.add_argument('--render-scale', type=int, default=100,
                    help="Eye resolution in percent of the runtime's recommendation, per side (50-200; default "
                         '100). Above 100 is sharper and costs frame rate and memory.')
+    p.add_argument('--upscale', type=int, default=DEFAULT_UPSCALE,
+                   help="Percent of the eye's size, per side, the eyes' scene is rendered at (50..100; default "
+                        "%d): the game's temporal anti-aliasing brings it to the eye's size. 100 only "
+                        'anti-aliases; lower is faster and softer.' % DEFAULT_UPSCALE)
+    p.add_argument('--no-eye-antialiasing', action='store_true',
+                   help='The eyes get no anti-aliasing and no upscaling: each is its scene as rendered, at the '
+                        "eye's size (builds before October 10's eighth did; jagged and slower)")
+    p.add_argument('--game-monitor-view', action='store_true',
+                   help='The game renders a view of its own on your head for the monitor, as builds before '
+                        "October 10's eighth did (about a fifth fewer frames); without it the monitor shows the "
+                        'left eye')
+    p.add_argument('--monitor-rate', type=int, default=DEFAULT_MONITOR_RATE,
+                   help='How often the game window gets your left eye in immersive VR: pictures a second (1..240; '
+                        'default %d), or 0 for every frame, as builds before October 11 did. Each one costs the '
+                        'graphics card time the headset could have.' % DEFAULT_MONITOR_RATE)
+    p.add_argument('--own-shadows', action='store_true',
+                   help="Each eye makes its own set of the sun's shadow maps, as builds before October 11 did; "
+                        'without it both use one set, fitted to a lens covering both (fewer render commands, '
+                        'shadow edges a little softer)')
     p.add_argument('--auto-launch',action='store_true')
     p.add_argument('--stop-after',type=float,default=0,help='End an untimed session after this many seconds for validation')
     p.add_argument('--capture-images', action='store_true',help='Enable diagnostic CPU eye readback (adds overhead)')
@@ -946,6 +984,10 @@ def main():
         p.error(f'Use 0 or 2..25 seconds, 0 or 64..{MAX_EYE_SIZE} pixels, and 1..65 m/s')
     if not RENDER_SCALES[0] <= a.render_scale <= RENDER_SCALES[1] or (a.size and a.render_scale != 100):
         p.error('Use a render scale of %d..%d%%, and not with --size' % RENDER_SCALES)
+    if not UPSCALES[0] <= a.upscale <= UPSCALES[1]:
+        p.error('Use an upscale of %d..%d%%' % UPSCALES)
+    if not MONITOR_RATES[0] <= a.monitor_rate <= MONITOR_RATES[1]:
+        p.error('Use a monitor rate of %d..%d a second (0: every frame)' % MONITOR_RATES)
     if not 0 <= a.snap_turn <= 90 or not 0 <= a.smooth_turn <= 360 or not 0 <= a.haptics <= 100:
         p.error('Use 0..90 degrees of snap turn, 0..360 degrees a second of smooth turn and 0..100% vibration')
     if not 40 <= a.weight <= 300:
@@ -1000,9 +1042,9 @@ def session(a, startup):
         if values:
             print(f"Desktop view: {values['WindowWidth']} x {values['WindowHeight']} window to save GPU time; "
                   'your display settings return when the game closes.', flush=True)
-        print("Game settings for VR: frame generation off, controllers through XInput only (SteamVR's virtual "
-              'gamepads would take the menus from the VR controllers); they return when the game closes.',
-              flush=True)
+        print('Game settings for VR: frame generation off, vertical sync off (the game would wait for the '
+              "monitor), controllers through XInput only (SteamVR's virtual gamepads would take the menus from "
+              'the VR controllers); they return when the game closes.', flush=True)
 
     render_module = {}
 
@@ -1070,7 +1112,7 @@ def session(a, startup):
                                            'SpidyGpuData', 'SpidyXrTimingData', 'SpidyAppearanceData',
                                            'SpidyStereoFrames', 'SpidyXrSnapshot', 'SpidyStereoData',
                                            'SpidyBodyData', 'SpidySlowMotionData', 'SpidyHudData'))
-        config = struct.pack('<4I7Q2IfI', 0x53585243, 20, 648, game.pid, game.base, queue,
+        config = struct.pack('<4I7Q2IfI', 0x53585243, 22, 656, game.pid, game.base, queue,
                              bridge_module, ray_module, motion_module, 0, 0,
                              int(a.seconds*1000), a.size, a.swing_speed,
                              int(a.capture_images) | (2 if a.overlay_webs else 0) |
@@ -1080,10 +1122,12 @@ def session(a, startup):
                              (256 if a.no_air_webs else 0) | (512 if a.no_web_shooter else 0) |
                              (1024 if a.no_calibration_prompt else 0) | (2048 if a.flips else 0) |
                              (4096 if a.trigger_webs else 0) | (8192 if a.no_stand_on_walls else 0) |
-                             (16384 if a.no_wall_run else 0)) + \
-            runtime_path(manifest) + struct.pack('<10I', a.snap_turn, a.haptics, a.screen_size, a.smooth_turn,
+                             (16384 if a.no_wall_run else 0) | (0x8000 if a.no_eye_antialiasing else 0) |
+                             (0x10000 if a.game_monitor_view else 0) |
+                             (0x20000 if a.own_shadows else 0)) + \
+            runtime_path(manifest) + struct.pack('<12I', a.snap_turn, a.haptics, a.screen_size, a.smooth_turn,
                                                  a.render_scale, a.weight, a.eye_height, a.arm_length, a.hud,
-                                                 a.flip_speed)
+                                                 a.flip_speed, a.upscale, a.monitor_rate)
         startup.stage = 'starting VR'
         code = call_with_payload(process, xr['SpidyXrStart'], config)
         if code:
@@ -1124,6 +1168,14 @@ def session(a, startup):
         # menus cannot be played (the October 7 Steam Link session: the game had turned XInput off).
         pad_watch = dict(reads=None, since=0.0, warned=False)
 
+        # How the eyes are rendered: upscaled from `upscale` percent of their size per side and anti-aliased
+        # (or neither), whether the game renders a view of its own for the monitor as well, how often the
+        # monitor gets the left eye otherwise, and whether both eyes use one set of sun shadow maps.
+        eye_options = dict(upscale=100 if a.no_eye_antialiasing else a.upscale,
+                           antialiased=not a.no_eye_antialiasing,
+                           game_monitor_view=bool(a.game_monitor_view or a.stock_monitor_view),
+                           monitor_rate=a.monitor_rate, shared_shadows=not a.own_shadows, render_size=None)
+
         def hand_over_settings(sample):
             """Tell the launcher what the VR settings were left at, for the next session."""
             line = settings_line(settings_start, sample)
@@ -1133,7 +1185,7 @@ def session(a, startup):
         def session_report(**extra):
             """Everything sampled so far. It is written however the session ends."""
             return dict(pid=game.pid, eye_size=a.size, render_scale=a.render_scale, swing_speed=a.swing_speed,
-                        vr_settings=settings_start,
+                        eyes=eye_options, vr_settings=settings_start,
                         game_settings_refused=startup.fields.get('game_settings_refused'),
                         xr_runtime=runtime, motion_hash=motion_hash,
                         xr_hash=xr_hash, ray_hash=ray_hash, samples=list(samples),
@@ -1225,6 +1277,9 @@ def session(a, startup):
                     # Eyes with their own occlusion culling (0 with --no-eye-occlusion or before VR starts).
                     views = stereo_snapshot(game, xr['SpidyStereoData'])
                     sample['eye_occlusion'] = sum(e['occlusion'] for e in views['eyes'] if e['view']) if views else None
+                    if views and views['eyes'][0]['view'] and views['eyes'][0]['render_width']:
+                        eye_options['render_size'] = [views['eyes'][0]['render_width'],
+                                                      views['eyes'][0]['render_height']]
                     # Frames whose render memory request did not fit lose a view's work.
                     if render_data:
                         render_memory = render_memory_snapshot(game, render_data) or render_memory
@@ -1248,7 +1303,8 @@ def session(a, startup):
                         print(PAD_IGNORED, flush=True)
                     if sample['eye_width'] and not printed_dimensions:
                         print(rendering_line(sample['eye_width'], sample['eye_height'], a.render_scale, a.size,
-                                             runtime['recommended_eye']), flush=True)
+                                             runtime['recommended_eye'], a.upscale, not a.no_eye_antialiasing),
+                              flush=True)
                         printed_dimensions=True
                     aim = ray_snapshot(game, rays['SpidyRayData'])
                     if aim and aim['serial'] and (not ray_samples or aim['serial'] != ray_samples[-1]['serial']):
@@ -1320,7 +1376,7 @@ def session(a, startup):
         final_render_memory = render_memory_snapshot(game, render_data) if render_data else None
         render_stop = call_remote(process, render_module['SpidyRenderMemoryStop']) if render_module else 0
         result = dict(pid=game.pid, module_base=hex(game.base), bridge_hash=bridge_hash, xr_hash=xr_hash,
-            eye_size=a.size,render_scale=a.render_scale,capture_images=a.capture_images,
+            eye_size=a.size,render_scale=a.render_scale,eyes=eye_options,capture_images=a.capture_images,
             timing=timing_snapshot(game,xr['SpidyXrTimingData']),
             ray_hash=ray_hash, ray_samples=list(ray_samples), rays=ray_snapshot(game, rays['SpidyRayData']),
             motion_hash=motion_hash, swing_speed=a.swing_speed, vr_settings=settings_start, xr_runtime=runtime,

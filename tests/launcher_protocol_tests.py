@@ -121,6 +121,21 @@ class DesktopViewTests(unittest.TestCase):
         self.assertTrue(display.restore(fresh,self.backup))
         self.assertEqual((fresh.keys[display.INPUT_KEY],fresh.values),({},USER))
 
+    def test_every_session_turns_off_vertical_sync(self):
+        # The October 10 session started with the game's VSync on at 120 Hz: frames of 36-45 ms, whole
+        # numbers of the monitor's 8.3 ms. It comes back afterwards; a value the game never saved stays unsaved.
+        graphics={**USER,'VSync':1}
+        registry=FakeRegistry(graphics)
+        display.prepare_launch(registry=registry,backup=self.backup,screen=(1920,1080))
+        self.assertEqual(registry.values['VSync'],0)
+        self.assertTrue(display.restore(registry,self.backup))
+        self.assertEqual(registry.values,graphics)
+        fresh=FakeRegistry(USER)
+        display.prepare_launch(registry=fresh,backup=self.backup,screen=(1920,1080))
+        self.assertNotIn('VSync',fresh.values)
+        self.assertTrue(display.restore(fresh,self.backup))
+        self.assertEqual(fresh.values,USER)
+
     def test_a_backup_from_before_the_session_settings_still_restores(self):
         self.backup.parent.mkdir(parents=True)
         self.backup.write_text(json.dumps(dict(key=display.KEY,values=USER)))

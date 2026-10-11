@@ -12,7 +12,7 @@ from run_game_vr import (snapshot as xr_snapshot, accepted as accepted_xr, timin
                          appearance_snapshot, eye_snapshot, save_eye_snapshot, rgb_rows, crop_origin,
                          game_memory, keep_game_log, body_snapshot,
                          punch_snapshot, shooter_snapshot, start_settings, settings_line, SETTINGS_LINE,
-                         scaled_eye_size, rendering_line,
+                         scaled_eye_size, rendering_line, eye_render_size,
                          slow_motion_snapshot, hud_snapshot, GAME_HOOKS)
 from probe_collision import snapshot as collision_snapshot
 from probe_movement import snapshot as movement_snapshot
@@ -446,13 +446,47 @@ class ProtocolTests(unittest.TestCase):
         self.assertAlmostEqual(width/height, 3072/3264, delta=.003)
         # The console says what the size is of, and when the runtime took less.
         self.assertEqual(rendering_line(4608, 4896, 150, 0, [3072, 3264]),
-                         "Rendering 4608 x 4896 pixels per eye (150% of the headset's 3072 x 3264).")
+                         "Rendering 4608 x 4896 pixels per eye (150% of the headset's 3072 x 3264), anti-aliased.")
         self.assertEqual(rendering_line(4000, 4248, 150, 0, [3072, 3264]),
                          "Rendering 4000 x 4248 pixels per eye (150% of the headset's 3072 x 3264 would be "
-                         '4608 x 4896, more than the VR runtime takes).')
+                         '4608 x 4896, more than the VR runtime takes), anti-aliased.')
         self.assertEqual(rendering_line(2048, 2048, 100, 2048, [2496, 2688]),
-                         "Rendering 2048 x 2048 pixels per eye (a square size instead of the headset's).")
-        self.assertEqual(rendering_line(3072, 3264, 100, 0, None), 'Rendering 3072 x 3264 pixels per eye.')
+                         "Rendering 2048 x 2048 pixels per eye (a square size instead of the headset's), "
+                         'anti-aliased.')
+        self.assertEqual(rendering_line(3072, 3264, 100, 0, None),
+                         'Rendering 3072 x 3264 pixels per eye, anti-aliased.')
+
+    def test_upscaling_sizes_the_eyes_scene(self):
+        # core_tests.cpp's cases for spidy::eyeRenderSize: the console counts as the DLL does. The October 10
+        # measurement: 3072 x 3264 eyes at 67% rendered 2064 x 2192.
+        self.assertEqual(eye_render_size(3072, 3264, 100), (3072, 3264))
+        self.assertEqual(eye_render_size(3072, 3264, 67), (2064, 2192))
+        self.assertEqual(eye_render_size(3072, 3264, 50), (1536, 1632))
+        self.assertEqual(eye_render_size(2496, 2688, 77), (1928, 2072))
+        self.assertEqual(eye_render_size(100, 100, 50), (64, 64))
+        self.assertEqual(rendering_line(3072, 3264, 100, 0, [3072, 3264], 67),
+                         "Rendering 3072 x 3264 pixels per eye (100% of the headset's 3072 x 3264): the scene at "
+                         '2064 x 2192 (67% per side), anti-aliased and upscaled.')
+        self.assertEqual(rendering_line(3072, 3264, 100, 0, [3072, 3264], 67, False),
+                         "Rendering 3072 x 3264 pixels per eye (100% of the headset's 3072 x 3264), without "
+                         'anti-aliasing.')
+
+    def test_the_upscale_is_checked_before_anything_starts(self):
+        import run_game_vr
+        for argv in (['--upscale', '49'], ['--upscale', '101']):
+            with patch.object(sys, 'argv', ['run_game_vr.py', *argv]), patch('sys.stderr'), \
+                    patch.object(run_game_vr, 'session') as session, self.assertRaises(SystemExit):
+                run_game_vr.main()
+            session.assert_not_called()
+
+    def test_the_monitor_rate_is_checked_before_anything_starts(self):
+        import run_game_vr
+        self.assertEqual((run_game_vr.MONITOR_RATES, run_game_vr.DEFAULT_MONITOR_RATE), ((0, 240), 30))
+        for argv in (['--monitor-rate', '-1'], ['--monitor-rate', '241']):
+            with patch.object(sys, 'argv', ['run_game_vr.py', *argv]), patch('sys.stderr'), \
+                    patch.object(run_game_vr, 'session') as session, self.assertRaises(SystemExit):
+                run_game_vr.main()
+            session.assert_not_called()
 
     def test_the_render_scale_is_checked_before_anything_starts(self):
         import run_game_vr

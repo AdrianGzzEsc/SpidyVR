@@ -266,9 +266,10 @@ class StereoProtocolTests(unittest.TestCase):
             def window(self, start, end):
                 return [(1.5, 80., 2800., 300., 9000.), (2.5, 90., 2800., 320., 9500.)]
         samples = [dict(t=t, frames=frames, frame_mb=mb, pairs=frames, threads={7: busy, 8: busy//4},
-                        system=(idle, 16e7*t), read_bytes=t*2**21, commit_mb=commit)
-                   for t, frames, mb, busy, idle, commit in ((0, 0, 30., 0, 0, 15000), (1, 100, 30., 0, 0, None),
-                                                             (3, 300, 12., 2e7, 8e7, 17000))]
+                        system=(idle, 16e7*t), read_bytes=t*2**21, commit_mb=commit, view_gpu_ms=views)
+                   for t, frames, mb, busy, idle, commit, views in (
+                       (0, 0, 30., 0, 0, 15000, [50., 50., 50.]), (1, 100, 30., 0, 0, None, [5., 10., 12.]),
+                       (3, 300, 12., 2e7, 8e7, 17000, [7., None, 14.]))]
         threads = type('Threads', (), {'names': {7: 'render', 8: 'worker'}})()
         result = summarize('vr', samples, Gpu(), threads, 16, settle=1)
         # Measured from the first sample after settling: 200 frames in 2 s, the busiest thread a full core.
@@ -280,6 +281,8 @@ class StereoProtocolTests(unittest.TestCase):
         self.assertEqual(result['disk_read_mb_per_s'], 2)
         # The most video memory in use and committed to the game in the phase, an unreadable commit skipped.
         self.assertEqual((result['gpu_memory_mb'], result['game_commit_mb']), (9500, 17000))
+        # Each view's GPU time (the game's own, then each eye): the median after settling, unread ones skipped.
+        self.assertEqual(result['view_gpu_ms'], [6, 10, 13])
 
     def test_torn_read_retries(self):
         value = snapshot(Reader([payload(2), struct.pack('<Q', 4), payload(4), struct.pack('<Q', 4)]), 0)
