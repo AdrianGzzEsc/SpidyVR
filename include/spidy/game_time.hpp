@@ -42,6 +42,10 @@ struct Telemetry {
     uint64_t updates{}, slowed{}, systems{};
     // The game's own values are in place (nothing of Spidy's to put back).
     bool restored = true;
+    // The game time its last frame took, seconds (gameFrameRva): 0 while the
+    // game is paused (the pause menu, a hint card), though its time system
+    // goes on updating at scale 1 there (61 updates a second, October 11).
+    double gameFrame{};
 };
 Telemetry telemetry();
 } // namespace spidy::game_time

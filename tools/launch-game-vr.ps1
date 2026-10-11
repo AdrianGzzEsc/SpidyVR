@@ -12,6 +12,7 @@ param(
     [ValidateRange(0,100)][int]$Haptics=100,
     [ValidateSet('Small','Medium','Large')][string]$ScreenSize='Medium',
     [ValidateSet('Off','Small','Medium','Large')][string]$Hud='Medium',
+    [ValidateSet('Off','Low','Medium','High')][string]$ScreenDepth='Medium',
     [ValidateRange(0,2500)][int]$EyeHeight=0,
     [ValidateRange(0,1200)][int]$ArmLength=0,
     [string]$Python,
@@ -77,7 +78,8 @@ Write-Host 'VR starts with the game: its intro, menus, loading and cutscenes sho
 Write-Host 'There the controllers are an Xbox controller: thumbstick moves, A selects, B goes back, grips switch tabs.'
 Write-Host 'In VR the menu button pauses and X opens the game menu (map, suits, skills).'
 Write-Host "In VR B and Y are the game's own: B dodges the way the left stick points, Y interacts (backpacks,"
-Write-Host 'doors, prompts; web strike in a fight).'
+Write-Host 'doors, prompts; web strike in a fight). The game takes its Y only within about a metre of the thing:'
+Write-Host 'hold Y and you step up to what you look at until it does.'
 Write-Host "Where the game shows LB + RB (a door or a grate to pull off), click the right thumbstick."
 Write-Host 'Keep the game window in front on the desktop: the game pauses while another window is.'
 Write-Host 'Click both thumbsticks to switch between immersive VR and a flat game screen in the headset.'
@@ -175,11 +177,13 @@ if($SmoothTurn -ne 0) { Write-Host "Smooth turn: $SmoothTurn degrees a second (r
 if($Weight -ne 80) { Write-Host "Weight: $Weight% of real gravity while webs fly you." }
 if($Haptics -ne 100) { Write-Host "Controller vibration: $Haptics%." }
 if($Hud -ne 'Medium') { Write-Host "HUD: $Hud." }
+if($ScreenDepth -ne 'Medium') { Write-Host "Game screen 3D (cutscenes): $ScreenDepth." }
 if($FlipSpeed -ne 180) { Write-Host "Flip speed: $FlipSpeed degrees a second at full tilt of the left stick." }
 $screenIndex=@{Small=0;Medium=1;Large=2}[$ScreenSize]
 $hudIndex=@{Off=0;Small=1;Medium=2;Large=3}[$Hud]
+$depthIndex=@{Off=0;Low=1;Medium=2;High=3}[$ScreenDepth]
 $captureArgs+=@('--snap-turn',$SnapTurn,'--smooth-turn',$SmoothTurn,'--haptics',$Haptics,'--screen-size',$screenIndex,
                '--render-scale',$RenderScale,'--upscale',$Upscale,'--weight',$Weight,'--hud',$hudIndex,
-               '--flip-speed',$FlipSpeed,'--monitor-rate',$MonitorRate)
+               '--flip-speed',$FlipSpeed,'--monitor-rate',$MonitorRate,'--screen-depth',$depthIndex)
 & $Python (Join-Path $PSScriptRoot 'run_game_vr.py') --seconds $Seconds --size $Size --swing-speed $SwingSpeed --output $report @captureArgs
 exit $LASTEXITCODE

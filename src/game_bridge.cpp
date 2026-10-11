@@ -40,7 +40,7 @@ using SetPosition = void (*)(void*, const float*);
 // update ends in the commit (slot 24, 1e1d600); the combat camera's update
 // (5c2630) places its camera itself with SetTranslation and never commits, so
 // before it was hooked every fight looked like a cutscene to the VR gate.
-constexpr uintptr_t followMover = 0x3871fd8, combatMover = 0x38720d0, combatUpdateRva = 0x5c2630;
+constexpr uintptr_t followMover = followCamera, combatMover = combatCamera, combatUpdateRva = 0x5c2630;
 Commit originalCommit{};
 MoverUpdate originalCombat{};
 ClearInput originalClear{};

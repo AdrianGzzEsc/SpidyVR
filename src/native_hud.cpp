@@ -54,6 +54,8 @@ uint32_t gameBase[2]{};
 // it maps onto the window pixel for pixel, as the second movie does.
 std::atomic<uintptr_t> vrTexture{};
 std::atomic<uint64_t> eyesTick{};
+// The eye views are the game screen in stereo, which shows the HUD though it is off.
+std::atomic<bool> screenEyes{};
 std::atomic<bool> stopping{}, restored{true};
 bool eyesRecent() {
     return GetTickCount64() - eyesTick.load() < 100;
@@ -182,7 +184,7 @@ void render(void* payload, uint32_t count) {
     Item* moved{};
     // The HUD off: the second movie stays in the game's view, which the
     // headset shows only on the game screen.
-    if (texture && enabled && hudSize.load() && eyesRecent() &&
+    if (texture && enabled && (hudSize.load() || screenEyes.load()) && eyesRecent() &&
         !(count && payload && pointer(reinterpret_cast<uintptr_t>(payload) + 8))) {
         // The list this frame draws, as the command picks it.
         const uint32_t frame = *reinterpret_cast<const uint32_t*>(base + 0x7a30b00);
@@ -335,8 +337,19 @@ uint32_t native_hud::start(uintptr_t imageBase) {
     ReleaseSRWLockExclusive(&lifecycle);
     return result;
 }
-void native_hud::eyesShown() {
+void native_hud::eyesShown(bool screen) {
+    screenEyes = screen;
     eyesTick = GetTickCount64();
+}
+namespace {
+std::atomic<uint64_t> screenTick{};
+}
+void native_hud::onScreen() {
+    screenTick = GetTickCount64();
+}
+bool native_hud::onScreen(uint64_t withinMs) {
+    const auto tick = screenTick.load();
+    return tick && GetTickCount64() - tick <= withinMs;
 }
 void native_hud::setSize(int size) {
     hudSize = std::clamp(size, 0, 3);

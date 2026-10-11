@@ -3,7 +3,105 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 11, seventh build): the first mission's crash is
+**Latest build (October 11, ninth build): cutscenes in 3D on the game
+screen.** You asked: "lets keep cutscenes in a virtual screen but with proper
+3d stereoscopic depth".
+
+- **What you see.** A cutscene still shows on the screen in front of you, and
+  now has depth: the game draws it once for each of your eyes, from its own
+  cutscene camera set a little apart, and the headset shows the left picture
+  to your left eye and the right one to your right. This is real depth from
+  the game's geometry, not a guess from a flat picture. Finishers, deaths and
+  the other scenes the game plays by itself get it too.
+- **Where things lie.** What is far away lies as far behind the screen as a
+  real horizon (your eyes look at it in parallel, never apart). What is close
+  to the game's camera comes out of the screen toward you. Subtitles, prompts
+  and the HUD stay on the screen itself.
+- **GAME SCREEN 3D** in Settings > SPIDY VR (under GAME SCREEN SIZE; "Game
+  screen 3D" in the launcher): OFF is the flat picture as before. HIGH shows
+  everything as far from you as it is from the game's camera. MEDIUM (the
+  default) and LOW put it all 1.4 and 2 times as far, so less comes out of the
+  screen. It changes at once.
+- **A close-up looks larger than life**, as on a cinema screen: a narrow lens
+  gets its two cameras closer together than your eyes are. A wide shot is life
+  size.
+- **Flat as before:** the pause menu, hint cards, the map, loading and the
+  title screen. The game draws those only into its own picture. A cutscene
+  comes up flat for a moment and gains its depth when the game's first pair
+  of pictures arrives.
+- **Cost.** In a cutscene the game now renders two eye pictures and its own
+  window, as it does in the flat-screen mode. Expect about the frame rate of
+  VR play, not the higher one the flat cutscenes had.
+- A session's report shows `game_screen_3d` as the `presentation` of those
+  frames and counts them in `screen_3d_submitted`.
+
+Checked in the game without a headset, on your rooftop save (the game's play
+camera stood in for a cutscene's): the far shore lies 75 of the expected 77
+pixels apart in the two pictures, Spider-Man 3 m ahead 47, and the HUD, a
+subtitle and a prompt 0 to 1, so they sit on the screen. With the pause menu
+open the game's own picture has the menu and the stereo pictures stand down.
+
+Not checked: a real cutscene, and anything in the headset. I had no cutscene
+at hand in your saves without playing past a story step. Two things in
+particular are yours to see: that the depth feels right (the eyes could be
+swapped only by a mistake in sign that the pixel measurement above rules
+out), and that subtitles show. If a cutscene stays flat, its scene had no HUD
+panel to carry the subtitles and Spidy kept the flat picture rather than lose
+them: the report will say so, and that case needs another way.
+
+A first copy of this build was in your play folder from 16:24 to 16:31 and
+was withdrawn untested: it took the pause menu for a scene (the game's time
+system goes on updating there) and would have hidden the menu.
+
+`spidy_stereo_probe.dll`, `spidy_ray_bridge.dll`, the launcher,
+`run_game_vr.py` and README.txt changed; XrConfig is version 23 and XrData
+version 22. 243 core checks (3 new), 23 launcher checks and 109 Python checks
+pass. In your play folder (`Documents\Spidy-0.2.11`) since 16:38, the files
+they replaced in its
+`reports\backups\play-folder-before-cutscene-3d-20261011-163800`. The
+launcher that is open is still the old one: close it and start it again.
+
+**Earlier build (October 11, eighth build): hold Y to step up to what it
+opens.** You reported "b (is now both dodge and interact, making
+interactions not register".
+
+- **B and Y are two buttons, and the game got each alone.** Your 15:24
+  session: 34 dodges (B) and 5 interacts (Y), never both at once. B is the
+  dodge only; the interact moved to Y in the sixth build. The launcher's
+  CONTROLS page still said B interacts: the launcher was open each time a
+  build went into your play folder, so it was never replaced. It is now.
+- **Why nothing happened at the red door.** The game takes its Y only within
+  about a metre of the thing, and shows its Y prompt only there. You stood
+  1.6 to 2.5 m from the door's middle: Y from 1.9 m and three times from
+  2.5 m did nothing, and each B dodged you (once to within 0.95 m, and away
+  again). In the plain game it is the same: no prompt and no effect from
+  3.6 m, "Open Door" 1.1 m from the door's middle.
+- **Now: look at the thing and hold Y.** After 0.3 s you walk on where you
+  look, until the game takes the Y (it does as you come into reach: checked
+  at that door in the plain game), you let go, a wall stops you, or 2 s have
+  passed. A tick in the left hand says the walk began. A tap of Y is as
+  before and moves nobody. Not in a fight (there Y is the web strike), in
+  the air or on a wall.
+- A session's report counts `interact_steps`, the walks a held Y began.
+- Not done: the game's own prompts still show Xbox buttons. A, B and Y are
+  those buttons on your controllers; LB + RB (a pull, or the right stick's
+  click) and X (your fists) are not.
+
+`spidy_stereo_probe.dll`, the launcher, `run_game_vr.py` and README.txt
+changed; XrData is version 21. 240 core checks (1 new), 23
+launcher checks and 109 Python checks pass.
+In your play folder (`Documents\Spidy-0.2.11`) since 16:05: the stereo
+module, `run_game_vr.py`, README.txt and this time the launcher too, the
+files they replaced in its
+`reports\backups\play-folder-before-interact-step-20261011-160526`. The
+launcher that is open is still the old one: close it and start it again for
+the new CONTROLS page.
+
+Not run in the headset: the walk itself (its direction and feel, and the
+door opening with it) is yours to try. Your save is as you left it at
+15:34, in front of that door.
+
+**Earlier build (October 11, seventh build): the first mission's crash is
 fixed, and a two-hand web pull is the game's LB + RB.** You reported "game
 crashes on first mission ... at some point during one of the steps it crashes
 for everyone", then a door further on that "prompts me to rb+lb and i cant
@@ -2186,10 +2284,6 @@ The user confirmed the preceding swing update feels much better. It raises the
 native speed cap from 8 to 32 m/s, increases steering and gravity, and starts
 reeling immediately on another trigger press. Ground takeoff and 100-metre
 open-space anchors were also confirmed working.
-
-R.E.A.L. VR's local installation was removed from the game folder at the user's
-request. Its 21 files are backed up under `backups/realvr-removed-20261004`, with
-a SHA-256 manifest. The game executable is unchanged.
 
 **The in-game VR milestone is unfinished.** The standalone OpenXR swinging lab
 works on the user's Quest. In-game tests now verify native input, camera position,

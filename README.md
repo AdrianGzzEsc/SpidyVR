@@ -56,8 +56,9 @@ coming. Questions, bugs, clips: come say hi on
 - ⚙️ **VR settings in the game's menu.** A SPIDY VR tab in the game's own
   Settings for aim markers, snap or smooth turning, vibration, swing speed,
   how heavy you swing, screen size, the HUD and more. Changes apply at once.
-- 🖥️ **Menus and cutscenes on a screen.** The Touch controllers work as an
-  Xbox controller there; VR resumes when play does.
+- 🖥️ **Menus and cutscenes on a screen.** Cutscenes in 3D: the game draws
+  them once for each eye. The Touch controllers work as an Xbox controller
+  there; VR resumes when play does.
 
 ## What you need
 
@@ -111,7 +112,7 @@ Spidy changes nothing in the game's folder.
 | Flip (experimental, off by default: FLIPS and FLIP SPEED in VR settings or the launcher) | **Left stick** in the air: turns you over, as fast as you tilt it; let go to come back level. Tap **A** in the air: one flip toward where the stick points. Hold **A**: you stay turned while the stick rests |
 | Turn | **Right stick**: snap 30° (adjustable or off), or hold to turn smoothly with SMOOTH TURN on in VR settings |
 | Dodge (the game's B) | **B**, the way the **left stick** points; not while a web carries you |
-| Interact (the game's Y) | **Y** |
+| Interact (the game's Y) | **Y**, within about a metre of the thing; hold **Y** and you step up to what you look at until the game takes it |
 | Pull a door or a grate (the game's LB + RB) | Click the **right stick**, or hold it; not while a web carries you |
 | Pause (VR settings: Settings > SPIDY VR) | **Menu** button |
 | Game menu (map, suits, skills) | **X** |

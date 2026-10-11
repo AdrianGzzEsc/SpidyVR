@@ -71,6 +71,7 @@ constexpr const char* kMonitorRates[] = {"Every frame", "60 a second", "30 a sec
 constexpr int kMonitorRateValues[] = {0, 60, 30, 15, 5};
 constexpr const char* kScreenSizes[] = {"Small", "Medium", "Large"};
 constexpr const char* kHudSizes[] = {"Off", "Small", "Medium", "Large"};
+constexpr const char* kScreenDepths[] = {"Off", "Low", "Medium", "High"};
 // The button that shoots and holds webs (SessionOptions::triggerWebs: the second).
 constexpr const char* kWebButtons[] = {"Grip", "Trigger"};
 constexpr const char* kWeights[] = {"40%", "60%", "80%", "100%", "125%", "150%", "200%", "250%", "300%"};
@@ -1098,6 +1099,11 @@ void App::optionsCard(ImVec2 size) {
         static constexpr int sizes[] = {0, 1, 2};
         stepCombo("##screen", kScreenSizes, sizes, 3, &o.screenSize);
     });
+    option("Game screen 3D", "Cutscenes have depth on that screen; higher brings the scene nearer. Off, they are flat.",
+           S(150), [&] {
+               static constexpr int depths[] = {0, 1, 2, 3};
+               stepCombo("##depth", kScreenDepths, depths, 4, &o.screenDepth);
+           });
     option("HUD", "How large the game's HUD shows in front of you; off, there is none in VR.", S(150), [&] {
         static constexpr int sizes[] = {0, 1, 2, 3};
         stepCombo("##hud", kHudSizes, sizes, 4, &o.hud);
@@ -1341,7 +1347,8 @@ void App::controls(ImVec2 origin, ImVec2 size) {
          {{"Left stick", "Walk and run"},
           {"A", "Jump"},
           {"B", "Dodge, the way the left stick points: the game's B"},
-          {"Y", "Interact: the game's Y (backpacks, doors, prompts); web strike in a fight"},
+          {"Y", "Interact: the game's Y (backpacks, doors, prompts); web strike in a fight. Hold it and you step "
+                "up to what you look at, until the game takes it"},
           {"Click the right stick", "The game's LB + RB: pull a door or a grate where the game shows the two"},
           {"Menu button", "Pause; VR settings are in Settings > SPIDY VR"},
           {"X", "Game menu: map, suits, skills"},

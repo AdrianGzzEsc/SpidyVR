@@ -241,8 +241,9 @@ struct Head {
 };
 // Implemented by the eye views (stereo_probe.cpp): what the eye views show
 // this frame (0 off the game's main thread). 0: none (the headset shows the game screen), 1:
-// immersive, with the head the HUD goes in front of, 2: the flat screen (the
-// eyes copy the game's camera; the HUD stays where the game put it).
+// immersive, with the head the HUD goes in front of, 2: the flat screen or the
+// game screen in stereo (the eyes copy the game's camera; the HUD covers that
+// camera's view, as the game placed it).
 uint32_t eyes(Head& out);
 // The HUD row (the XR worker sets it every frame; probes through SpidyHudSet):
 // 0 off, 1-3 its size.
@@ -261,9 +262,17 @@ uint32_t start(uintptr_t base);
 // The game's HUD follower (main thread), whose texture binding a new panel
 // texture needs.
 void follower(uintptr_t follower);
-// Each frame whose eye views the headset shows (immersive or flat): its second
-// movie goes on the panel until 100 ms after the last one.
-void eyesShown();
+// Each frame whose eye views the headset shows (immersive, flat, or the game
+// screen in stereo): its second movie goes on the panel until 100 ms after the
+// last one. `screen`: the game screen in stereo, which shows the HUD whatever
+// its setting.
+void eyesShown(bool screen = false);
+// The panel went onto the game screen in stereo this frame (the eye views,
+// main thread), and whether it did within the last `withinMs`. A scene is
+// shown in stereo only with it: the panel carries the subtitles there, and
+// without it the second movie stays in the game's own frame.
+void onScreen();
+bool onScreen(uint64_t withinMs);
 // Puts the game's own texture size back (waiting for the game's frames, up to
 // `waitMs`), then removes the hooks.
 uint32_t stop(uint32_t waitMs);

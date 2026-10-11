@@ -20,6 +20,9 @@ struct NativeEyeFrame {
     // Slow motion: the image's recolouring and the focus meter (none at rest).
     SlowMotionView slow{};
     bool flatScreen{};
+    // The game screen in stereo (eye command 3): the pair goes on the screen,
+    // the left image for the left eye and the right one for the right.
+    bool stereoScreen{};
     Pose screenPose{};
     float screenAspect = 16.f / 9;
 };

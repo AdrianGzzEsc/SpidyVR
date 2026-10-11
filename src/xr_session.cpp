@@ -554,11 +554,19 @@ bool XrRuntime::frameStereo(const std::function<bool(const XrFrame&)>& prepare,
                         screenPose_.orientation.w},
                        {screenPose_.position.x, screenPose_.position.y, screenPose_.position.z}};
         screen.size = {screenWidth_, screenWidth_ / screenAspect_};
+        // In stereo the same screen twice: each eye sees its own image on it.
+        auto rightScreen = screen;
+        if (stereoScreen_) {
+            screen.eyeVisibility = XR_EYE_VISIBILITY_LEFT;
+            rightScreen.eyeVisibility = XR_EYE_VISIBILITY_RIGHT;
+            rightScreen.subImage = projectionViews[1].subImage;
+        }
         const XrCompositionLayerBaseHeader* layers[] = {
             flatScreen_ ? reinterpret_cast<const XrCompositionLayerBaseHeader*>(&screen)
-                        : reinterpret_cast<const XrCompositionLayerBaseHeader*>(&layer)};
+                        : reinterpret_cast<const XrCompositionLayerBaseHeader*>(&layer),
+            reinterpret_cast<const XrCompositionLayerBaseHeader*>(&rightScreen)};
         if (state.shouldRender && tracked.valid && ready && drawn) {
-            end.layerCount = 1;
+            end.layerCount = flatScreen_ && stereoScreen_ ? 2 : 1;
             end.layers = layers;
         }
         endCalled = true;

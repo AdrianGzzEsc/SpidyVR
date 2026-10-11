@@ -410,7 +410,8 @@ def watch_stop_event(name):
     threading.Thread(target=wait, name='stop-event', daemon=True).start()
 
 
-PRESENTATIONS = {0: 'none', 1: 'immersive', 2: 'flat', 3: 'game_screen'}
+# game_screen_3d: the game screen with a scene's own two eye images on it (a cutscene in stereo).
+PRESENTATIONS = {0: 'none', 1: 'immersive', 2: 'flat', 3: 'game_screen', 4: 'game_screen_3d'}
 # Why a frame had no gameplay (game_xr.cpp GateReason).
 GATE_REASONS = ((1, 'no_player'), (2, 'bridge_stopped'), (4, 'no_camera_commit'), (8, 'other_camera'),
                 (16, 'tracking'))
@@ -435,7 +436,7 @@ def start_settings(a):
                 swing_speed=round(a.swing_speed, 1), weight=a.weight,
                 snap_turn=a.snap_turn, smooth_turn=a.smooth_turn, haptics=a.haptics, screen_size=a.screen_size,
                 flips=a.flips, flip_speed=a.flip_speed, trigger_webs=a.trigger_webs, hud=a.hud,
-                stand_on_walls=not a.no_stand_on_walls, eye_height_mm=a.eye_height,
+                stand_on_walls=not a.no_stand_on_walls, screen_depth=a.screen_depth, eye_height_mm=a.eye_height,
                 arm_length_mm=a.arm_length, calibration_prompt=not a.no_calibration_prompt)
 
 
@@ -461,7 +462,8 @@ def pad_ignored(watch, sample, quiet=5):
     if sample.get('pad_reads') != watch['reads']:
         watch.update(reads=sample.get('pad_reads'), since=sample['seconds'])
         return False
-    if sample.get('presentation') == 'game_screen' and sample.get('pad_buttons', '0x0') != '0x0' and \
+    if sample.get('presentation') in ('game_screen', 'game_screen_3d') and \
+            sample.get('pad_buttons', '0x0') != '0x0' and \
             sample['seconds']-watch['since'] >= quiet:
         watch['warned'] = True
         return True
@@ -476,10 +478,10 @@ CALIBRATION_HINTS = {0: None, 1: 'tracking', 2: 'stand_up', 3: 'arms_out', 4: 's
 
 def snapshot(game, address):
     for _ in range(8):
-        raw = game.read(address, 800)
-        if len(raw) != 800:
+        raw = game.read(address, 816)
+        if len(raw) != 816:
             return None
-        if struct.unpack_from('<3I', raw) != (0x53585244, 20, 800):
+        if struct.unpack_from('<3I', raw) != (0x53585244, 22, 816):
             raise RuntimeError('Game XR protocol mismatch')
         if struct.unpack_from('<Q', raw, 16)[0] & 1 or raw[16:24] != game.read(address+16, 8):
             continue
@@ -497,8 +499,10 @@ def snapshot(game, address):
         # virtual screen because gameplay was unavailable (menus, hint cards, cutscenes, animated cameras).
         # Then the B presses the game got as its B (the dodge).
         presentation, dodges = struct.unpack_from('<2I', raw, 576)
+        # screen_3d_submitted: the game-screen frames that showed a scene in stereo (among screen_submitted).
         result.update(presentation=PRESENTATIONS.get(presentation, presentation), dodges=dodges,
-                      screen_submitted=struct.unpack_from('<Q', raw, 584)[0])
+                      screen_submitted=struct.unpack_from('<Q', raw, 584)[0],
+                      screen_3d_submitted=struct.unpack_from('<Q', raw, 808)[0])
         # Why gameplay was unavailable, and which camera the game used meanwhile (a scene that
         # stays on the screen although it is played: its camera is missing from the gate).
         gate, mover = struct.unpack_from('<2I', raw, 592)
@@ -514,6 +518,8 @@ def snapshot(game, address):
         # Y presses the game got as its Y (interact, web strike), whether the aim markers show, and the
         # markers drawn so far (one per hand per headset frame).
         interacts, aim_markers = struct.unpack_from('<2I', raw, 648)
+        # The walks a held Y began: the player stepping up to what the game's Y is for.
+        result.update(interact_steps=struct.unpack_from('<I', raw, 800)[0])
         result.update(interacts=interacts, aim_markers=bool(aim_markers),
                       markers=struct.unpack_from('<Q', raw, 656)[0])
         # The VR settings now (the SPIDY VR tab in the game's Settings changes them),
@@ -534,6 +540,8 @@ def snapshot(game, address):
         # The flip speed: degrees a second at full tilt of the left stick. Then how far the view leans from the
         # world's up now, degrees: 90 while the player stands on a wall (STAND ON WALLS).
         flip_speed, view_tilt = struct.unpack_from('<If', raw, 792)
+        # The GAME SCREEN 3D row: 0 off (cutscenes flat), 1 low, 2 medium, 3 high.
+        screen_depth, = struct.unpack_from('<I', raw, 804)
         result.update(vr_settings=dict(aim_markers=bool(aim_markers), web_grab=bool(flags & 1),
                                        air_webs=bool(flags & 8), web_shooter=bool(flags & 16),
                                        punch=bool(flags & 2), body=bool(flags & 4),
@@ -541,7 +549,7 @@ def snapshot(game, address):
                                        smooth_turn=smooth_turn, haptics=haptics, screen_size=screen_size,
                                        flips=bool(flags & 32), flip_speed=flip_speed,
                                        trigger_webs=bool(flags & 64), hud=hud,
-                                       stand_on_walls=bool(flags & 128),
+                                       stand_on_walls=bool(flags & 128), screen_depth=screen_depth,
                                        eye_height_mm=eye_height, arm_length_mm=arm_length,
                                        calibration_prompt=not calibration_flags & 1),
                       setting_changes=changes,
@@ -1052,6 +1060,10 @@ def main():
     p.add_argument('--haptics', type=int, default=100, help='Controller vibration in percent (default 100)')
     p.add_argument('--screen-size', type=int, choices=(0, 1, 2), default=1,
                    help='The game screen for menus, cutscenes and flat mode: 0 small, 1 medium, 2 large')
+    p.add_argument('--screen-depth', type=int, choices=(0, 1, 2, 3), default=2,
+                   help='The depth cutscenes have on the game screen (the game renders them once for each eye): '
+                        '0 off (flat), 1 low, 2 medium (default), 3 high, everything as far away as it is from '
+                        "the game's camera")
     p.add_argument('--hud', type=int, choices=(0, 1, 2, 3), default=2,
                    help="The game's HUD in the headset: 0 off, 1 small (50 degrees across), 2 medium (60, the "
                         'default), 3 large (70)')
@@ -1205,7 +1217,7 @@ def session(a, startup):
         saved = vr_display.Registry().read(('ScreenSpaceReflections', 'RTReflections'))
         reflections, reflections_line = eye_reflections(saved.get('ScreenSpaceReflections'), a.no_eye_reflections,
                                                         saved.get('RTReflections', 0))
-        config = struct.pack('<4I7Q2IfI', 0x53585243, 22, 656, game.pid, game.base, queue,
+        config = struct.pack('<4I7Q2IfI', 0x53585243, 23, 664, game.pid, game.base, queue,
                              bridge_module, ray_module, motion_module, 0, 0,
                              int(a.seconds*1000), a.size, a.swing_speed,
                              int(a.capture_images) | (2 if a.overlay_webs else 0) |
@@ -1218,9 +1230,9 @@ def session(a, startup):
                              (16384 if a.no_wall_run else 0) | (0x8000 if a.no_eye_antialiasing else 0) |
                              (0x10000 if a.game_monitor_view else 0) |
                              (0x20000 if a.own_shadows else 0) | (0 if reflections else 0x40000)) + \
-            runtime_path(manifest) + struct.pack('<12I', a.snap_turn, a.haptics, a.screen_size, a.smooth_turn,
+            runtime_path(manifest) + struct.pack('<14I', a.snap_turn, a.haptics, a.screen_size, a.smooth_turn,
                                                  a.render_scale, a.weight, a.eye_height, a.arm_length, a.hud,
-                                                 a.flip_speed, a.upscale, a.monitor_rate)
+                                                 a.flip_speed, a.upscale, a.monitor_rate, a.screen_depth, 0)
         startup.stage = 'starting VR'
         code = call_with_payload(process, xr['SpidyXrStart'], config)
         if code:

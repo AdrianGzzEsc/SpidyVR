@@ -10,9 +10,18 @@ the window's size, so all three share one pixel grid. Steps run in order:
 
   NAME        capture a phase (eye image, window image, comparison)
   key:esc     press Esc in the game window (also key:enter)
+  pad:start   press a button of Spidy's virtual Xbox controller (start, a, b, x, y): a game whose save was
+              loaded with that controller no longer takes the keyboard
   wait:N      keep the eye views running for N seconds
 
 Example, in free roam: gameplay key:esc wait:3 pause key:esc wait:3 resumed
+
+With --stereo DEPTH the eye views are the game screen's stereo pair instead (eye command mode 3, as the VR
+session sends it in a cutscene: eyes 64 mm apart, the medium screen, DEPTH of the scene's depth, 0.7 for
+MEDIUM). Each phase then also saves the right eye (`-right.png`) and measures how far apart the two images
+show the same things, patch by patch: 2% of the width for what is far away, nothing for what is at the
+convergence distance, the other way for what is nearer. Every phase reports the updates of the game's time a
+second and its scale too: the session shows a scene in stereo only while that time runs.
 
 Start the game with tools\\vr_launcher.py and load the save first: a load can
 replace the game's view pool, which ends the eye views for that process. The
@@ -32,11 +41,15 @@ from inspect_game import PE
 from observe_game import call_remote, call_with_payload
 from probe_stereo import snapshot as stereo_snapshot, frame_snapshot
 from probe_stereo_gpu import MAX_EYE_SIZE, discover_queue, snapshot as gpu_snapshot
-from run_game_vr import write_rgb_png
+from run_game_vr import hud_snapshot, write_rgb_png
 
 HOOKS = (0x18a0bb0, 0x189bd30, 0x186cc00, 0x1846c20, 0x19223e0, 0x189e310, 0x189e3a0, 0x1873470,
          0x17991a0, 0x1920310, 0x1899ab0, 0x1920240)
 SCANCODES = {'esc': 0x01, 'enter': 0x1c}
+PAD_BUTTONS = {'start': 0x10, 'a': 0x1000, 'b': 0x2000, 'x': 0x4000, 'y': 0x8000}
+# The stereo screen's viewer (native_eyes::screenStereo): eyes 64 mm apart, the medium screen 3.2 m wide and
+# 2.5 m away.
+EYE_DISTANCE, SCREEN_WIDTH, SCREEN_DISTANCE = .064, 3.2, 2.5
 user32 = c.WinDLL('user32', use_last_error=True)
 gdi32 = c.WinDLL('gdi32', use_last_error=True)
 for function, result, arguments in (
@@ -218,6 +231,40 @@ def screen_rgb(rows, width, height, view, row_bytes):
     return bytes(rgb)
 
 
+def stereo_command(serial, depth):
+    """Eye command mode 3: the game's own camera as two eyes, its numbers in the first eye's fov."""
+    floats = [0.]*40
+    floats[16:19] = SCREEN_DISTANCE*depth, EYE_DISTANCE/SCREEN_WIDTH, EYE_DISTANCE
+    return struct.pack('<4IQ2I40f3fI', 0x53455043, 2, 208, 3, serial, 250, 0, *floats, 0, 0, 0, 0)
+
+
+def disparities(left, right, width, height, columns=8, rows=6, reach=None):
+    """How far to the right (pixels) the right image shows what the left one shows, for a grid of patches:
+    rows of the grid top to bottom, None for a patch without detail to match. Positive: behind the screen."""
+    reach = reach or max(16, width//24)
+    luma_left = [luma(left[i], left[i+1], left[i+2]) for i in range(0, width*height*3, 3)]
+    luma_right = [luma(right[i], right[i+1], right[i+2]) for i in range(0, width*height*3, 3)]
+    half_w, half_h = max(8, width//40), max(8, height//30)
+    step = max(2, width//480)  # every patch about 24 by 20 samples, whatever the image's size
+    grid = []
+    for row in range(rows):
+        cy = int((row+.5)*height/rows)
+        line = []
+        for column in range(columns):
+            cx = int(reach+half_w+(column+.5)*(width-2*(reach+half_w))/columns)
+            points = [(x, y) for y in range(cy-half_h, cy+half_h, step) for x in range(cx-half_w, cx+half_w, step)]
+            patch = [luma_left[y*width+x] for x, y in points]
+            mean = sum(patch)/len(patch)
+            if sum(abs(v-mean) for v in patch)/len(patch) < 4:
+                line.append(None)
+                continue
+            best = min(range(-reach, reach+1),
+                       key=lambda shift: sum(abs(v-luma_right[y*width+x+shift]) for v, (x, y) in zip(patch, points)))
+            line.append(best)
+        grid.append(line)
+    return grid
+
+
 def difference_image(eye, window):
     """|eye - window| per channel, four times brighter, to show where the images differ."""
     return bytes(min(255, 4*abs(a-b)) for a, b in zip(eye, window))
@@ -227,12 +274,17 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('steps', nargs='+')
     p.add_argument('--seconds', type=float, default=2, help='eye views running before each capture')
+    p.add_argument('--stereo', type=float, default=0, metavar='DEPTH',
+                   help="the game screen's stereo pair instead of the flat screen's eyes: 0.5 LOW, 0.7 MEDIUM, 1 HIGH")
     p.add_argument('--output', type=pathlib.Path, default=ROOT/'reports/game-screen.json')
     a = p.parse_args()
     for step in a.steps:
         kind, _, value = step.partition(':')
-        if kind == 'key' and value not in SCANCODES or kind == 'wait' and not 0 < float(value or 0) <= 60:
+        if kind == 'key' and value not in SCANCODES or kind == 'wait' and not 0 < float(value or 0) <= 60 or \
+                kind == 'pad' and value not in PAD_BUTTONS:
             p.error(f'Unsupported step {step}')
+    if a.stereo and not .1 <= a.stereo <= 1:
+        p.error('Use a depth from 0.1 to 1')
     try:
         user32.SetProcessDpiAwarenessContext(c.c_void_p(-4))  # window pixels, not scaled ones
     except AttributeError:
@@ -257,7 +309,19 @@ def main():
                                   ROOT/'reports/stereo-modules',
                                   ('SpidyStart', 'SpidyStop', 'SpidyStereoData', 'SpidySetEyes', 'SpidyStereoFrames',
                                    'SpidyGpuStart', 'SpidyGpuStop', 'SpidyGpuData', 'SpidyGpuFreeze',
-                                   'SpidyGpuScreen', 'SpidyScreenData'))
+                                   'SpidyGpuScreen', 'SpidyScreenData', 'SpidyTimeStart', 'SpidyTimeSample',
+                                   'SpidyTimeStop', 'SpidyPadSubmit', 'SpidyHudData'))
+        # The game's time, as the VR session watches it: a scene runs it, a pause menu does not.
+        timed = not call_remote(process, exports['SpidyTimeStart'])
+
+        def game_time():
+            from probe_menu_pad import call_with_output
+            code, raw = call_with_output(game, process, exports['SpidyTimeSample'], b'', 104)
+            if code or len(raw) != 104 or struct.unpack_from('<3I', raw) != (0x454d4954, 1, 104):
+                return None
+            # The game time its last frame took: 0 in a pause menu, where the time system updates all the same.
+            return dict(updates=struct.unpack_from('<Q', raw, 16)[0], scale=round(struct.unpack_from('<f', raw, 52)[0], 4),
+                        frame=struct.unpack_from('<d', raw, 88)[0], at=time.monotonic())
         # Capture only, untimed: the eye views live while commands arrive, as in a VR session.
         code = call_with_payload(process, exports['SpidyGpuStart'],
                                  struct.pack('<4I2Q4I', 0x53475043, 3, 48, game.pid, game.base, queue, 0, 0, 1, 0))
@@ -281,7 +345,8 @@ def main():
             end = time.monotonic()+seconds
             while time.monotonic() < end:
                 serial += 1
-                command = struct.pack('<4IQ2I40f3fI', 0x53455043, 2, 208, 2, serial, 250, 0, *([0.]*40), 0, 0, 0, 0)
+                command = stereo_command(serial, a.stereo) if a.stereo else \
+                    struct.pack('<4IQ2I40f3fI', 0x53455043, 2, 208, 2, serial, 250, 0, *([0.]*40), 0, 0, 0, 0)
                 code = call_with_payload(process, exports['SpidySetEyes'], command)
                 if code:
                     raise RuntimeError(f'Game screen command: {code}')
@@ -297,6 +362,16 @@ def main():
             if kind == 'wait':
                 run_views(float(value))
                 continue
+            if kind == 'pad':
+                # A press of 150 ms, then its release seen by several game frames.
+                code = call_with_payload(process, exports['SpidyPadSubmit'],
+                                         struct.pack('<H2B4hI', PAD_BUTTONS[value], 0, 0, 0, 0, 0, 0, 150))
+                if code:
+                    raise RuntimeError(f'Virtual controller: {code}')
+                run_views(.8)
+                continue
+            clock_before = game_time() if timed else None
+            hud_before = hud_snapshot(game, exports['SpidyHudData'])
             before = frame_snapshot(game, exports['SpidyStereoFrames'])
             pairs_before = (gpu_snapshot(game, exports['SpidyGpuData']) or {}).get('pairs', 0)
             screen_before = call_remote(process, exports['SpidyGpuScreen'], 2) == 0 and \
@@ -309,6 +384,18 @@ def main():
             after = frame_snapshot(game, exports['SpidyStereoFrames'])
             phase = dict(freeze=code, new_pairs=gpu['pairs']-pairs_before if gpu else None,
                          eye_job_copies=after['left_copies']-before['left_copies'] if before and after else None)
+            clock = game_time() if timed else None
+            if clock and clock_before:
+                phase.update(time_updates_per_second=round((clock['updates']-clock_before['updates']) /
+                                                           (clock['at']-clock_before['at']), 1),
+                             time_scale=clock['scale'], game_frame_ms=round(clock['frame']*1000, 3))
+            hud = hud_snapshot(game, exports['SpidyHudData'])
+            if hud and hud_before:
+                # The panel placed for the eyes (on the stereo screen: at the convergence), the second movie
+                # (subtitles, prompts, menus) drawn on it, and how far from the camera it went.
+                phase.update(hud={k: hud[k]-hud_before[k] for k in ('game_frames', 'placed_frames', 'rejected_frames',
+                                                                   'layer_frames') if k in hud},
+                             hud_distance=hud.get('distance'))
             # The headset's game screen: the presented frame the game copied at Present.
             copied = screen_snapshot(game, exports['SpidyScreenData'])
             phase.update(screen_read=screen_code, screen_frames=copied['frames']-(screen_before or 0),
@@ -342,10 +429,28 @@ def main():
             stem = a.output.with_name(f'{a.output.stem}-{step}')
             for name, image in (('eye', eye), ('window', shot), ('difference', difference_image(eye, shot))):
                 write_rgb_png(stem.with_name(f'{stem.name}-{name}.png'), width, height, image)
+            if a.stereo:
+                rgba = game.read(gpu['right_pixels'], width*height*4)
+                if len(rgba) != width*height*4:
+                    raise RuntimeError('Incomplete right eye pixels')
+                other = bytearray(width*height*3)
+                other[0::3], other[1::3], other[2::3] = rgba[0::4], rgba[1::4], rgba[2::4]
+                other = bytes(other)
+                write_rgb_png(stem.with_name(f'{stem.name}-right.png'), width, height, other)
+                grid = disparities(eye, other, width, height)
+                found = sorted(v for line in grid for v in line if v is not None)
+                # What is infinitely far away lies this many pixels further right in the right eye's image.
+                phase.update(stereo=dict(depth=a.stereo, horizon_pixels=round(width*EYE_DISTANCE/SCREEN_WIDTH, 1),
+                                         convergence_m=SCREEN_DISTANCE*a.stereo, disparity_rows=grid,
+                                         disparity_min=found[0] if found else None,
+                                         disparity_median=found[len(found)//2] if found else None,
+                                         disparity_max=found[-1] if found else None))
             phase.update(compare(eye, shot, width, height), images=str(stem)+'-*.png')
             phases[step] = phase
             print(step, json.dumps(phase), flush=True)
         call_remote(process, exports['SpidyGpuScreen'], 0)
+        if timed:
+            call_remote(process, exports['SpidyTimeStop'])
         code = call_remote(process, exports['SpidyStop'])
         views_active = code != 0
         if code:

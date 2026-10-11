@@ -209,6 +209,12 @@ Telemetry game_time::telemetry() {
     t.slowed = slowedUpdates.load(std::memory_order_relaxed);
     t.systems = systems.load(std::memory_order_relaxed);
     t.restored = restored.load(std::memory_order_relaxed);
+    if (hooked) {
+        __try {
+            t.gameFrame = get<double>(imageBase + gameFrameRva);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+        }
+    }
     return t;
 }
 

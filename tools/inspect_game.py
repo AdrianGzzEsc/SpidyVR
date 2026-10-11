@@ -81,7 +81,7 @@ def inspect(executable):
         try: tables[name] = dict(rva=hex(rva), **pe.vtable(rva))
         except (ValueError, struct.error) as error: tables[name] = {"rva": hex(rva), "error": str(error)}
     existing = [p.name for p in executable.parent.iterdir()
-                if p.name.lower() in {"dxgi.dll", "dinput8.dll", "winmm.dll", "version.dll", "realvr.ini", "openvr_api.dll"}]
+                if p.name.lower() in {"dxgi.dll", "dinput8.dll", "winmm.dll", "version.dll", "openvr_api.dll"}]
     return dict(executable=str(executable), sha256=digest, known_executable=digest == EXPECTED_SHA256,
                 machine=hex(pe.machine), image_base=hex(pe.image_base), image_size=pe.image_size,
                 candidate_functions=functions, candidate_vtables=tables, existing_mod_files=existing,

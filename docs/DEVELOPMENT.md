@@ -413,10 +413,13 @@ and step their FLIP SPEED (90 to 480 degrees a second at full tilt of the
 left stick, 180 by default; `GameTrackingRig::flipSpeed`, XrConfig and XrData
 `flipSpeed`), and switch STAND ON WALLS (on by default: walking a wall or
 stopped on it, the view turns so the wall is the floor; `GameTrackingRig::standOnWalls`, XrConfig
-options bit 13 for off, XrData settings bit 128); XrConfig is version 22
-(`upscale`, `monitorRate`; options bit 15 for no eye anti-aliasing, bit 16
-for the game's own monitor view, bit 17 for each eye's own shadow set) and
-XrData version 20.
+options bit 13 for off, XrData settings bit 128), and step GAME SCREEN 3D
+(OFF, LOW, MEDIUM, HIGH: the depth cutscenes have on the game screen;
+`vr_settings::screenDepths`, XrConfig and XrData `screenDepth`); XrConfig is
+version 23 (664 bytes: `screenDepth`; `upscale`, `monitorRate`; options bit 15
+for no eye anti-aliasing, bit 16 for the game's own monitor view, bit 17 for
+each eye's own shadow set) and XrData version 22 (816 bytes: `screenDepth`,
+`stereoSubmitted`; `interactSteps`).
 X resets a setting, Y the
 whole tab (to Spidy's defaults). Web grabbing, the web
 shooter, your body and punching are not in it or in the launcher's options
@@ -446,7 +449,17 @@ gloves instead; `-NoPunch` lets fists pass through. See
 
 The intro, menus, loading, the map, hint cards, cutscenes, finishers and death
 appear on a screen in front of you, as the game shows them on the monitor; VR
-resumes when play does. On that screen the VR controllers are the game's Xbox
+resumes when play does. Scenes the game plays there (cutscenes, finishers,
+deaths: a player exists and the game's frames take game time) are in stereo:
+the game renders its own camera once for each eye, set apart for your eyes
+and that screen (eye command mode 3, `native_eyes::Stereo`), and the headset
+shows each eye its own image on the screen. The far background lies as far
+behind the screen as a horizon, what is `GAME SCREEN 3D` of the screen's
+2.5 m from the camera (LOW 0.5, MEDIUM 0.7, HIGH 1) lies on it, and nearer
+things come out of it; the HUD's panel with the subtitles is moved to that
+distance, so it lies on the screen. Menus, hint cards and loading keep the
+game's flat frame, and so does a scene whose eyes get no HUD panel
+(`ScenePanel`). `-ScreenDepth Off` is the flat frame everywhere. On that screen the VR controllers are the game's Xbox
 controller: the left thumbstick moves through menus, A selects, B goes back,
 X and Y are the game's X and Y, the grips are the bumpers (menu tabs), the
 triggers are the triggers, the right thumbstick and the stick clicks are the
@@ -456,7 +469,12 @@ pauses the game, X opens the game menu (map, suits, skills), and B and Y are
 the game's own: B its dodge, the way the left stick points, and Y its interact
 button (backpacks, doors, consoles, prompts; web strike in a fight), both
 except while a web carries you (`game_pad::Walk`; XrData `dodges` and
-`interacts` count the presses that reached the game). The right thumbstick's
+`interacts` count the presses that reached the game). The game takes its Y
+only within about a metre of the thing (a door's "Open Door" prompt showed
+1.1 m from its middle and not 1.2 m), so Y held past 0.3 s walks the player
+on where they look, at half stick, until the game's scene ends play, Y is let
+go, the walk meets a wall, or 2 s have passed; not in a fight, in the air or
+on a wall (`game_pad::InteractStep`, XrData `interactSteps`). The right thumbstick's
 click is the game's LB + RB together, its web pull where it shows the two (a
 door, a grate), under the same condition (`game_pad::PullPress`,
 `Walk::pull`): the grips shoot webs in VR and are no bumpers there. Until
@@ -591,6 +609,7 @@ reattaching after a stopped session or a rebuilt DLL.
 | `-SmoothTurn 120` | Smooth turning in degrees a second at full tilt, instead of snap turning (0-360; 0, the default, snap turns) |
 | `-Haptics 100` | Controller vibration in percent; 0 turns it off |
 | `-ScreenSize Medium` | Size of the game screen in the headset: Small, Medium or Large |
+| `-ScreenDepth Medium` | Depth of cutscenes on the game screen (stereo): Off (flat), Low, Medium or High |
 | `-RenderScale 125` | Eye resolution in percent of the runtime's recommendation, per side (50-200; 100 by default) |
 | `-Size 2048` | Square eye resolution instead of the runtime's recommendation (not with `-RenderScale`) |
 | `-Upscale 67` | The size the scene inside each eye is rendered at, in percent of the eye's size per side; the game's temporal anti-aliasing brings it to the eye's size (50-100; 67 by default, 100 is anti-aliasing alone) |

@@ -53,9 +53,13 @@ class XrRuntime {
     std::array<unsigned, 2> recommendedDimensions() const {
         return {eyes_[0].recommendedWidth, eyes_[0].recommendedHeight};
     }
-    // width: the screen's width in metres.
-    void presentation(bool flat, Pose screenPose = {}, float aspect = 16.f / 9, float width = 3.2f) {
+    // width: the screen's width in metres. stereo: the screen shows the left
+    // eye's image to the left eye and the right one's to the right; without
+    // it both eyes see the left one's.
+    void presentation(bool flat, Pose screenPose = {}, float aspect = 16.f / 9, float width = 3.2f,
+                      bool stereo = false) {
         flatScreen_ = flat;
+        stereoScreen_ = flat && stereo;
         screenPose_ = screenPose;
         screenAspect_ = std::isfinite(aspect) && aspect > .2f && aspect < 5 ? aspect : 16.f / 9;
         screenWidth_ = std::isfinite(width) && width > .5f && width < 10 ? width : 3.2f;
@@ -95,7 +99,7 @@ class XrRuntime {
     XrTime previousTime_{};
     bool running_{}, exit_{};
     bool lastFrameSubmitted_{};
-    bool flatScreen_{};
+    bool flatScreen_{}, stereoScreen_{};
     Pose screenPose_{};
     float screenAspect_ = 16.f / 9, screenWidth_ = 3.2f;
     float hapticScale_ = 1;

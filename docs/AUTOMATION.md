@@ -133,16 +133,17 @@ Y (Back) reach the game as buttons, and native walking and jumping (the takeoff
 jump included) as its left stick and A, besides the input bridge's
 W/A/S/D/Space: once that controller has pressed a button, the game ignores the
 keyboard for the player. Samples carry `presentation` (`immersive`, `flat`,
-`game_screen`, or `none` for a frame without an image), `screen_submitted`
-(game-screen frames), `gate` (why gameplay was unavailable: `no_player`,
+`game_screen`, `game_screen_3d` for a scene in stereo on that screen, or
+`none` for a frame without an image), `screen_submitted` (game-screen frames)
+and `screen_3d_submitted` (those in stereo), `gate` (why gameplay was unavailable: `no_player`,
 `bridge_stopped`, `no_camera_commit`, `other_camera`, `tracking`),
 `camera_mover` (the class of the camera that last committed; a scene played on
 the screen names the camera the gate is missing), `camera_commits` and
 `player_commits` (the bridge's commits, and those the gate accepts), `players` and
 `player_record` (each player the worker followed), and `pad_buttons`,
 `pad_installed` and `pad_reads` (the virtual controller and the game's reads of
-it), and `interacts` and `dodges` (Y and B presses in VR play that reached the
-game as its Y and its B). The native mover controls collision; requests expire if the swing
+it), `interacts` and `dodges` (Y and B presses in VR play that reached the
+game as its Y and its B), and `interact_steps` (the walks a held Y began). The native mover controls collision; requests expire if the swing
 or XR worker stops renewing them. Owned movement synchronizes the native airborne
 velocity and clears the mover's duplicate fall accumulator. This correction
 still needs an in-game handoff test. Reports now include native movement samples
@@ -176,8 +177,10 @@ holding, done; `hint`: what the panel asks for; `progress`; `done` and
 `skipped` this session; `reach_m`, each arm at the last one) and, in
 `vr_settings`, `eye_height_mm`, `arm_length_mm` and `calibration_prompt`, so
 the session's last line hands a calibration made or skipped to the launcher;
-`body` has `arm_scale`. XrConfig is version 22 and XrData version 20 (656 and 800
-bytes; `run_game_vr.py --upscale 50`..`100` is the share of the eye's size, per
+`body` has `arm_scale`. XrConfig is version 23 and XrData version 22 (664 and 816
+bytes; `run_game_vr.py --screen-depth 0`..`3` is the depth cutscenes have on
+the game screen, 2 by default and 0 flat, a sample's `vr_settings`
+`screen_depth`; `run_game_vr.py --upscale 50`..`100` is the share of the eye's size, per
 side, that its scene is rendered at, 67 by default; `--no-eye-antialiasing`
 gives the eyes as they were before October 10's eighth build and
 `--game-monitor-view` has the game render its own view while immersive;
@@ -237,7 +240,13 @@ with no headset connected; see their `--help`. `tools/probe_game_screen.py`
 steps through game states itself (Esc for the pause menu) and, for each, saves
 the headset's game-screen source (the copied back buffer) and a left eye copying
 the stock camera beside the game window's own image, with brightness and alpha
-statistics. `tools/probe_menu_pad.py` does what a VR session does from the
+statistics. With `--stereo 0.7` its eye views are the game screen's stereo
+pair (eye command mode 3) instead: it saves the right eye too, measures how
+far apart the two images show the same things patch by patch (2% of the width
+for the horizon, 0 for the HUD on the screen's plane), and reports the HUD
+panel's placements and the game time a frame took (0 in the pause menu);
+`pad:start` presses the virtual controller's Start where the game no longer
+takes the keyboard. `tools/probe_menu_pad.py` does what a VR session does from the
 game's start: `start` launches the game as the launcher does and times the
 renderer, `pad a --until-player` plays the title and main menu with the virtual
 Xbox controller until a player exists, `pad start`, `pad down` or `pad --left 0

@@ -22,9 +22,6 @@ Locally checked on 2026-10-03:
 - Steam app 1817070, build 23986256.
 - `Spider-Man.exe` file version 4.0630.0.0, size 121,901,008 bytes.
 - SHA-256 `e297d4d94f1ffe4febf289745e79e7b6fa233a788e7a00f480fc77c55db81ad1`.
-- R.E.A.L. VR was present during initial research. On October 4 its local files
-  were removed from this game's directory at the user's request and backed up
-  under `backups/realvr-removed-20261004`. The executable hash is unchanged.
 
 Steam's branches, from Steam's app info on 2026-10-08 (api.steamcmd.net):
 
@@ -162,6 +159,8 @@ running game with `tools/probe_slow_motion.py`:
 | Set a channel (system, channel, scale, rate, reason, kind) / clear one | `0x19bbaa0` / `0x19bbb40` | Disassembly; not used by Spidy |
 | Linear blend (from, to, rate, seconds) | `0x1c477e0` | Disassembly |
 | The clock's time scale (double): a frame's game time `0x7a7fbd8` is its real time `0x7a7fbf0` times it | `0x7a7fb90` | In the game: 1.0, then 0.30 slowed; the frame ratio went from 1.043 to 0.311 (a frame's game time has a floor near 1/240 s) |
+| In the pause menu a frame's game time `0x7a7fbd8` is exactly 0.0, while the `TimeScaleSystem` goes on updating at scale 1.0 (61 updates a second) and `PlayerModelHudFollower` does not run | | In the game, October 11 (`reports/cutscene-3d.json`): the gate for scenes in stereo reads the frame's game time |
+| A render instance's bounding sphere: centre in the model's own axes (3 floats), then its radius | instance `+0x40` | The HUD panel's: (-0.0098, 0, -0.4053), 1.5208; placed by that centre the HUD lies on the stereo screen's plane to a pixel, by the instance's position 22% behind it |
 | Havok's step: float step, float base (1/30 s), owner; set by `0x1822670` (step = scale x base) | `0x609a560` | In the game: 0.0333 s, 0.0100 s at 30% |
 | Component timestep (the player's mover's step) | `0x16769f0` | In the game: 0.301 game seconds per real second at 30% |
 

@@ -38,7 +38,7 @@
 #include <windows.h>
 using namespace spidy;
 struct XrConfig {
-    uint32_t magic = 0x53585243, version = 22, bytes = sizeof(XrConfig), pid{};
+    uint32_t magic = 0x53585243, version = 23, bytes = sizeof(XrConfig), pid{};
     // record and mover are no longer used: VR starts with the game, before
     // there is a player, and finds each new player itself (game_player).
     uint64_t base{}, queue{}, bridgeModule{}, rayModule{}, motionModule{}, record{}, mover{};
@@ -95,8 +95,12 @@ struct XrConfig {
     // while the game renders no view of its own: presents a second (1-240), 0
     // every frame (monitor_rate.hpp).
     uint32_t upscale = defaultEyeUpscale, monitorRate = defaultMonitorRate;
+    // Version 23: how much depth scenes have on the game screen: 0 none (the
+    // game's flat frame), 1 low, 2 medium, 3 high (vr_settings::screenDepths);
+    // and a spare word.
+    uint32_t screenDepth = 2, spare{};
 };
-static_assert(sizeof(XrConfig) == 656);
+static_assert(sizeof(XrConfig) == 664);
 // Why the last frame had no gameplay (XrData::gate bits).
 enum GateReason : uint32_t {
     gateNoPlayer = 1,     // no save loaded, or a level change in progress
@@ -106,7 +110,7 @@ enum GateReason : uint32_t {
     gateTracking = 16,    // the headset's pose or timing was not usable
 };
 struct XrData {
-    uint32_t magic = 0x53585244, version = 20, bytes = sizeof(XrData), status{};
+    uint32_t magic = 0x53585244, version = 22, bytes = sizeof(XrData), status{};
     int64_t sequence{};
     uint64_t frames{}, tracked{}, submitted{}, dropped{}, leftHands{}, rightHands{}, serial{}, generation{};
     uint32_t nativeKeys{}, error{};
@@ -180,8 +184,14 @@ struct XrData {
     // the player stands on a wall (GameMotionFrame::viewTilt).
     uint32_t flipSpeed{};
     float viewTilt{};
+    // Version 21: the walks a held Y began (game_pad::InteractStep). Version
+    // 22: the GAME SCREEN 3D row now (0 off, 1-3 low to high), and the frames
+    // that showed the game screen in stereo (a scene's own two eye images;
+    // screenSubmitted counts them too).
+    uint32_t interactSteps{}, screenDepth{};
+    uint64_t stereoSubmitted{};
 };
-static_assert(sizeof(XrData) == 800);
+static_assert(sizeof(XrData) == 816);
 // Slow motion (slow_motion.hpp, game_time.hpp): what the player did with it
 // and what the game's time did. status: 1 before VR starts, then 0 with the
 // game's time hooked, else why it is not (game_time::install) and slow
@@ -371,6 +381,10 @@ DWORD WINAPI run(void*) {
         // own, in VR B dodges, Y interacts and X opens the game menu
         // (game_pad::PressOrigins).
         game_pad::PressOrigins origins;
+        // Y held walks the player up to what they look at: the game takes
+        // its Y only within about a metre of the thing.
+        game_pad::InteractStep interactStep;
+        uint32_t interactStepsBefore{};
         // The game's LB + RB (its web pull): both web buttons on a thing no
         // web holds on, then a yank (WebPull); or the right thumbstick's
         // click. aimed: what each hand's web button would do, markers or not.
@@ -400,6 +414,7 @@ DWORD WINAPI run(void*) {
         values.weight = static_cast<int>(config.weight);
         values.hud = static_cast<int>(config.hud);
         values.flipSpeed = static_cast<int>(config.flipSpeed);
+        values.screenDepth = static_cast<int>(config.screenDepth);
         values = vr_settings::sanitized(values);
         game_menu::publish(values);
         uint32_t settingChanges{};
@@ -417,6 +432,10 @@ DWORD WINAPI run(void*) {
         native_hud::Follow hudFollow;
         VrShortcut shortcut;
         GameScreen gameScreen;
+        // Whether the game is playing a scene on the screen (its time runs),
+        // and whether that scene's stereo eyes have the HUD's panel.
+        SceneClock sceneClock;
+        ScenePanel scenePanel;
         bool flatScreen{};
         Pose screenPose{};
         const auto dimensions = runtime.eyeDimensions();
@@ -653,8 +672,9 @@ DWORD WINAPI run(void*) {
                 break;
             double copyMs{}, overlayMs{};
             Presentation drawn{};
-            // This frame shows the game's presented frame on the screen.
-            bool showScreen{};
+            // This frame shows the game's presented frame on the screen, or
+            // (stereoScene) the scene's own two eye images once there are some.
+            bool showScreen{}, stereoScene{};
             if (!padInstalled && GetTickCount64() >= padRetryMs) {
                 padInstalled = !game_pad::install();
                 padRetryMs = GetTickCount64() + 1000;
@@ -749,6 +769,18 @@ DWORD WINAPI run(void*) {
                     else
                         gameScreen.reset();
                     wasScreen = screen;
+                    // A scene the game plays there (a cutscene, a finisher, a
+                    // death) gets its own two eyes: the game renders its
+                    // camera once for each of the viewer's. Not a pause menu
+                    // or a hint card (the game's frames take no game time),
+                    // nor without a player (the title screen, a load), nor a
+                    // scene whose eyes get no HUD panel for its subtitles.
+                    const auto clock = game_time::telemetry();
+                    const bool timeRuns =
+                        sceneClock.running(clock.installed && clock.gameFrame > 0, GetTickCount64());
+                    const bool scene =
+                        scenePanel.wanted(screen && values.screenDepth > 0 && player.hero && bridgeRunning && timeRuns,
+                                          native_hud::onScreen(sceneHoldMs), GetTickCount64());
                     // On the screen the controllers are the game's Xbox
                     // controller; in VR it gets Start (menu), Back (X) and
                     // the native walking, jumping, dodge and interact
@@ -1061,6 +1093,29 @@ DWORD WINAPI run(void*) {
                             walk.interact = (origins.play() & buttonY) != 0;
                             walk.dodge = (origins.play() & buttonB) && !calibrationInput;
                         }
+                        // Y held on: the player walks where they look, until the
+                        // game takes the press. The player's own stick goes first.
+                        const bool fight = moverTable == config.base + bridge::combatCamera;
+                        const float stepIn = interactStep.update(
+                            frame.seconds, walk.interact,
+                            playing && !mounting && swingState.grounded && !fight && !motion.standing,
+                            std::hypot(swingState.velocity.x, swingState.velocity.z));
+                        if (interactStep.steps() != interactStepsBefore) {
+                            interactStepsBefore = interactStep.steps();
+                            runtime.haptic(0, .2f);
+                        }
+                        if (stepIn > 0 && std::hypot(walk.right, walk.forward) < .1f) {
+                            Vec3 look = motion.headPose.orientation.rotate({0, 0, -1});
+                            Vec3 ahead{camera[8], 0, camera[10]};
+                            look.y = 0;
+                            // Looking straight down or up says no way to go.
+                            if (length(look) > .3f && length(ahead) > .3f) {
+                                look = normalized(look);
+                                ahead = normalized(ahead);
+                                walk.forward = stepIn * dot(look, ahead);
+                                walk.right = stepIn * dot(look, cross(ahead, {0, 1, 0}));
+                            }
+                        }
                         // The game's LB + RB, its web pull where it shows the two
                         // (a door, a grate): both web buttons on the thing, which
                         // no web holds on, and a yank; or the right stick's click.
@@ -1130,6 +1185,8 @@ DWORD WINAPI run(void*) {
                         d.hud = static_cast<uint32_t>(values.hud);
                         d.flipSpeed = static_cast<uint32_t>(values.flipSpeed);
                         d.viewTilt = motion.active ? motion.viewTilt * 180 / 3.14159265f : 0.f;
+                        d.interactSteps = interactStep.steps();
+                        d.screenDepth = static_cast<uint32_t>(values.screenDepth);
                         d.settingChanges = settingChanges;
                         const auto menu = game_menu::telemetry();
                         d.menuTabs = menu.tabs;
@@ -1188,7 +1245,7 @@ DWORD WINAPI run(void*) {
                     // Without gameplay the screen shows the game's presented
                     // frame; until it is up, the last image stays. The eye
                     // views get no command and stop rendering meanwhile.
-                    if (!motion.active)
+                    if (!motion.active && !scene)
                         return screen || gameScreen.holding();
                     if (!nativeStarted) {
                         struct NativeConfig {
@@ -1232,8 +1289,37 @@ DWORD WINAPI run(void*) {
                         // hidden and the overlay draws gloves, as before.
                         bodyStarted = values.body && !native_body::start(config.base);
                         firstImageDeadline = GetTickCount64() + 3000;
-                        message(3, 0, "Gameplay found; waiting for the first eye images");
-                        return false; // initialization can exceed one predicted display interval
+                        message(3, 0, motion.active ? "Gameplay found; waiting for the first eye images"
+                                                    : "A scene found; waiting for its first eye images");
+                        // Initialization can exceed one predicted display
+                        // interval. A scene's screen keeps the game's frame.
+                        return !motion.active;
+                    }
+                    if (!motion.active) {
+                        // The scene's two eyes: the game's own camera, set apart
+                        // for this viewer and this screen (native_eyes::Stereo).
+                        native_eyes::Command eyes;
+                        eyes.enabled = 3;
+                        eyes.serial = ++serial;
+                        eyes.leaseMs = 250;
+                        native_eyes::setStereo(
+                            eyes, native_eyes::screenStereo(
+                                      eyeDistance(frame.eyes[0].pose.position, frame.eyes[1].pose.position),
+                                      vr_settings::screenWidth(values.screenSize), vr_settings::screenDistance,
+                                      vr_settings::screenDepth(values.screenDepth)));
+                        NativeEyeFrame saved;
+                        saved.serial = eyes.serial;
+                        // A held pair ages by the time it was asked for.
+                        saved.motion.predictedDisplayTime = frame.predictedDisplayTime;
+                        saved.flatScreen = saved.stereoScreen = true;
+                        saved.screenPose = screenPose;
+                        saved.screenAspect = SpidyFlatAspect();
+                        history.remember(saved);
+                        const auto code = SpidySetEyes(&eyes);
+                        if (code && code != 4003)
+                            check(code, "Scene eye command");
+                        stereoScene = !code;
+                        return true;
                     }
                     if (const float h = frame.head.position.y; std::isfinite(h) && h > .8f && h < 2.4f)
                         standingEye = standingEye <= 0 ? h
@@ -1338,6 +1424,42 @@ DWORD WINAPI run(void*) {
                 },
                 [&](std::array<XrRuntime::EyeTarget, 2>& targets) {
                     const auto copyStart = std::chrono::steady_clock::now();
+                    if (showScreen && stereoScene && native_hud::onScreen(sceneHoldMs)) {
+                        // The scene's newest pair, once the game has rendered
+                        // one with the HUD's panel on its screen; until then
+                        // the game's own frame below.
+                        uint64_t pairSerial{}, pairGeneration{};
+                        const bool copied = native_gpu::copyLatest(targets[0].texture, targets[1].texture,
+                                                                   pairSerial, pairGeneration);
+                        check(native_gpu::error(), "GPU eye bridge");
+                        const auto* saved = copied ? history.find(pairSerial, displayTime) : nullptr;
+                        if (saved && saved->stereoScreen) {
+                            copyMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() -
+                                                                               copyStart)
+                                         .count();
+                            runtime.presentation(true, screenPose, saved->screenAspect,
+                                                 vr_settings::screenWidth(values.screenSize), true);
+                            drawn = Presentation::stereoScreen;
+                            D3D12Renderer::Captured pixels;
+                            if (snapshotTicket && overlay.captured(snapshotTicket, pixels)) {
+                                publishSnapshot(pendingSnapshot, &pixels);
+                                snapshotTicket = 0;
+                            }
+                            if (!snapshotTicket && snapshots.due(GetTickCount64(), 0, false) &&
+                                (snapshotTicket = overlay.capture(targets[0].texture)) != 0) {
+                                pendingSnapshot = {};
+                                pendingSnapshot.flatScreen = 1;
+                                pendingSnapshot.generation = pairGeneration;
+                                pendingSnapshot.serial = pairSerial;
+                            }
+                            std::lock_guard lock(telemetry);
+                            InterlockedIncrement64(&SpidyXrData.sequence);
+                            SpidyXrData.serial = pairSerial;
+                            SpidyXrData.generation = pairGeneration;
+                            InterlockedIncrement64(&SpidyXrData.sequence);
+                            return true;
+                        }
+                    }
                     native_gpu::Screen image;
                     if (showScreen && native_gpu::latestScreen(image, imageHoldMs)) {
                         // The game's presented frame, scaled into the image the screen shows.
@@ -1377,9 +1499,12 @@ DWORD WINAPI run(void*) {
                                                                        copyStart)
                                  .count();
                     if (copied) {
-                        drawn = saved->flatScreen ? Presentation::flat : Presentation::immersive;
+                        // A scene's pair stays on its screen until play's first image.
+                        drawn = saved->stereoScreen ? Presentation::stereoScreen
+                                : saved->flatScreen ? Presentation::flat
+                                                    : Presentation::immersive;
                         runtime.presentation(saved->flatScreen, saved->screenPose, saved->screenAspect,
-                                             vr_settings::screenWidth(values.screenSize));
+                                             vr_settings::screenWidth(values.screenSize), saved->stereoScreen);
                         const auto& rendered = saved->motion;
                         for (unsigned eye = 0; eye < 2; ++eye) {
                             const auto& pose = saved->trackingEyes[eye].pose;
@@ -1636,9 +1761,14 @@ DWORD WINAPI run(void*) {
                             drawn == Presentation::gameScreen
                                 ? "Game screen (menus, loading, cutscenes): the controllers work as an Xbox "
                                   "controller, VR settings are in Settings > SPIDY VR - VR resumes with gameplay"
+                            : drawn == Presentation::stereoScreen
+                                ? "Game screen in 3D (a cutscene or another scene the game plays): the "
+                                  "controllers work as an Xbox controller - Settings > SPIDY VR > GAME SCREEN 3D "
+                                  "sets its depth"
                             : drawn == Presentation::flat
                                 ? "Flat screen - click both thumbsticks for VR"
-                                : "VR active - B dodges, Y interacts, X opens the game menu, the menu button "
+                                : "VR active - B dodges, Y interacts (held: you step up to it), X opens "
+                                  "the game menu, the menu button "
                                   "pauses, the left thumbstick's click slows time, the right one's is the "
                                   "game's LB + RB (web pull); click both thumbsticks for flat screen");
                 }
@@ -1651,8 +1781,9 @@ DWORD WINAPI run(void*) {
                 if (submitted) {
                     ++d.submitted;
                     // Game-screen frames are not eye images: neither new nor reused ones.
-                    if (drawn == Presentation::gameScreen) {
+                    if (drawn == Presentation::gameScreen || drawn == Presentation::stereoScreen) {
                         ++d.screenSubmitted;
+                        d.stereoSubmitted += drawn == Presentation::stereoScreen;
                     } else if (d.generation != previousPresentedGeneration) {
                         ++d.uniqueSubmitted;
                         lastNewImageMs = lastPresentedMs;
@@ -1740,13 +1871,14 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyXrStart(void* input) {
     if (worker)
         return 1000; // one bounded XR session per process during validation
     if (!read(reinterpret_cast<uintptr_t>(input), &config, sizeof(config)) || config.magic != 0x53585243 ||
-        config.version != 22 || config.bytes != sizeof(config) || config.pid != GetCurrentProcessId() ||
+        config.version != 23 || config.bytes != sizeof(config) || config.pid != GetCurrentProcessId() ||
         config.runtime[std::size(config.runtime) - 1] ||
         config.base != reinterpret_cast<uint64_t>(GetModuleHandleW(nullptr)) ||
         !GetModuleHandleW(L"Spider-Man.exe") || !config.queue || !config.bridgeModule || !config.rayModule ||
         !config.motionModule || config.options > 0x7ffff || config.snapTurn > 90 || config.haptics > 100 ||
         !validEyeUpscale(config.upscale) || !validMonitorRate(config.monitorRate) ||
-        config.screenSize > 2 || config.smoothTurn > 360 || config.hud > 3 || config.flipSpeed < 90 ||
+        config.screenSize > 2 || config.screenDepth > 3 || config.spare || config.smoothTurn > 360 ||
+        config.hud > 3 || config.flipSpeed < 90 ||
         config.flipSpeed > 480 || !std::isfinite(config.swingSpeed) || config.swingSpeed < 1 ||
         config.swingSpeed > 65 || (config.durationMs && config.durationMs < 2000) || config.durationMs > 25000 ||
         (config.eyeSize && !validEyeSize(config.eyeSize)) || !validRenderScale(config.renderScale) ||

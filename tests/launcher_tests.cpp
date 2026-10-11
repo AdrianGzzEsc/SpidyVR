@@ -238,6 +238,14 @@ int main() {
         args = sessionArguments(options, L"r.json", L"", L"");
         check(args.size() == 8 && args[7] == L"--no-stand-on-walls", "standing on walls switched off");
         options = {};
+        check(options.screenDepth == 2, "cutscenes at medium depth in a new launcher");
+        options.screenDepth = 0;
+        args = sessionArguments(options, L"r.json", L"", L"");
+        check(args.size() == 9 && args[7] == L"--screen-depth" && args[8] == L"0", "flat cutscenes");
+        options.screenDepth = 9;
+        args = sessionArguments(options, L"r.json", L"", L"");
+        check(args.size() == 9 && args[7] == L"--screen-depth" && args[8] == L"3", "the depth at most high");
+        options = {};
         check(options.hud == 2, "the medium HUD in a new launcher");
         options.hud = 0;
         args = sessionArguments(options, L"r.json", L"", L"");
@@ -271,13 +279,14 @@ int main() {
         SessionOptions options;
         check(headsetSettings("VR settings from the headset: aim_markers=0 web_grab=1 air_webs=0 web_shooter=0 "
                               "punch=0 body=1 swing_speed=48 weight=150 snap_turn=45 smooth_turn=90 haptics=50 "
-                              "flips=1 flip_speed=300 trigger_webs=1 hud=0 stand_on_walls=0 screen_size=2\r",
+                              "flips=1 flip_speed=300 trigger_webs=1 hud=0 stand_on_walls=0 screen_depth=3 "
+                              "screen_size=2\r",
                               options),
               "the line changed nothing");
         check(!options.aimMarkers && !options.airWebs && options.swingSpeed == 48 && options.weight == 150 &&
                   options.snapTurn == 45 && options.smoothTurn == 90 && options.haptics == 50 && options.flips &&
                   options.flipSpeed == 300 && options.triggerWebs && options.hud == 0 && !options.standOnWalls &&
-                  options.screenSize == 2,
+                  options.screenDepth == 3 && options.screenSize == 2,
               "every value, the last one before a carriage return");
         const auto kept = options;
         check(!headsetSettings("VR settings from the headset: aim_markers=0 air_webs=0", options) && options == kept,

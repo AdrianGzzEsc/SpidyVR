@@ -11,6 +11,10 @@ constexpr uint32_t version = 1;
 constexpr uint32_t keyCodes[] = {0x11, 0x1e, 0x1f, 0x20, 0x39, 0x2a, 0x1d, 0x12,
                                  0x13, 0x10, 0x21, 0x01, 0x1c, 0x02, 0x03};
 enum Mode : uint32_t { input = 1, cameraOffset = 2 };
+// The player's cameras (Camera2 vtables, image offsets): what Data::mover's
+// first word is while the player's own camera commits. The combat camera is
+// a fight.
+constexpr uintptr_t followCamera = 0x3871fd8, combatCamera = 0x38720d0;
 struct Config {
     uint32_t magic = configMagic, protocol = version, bytes = sizeof(Config), pid{};
     uint64_t imageBase{}, hero{}, actorRecord{};

@@ -17,7 +17,8 @@ inline bool recentPresentation(uint64_t lastNewImageMs, uint64_t nowMs) {
     return lastNewImageMs && nowMs >= lastNewImageMs && nowMs - lastNewImageMs <= controlHoldMs;
 }
 // What a submitted headset frame showed.
-enum class Presentation : uint32_t { none = 0, immersive = 1, flat = 2, gameScreen = 3 };
+// stereoScreen: the game screen with a scene's own two eye images on it.
+enum class Presentation : uint32_t { none = 0, immersive = 1, flat = 2, gameScreen = 3, stereoScreen = 4 };
 // Pause menus and hint cards, cutscenes, finishers, death and loading give the
 // tracked rig no gameplay camera. The headset then shows the game's presented
 // frame on a virtual screen; before the sixth build of October 5 it showed
@@ -57,6 +58,61 @@ class GameScreen {
     uint64_t closedMs_{};
     bool closed_{}, showing_{}, entered_{};
 };
+// A scene the game plays on the game screen (a cutscene, a finisher, a death)
+// is shown there in stereo: the game renders it once for each eye. Its time
+// runs. In a pause menu and on a hint card the game's frames take no game
+// time, and the menu is drawn only into the game's own frame: those keep it.
+constexpr uint64_t sceneHoldMs = 200;
+// A scene shown in stereo needs the HUD's panel on its screen, which carries
+// the subtitles there. One that has gone this long without it stays flat.
+constexpr uint64_t scenePanelMs = 1000;
+class SceneClock {
+  public:
+    // Once per headset frame, with whether the game's last frame took game
+    // time: true while such a frame is no older than sceneHoldMs.
+    bool running(bool advancing, uint64_t nowMs) {
+        if (advancing) {
+            tickMs_ = nowMs;
+            ticked_ = true;
+        }
+        return ticked_ && nowMs >= tickMs_ && nowMs - tickMs_ <= sceneHoldMs;
+    }
+
+  private:
+    uint64_t tickMs_{};
+    bool ticked_{};
+};
+// One stretch of a scene's stereo eyes on the screen: whether to go on asking
+// the game for them.
+class ScenePanel {
+  public:
+    // Once per headset frame. `scene`: a scene plays on the screen. `panel`:
+    // the HUD's panel was on the stereo screen just now. False once a stretch
+    // has had none for scenePanelMs, until the scene or the screen has gone.
+    bool wanted(bool scene, bool panel, uint64_t nowMs) {
+        if (!scene) {
+            started_ = flat_ = false;
+            return false;
+        }
+        if (!started_ || panel || nowMs < sinceMs_) {
+            started_ = true;
+            sinceMs_ = nowMs;
+        } else if (nowMs - sinceMs_ > scenePanelMs) {
+            flat_ = true;
+        }
+        return !flat_;
+    }
+
+  private:
+    uint64_t sinceMs_{};
+    bool started_{}, flat_{};
+};
+// The viewer's eye distance, metres, from the two tracked eyes; the usual
+// 64 mm when they say none a person has.
+inline float eyeDistance(Vec3 left, Vec3 right) {
+    const float d = length(right - left);
+    return std::isfinite(d) && d >= .05f && d <= .08f ? d : .064f;
+}
 // A level virtual screen `distance` ahead of the head, facing it. Only the
 // head's heading counts, so a tilted head does not tilt the screen.
 inline Pose screenAhead(const Pose& head, float distance = 2.5f) {

@@ -1,6 +1,185 @@
 # Validation — 2026-10-11
 
-## The first mission's crash; the game's LB + RB by a two-hand web pull — current build
+## Cutscenes in stereo on the game screen — current build
+
+The user, October 11: "lets keep cutscenes in a virtual screen but with proper
+3d stereoscopic depth".
+
+**Design.** Without gameplay the headset showed the game's presented frame on
+one quad (both eyes the same image). A scene the game plays there now gets
+the game's own camera twice: eye command mode 3 (`native_eyes::Stereo`,
+`include/spidy/native_eye_frame.hpp`), the two eye views the engine's camera
+set apart along its right axis, each lens shifted the other way
+(`stereoEyes`, `placeEyes` in `src/stereo_probe.cpp`). The worker shows the
+pair on the same quad twice, the left image for the left eye and the right
+one for the right (`XrRuntime::presentation`'s `stereo`,
+`XR_EYE_VISIBILITY_LEFT` / `_RIGHT`).
+
+The numbers, for a viewer whose eyes are `i` apart, a screen `W` wide and `D`
+away, a lens of half width `t` (tangent) and the depth setting `d`:
+
+- each lens is shifted by `t i / W`: a point infinitely far away lands `i / W`
+  of the image's width apart in the two images, `i` metres on the screen, so
+  the eyes look at it in parallel;
+- the cameras stand `2 t (d D) i / W` apart, at most `i`: what is `d D` from
+  the camera lands on one spot of both images and shows at the screen's
+  distance, and a point `z` from the camera shows `z / d` from the viewer;
+- a lens narrower than `W / (2 D)` (0.64 for the medium screen) gets cameras
+  closer together than the eyes: its scene shows larger than life, `W / (2 t
+  d D)` times. A wider lens keeps them an eye distance apart and the screen's
+  plane comes nearer.
+
+`vr_settings::screenDepths` gives `d`: LOW 0.5, MEDIUM 0.7, HIGH 1. The
+viewer's eye distance is the tracked eyes' (`eyeDistance`, 50 to 80 mm, else
+64).
+
+**When.** `scene` in `src/game_xr.cpp`: the game screen is up, GAME SCREEN 3D
+is not OFF, there is a player, and the game's last frame took game time
+(`SceneClock`, `game_time::Telemetry::gameFrame`, the double at `0x7a7fbd8`).
+The eye views start with the first scene if no gameplay came before it. The
+screen shows the game's frame until the newest pair is a stereo one, and
+again when the pairs stop.
+
+**The HUD and subtitles.** The eyes get the HUD's panel and, on it, the
+second movie (subtitles, prompts, markers). `placeScreenHud` moves the panel
+toward the camera until its face is at the convergence distance, smaller by
+as much, so both eyes see it in one place, on the screen. The stereo screen
+shows the panel whatever the HUD setting. The worker shows a scene in stereo
+only while the panel went onto its screen within 200 ms
+(`native_hud::onScreen`), and gives a scene's eyes up after a second without
+it (`ScenePanel`): without the panel the second movie stays in the game's own
+frame, and that frame is shown.
+
+**In the game without a headset** (`tools/probe_game_screen.py --stereo 0.7
+play pad:start wait:2 paused pad:start wait:2 resumed`, the rooftop save, the
+window 3840 wide; `reports/cutscene-3d.json` and its images). The probe sends
+mode 3 as the worker does (eyes 64 mm, the medium screen) and matches patches
+of the two eye images:
+
+| | Expected | Measured |
+|---|---|---|
+| The far shore and sky | 76.8 pixels (2% of the width) | 73 to 77 |
+| Spider-Man, about 3 m from the camera | 76.8 (1 - 1.75 / 3) = 32, more for the roof behind him | 46 to 53 |
+| The HUD's corners, a subtitle, a prompt | 0 | 0, 0, 0, -1 |
+| The panel's distance (`hud_distance`) | 1.75 m | 1.75 m |
+
+New pairs 65 to 75 in each 2 s phase (the window at 3840 x 2400 ran at 31
+frames a second), the panel placed in 68 of 69 frames of play and the second
+movie drawn on it in 66.
+
+Two findings of the first run changed the build:
+
+- **The pause menu is no scene, and the time system does not say so.** With
+  the pause menu open the `TimeScaleSystem` went on updating, 61 times a
+  second at scale 1.0, as in play. The first build read "time runs" from
+  those updates and would have sent stereo commands in the pause menu, with
+  the menu moved onto a panel the game does not draw there: the menu was in
+  neither the eyes nor the window (first run's `paused` images). A frame's
+  game time (`0x7a7fbd8`) is 8 to 32 ms in play and exactly 0.0 with the menu
+  open: the gate reads that. And the second movie goes onto the panel only in
+  a frame whose panel went onto the stereo screen: the game's HUD follower
+  does not run in the pause menu (`game_frames` 0), so the menu stays in the
+  game's frame whatever is sent (second run: `layer_frames` 0, the window
+  shows the menu).
+- **The panel's face is behind its position.** Placed by the instance's
+  position, the HUD lay 9 to 10 of the horizon's 51 pixels behind the screen:
+  1.22 times the convergence distance. The instance's bounding sphere
+  (`+0x40`: centre in the model's axes, radius) has its centre 0.4053 units
+  along the model's -z, 4.46 m at the game's z scale of 11.0: the face is
+  24.46 m from the camera, not the follower's 20. `placeScreenHud` scales by
+  the face's depth. (In immersive VR the panel "2 m ahead" has had its face
+  at 2.45 m since October 9; not changed.)
+
+The first build was in the play folder from 16:24 to 16:31 and was replaced
+by the previous one before the user ran it.
+
+**Tests.** Core 243/243 (3 new: the stereo command's numbers and limits; the
+two cameras' geometry at three lenses, a wide one, medium depth and an
+off-centre lens; the scene clock, the panel's wait and the eye distance; and
+the GAME SCREEN 3D row in the two settings tests), launcher 23/23
+(`--screen-depth`, `screen_depth`), Python 109 (`game_screen_3d`,
+`screen_3d_submitted`, `screen_depth`), the graphics test.
+
+**Protocols.** XrConfig version 23, 664 bytes (`screenDepth`); XrData version
+22, 816 bytes (`screenDepth`, `stereoSubmitted`); `Presentation::stereoScreen`
+4 (`game_screen_3d`). The eye command keeps version 2 and its 208 bytes: mode
+3's three numbers travel in the first eye's fov, which modes 2 and 3 do not
+read. The saves the two game runs changed (`slot0-s.save`, `-userprefs.save`)
+are back as they were at 16:25 (`reports/backups/saves-20261011-cutscene-3d`).
+
+Not checked: a real cutscene (none could be reached in the user's saves
+without playing past a story step); whether the game runs its HUD follower
+and draws the panel in cutscenes, on which the stereo screen depends (if not,
+cutscenes stay flat and `placed_frames` stands still there); the two quads
+in the headset; camera cuts with the eyes' temporal anti-aliasing; depth of
+field and other effects of the game's own view that eye views do not have;
+cutscenes that are videos; the frame rate of a cutscene's three views.
+
+## Y held steps up to what it opens — preceding build
+
+The user, October 11, after the 15:24 session: "b (is now both dodge and
+interact, making interactions not register also can we add proper active
+controller buttons to the ui indicators?"
+
+**What the buttons sent** (`game-vr-20261011-152435`, 570 s). B and Y never
+went to the game together: of the samples in VR play 90 have the game's B
+alone (`pad_buttons` 0x2000), 14 its Y alone (0x8000), none both; `dodges`
+34, `interacts` 5. The first Y (106.8 s, at the console of the server room)
+worked: the game's scene began 0.5 s later. The other four were at the red
+double door of "The Main Event" (its middle near -539.3, -597.6; the feet
+from the swing's samples):
+
+| Time | Press | Feet from the door's middle |
+|---|---|---|
+| 510.7 s | B | 1.64 m, the dodge to 1.49 and back to 1.81 |
+| 513.8 s | Y | 1.92 m: nothing |
+| 524.0 s | B | 1.60 m, the dodge to 1.14 and on to 2.34 |
+| 542.5 s | B | 1.87 m, the dodge to 1.24 and back to 1.81 |
+| 548.1 s | B | 2.12 m, the dodge to 2.88 |
+| 552.6, 558.1, 558.4 s | Y | 2.53 m: nothing |
+
+He walked up to 1.64 m and stopped there (508 s); the nearest he came was
+0.95 m, in a dodge. A and the web pull (four times) were tried there too.
+
+**The same door in the plain game** (no headset; `probe_menu_pad.py start`,
+profile 2 chosen on the profile screen with the virtual controller, Continue:
+the checkpoint 31 m from the door). No prompt 3.6 m in front of the door,
+nor against the wall 1.2 m to the side of its middle (-538.1, -597.4); the
+game's "Y Open Door" at (-538.86, -596.71), 1.1 m from the middle. A Y tap
+from 3.6 m: nothing, the gate stayed open, as in the headset. Y held with
+the left stick at 0.6 toward the door from 3.6 m: the door opened on the way
+in (the bomb squad's scene, the gate closed) within 2.5 s. So the game takes
+its Y only within about a metre, and takes a Y that is already held as the
+player comes into reach. That scene saved the game past the door: the two
+save files the check changed are back as they were at 15:45
+(`reports/backups/save-before-door-20261011-1545`; as the check left them in
+`save-after-door-test-20261011-1600`).
+
+**Changes.** `include/spidy/game_pad.hpp`, `InteractStep`: Y held 0.3 s
+walks the player where they look at half stick, for 2 s at most, and no more
+once the walk stalls (under 0.3 m/s for 0.25 s after its first 0.4 s), Y is
+let go, or the game no longer has the player on the ground out of a fight.
+`src/game_xr.cpp`: the worker turns the head's level direction into the
+game camera's stick axes as `GameTrackingRig` does for the left stick, only
+while the player's own stick rests; the swing is told of no stick, so no
+wall takes a player walked up to a door; a tick in the left hand as the walk
+begins. A fight is the combat camera (`bridge::combatCamera`, now in
+`game_bridge_protocol.hpp` with the follow camera's). XrData is version 21,
+808 bytes (`interactSteps`; a sample's `interact_steps`). The launcher's
+CONTROLS page, `tools/launch-game-vr.ps1`, `docs/PLAYERS.md`, `README.md`,
+`docs/DEVELOPMENT.md` and `docs/AUTOMATION.md` say so.
+
+**Tests.** Core 240/240 (1 new: a tap walks nobody, a hold walks for
+`walkSeconds`, a wall and a fight end it, one walk a press), launcher 23/23,
+Python 109 (`interact_steps`).
+
+Not checked: the walk in the headset (the worker's part needs one): its
+direction, how it feels, and that the door opens with it; things other than
+this door; a walk held into a wall the game crawls (it ends after 0.65 s
+there). The game's prompts still name Xbox buttons: LB + RB and X are none
+of the Touch controllers' in VR play.
+
+## The first mission's crash; the game's LB + RB by a two-hand web pull — preceding build
 
 The user, October 11: "game crashes on first mission, theres a chase sequence
 mixed with a tutorial ... at some point during one of the steps it crashes
@@ -4605,7 +4784,7 @@ elements have normal brightness. Toggle both thumbsticks to flatscreen and
 back, checking avatar visibility in both modes. Session reports will contain
 the corresponding per-eye appearance counters.
 
-## Swing response, fall handoff, and R.E.A.L. VR removal — preceding build
+## Swing response and fall handoff — preceding build
 
 The user confirmed ground takeoff and open-space attachment now work, then
 reported slow swinging, delayed reeling, and intermittent abrupt downward motion.
@@ -4641,15 +4820,6 @@ at 45, 72, 90, and 120 physics steps per second. These checks do not execute the
 native game hooks. The user subsequently reported that the update feels much
 better. That feedback confirms improved swing feel; exhaustive fall handoff
 and full-speed collision behavior have not been verified.
-
-At the user's request, 21 R.E.A.L. VR files were moved out of the game folder:
-`RealRepo`, `ShaderFixesGeo3D`, `dxgi.dll`, `openvr_api.dll`, both bundled CUDA
-runtime DLLs, `RealConfig.bat`, `RealVR.ini`, `RealVR64.log`, and `Begun.txt`.
-The backup and SHA-256 inventory are in `backups/realvr-removed-20261004`.
-Every backup hash was checked and the game executable hash is unchanged.
-Global NVIDIA profiles and game registry preferences were not restored because
-their pre-mod values were not established. No bundled R.E.A.L. VR executable
-or setup script was run.
 
 ## Ground takeoff and open-space webs — preceding build, user confirmed
 
@@ -4965,9 +5135,8 @@ Spider-Man integration still requires its own validation.
 
 ## Actual game experiment
 
-The camera observer sampled the supported Steam executable with the existing
-R.E.A.L. VR module still present and its `AutoStartVR=0` setting. This establishes
-flat-screen diagnostic coexistence in this scene only.
+The camera observer sampled the supported Steam executable in a flat-screen
+scene.
 
 `reports/native-camera-summary.json` records:
 
@@ -5007,7 +5176,6 @@ action as recorded above. Mouse camera movement and the OS close shortcut work.
 - Camera and movement ownership through loading/cutscenes, respawn, and streaming.
 - Detailed stereo/reprojection quality and performance beyond the confirmed smoke test.
 - Sustained game-world swinging, animation/IK, streaming, loading, cutscenes, HUD, or performance.
-- Global settings left by the removed R.E.A.L. VR installation.
 
 The headset test was initially deferred and subsequently completed as a lab
 smoke test. For the game experiment, a save backup was made first. The diagnostic

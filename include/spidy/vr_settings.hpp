@@ -50,6 +50,10 @@ struct Values {
     // your floor (the tab's STAND ON WALLS; GameTrackingRig::standOnWalls);
     // off, you stay upright beside it.
     bool standOnWalls = true;
+    // Scenes the game plays on the game screen (cutscenes, finishers) have
+    // depth there (the tab's GAME SCREEN 3D): 0 off, the game's flat frame; 1
+    // low, 2 medium, 3 high (screenDepths).
+    int screenDepth = 2;
     bool operator==(const Values&) const = default;
 };
 // The steps the game's Settings offer. The launcher's slider sets any swing
@@ -74,10 +78,19 @@ inline float screenWidth(int size) {
 // The game screen's distance from the viewer it was placed for, metres
 // (presentation_gate's screenAhead).
 inline constexpr float screenDistance = 2.5f;
+// How much of a scene's depth the game screen shows for each GAME SCREEN 3D
+// choice (native_eyes::screenStereo's depth): at 1 everything is as far from
+// you as it is from the game's camera, and what is nearer to that camera than
+// the screen is to you comes out of the screen; lower, everything lies
+// farther back.
+inline constexpr float screenDepths[] = {0, .5f, .7f, 1.f};
+inline float screenDepth(int choice) {
+    return screenDepths[choice < 0 ? 0 : choice > 3 ? 3 : choice];
+}
 // The values within the session's ranges: swing speed 1-65 m/s (what
 // run_game_vr.py accepts), snap turn 0-90 degrees, smooth turn 0-360 degrees
 // a second, vibration 0-100%, weight 40-300%, HUD 0-3, flip speed 90-480
-// degrees a second.
+// degrees a second, the game screen's depth 0-3.
 Values sanitized(Values);
 
 enum class Item : uint8_t {
@@ -96,8 +109,9 @@ enum class Item : uint8_t {
     hud,
     flipSpeed,
     standOnWalls,
+    screenDepth,
 };
-inline constexpr Item lastItem = Item::standOnWalls;
+inline constexpr Item lastItem = Item::screenDepth;
 // The SPIDY VR tab, top to bottom: a section's heading (item none) or a
 // setting. A setting without choices is an ON/OFF switch, the game's own;
 // one with choices steps through them. Titles are upper case, as the game's
@@ -108,7 +122,7 @@ struct Row {
     const char* help{};
     std::span<const char* const> choices{};
 };
-const std::array<Row, 18>& rows();
+const std::array<Row, 19>& rows();
 // The choice a setting shows for these values: a switch 0 (off) or 1 (on), a
 // list its step nearest to the value (a launcher value between two steps
 // shows the nearer one, the lower on a tie).

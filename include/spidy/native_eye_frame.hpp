@@ -1,5 +1,6 @@
 #pragma once
 #include "native_view.hpp"
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <initializer_list>
@@ -9,6 +10,9 @@ struct EyePose {
     Mat4 world{};
     float fov[4]{};
 }; // left, right, down, up
+// enabled: 0 off; 1 the tracked eyes; 2 the flat screen, both eyes the engine's
+// own camera; 3 the game screen in stereo, the two eyes that camera set apart
+// (Stereo below, carried in the first eye's fov).
 struct Command {
     uint32_t magic = 0x53455043, version = 2, bytes = sizeof(Command), enabled{};
     uint64_t serial{};
@@ -29,8 +33,46 @@ inline bool reanchorOffset(Vec3 sampled, Vec3 rendered, Vec3& offset, float limi
     offset = {};
     return false;
 }
+// The game screen in stereo (enabled 3): the headset shows the left eye's image
+// to the left eye and the right one's to the right, on one screen. The eyes are
+// the engine's own camera (a cutscene's) set apart sideways, each lens shifted
+// the other way, so that what is `convergence` metres from the camera lands on
+// the same spot of both images and shows at the screen's own distance; nearer
+// things come out in front of the screen and farther ones lie behind it.
+struct Stereo {
+    float convergence{};
+    // How far apart the two images show a point infinitely far away, as a part
+    // of the image's width: the viewer's eye distance over the screen's width,
+    // at which the eyes look at it in parallel, as at a real horizon.
+    float parallax{};
+    // The most the two cameras stand apart, metres: the viewer's eye distance,
+    // at which the scene has its real size. A narrow lens takes less, and
+    // shows its scene larger than life, as a cinema screen shows a close-up.
+    float separation{};
+};
+inline Stereo stereo(const Command& c) {
+    return {c.eyes[0].fov[0], c.eyes[0].fov[1], c.eyes[0].fov[2]};
+}
+inline void setStereo(Command& c, const Stereo& s) {
+    c.eyes[0].fov[0] = s.convergence;
+    c.eyes[0].fov[1] = s.parallax;
+    c.eyes[0].fov[2] = s.separation;
+}
+// The stereo screen for a viewer whose eyes are `eyeDistance` metres apart, on
+// a screen `screenWidth` metres wide and `screenDistance` metres away. `depth`
+// (0 to 1): at 1 everything shows as far from the viewer as it is from the
+// camera, so what is nearer to the camera than the screen is to the viewer
+// comes out of the screen; at 0.5 everything shows twice as far.
+inline Stereo screenStereo(float eyeDistance, float screenWidth, float screenDistance, float depth) {
+    return {screenDistance * depth, eyeDistance / screenWidth, eyeDistance};
+}
+inline bool valid(const Stereo& s) {
+    return std::isfinite(s.convergence) && std::isfinite(s.parallax) && std::isfinite(s.separation) &&
+           s.convergence >= .1f && s.convergence <= 100 && s.parallax > 0 && s.parallax <= .1f && s.separation > 0 &&
+           s.separation <= .1f;
+}
 inline bool valid(const Command& c) {
-    if (c.magic != 0x53455043 || c.version != 2 || c.bytes != sizeof(c) || c.enabled > 2 || !c.serial ||
+    if (c.magic != 0x53455043 || c.version != 2 || c.bytes != sizeof(c) || c.enabled > 3 || !c.serial ||
         c.leaseMs > 500 || c.reserved || c.anchored > 1 || !finite(c.anchor) || std::abs(c.anchor.x) > 1e6f ||
         std::abs(c.anchor.y) > 1e6f || std::abs(c.anchor.z) > 1e6f)
         return false;
@@ -40,6 +82,8 @@ inline bool valid(const Command& c) {
         return false;
     if (c.enabled == 2)
         return true; // Flat mode clones the engine's own camera descriptor.
+    if (c.enabled == 3)
+        return valid(stereo(c));
     for (const auto& e : c.eyes) {
         if (!native_view::validPose(e.world))
             return false;
@@ -58,6 +102,19 @@ inline bool valid(const Command& c) {
 struct Bounds {
     float left{}, right{}, top{}, bottom{};
 };
+// The stereo screen's two cameras for a camera with lens `lens`: `separation`
+// metres apart (the left eye half of it to the camera's left), the left eye's
+// lens moved by +shift and the right one's by -shift (tangents). What is
+// `distance` metres ahead then shows at the screen's own distance: the
+// convergence asked for, or nearer where the separation is at its most.
+struct StereoEyes {
+    float separation{}, shift{}, distance{};
+};
+inline StereoEyes stereoEyes(const Stereo& s, const Bounds& lens) {
+    const float shift = (lens.right - lens.left) / 2 * s.parallax;
+    const float separation = std::min(s.separation, 2 * shift * s.convergence);
+    return {separation, shift, separation / (2 * shift)};
+}
 // Head camera for the engine's active view: centred between the eyes, oriented
 // as their average, with the smallest lens that holds both eye frustums
 // (widened by margin), so culling done for that view covers both eye images.

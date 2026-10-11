@@ -691,7 +691,7 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual((result['captured'],result['reused'],result['captured_serial']),(101,202,303))
 
     def test_all_readers_reject_incompatible_dlls(self):
-        for reader, magic, size in ((gpu_snapshot, 0x53475044, 208), (xr_snapshot, 0x53585244, 800),
+        for reader, magic, size in ((gpu_snapshot, 0x53475044, 208), (xr_snapshot, 0x53585244, 816),
                                      (collision_snapshot, 0x53435044, 2160),
                                      (movement_snapshot, 0x534d5044, 57408),
                                      (motion_snapshot, 0x534d5644, 176), (ray_snapshot, 0x53525944, 784),
@@ -802,13 +802,13 @@ class ProtocolTests(unittest.TestCase):
             game.candidate.assert_not_called()
 
     def test_xr_never_publishes_partly_updated_pose(self):
-        raw = bytearray(800)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 20, 800, 3, 4)
+        raw = bytearray(816)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 22, 816, 3, 4)
         self.assertIsNone(xr_snapshot(Reader(*([raw, struct.pack('<Q', 6)]*8)), 0))
 
     def test_xr_decodes_both_hands_and_status_message(self):
-        raw = bytearray(800)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 20, 800, 3, 4)
+        raw = bytearray(816)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 22, 816, 3, 4)
         struct.pack_into('<16f', raw, 160, *range(16))
         struct.pack_into('<16f', raw, 224, *range(16, 32))
         raw[288:295] = b'Tracked'
@@ -822,11 +822,18 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual((result['flat_screen'],result['toggles'],result['eye_width'],result['eye_height']),(1,7,2688,2784))
         # The game's camera on the virtual screen while gameplay was unavailable.
         self.assertEqual((result['presentation'], result['screen_submitted']), ('game_screen', 1234))
+        self.assertEqual(result['screen_3d_submitted'], 0)
+        # A cutscene on that screen in stereo: 900 of its frames so far.
+        struct.pack_into('<I', raw, 576, 4)
+        struct.pack_into('<Q', raw, 808, 900)
+        result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
+        self.assertEqual((result['presentation'], result['screen_submitted'], result['screen_3d_submitted']),
+                         ('game_screen_3d', 1234, 900))
         self.assertEqual((result['gate'], result['camera_mover']), ([], None))
 
     def test_xr_says_why_gameplay_was_unavailable_and_which_camera_ran(self):
-        raw = bytearray(800)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 20, 800, 3, 4)
+        raw = bytearray(816)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 22, 816, 3, 4)
         # A played scene whose camera the gate does not accept, the third player of the session,
         # and the menu button held on the virtual controller the game has read 900 times.
         struct.pack_into('<2I2Q2IQ', raw, 592, 8, 0x3872860, 3, 0x2aefe723280, 0x10, 1, 900)
@@ -844,8 +851,8 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual((result['gate'], result['camera_mover']), (['no_player', 'no_camera_commit'], '0x3999999'))
 
     def test_xr_counts_interacts_dodges_and_aim_markers(self):
-        raw = bytearray(800)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 20, 800, 3, 4)
+        raw = bytearray(816)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 22, 816, 3, 4)
         result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
         self.assertEqual((result['interacts'], result['aim_markers'], result['markers']), (0, False, 0))
         self.assertEqual(result['dodges'], 0)
@@ -856,10 +863,14 @@ class ProtocolTests(unittest.TestCase):
         result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
         self.assertEqual((result['interacts'], result['aim_markers'], result['markers']), (3, True, 5000))
         self.assertEqual(result['dodges'], 7)
+        # Two of the Y presses were held on and walked the player up to the thing.
+        self.assertEqual(result['interact_steps'], 0)
+        struct.pack_into('<I', raw, 800, 2)
+        self.assertEqual(xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)['interact_steps'], 2)
 
     def test_xr_reports_the_vr_settings_and_the_settings_tab(self):
-        raw = bytearray(800)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 20, 800, 3, 4)
+        raw = bytearray(816)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 22, 816, 3, 4)
         # Markers on; web grab, webs in open air, the web shooter and body on, punching off; 48 m/s, half again
         # real gravity, 45 degree snap turns, smooth turning at 120 degrees a second, half vibration, the large
         # screen; two changes in the SPIDY VR tab, which the game built 7 times.
@@ -869,13 +880,15 @@ class ProtocolTests(unittest.TestCase):
         # Half again real gravity, the large HUD; flips at 300 degrees a second.
         struct.pack_into('<2I', raw, 744, 150, 3)
         struct.pack_into('<I', raw, 792, 300)
+        # GAME SCREEN 3D: HIGH.
+        struct.pack_into('<I', raw, 804, 3)
         result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
         self.assertEqual(result['vr_settings'], dict(aim_markers=True, web_grab=True, air_webs=True, web_shooter=True,
                                                      punch=False, body=True, swing_speed=48.0, weight=150,
                                                      snap_turn=45, smooth_turn=120, haptics=50, screen_size=2,
                                                      flips=False, flip_speed=300, trigger_webs=False, hud=3,
-                                                     stand_on_walls=False, eye_height_mm=0, arm_length_mm=0,
-                                                     calibration_prompt=True))
+                                                     stand_on_walls=False, screen_depth=3, eye_height_mm=0,
+                                                     arm_length_mm=0, calibration_prompt=True))
         # The HUD switched off in the tab.
         struct.pack_into('<I', raw, 748, 0)
         self.assertEqual(xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)['vr_settings']['hud'], 0)
@@ -906,8 +919,8 @@ class ProtocolTests(unittest.TestCase):
         self.assertFalse(settings['flips'] or settings['trigger_webs'])
 
     def test_xr_reports_walls_the_game_held_the_player_on(self):
-        raw = bytearray(800)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 20, 800, 3, 4)
+        raw = bytearray(816)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 22, 816, 3, 4)
         result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
         self.assertEqual(result['surface'], dict(entries=0, frames=0, hero_up=[0, 0, 0], stand_off_m=0,
                                                  head_height_m=0, head_clearance_m=0, view_tilt_deg=0))
@@ -923,8 +936,8 @@ class ProtocolTests(unittest.TestCase):
                                                  head_height_m=-.02, head_clearance_m=.46, view_tilt_deg=0))
 
     def test_xr_reports_the_t_pose_calibration(self):
-        raw = bytearray(800)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 20, 800, 3, 4)
+        raw = bytearray(816)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 22, 816, 3, 4)
         result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
         self.assertEqual(result['calibration'], dict(phase='none', hint=None, progress=0, done=0, skipped=0,
                                                      reach_m=[0, 0]))
@@ -949,12 +962,12 @@ class ProtocolTests(unittest.TestCase):
         args = Mock(no_aim_markers=False, no_web_grab=False, no_air_webs=False, no_web_shooter=False, no_punch=True,
                     no_body=False, swing_speed=32.0, weight=60, snap_turn=30, smooth_turn=0, haptics=100,
                     screen_size=1, flips=False, flip_speed=180, trigger_webs=False, hud=2, eye_height=0,
-                    arm_length=0, no_calibration_prompt=False, no_stand_on_walls=False)
+                    arm_length=0, no_calibration_prompt=False, no_stand_on_walls=False, screen_depth=2)
         start = start_settings(args)
         self.assertEqual(start, dict(aim_markers=True, web_grab=True, air_webs=True, web_shooter=True, punch=False,
                                      body=True, swing_speed=32.0, weight=60, snap_turn=30, smooth_turn=0,
                                      haptics=100, screen_size=1, flips=False, flip_speed=180, trigger_webs=False,
-                                     hud=2, stand_on_walls=True, eye_height_mm=0, arm_length_mm=0,
+                                     hud=2, stand_on_walls=True, screen_depth=2, eye_height_mm=0, arm_length_mm=0,
                                      calibration_prompt=True))
         # Nothing changed, or no sample: no line.
         self.assertIsNone(settings_line(start, dict(vr_settings=dict(start))))
@@ -965,7 +978,8 @@ class ProtocolTests(unittest.TestCase):
                          SETTINGS_LINE + 'aim_markers=1 web_grab=1 air_webs=0 web_shooter=0 punch=1 body=1 '
                                          'swing_speed=48 weight=150 snap_turn=0 smooth_turn=90 haptics=100 '
                                          'screen_size=1 flips=0 flip_speed=180 trigger_webs=0 hud=2 '
-                                         'stand_on_walls=1 eye_height_mm=0 arm_length_mm=0 calibration_prompt=1')
+                                         'stand_on_walls=1 screen_depth=2 eye_height_mm=0 arm_length_mm=0 '
+                                         'calibration_prompt=1')
         # The experimental flips switched on in the headset go to the launcher too; so do their speed, the web
         # button and the HUD.
         self.assertIn(' flips=1 ', settings_line(start, dict(vr_settings=dict(start, flips=True))))
@@ -973,6 +987,8 @@ class ProtocolTests(unittest.TestCase):
         self.assertIn(' trigger_webs=1 ', settings_line(start, dict(vr_settings=dict(start, trigger_webs=True))))
         self.assertIn(' hud=0 ', settings_line(start, dict(vr_settings=dict(start, hud=0))))
         self.assertIn(' stand_on_walls=0 ', settings_line(start, dict(vr_settings=dict(start, stand_on_walls=False))))
+        # GAME SCREEN 3D switched off in the headset: the next session's cutscenes are flat again.
+        self.assertIn(' screen_depth=0 ', settings_line(start, dict(vr_settings=dict(start, screen_depth=0))))
         # A T-pose calibration in the headset goes to the launcher the same way; so does skipping it.
         self.assertTrue(settings_line(start, dict(vr_settings=dict(start, eye_height_mm=1630, arm_length_mm=590)))
                         .endswith(' eye_height_mm=1630 arm_length_mm=590 calibration_prompt=1'))

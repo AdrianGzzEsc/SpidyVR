@@ -626,6 +626,59 @@ void placeHud(const HudPlacement& placed, const FrameHead& head) {
         }
     });
 }
+// The frame whose HUD panel went onto the game screen in stereo (main thread).
+uint64_t screenHudFrame = UINT64_MAX;
+// On the game screen in stereo the panel goes where both eyes see it in one
+// place, at the screen's own distance: toward the game's camera from where the
+// game put it, until its face is at the distance the two eyes' images agree at
+// (native_eyes::stereoEyes), and smaller by as much, so the camera sees it as
+// before. The HUD, the subtitles and the prompts then lie on the screen.
+// The panel's face is not at the instance's position: the model's bounding
+// sphere (+40: its centre in the model's own axes, then its radius) lies 0.405
+// of the model's units behind it, 4.46 m at the game's scale of 11 and 20 m
+// (October 11: placed by its position, the HUD showed 9 to 10 of the horizon's
+// 51 pixels behind the screen).
+void placeScreenHud(const HudPlacement& placed, const native_eyes::Command& command) {
+    Descriptor main{};
+    float m[16]{}, sphere[4]{};
+    uint32_t handle{}, flags{};
+    // Not a panel the game has switched off (+5c bit 0x20: DrawOff).
+    bool done = read(pointer(base + 0x7a34dd0), &main, sizeof(main)) && native_view::valid(main) &&
+                registered(placed.instance, handle) && read(placed.instance, m, sizeof(m)) &&
+                read(placed.instance + 0x5c, &flags, 4) && !(flags & 0x20);
+    const auto pose = main.pose();
+    const auto eyes = native_eyes::stereoEyes(
+        native_eyes::stereo(command),
+        {main.values[0x400 / 4], main.values[0x404 / 4], main.values[0x408 / 4], main.values[0x40c / 4]});
+    const Vec3 camera{pose[12], pose[13], pose[14]}, forward{pose[8], pose[9], pose[10]};
+    const Vec3 panel{m[12], m[13], m[14]};
+    Vec3 face = panel;
+    if (read(placed.instance + 0x40, sphere, sizeof(sphere)) && std::isfinite(sphere[0] + sphere[1] + sphere[2]) &&
+        std::abs(sphere[0]) < 100 && std::abs(sphere[1]) < 100 && std::abs(sphere[2]) < 100)
+        for (int row = 0; row < 3; ++row)
+            face += Vec3{m[row * 4], m[row * 4 + 1], m[row * 4 + 2]} * sphere[row];
+    const float depth = dot(face - camera, forward), scale = eyes.distance / depth;
+    done = done && depth > .1f && std::isfinite(scale) && scale > 1e-4f && scale < 1e4f;
+    if (done) {
+        for (int i = 0; i < 12; ++i)
+            m[i] *= scale;
+        const Vec3 moved = camera + (panel - camera) * scale;
+        m[12] = moved.x;
+        m[13] = moved.y;
+        m[14] = moved.z;
+        reinterpret_cast<SetTransform>(base + 0x191c0e0)(reinterpret_cast<void*>(placed.instance), m,
+                                                         reinterpret_cast<void*>(placed.instance + 0x70));
+        screenHudFrame = frameIndex;
+        native_hud::onScreen();
+    }
+    native_hud::publish([&](native_hud::Data& d) {
+        ++(done ? d.placedFrames : d.rejectedFrames);
+        if (done) {
+            d.distance = eyes.distance;
+            d.halfWidth = (main.values[0x404 / 4] - main.values[0x400 / 4]) / 2;
+        }
+    });
+}
 // After the game placed the HUD panel in front of its camera: while immersive,
 // move it in front of this frame's head.
 void hudPlace(void* follower) {
@@ -655,13 +708,18 @@ void hudPlace(void* follower) {
         d.viewHalfWidth = stockHalfWidth;
     });
     const auto& head = latchHead();
+    // The game screen in stereo shows the HUD whatever its setting, as the
+    // game's own view does on the flat one.
+    const bool screen = head.controlled && head.command.enabled == 3 && !retiring();
     // The HUD off: the eyes (immersive or the flat screen) leave the panel out.
-    const bool hide = !native_hud::size() && head.controlled && !retiring();
+    const bool hide = !native_hud::size() && head.controlled && !screen && !retiring();
     hiddenHud = hide ? placed.instance : 0;
     if (hide)
         native_hud::publish([](native_hud::Data& d) { ++d.hiddenFrames; });
     if (head.viewed)
         placeHud(placed, head);
+    else if (screen)
+        placeScreenHud(placed, head.command);
 }
 // `lag` is the hero's render-transform distance from the shared rope-update
 // sample the eyes used, or negative when they used the render transform.
@@ -1199,8 +1257,13 @@ void placeEyes() {
     restGameView(primary, latchedImmersive && (config.createViews & 32) && live.load() == 2 &&
                               !native_gpu::screenRequested());
     // The HUD's second movie goes on its panel while the eyes are shown.
-    if (render && enabled && controlled && (config.createViews & 4))
-        native_hud::eyesShown();
+    // On the game screen in stereo only in a frame whose panel went onto
+    // that screen (placeScreenHud, earlier in the frame): without the panel
+    // (a pause menu: the game places none) the movie stays in the game's own
+    // frame, which the headset then shows.
+    if (render && enabled && controlled && (config.createViews & 4) &&
+        (desired.enabled != 3 || screenHudFrame == frameIndex))
+        native_hud::eyesShown(desired.enabled == 3);
     latchedHide = latchedImmersive && !native_body::drawn();
     if ((config.createViews & 4) && (latchedImmersive || hiddenHero.load()))
         updateHero(latchedImmersive, latchedHide);
@@ -1249,7 +1312,7 @@ void placeEyes() {
     // monitor too, before either view's render job is copied. Otherwise the
     // desktop can look into the back while the eyes are already at the head.
     // Do not replace the deliberately selected stock monitor or flat screen.
-    shadowLensSame = controlled && desired.enabled == 2;
+    shadowLensSame = controlled && desired.enabled >= 2;
     if (latchedImmersive) {
         Mat4 pose{};
         native_eyes::Bounds lens{};
@@ -1279,14 +1342,31 @@ void placeEyes() {
         if (auto eye = slot.load(); eye && owned(eye)) {
             auto descriptor = main;
             const unsigned index = eye == eyes[0].load() ? 0 : 1;
-            if (controlled && desired.enabled == 2) {
+            if (controlled && desired.enabled >= 2) {
+                // The game screen in stereo: the game's camera set apart
+                // sideways, each lens shifted the other way (stereoEyes).
+                const bool stereo = desired.enabled == 3;
                 // The stock camera's jitter is in its own render size's pixels.
-                if (eyeTemporal.load() & 1) {
-                    const auto jitter = eyeJitter();
+                if (stereo || (eyeTemporal.load() & 1)) {
+                    const auto jitter = (eyeTemporal.load() & 1)
+                                            ? eyeJitter()
+                                            : std::array<float, 2>{main.values[0x428 / 4], main.values[0x42c / 4]};
+                    auto pose = main.pose();
+                    float shift{};
+                    if (stereo) {
+                        const auto apart = native_eyes::stereoEyes(
+                            native_eyes::stereo(desired), {main.values[0x400 / 4], main.values[0x404 / 4],
+                                                           main.values[0x408 / 4], main.values[0x40c / 4]});
+                        const float side = index == 0 ? -apart.separation / 2 : apart.separation / 2;
+                        for (int i = 0; i < 3; ++i)
+                            pose[12 + i] += pose[i] * side;
+                        shift = index == 0 ? apart.shift : -apart.shift;
+                    }
                     reinterpret_cast<Lens>(base + 0x187bb00)(
-                        &descriptor, main.nearZ(), main.farZ(), main.values[0x400 / 4], main.values[0x404 / 4],
-                        main.values[0x408 / 4], main.values[0x40c / 4], 0, 0, jitter[0], jitter[1], false, false);
-                    reinterpret_cast<SetPose>(base + 0x187ca10)(&descriptor, main.pose().data());
+                        &descriptor, main.nearZ(), main.farZ(), main.values[0x400 / 4] + shift,
+                        main.values[0x404 / 4] + shift, main.values[0x408 / 4], main.values[0x40c / 4], 0, 0,
+                        jitter[0], jitter[1], false, false);
+                    reinterpret_cast<SetPose>(base + 0x187ca10)(&descriptor, pose.data());
                 }
                 reinterpret_cast<Submit>(base + 0x1899ab0)(eye, &descriptor);
                 continue;
@@ -1955,7 +2035,7 @@ uint32_t spidy::native_hud::eyes(Head& out) {
     const auto& head = earlyHead();
     if (!head.controlled)
         return 0;
-    if (head.command.enabled == 2)
+    if (head.command.enabled >= 2)
         return 2;
     if (!head.viewed)
         return 0;

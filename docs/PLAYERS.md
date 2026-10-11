@@ -162,7 +162,13 @@ Moving
                          stick points; with the stick at rest the game
                          chooses the way. Not while a web carries you
   Y .................... interact: the game's Y (backpacks, doors, prompts;
-                         web strike in a fight)
+                         web strike in a fight). The game takes it only
+                         within about a metre of the thing, where its Y
+                         prompt shows
+  Hold Y ............... you step up to what you look at until the game
+                         takes it (2 seconds at most; let go to stop). At a
+                         door or a console: look at it and hold Y. Not in a
+                         fight
   Right stick click .... the game's LB + RB: its web pull. Where the game
                          shows LB + RB (a door or a grate to tear off),
                          click the right stick, or hold it for as long as
@@ -229,6 +235,16 @@ Menus and cutscenes show on a screen in the headset. There the controllers act
 as an Xbox controller: left stick moves, A selects, B goes back, grips switch
 tabs, the menu button is Start.
 
+Cutscenes have depth on that screen (3D, as in a 3D cinema): the game draws
+them once for each of your eyes. So do finishers and the other scenes the game
+plays by itself. The far background lies far behind the screen, and what is
+close to the game's camera comes out of it toward you. Subtitles and prompts
+stay on the screen itself. Menus, hint cards, the map and loading are flat, as
+before. GAME SCREEN 3D in Settings > SPIDY VR (or "Game screen 3D" in the
+launcher's options) sets how much: LOW and MEDIUM keep the scene further
+behind the screen, HIGH shows everything as far from you as it is from the
+game's camera, OFF is the flat picture again.
+
 The game's HUD (health, gadgets, minimap, prompts, subtitles and the game's
 markers) floats 2 m ahead of you, about 60 degrees wide. It stays still while
 your head moves a little, and glides back in front of you when you look
@@ -248,7 +264,8 @@ VR settings
   webs holding in open air (a web that meets nothing within 100 m holds
   there; off, it misses) on or off, or step the
   swing speed limit, your weight, snap turn, smooth turn, controller
-  vibration, the game screen's size and the HUD's (OFF hides it in VR).
+  vibration, the game screen's size, its 3D depth for cutscenes and the
+  HUD's size (OFF hides it in VR).
   Under EXPERIMENTAL, FLIPS (off until
   you switch it on) lets the left stick and A in the air flip you, and FLIP
   SPEED sets how fast. Changes apply at once. The
@@ -348,6 +365,9 @@ IF SOMETHING IS WRONG
   uneasy, try a slower speed, or OFF for snap turning again.
 - The menu screen is too small or too large: "Game screen size" in Settings
   > SPIDY VR.
+- A cutscene's depth strains your eyes, or things come too far out of the
+  screen: GAME SCREEN 3D in Settings > SPIDY VR, LOW or OFF. Too little
+  depth: HIGH.
 - The HUD is too small, too large or in the way: HUD in Settings > SPIDY VR
   (or "HUD" in the launcher's options): SMALL, MEDIUM, LARGE, or OFF.
 - The game asks for LB + RB (a door you cannot get through, a grate) and
@@ -356,6 +376,10 @@ IF SOMETHING IS WRONG
 - B no longer interacts, or Y no longer opens the game menu: the buttons
   moved to make room for the dodge. B dodges, Y interacts (as the game's
   prompts say) and X opens the game menu.
+- Y does nothing at a door, a console or a backpack: you stand too far from
+  it. The game wants you within about a metre, closer than feels natural at
+  a wall in VR, and shows its Y prompt only there. Look at the thing and
+  hold Y: you step up to it and it opens. B there dodges, away from it.
 - The view turning onto a wall makes you uneasy: switch STAND ON WALLS off in
   Settings > SPIDY VR (or "Stand on walls" in the launcher's options). You
   still stay on walls, upright beside them.

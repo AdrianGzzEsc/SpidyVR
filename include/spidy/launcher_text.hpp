@@ -497,6 +497,7 @@ struct SessionOptions {
     int snapTurn = 30;  // degrees per flick of the right stick; 0: no snap turning
     int haptics = 100;  // controller vibration, percent
     int screenSize = 1; // the game screen in the headset: 0 small, 1 medium, 2 large
+    int screenDepth = 2; // the depth cutscenes have on that screen: 0 off (flat), 1 low, 2 medium, 3 high
     int smoothTurn = 0; // degrees a second the right stick turns you while held over; 0: it snap turns
     int weight = 80;    // how heavy you are while webs fly you, percent of real gravity
     bool flips = false; // experimental: in the air the left stick turns you over, and a tap of A flips you
@@ -569,6 +570,7 @@ inline std::vector<std::wstring> sessionArguments(const SessionOptions& options,
         {std::clamp(options.smoothTurn, 0, 360), {L"--smooth-turn", 0}},
         {std::clamp(options.haptics, 0, 100), {L"--haptics", 100}},
         {std::clamp(options.screenSize, 0, 2), {L"--screen-size", 1}},
+        {std::clamp(options.screenDepth, 0, 3), {L"--screen-depth", 2}},
         {std::clamp(options.weight, 40, 300), {L"--weight", 80}},
         {std::clamp(options.hud, 0, 3), {L"--hud", 2}},
         {std::clamp(options.flipSpeed, 90, 480), {L"--flip-speed", 180}},
@@ -637,6 +639,8 @@ inline bool headsetSettings(std::string_view line, SessionOptions& options) {
             next.haptics = std::clamp(number, 0, 100);
         else if (key == "screen_size")
             next.screenSize = std::clamp(number, 0, 2);
+        else if (key == "screen_depth")
+            next.screenDepth = std::clamp(number, 0, 3);
         else if (key == "weight")
             next.weight = std::clamp(number, 40, 300);
         else if (key == "hud")

@@ -21,13 +21,16 @@ constexpr const char* webButtonChoices[] = {"GRIP", "TRIGGER"};
 constexpr const char* hudChoices[] = {"OFF", "SMALL", "MEDIUM", "LARGE"};
 constexpr const char* flipSpeedChoices[] = {"90\xC2\xB0/S",  "120\xC2\xB0/S", "150\xC2\xB0/S", "180\xC2\xB0/S",
                                             "240\xC2\xB0/S", "300\xC2\xB0/S", "360\xC2\xB0/S", "480\xC2\xB0/S"};
+constexpr const char* depthChoices[] = {"OFF", "LOW", "MEDIUM", "HIGH"};
 constexpr int screenSizes[] = {0, 1, 2};
 constexpr int hudSizes[] = {0, 1, 2, 3};
+constexpr int depthSteps[] = {0, 1, 2, 3};
 static_assert(std::size(swingChoices) == std::size(swingSpeeds) && std::size(snapChoices) == std::size(snapTurns) &&
               std::size(smoothChoices) == std::size(smoothTurns) &&
               std::size(hapticChoices) == std::size(hapticLevels) && std::size(screenChoices) == std::size(screenSizes) &&
               std::size(weightChoices) == std::size(weights) && std::size(hudChoices) == std::size(hudSizes) &&
-              std::size(flipSpeedChoices) == std::size(flipSpeeds));
+              std::size(flipSpeedChoices) == std::size(flipSpeeds) &&
+              std::size(depthChoices) == std::size(depthSteps) && std::size(depthSteps) == std::size(screenDepths));
 // A list setting's steps, or none for a switch.
 std::span<const int> steps(Item item) {
     switch (item) {
@@ -47,6 +50,8 @@ std::span<const int> steps(Item item) {
         return hudSizes;
     case Item::flipSpeed:
         return flipSpeeds;
+    case Item::screenDepth:
+        return depthSteps;
     default:
         return {};
     }
@@ -69,6 +74,8 @@ float numberOf(Item item, const Values& v) {
         return static_cast<float>(v.hud);
     case Item::flipSpeed:
         return static_cast<float>(v.flipSpeed);
+    case Item::screenDepth:
+        return static_cast<float>(v.screenDepth);
     default:
         return 0;
     }
@@ -103,11 +110,12 @@ Values sanitized(Values v) {
     v.weight = std::clamp(v.weight, 40, 300);
     v.hud = std::clamp(v.hud, 0, 3);
     v.flipSpeed = std::clamp(v.flipSpeed, 90, 480);
+    v.screenDepth = std::clamp(v.screenDepth, 0, 3);
     return v;
 }
-const std::array<Row, 18>& rows() {
+const std::array<Row, 19>& rows() {
     // The help fits the game's description column beside the rows.
-    static const std::array<Row, 18> all{{
+    static const std::array<Row, 19> all{{
         {Item::none, "WEBS", nullptr, {}},
         {Item::webButton, "WEB BUTTON",
          "Which button shoots and holds a web; the other reels in and shoots web balls.", webButtonChoices},
@@ -129,6 +137,9 @@ const std::array<Row, 18>& rows() {
          hapticChoices},
         {Item::screenSize, "GAME SCREEN SIZE", "The screen that shows menus, cutscenes and flat mode.",
          screenChoices},
+        {Item::screenDepth, "GAME SCREEN 3D",
+         "Cutscenes get depth on the game screen. Higher brings them nearer. Off: flat.",
+         depthChoices},
         {Item::hud, "HUD", "How large the game's HUD shows in front of you. Off: no HUD in VR.", hudChoices},
         {Item::standOnWalls, "STAND ON WALLS",
          "Walk or stop on a wall and your view turns so it is your floor. Off: upright.", {}},
@@ -188,6 +199,9 @@ bool choose(Item item, int index, Values& v) {
         break;
     case Item::flipSpeed:
         v.flipSpeed = s[index];
+        break;
+    case Item::screenDepth:
+        v.screenDepth = s[index];
         break;
     default:
         return false;

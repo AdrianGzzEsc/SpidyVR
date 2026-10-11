@@ -3025,9 +3025,97 @@ int main() {
         native_eyes::Command command;
         command.serial=1;command.enabled=2;
         check(native_eyes::valid(command),"native flat camera command rejected");
-        command.enabled=3;check(!native_eyes::valid(command),"unknown camera mode accepted");
+        command.enabled=4;check(!native_eyes::valid(command),"unknown camera mode accepted");
         command.enabled=2;command.leaseMs=0;
         check(!native_eyes::valid(command),"flat camera without a lease accepted");
+    });
+    test("a cutscene's stereo command carries the viewer's eyes and screen, not tracked poses", [] {
+        native_eyes::Command command;
+        command.serial=1;command.enabled=3;
+        check(!native_eyes::valid(command),"a stereo screen without its numbers accepted");
+        // Eyes 64 mm apart, the medium screen (3.2 m wide, 2.5 m away), medium depth.
+        const auto stereo=native_eyes::screenStereo(.064f,3.2f,2.5f,.7f);
+        near(stereo.convergence,1.75f);near(stereo.parallax,.02f);near(stereo.separation,.064f);
+        native_eyes::setStereo(command,stereo);
+        check(native_eyes::valid(command),"a stereo screen command rejected");
+        const auto back=native_eyes::stereo(command);
+        check(back.convergence==stereo.convergence && back.parallax==stereo.parallax &&
+              back.separation==stereo.separation,"the command lost the stereo numbers");
+        auto bad=command;bad.eyes[0].fov[0]=std::numeric_limits<float>::quiet_NaN();
+        check(!native_eyes::valid(bad),"an unreadable convergence accepted");
+        bad=command;bad.eyes[0].fov[1]=0;check(!native_eyes::valid(bad),"no parallax accepted");
+        bad=command;bad.eyes[0].fov[1]=.2f;check(!native_eyes::valid(bad),"eyes a fifth of the screen apart accepted");
+        bad=command;bad.eyes[0].fov[2]=.5f;check(!native_eyes::valid(bad),"cameras half a metre apart accepted");
+        bad=command;bad.eyes[0].fov[0]=.01f;check(!native_eyes::valid(bad),"a convergence at the lens accepted");
+        bad=command;bad.leaseMs=0;check(!native_eyes::valid(bad),"a stereo screen without a lease accepted");
+    });
+    test("a cutscene's two cameras: the horizon an eye distance apart, the convergence on the screen", [] {
+        const auto stereo=native_eyes::screenStereo(.064f,3.2f,2.5f,1);
+        // Where a point `depth` metres ahead of the middle camera lands in an eye's image (0 to 1 across),
+        // the eye `side` metres to the right with its lens moved by `shift`.
+        auto across=[](native_eyes::Bounds lens,float side,float shift,float depth) {
+            return (-side/depth-(lens.left+shift))/(lens.right-lens.left);
+        };
+        // What the viewer sees: the two image points `parallax` metres apart on a screen 2.5 m away.
+        auto shown=[](float parallax) { return 2.5f*.064f/(.064f-parallax); };
+        for(const float half:{.2f,.35f,.64f}) {
+            const native_eyes::Bounds lens{-half,half,-half*9/16,half*9/16};
+            const auto eyes=native_eyes::stereoEyes(stereo,lens);
+            near(eyes.shift,half*.02f,1e-5f);
+            check(eyes.separation>0 && eyes.separation<=.064f+1e-6f,"cameras further apart than the viewer's eyes");
+            auto parallax=[&](float depth) {
+                return (across(lens,eyes.separation/2,-eyes.shift,depth)-across(lens,-eyes.separation/2,eyes.shift,depth))*3.2f;
+            };
+            // Infinitely far away: the viewer's eyes look at it in parallel.
+            near(parallax(1e7f),.064f,1e-4f);
+            // At the convergence both images agree: it lies on the screen.
+            near(parallax(eyes.distance),0,1e-5f);
+            near(eyes.distance,2.5f,1e-3f);
+            // High depth: everything as far from the viewer as it is from the camera.
+            near(shown(parallax(1)),1,2e-3f);
+            near(shown(parallax(10)),10,.05f);
+            // A narrow lens shows its scene larger than life: the cameras closer together, never further.
+            near(eyes.separation,2*half*2.5f*.064f/3.2f,1e-5f);
+        }
+        // A lens wider than the screen is from the viewer: the cameras stay an eye distance apart
+        // (the scene never smaller than life) and the screen's plane comes nearer.
+        const native_eyes::Bounds wide{-1,1,-.5625f,.5625f};
+        const auto eyes=native_eyes::stereoEyes(stereo,wide);
+        near(eyes.separation,.064f,1e-6f);near(eyes.shift,.02f,1e-6f);near(eyes.distance,1.6f,1e-4f);
+        // Medium depth: the screen's plane at 1.75 m, everything a little farther than it is.
+        const auto medium=native_eyes::stereoEyes(native_eyes::screenStereo(.064f,3.2f,2.5f,.7f),{-.35f,.35f,-.2f,.2f});
+        near(medium.distance,1.75f,1e-3f);
+        // An off-centre lens keeps its centre: only its width counts.
+        const auto off=native_eyes::stereoEyes(stereo,{-.3f,.4f,-.2f,.2f});
+        near(off.shift,.35f*.02f,1e-6f);
+    });
+    test("the game screen is in stereo only while the game plays a scene", [] {
+        SceneClock clock;
+        check(!clock.running(false,1000),"a game that never ran had a scene");
+        check(clock.running(true,1016),"a frame that took game time did not count");
+        check(clock.running(false,1016+sceneHoldMs),"a slow frame ended the scene");
+        // The pause menu: the game's frames take no game time.
+        check(!clock.running(false,1017+sceneHoldMs),"a paused game kept its scene");
+        check(clock.running(true,5000),"the scene did not come back with the game's time");
+        check(!clock.running(false,4000) && clock.running(true,4010),"a clock reversal");
+        // The scene's eyes need the HUD's panel on their screen: it carries the subtitles.
+        ScenePanel panel;
+        check(!panel.wanted(false,false,900),"eyes asked for without a scene");
+        check(panel.wanted(true,false,1000) && panel.wanted(true,false,1000+scenePanelMs),
+              "a scene's eyes given up before its panel could come");
+        check(!panel.wanted(true,false,1001+scenePanelMs),"eyes without a panel went on");
+        check(!panel.wanted(true,true,3000),"a scene given up asked again");
+        check(!panel.wanted(false,false,3100) && panel.wanted(true,false,3200),"the next scene did not ask again");
+        for(uint64_t t=3300;t<9000;t+=100)check(panel.wanted(true,true,t),"a scene with its panel stopped");
+        check(panel.wanted(true,false,8900+scenePanelMs) && !panel.wanted(true,false,8901+scenePanelMs),
+              "a panel that left was waited for too briefly, or for ever");
+        check(!panel.wanted(false,false,20000) && panel.wanted(true,false,100) && panel.wanted(true,false,50),
+              "a clock reversal");
+        near(eyeDistance({-.032f,1.6f,0},{.032f,1.6f,0}),.064f);
+        near(eyeDistance({-.029f,1.6f,0},{.029f,1.6f,0}),.058f);
+        near(eyeDistance({0,0,0},{0,0,0}),.064f);
+        near(eyeDistance({0,0,0},{.2f,0,0}),.064f);
+        near(eyeDistance({0,0,0},{std::numeric_limits<float>::quiet_NaN(),0,0}),.064f);
     });
     test("movement requires a recent new headset image", [] {
         check(!recentPresentation(0,1000),"controls started before a first image");
@@ -3160,6 +3248,46 @@ int main() {
         o.update(buttonY|buttonB,false);
         check(sent(o,buttonY|buttonB|buttonA|buttonMenu,Mapping::menus)==(b|a|start),"buttons mixed up across the switch");
         check(!sent(o,buttonY|buttonB,Mapping::none),"buttons reached the game without the headset");
+    });
+    test("Y held walks the player up to what it is for; a tap, a fight and a wall do not", [] {
+        using game_pad::InteractStep;
+        const float dt=1.f/90;
+        // Frames of Y held, allowed and moving at `speed`; the walk's time in them.
+        const auto run=[&](InteractStep& s,float seconds,bool allowed=true,float speed=3) {
+            float walked=0;
+            for(float t=0;t<seconds;t+=dt)
+                if(s.update(dt,true,allowed,speed)>0) walked+=dt;
+            return walked;
+        };
+        InteractStep step;
+        // A tap interacts where the player stands.
+        check(run(step,.2f)==0 && !step.steps(),"a tap of Y walked the player");
+        check(step.update(dt,false,true,0)==0,"Y let go still walked");
+        // Held on, the walk begins after holdSeconds, at walkStick, and ends after walkSeconds.
+        const float walked=run(step,5);
+        check(step.steps()==1,"Y held began no walk, or more than one");
+        check(std::abs(walked-InteractStep::walkSeconds)<.03f,"the walk did not last walkSeconds");
+        check(step.update(dt,true,true,3)==0,"a walk that ended went on while Y stayed held");
+        step.update(dt,false,true,0);
+        check(run(step,InteractStep::holdSeconds-.05f)==0,"the walk began before holdSeconds");
+        check(step.update(.1f,true,true,3)==InteractStep::walkStick,"the walk is not at walkStick");
+        check(step.steps()==2,"another press began no second walk");
+        // At a wall the walk gets its start, then ends; the same hold walks no more.
+        step.update(dt,false,true,0);
+        const float blocked=run(step,3,true,0);
+        check(blocked>InteractStep::startSeconds && blocked<InteractStep::startSeconds+InteractStep::stallSeconds+.05f,
+              "a walk into a wall went on");
+        check(run(step,1,true,3)==0,"a walk a wall ended began again in the same press");
+        // Y pressed in a fight (the web strike), in the air or on a wall walks nobody, later in the hold neither.
+        step.update(dt,false,true,0);
+        const uint32_t before=step.steps();
+        check(run(step,1,false)==0 && run(step,1,true)==0 && step.steps()==before,"a web strike walked the player");
+        // A fight that begins on the way ends the walk.
+        step.update(dt,false,true,0);
+        check(run(step,1)>0 && step.update(dt,true,false,3)==0 && run(step,1)==0,"the walk went on into a fight");
+        // Bad timing moves nobody.
+        step.update(dt,false,true,0);
+        check(step.update(std::numeric_limits<float>::quiet_NaN(),true,true,3)==0,"a bad frame time walked the player");
     });
     test("the right thumbstick's click is the game's LB + RB, and not half of clicking both", [] {
         using game_pad::PullPress;
@@ -4923,18 +5051,22 @@ int main() {
                 check(c && *c, "an empty choice");
         }
         check(headings == 4 && all[0].item == Item::none && all[6].item == Item::none && all[8].item == Item::none &&
-                  all[15].item == Item::none,
+                  all[16].item == Item::none,
               "the sections: webs, body, comfort, experimental");
-        check(all[16].item == Item::flips && all[16].choices.empty() && std::strcmp(all[15].title, "EXPERIMENTAL") == 0,
+        check(all[17].item == Item::flips && all[17].choices.empty() && std::strcmp(all[16].title, "EXPERIMENTAL") == 0,
               "the flips: a switch under EXPERIMENTAL");
-        check(all.size() == 18 && all[17].item == Item::flipSpeed && all[17].choices.size() == std::size(flipSpeeds),
+        check(all.size() == 19 && all[18].item == Item::flipSpeed && all[18].choices.size() == std::size(flipSpeeds),
               "the flip speed under the flips, the last row");
-        check(all[14].item == Item::standOnWalls && all[14].choices.empty() &&
-                  std::strcmp(all[14].title, "STAND ON WALLS") == 0,
+        check(all[15].item == Item::standOnWalls && all[15].choices.empty() &&
+                  std::strcmp(all[15].title, "STAND ON WALLS") == 0,
               "standing on walls: a switch, the last row of COMFORT");
-        check(all[12].item == Item::screenSize && all[13].item == Item::hud && all[13].choices.size() == 4 &&
-                  std::strcmp(all[13].choices[0], "OFF") == 0 && std::strcmp(all[13].choices[3], "LARGE") == 0,
-              "the HUD after the game screen's size: OFF, SMALL, MEDIUM, LARGE");
+        check(all[12].item == Item::screenSize && all[14].item == Item::hud && all[14].choices.size() == 4 &&
+                  std::strcmp(all[14].choices[0], "OFF") == 0 && std::strcmp(all[14].choices[3], "LARGE") == 0,
+              "the HUD after the game screen's rows: OFF, SMALL, MEDIUM, LARGE");
+        check(all[13].item == Item::screenDepth && std::strcmp(all[13].title, "GAME SCREEN 3D") == 0 &&
+                  all[13].choices.size() == 4 && std::strcmp(all[13].choices[0], "OFF") == 0 &&
+                  std::strcmp(all[13].choices[3], "HIGH") == 0,
+              "the game screen's depth under its size: OFF, LOW, MEDIUM, HIGH");
         check(all[1].item == Item::webButton && all[1].choices.size() == 2 &&
                   std::strcmp(all[1].choices[0], "GRIP") == 0 && std::strcmp(all[1].choices[1], "TRIGGER") == 0,
               "the web button first under WEBS: GRIP, or TRIGGER");
@@ -5015,6 +5147,18 @@ int main() {
                   choose(Item::hud, 0, v) && v.hud == 0 && choice(Item::hud, v) == 0 && choose(Item::hud, 3, v) &&
                   v.hud == 3 && !choose(Item::hud, 4, v) && !choose(Item::hud, -1, v),
               "the HUD: MEDIUM by default, OFF to LARGE");
+        check(defaults.screenDepth == 2 && choice(Item::screenDepth, defaults) == 2 &&
+                  defaultChoice(Item::screenDepth) == 2 && choose(Item::screenDepth, 0, v) && v.screenDepth == 0 &&
+                  choose(Item::screenDepth, 3, v) && v.screenDepth == 3 && !choose(Item::screenDepth, 4, v) &&
+                  !choose(Item::screenDepth, -1, v),
+              "the game screen's depth: MEDIUM by default, OFF to HIGH");
+        near(screenDepth(0), 0);
+        near(screenDepth(2), .7f);
+        near(screenDepth(3), 1);
+        near(screenDepth(9), 1);
+        Values deep;
+        deep.screenDepth = 9;
+        check(sanitized(deep).screenDepth == 3, "a depth past HIGH");
         check(defaults.flipSpeed == 180 && choice(Item::flipSpeed, defaults) == 3 &&
                   defaultChoice(Item::flipSpeed) == 3 && choose(Item::flipSpeed, 4, v) && v.flipSpeed == 240 &&
                   choose(Item::flipSpeed, 0, v) && v.flipSpeed == 90 && choose(Item::flipSpeed, 7, v) &&
