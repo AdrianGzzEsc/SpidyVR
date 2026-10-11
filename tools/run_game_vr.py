@@ -183,6 +183,84 @@ def rendering_line(width, height, percent, size, recommended, upscale=100, antia
     return f'{line}: the scene at {scene[0]} x {scene[1]} ({upscale}% per side), anti-aliased and upscaled.'
 
 
+def eye_reflections(setting, refused=False, ray_traced=0):
+    """Whether the eyes get the targets the game's screen-space reflections need, and the console's line.
+
+    They follow the game's own setting (Graphics > Screen Space Reflections; `setting` is its saved value,
+    0 for Off, None where the game never saved one) as it is when the session starts: an eye's buffers are
+    made once. With it off, or with --no-eye-reflections (`refused`), the eyes are as before October 11's
+    second build. So they are with ray-traced reflections on (`ray_traced`, the saved RTReflections): the
+    game then takes another way through the pass, for which an eye's buffers lack the targets, and that
+    was never run in the eyes."""
+    if refused:
+        return False, 'Reflections: none in the eyes (--no-eye-reflections).'
+    if ray_traced:
+        return False, ("Reflections: none in the eyes, as Ray-Traced Reflections is on in the game's graphics "
+                       'settings and the eyes cannot have those. With it off and Screen Space Reflections on, '
+                       'start VR again for reflections in the eyes.')
+    if setting == 0:
+        return False, ("Reflections: none in the eyes, as Screen Space Reflections is off in the game's "
+                       'graphics settings. Turn it on there and start VR again to have them.')
+    return True, ("Reflections: the game's screen-space reflections, in each eye (the game's Screen Space "
+                  'Reflections setting, as it is when VR starts).')
+
+
+def network_links(wlan=None, addresses=None):
+    """How this PC is on the network: the Wi-Fi network it is connected to (None without one) and whether
+    a cable carries an address too. `wlan` and `addresses` are `netsh wlan show interfaces` and `ipconfig`
+    output (run here when not given)."""
+    def said(command):
+        try:
+            return subprocess.run(command, capture_output=True, text=True, timeout=10,
+                                  creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)).stdout
+        except (OSError, subprocess.SubprocessError):
+            return ''
+    wlan = said(['netsh', 'wlan', 'show', 'interfaces']) if wlan is None else wlan
+    addresses = said(['ipconfig']) if addresses is None else addresses
+    wifi = None
+    if re.search(r'^\s*State\s*:\s*connected\s*$', wlan, re.M):
+        name = re.search(r'^\s*SSID\s*:\s*(.*?)\s*$', wlan, re.M)
+        wifi = name.group(1) if name and name.group(1) else 'Wi-Fi'
+    cable = False
+    for block in re.split(r'^(?=\S)', addresses, flags=re.M):
+        if block.startswith('Ethernet adapter') and 'Bluetooth' not in block.splitlines()[0] and \
+                re.search(r'IPv4 Address', block):
+            cable = True
+    return dict(wifi=wifi, cable=cable)
+
+
+def link_warning(links, runtime_name):
+    """The console's warning for a PC that streams to the headset over Wi-Fi, or None.
+
+    A wireless headset's picture comes over the network. From a PC that is on Wi-Fi itself every picture
+    crosses the air twice, and the stream stalls for a second or two at a time whatever the game's frame
+    rate: Virtual Desktop then holds each of the game's frames for a tenth of a second (`stream_stalls`).
+    On October 11 the session with the PC on its cable alone had none; the three with it on Wi-Fi had 5 to
+    8 each."""
+    if not links.get('wifi') or not re.search(r'virtual desktop|steamvr|alvr', runtime_name or '', re.I):
+        return None
+    if links.get('cable'):
+        return (f"WARNING: this PC is on Wi-Fi ({links['wifi']}) as well as on a network cable. A headset that "
+                "connected over the Wi-Fi keeps using it, and its picture then stalls for a second or two at a "
+                "time. Turn this PC's Wi-Fi off and connect the headset again.")
+    return (f"WARNING: this PC is on Wi-Fi ({links['wifi']}), not on a network cable. A wireless headset's "
+            'picture then crosses the Wi-Fi twice and stalls for a second or two at a time, whatever the frame '
+            'rate. Connect this PC to the router by cable.')
+
+
+def stream_stalls(samples):
+    """Rounds of the headset's loop that the VR runtime held for about a tenth of a second (its submit
+    timed out: Virtual Desktop was not taking frames), from the samples' `xr_ms`; and their seconds."""
+    rounds = {s.get('frames') for s in samples if s.get('xr_ms') and s['xr_ms'][0] >= 90 and
+              s['xr_ms'][XR_STAGES.index('end_frame')]+s['xr_ms'][XR_STAGES.index('wait_frame')] >= 80}
+    return dict(rounds=len(rounds), seconds=round(len(rounds)/10, 1))
+
+
+# What the headset's loop spent on its newest frame, in milliseconds, in a session's samples (`xr_ms`).
+XR_STAGES = ('frame', 'wait_frame', 'tracking', 'prepare', 'acquire', 'copy_wait', 'hand_overlay', 'release',
+             'end_frame')
+
+
 def frame_rates(samples):
     """Measure active presentation; reused images are not new scene frames."""
     active = [s for s in samples if s.get('status') == 3 and s.get('submitted', 0) > 0]
@@ -909,6 +987,9 @@ def main():
                    help='How often the game window gets your left eye in immersive VR: pictures a second (1..240; '
                         'default %d), or 0 for every frame, as builds before October 11 did. Each one costs the '
                         'graphics card time the headset could have.' % DEFAULT_MONITOR_RATE)
+    p.add_argument('--no-eye-reflections', action='store_true',
+                   help="The eyes without the game's screen-space reflections, as builds before October 11's "
+                        "second did. Without it they follow the game's own Screen Space Reflections setting")
     p.add_argument('--own-shadows', action='store_true',
                    help="Each eye makes its own set of the sun's shadow maps, as builds before October 11 did; "
                         'without it both use one set, fitted to a lens covering both (fewer render commands, '
@@ -1021,6 +1102,10 @@ def session(a, startup):
     startup.stage = 'finding the headset'
     manifest, runtime = preflight(a.xr_runtime)
     startup.fields['xr_runtime'] = runtime
+    links = network_links()
+    startup.fields['network'] = links
+    if link_warning(links, runtime.get('name')):
+        print(link_warning(links, runtime.get('name')), flush=True)
     startup.stage = 'starting the game'
 
     def prepare_display():
@@ -1112,6 +1197,9 @@ def session(a, startup):
                                            'SpidyGpuData', 'SpidyXrTimingData', 'SpidyAppearanceData',
                                            'SpidyStereoFrames', 'SpidyXrSnapshot', 'SpidyStereoData',
                                            'SpidyBodyData', 'SpidySlowMotionData', 'SpidyHudData'))
+        saved = vr_display.Registry().read(('ScreenSpaceReflections', 'RTReflections'))
+        reflections, reflections_line = eye_reflections(saved.get('ScreenSpaceReflections'), a.no_eye_reflections,
+                                                        saved.get('RTReflections', 0))
         config = struct.pack('<4I7Q2IfI', 0x53585243, 22, 656, game.pid, game.base, queue,
                              bridge_module, ray_module, motion_module, 0, 0,
                              int(a.seconds*1000), a.size, a.swing_speed,
@@ -1124,7 +1212,7 @@ def session(a, startup):
                              (4096 if a.trigger_webs else 0) | (8192 if a.no_stand_on_walls else 0) |
                              (16384 if a.no_wall_run else 0) | (0x8000 if a.no_eye_antialiasing else 0) |
                              (0x10000 if a.game_monitor_view else 0) |
-                             (0x20000 if a.own_shadows else 0)) + \
+                             (0x20000 if a.own_shadows else 0) | (0 if reflections else 0x40000)) + \
             runtime_path(manifest) + struct.pack('<12I', a.snap_turn, a.haptics, a.screen_size, a.smooth_turn,
                                                  a.render_scale, a.weight, a.eye_height, a.arm_length, a.hud,
                                                  a.flip_speed, a.upscale, a.monitor_rate)
@@ -1156,6 +1244,7 @@ def session(a, startup):
         # The HUD: the latest (native_hud::Data), for a report written after the game closed.
         hud_last = None
         eye_jobs = None
+        timing = None
         render_memory = None
         lowest_commit = start_commit = free_commit_mb()
         printed_ring = False
@@ -1174,7 +1263,8 @@ def session(a, startup):
         eye_options = dict(upscale=100 if a.no_eye_antialiasing else a.upscale,
                            antialiased=not a.no_eye_antialiasing,
                            game_monitor_view=bool(a.game_monitor_view or a.stock_monitor_view),
-                           monitor_rate=a.monitor_rate, shared_shadows=not a.own_shadows, render_size=None)
+                           monitor_rate=a.monitor_rate, shared_shadows=not a.own_shadows,
+                           reflections=reflections, render_size=None)
 
         def hand_over_settings(sample):
             """Tell the launcher what the VR settings were left at, for the next session."""
@@ -1194,7 +1284,8 @@ def session(a, startup):
                         punch_samples=list(punch_samples), shooter=shooter, shooter_samples=list(shooter_samples),
                         slow_motion=slow_motion, slow_motion_samples=list(slow_motion_samples), hud=hud_last,
                         ray_samples=list(ray_samples), appearance=appearance, eye_jobs=eye_jobs,
-                        render_memory=render_memory,
+                        render_memory=render_memory, timing=timing, network=links,
+                        stream_stalls=stream_stalls(list(samples)),
                         free_commit_mb=dict(start=start_commit, lowest=lowest_commit),
                         eye_snapshots=list(eye_shots), eye_snapshot_folder=str(eye_folder) if eye_shots else None,
                         frame_rates=frame_rates(list(samples)), final=samples[-1] if samples else None, **extra)
@@ -1295,6 +1386,15 @@ def session(a, startup):
                                 print("WARNING: the game is on its own 128 MB of render memory, which three "
                                       'views overflow in heavy scenes: eye frames drop and the game can '
                                       'crash. Close the game and start it with Launch Spidy VR.', flush=True)
+                    # What the headset's loop spent on its newest frame (XR_STAGES, milliseconds), and the
+                    # eye pairs handed to the graphics card that it had not finished: a loop that falls
+                    # behind the headset shows here which step it waited in.
+                    timing = timing_snapshot(game, xr['SpidyXrTimingData']) or timing
+                    if timing:
+                        sample['xr_ms'] = [round(timing[name]['last_ms'], 1) for name in XR_STAGES]
+                    pair = gpu_snapshot(game, xr['SpidyGpuData'])
+                    if pair and pair['completed'] != 0xffffffffffffffff:
+                        sample['gpu_waiting'] = pair['fence']-pair['completed']
                     sample['free_commit_mb'] = free_commit_mb()
                     if sample['free_commit_mb'] is not None:
                         lowest_commit = min(lowest_commit or sample['free_commit_mb'], sample['free_commit_mb'])
@@ -1305,6 +1405,7 @@ def session(a, startup):
                         print(rendering_line(sample['eye_width'], sample['eye_height'], a.render_scale, a.size,
                                              runtime['recommended_eye'], a.upscale, not a.no_eye_antialiasing),
                               flush=True)
+                        print(reflections_line, flush=True)
                         printed_dimensions=True
                     aim = ray_snapshot(game, rays['SpidyRayData'])
                     if aim and aim['serial'] and (not ray_samples or aim['serial'] != ray_samples[-1]['serial']):
@@ -1362,6 +1463,11 @@ def session(a, startup):
             xr_active=bridge_active=False
             write_report(session_report(game_exited=True, error=str(loop_error) if loop_error else None))
             hand_over_settings(samples[-1] if samples else None)
+            stalls = stream_stalls(list(samples))
+            if stalls['rounds'] >= 5:
+                print(f"The headset's picture stalled: the VR runtime held {stalls['rounds']} frames for a tenth "
+                      f"of a second each ({stalls['seconds']} s in all). That is the stream to the headset, not "
+                      'the game' + (': this PC was on Wi-Fi.' if links.get('wifi') else '.'), flush=True)
             print(f'Game closed. Session report: {a.output.resolve()}',flush=True)
             return 0
         if loop_error is not None:

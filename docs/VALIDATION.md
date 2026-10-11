@@ -1,6 +1,346 @@
 # Validation — 2026-10-11
 
-## The monitor's presents, and one shadow set for both eyes — current build
+## The reflections restored: the shared half-size targets are needed — current build
+
+The user, October 11, after a session on the cable with the build below:
+"preformance was good again, but no ssr visible (turned it off and on in the
+menu".
+
+**The session** (`game-vr-20261011-124240`, module 2c4f63e5..., 215 s):
+`network` Wi-Fi none, cable yes; `stream_stalls` 0 rounds (77 in the session
+before); `eyes.reflections` true; the game's log has Screen Space Reflections
+Normal at the start, Off at 12:44:07 and Normal again a second later.
+
+**What was wrong.** The third build made an eye's set without the four
+`kSharedHalfResFp16Target` (the two sections below: only `189cae0` takes
+them, called in `172b180` on the ray-traced path, in depth of field and in
+`1a054a1`). With that set the pass's command runs and the eye's image has no
+reflection. The four pictures of the sections below, the same crop enlarged
+three times (`reports/ssr/statue-four-a.png`, `-b.png`; half-size crop 655,
+760 to 915, 900):
+
+| Picture | Module, the game's setting | The statue's mirror image in the water |
+|---|---|---|
+| `old-eyes` | no targets, Normal | none |
+| `new-eyes` | second build (all ten targets), Normal | there, with the island's |
+| `ssroff-new-eyes` | second build, Off | none |
+| `lean-on-eyes` | third build (six targets), Normal | none |
+
+The third build's check ("the left eye's image has the mirrored sky on the
+wet roofs again") compared `ssroff-new-eyes` with `lean-on-eyes` at half size
+and took a brighter roof for reflections; it was not. In one game with the
+third build, the game's own view rendering beside the eyes (`--views 29`,
+`reports/ssr/setting-ab`): the statue's mirror image is in the game's window
+(`reports/menu-pad/ab1.png`) and not in the left eye taken at the same time
+(`a-normal.png`).
+
+**Changes.** `src/stereo_probe.cpp`, `initBuffers`: the offscreen kind's mask
+gets bit 1 with nothing left out, as in the second build (targets
+`kSsrHistory`, `kSsrHistoryDepth`, `kSsrFinalColor0/1`,
+`kSsrFinalConfidence0/1` and the four shared ones). `tools/run_game_vr.py`:
+`eye_reflections` also refuses with the saved `RTReflections` set (the
+ray-traced path through `172b180` and `1a054a1` was never run in an eye, whose
+set has no kind-0x80 targets). `tools/probe_vr_load.py`: the phase `sway` (a
+head 2 cm to either side and a degree of turn, about once a second). Tried
+and taken out: clearing the job's render context `+710` in `copyJob` to
+switch the pass off for a comparison (the reflections stayed).
+
+**Checked in the game** (no headset; the game's setting Normal; module
+6f0097a4..., `reports/ssr/final.json`, image capture):
+
+- `reflection_targets`: 1032 x 1096 for `kSsrHistory` and for the first
+  shared target in each eye.
+- The statue's mirror image, the crop enlarged (`final-eyes/statue-final.png`):
+  in the still left eye (`heading0-on.png`) and in two taken while the head
+  swayed (`sway-1.png`, `sway-2.png`). With the build before this one's
+  clean-up (74e1564c..., `full-reflections/statue-still.png`,
+  `statue-sway.png`): the same.
+- Frames (`--pacing`): still 50.4 a second, 19.82 ms median, 21.42 ms the
+  99th percentile, 22.25 ms the longest; swaying 49.8, 19.97, 21.94, 27.76;
+  still again 50.2, 19.96, 21.66, 22.45; none over 1.5 medians. An eye's GPU
+  time 6.76 and 6.90 ms, video memory 6,349 MB, 13,813 MB committed.
+- 236 core and 23 launcher checks, 109 Python checks pass.
+
+**Not verified.** The headset. The right eye. The setting High, and ray
+tracing on (the eyes then get none, by `eye_reflections`; not run). Whether
+the 10:51 and 11:00 sessions' eyes showed the reflections (the second build:
+they should have).
+
+**In the play folder** (October 11, 13:13):
+`build\windows-ninja\spidy_stereo_probe.dll` (6f0097a4...) and
+`tools\run_game_vr.py`, the ones they replaced in its
+`reports\backups\play-folder-before-reflections-restored-20261011-131313`.
+
+## The stalls are Virtual Desktop's, with the PC on Wi-Fi — preceding build
+
+The user, October 11, 12:21, after one session with the build below (the
+reflections on): "preformance sucked with and a without ssr, huge stutter
+spikes".
+
+**The session** (`game-vr-20261011-121756`, module 2c4f63e5..., 154 s, 100 s
+of them immersive; the first with `xr_ms` and `gpu_waiting` in its samples).
+The runtime's display period is 8.33 ms; the worker's round 13.9 ms at the
+median.
+
+| Step of the worker's round | Median | 99th percentile | Longest |
+|---|---|---|---|
+| Whole round | 13.9 ms | 100.3 ms | 100.7 ms |
+| `xrWaitFrame` | 0.0 | 7.3 | 8.7 |
+| Tracking, prepare, acquire, release | 0.2 | 0.4 | 1.2 |
+| Copy of the staged pair | 0.1 | 0.3 | 1.4 |
+| Hands and overlay | 0.1 | 20.5 | 23.5 |
+| `xrEndFrame` | 13.2 | 93.0 | 100.1 |
+
+114 of 2,289 immersive samples have a round over 60 ms, in five stretches
+(23-25, 39-40, 49-51, 75 and 116-118 s): 77 rounds, each 99.8 to 100.7 ms,
+of which `xrWaitFrame` 6.9 ms and `xrEndFrame` 92.9 ms (`stream_stalls`: 77
+rounds, 7.7 s). In those samples `gpu_waiting` is 0 (40), 1 (58), 2 (14) or
+3 (2), no more than in the others (median 1, 4 at most), and the image's
+generation moves 6 a round (60 pairs a second; 2 to 3 a 47 ms sample
+otherwise). So the runtime's submit waited out a time-out of a tenth of a
+second while the game's queue was short and the game had more of the
+graphics card than usual: Virtual Desktop was not taking frames.
+
+**The PC's network that day** (Windows' NetworkProfile and WLAN-AutoConfig
+logs):
+
+| Time | Event |
+|---|---|
+| 09:59:01 | The cable's network connects (the Ethernet adapter) |
+| 10:01:56 | Wi-Fi disconnects |
+| 10:07-10:20 | Session, first build: no stretches |
+| 10:32:50 | The cable's network disconnects; Wi-Fi connects to the headset's network (802.11ax, 5 GHz) |
+| 10:51-10:55, 11:00-11:06 | Sessions, second build: 8 stretches each |
+| 12:17:43 | The cable's network connects again; Wi-Fi stays connected |
+| 12:17:56-12:20 | Session, third build: 5 stretches |
+| 12:21:48 | Wi-Fi disconnects |
+
+The headset's access point is on the same network as the cable. Over the cable afterwards (`tools/probe_link.py`,
+`reports/ssr/link-idle-ap.json`): 2,967 replies in 75 s, 0.7 ms median,
+1.2 ms the 99th percentile, 4.7 ms the longest, none lost.
+
+**Not shown.** That the headset's stream ran over the Wi-Fi address in the
+12:17 session (both were connected; a connection made before 12:17:43 would
+have). A session on the cable alone with the reflections on: the one smooth
+session was the first build's. Why the cable's connection ended at 10:32:50
+(no driver event in the System log). The link's times with the PC on Wi-Fi,
+and during a session.
+
+**Changes** (`tools/run_game_vr.py`; the module is the build below's):
+`network_links` (`netsh wlan show interfaces`, `ipconfig`), `link_warning`
+at a session's start for Virtual Desktop, SteamVR and ALVR, `stream_stalls`
+(rounds of 90 ms or more of which the runtime's two waits are 80 ms or more)
+said when the game closes if there are 5 or more; `network` and
+`stream_stalls` in the report. `tools/probe_link.py`. 109 Python checks pass
+(1 new). Nothing here was run in a session.
+
+**In the play folder** (October 11, 12:29): `tools\run_game_vr.py` and
+`README.txt`, the ones they replaced in its
+`reports\backups\play-folder-before-link-warning-20261011`.
+
+## The headset loop's stalls with the reflections, fewer buffers, the game's setting — preceding build
+
+The user, October 11, after two sessions with the build below: "this run with
+the reflections was much more stuttering compared to my first run before the
+ssr fix (even with ssr disabled its stuterry) any ideas why?"; then, the first
+build's module back in the play folder for a comparison that was not run:
+"fix the ssr fix".
+
+**The sessions** (the play folder's reports; `game-vr-20261011-100710` is the
+first build's module cee13954..., `-105143` and `-110002` the second's
+5d9037fa...; the same options: 3072 x 3264 eyes at 67%, monitor rate 5,
+shared shadows; the report's samples are about 47 ms apart):
+
+| | 10:07, first build | 10:51, second | 11:00, second |
+|---|---|---|---|
+| Immersive seconds sampled | 637 | 169 | 274 |
+| New eye pairs a second, 10 s windows | 34-53 | 33-49 | 32-50 |
+| Samples at least 2 submissions short of 72 a second | 40 of 11,665 (0.3%) | 156 of 3,145 (5.0%) | 148 of 5,054 (2.9%) |
+| Half seconds with the worker under 30 rounds a second | 0 of 1,384 | 12 of 365 (3.3%) | 5 of 592 (0.8%) |
+| Stretches at about 10 rounds a second (6 samples or more) | none | 8, 0.3-2.3 s | 8, 0.3-1.6 s |
+| Video memory, the game's log, most | 7,444 MB | 7,387 MB | 7,769 MB |
+
+October 10's session (`game-vr-20261010-193410`, 0.2.11): 0 of 232 half
+seconds, one stretch of 0.67 s. In a stretch the worker's frame counter moves
+once in two samples while the image's generation moves 4 to 6 (the game went
+on at 40 to 60 pairs a second), and render memory a frame is 17 to 21 MB in
+about every third sample where it was 10 to 12. One in each session is at its first eye images, several
+start as the player lands or a web starts or ends, and some end with one
+game-screen frame. In the 11:00 session the game logged `Screen
+Space Reflections: Off` at 11:03:40 (about 215 s); stretches at 240.0, 290.7 and
+302.9 s follow. Where the worker waits is not in these reports: the stage
+times were only read at a normal stop, and the game was closed first.
+
+**Without a headset** (the rooftop save, a fresh game for each run, 30 s
+after the load; the game's window full screen, as this shell's registry
+writes do not reach the game):
+
+- `tools/probe_frame_pacing.py` (new; `probe_vr_load.py --pacing`) reads the
+  render memory module's frame counter about a thousand times a second.
+  The second build's module, the game's setting Off (as the user left it;
+  `reports/ssr/pace-new.json`): the game alone 119.2 frames a second, 8.48 ms
+  median, 9.98 ms the 99th percentile, 10.92 ms the longest; eyes live 66.3 a
+  second, 15.09, 16.68, 20.14 ms; turning 66.6, 15.01, 17.58, 19.26 ms. No
+  interval over 1.5 medians in any phase, and none in two more phases of 35 s
+  with the pad held on run, jump and swing (`move-new.json`, 20.24 ms the
+  longest; the player ended in the
+  harbour at the mission's edge, and the game was closed without an answer to
+  its "Abandon mission" question).
+- With the setting Off and the second build's targets, the left eye's image
+  has no mirror image of the statue and flat roofs (`ssroff-new-eyes`): the
+  pass does not run. What the targets still change then: RadianceCapture
+  (0x44, `1849200`) renders into `kSsrHistory` and its depth instead of
+  `kToneMapRadiance` (`189cc60` picks it), and the extra memory.
+- Depth of field is not it. Its handler (0x8c, `18371f0`) is the other user
+  of the shared half-size targets (`189cae0`) and skips without them, but the
+  command is queued (`1922fee`, `1923076`) only where the game's byte
+  `609d8f6` is 0 and a view's `+1d6c`..`+1d78` are set: 1 with Depth of Field
+  Off, and (0, 0, 100, 0) in both eyes. In 525 frames of running, jumping and
+  swinging no view got it (`swing-new-trace.json`), an eye's GPU time was
+  7.0 ms at the median and 8.8 ms at most, and a fourth scene view rendered
+  69 of them (not identified).
+- The game does not queue frames ahead of the graphics card with the
+  monitor's presents held: at 100% (3072 x 3264 scenes, 40.9 frames a second,
+  GPU 99% busy) 0.6 staged pairs waited on it on average and 2 at most at
+  monitor rate 5, 1.0 and 2 with every present (`depth-100.json`).
+- OneDrive does not sync this project, the play folder or the saves (their
+  folders are not its placeholders), so no upload of the reports shared
+  the Wi-Fi the headset streams over (802.11ax).
+
+**Not found:** what the worker waits for in those stretches, and whether the
+second build's module causes them. Its GPU cost does not (the pass off, they
+went on), video memory peaked no
+higher than in the first session (the table; the budget 11,227 MB), and the
+game's frames are even. Three sessions one after another on a laptop that ran this shell's
+probes in between are the whole evidence.
+
+**Changes.**
+
+- `src/stereo_probe.cpp`, `initBuffers`: for the call, the four
+  `kSharedHalfResFp16Target` (table `609b060`, targets 0x6e-0x71, flags
+  0x80011 at `+28`) have kind 0x10 instead of 0x11, so an eye's set (mask
+  0x25) is made without them; the game's own sets (0xff) get them as before.
+  The reflections take them only on the ray-traced path (`172b180` with its
+  argument set, `172c086`), where an eye's set lacks the other targets too:
+  with ray tracing on, the second build's set would have gone further into
+  that path than an eye's set can serve.
+- `src/game_xr.cpp`: options bit 0x40000 gives `SpidyEyeTemporal` its bit 8
+  (no targets for reflections); options up to 0x7ffff.
+- `tools/run_game_vr.py`: `eye_reflections` (the game's saved
+  `ScreenSpaceReflections`, 0 Off, 1 Normal, 2 High as `1ca9026` names them;
+  Off or `--no-eye-reflections` sets the bit), the console's line, `eyes.
+  reflections` in the report; each sample's `xr_ms` (`XR_STAGES`, the last
+  round's milliseconds from `SpidyXrTimingData`) and `gpu_waiting` (the GPU
+  bridge's fence less its completed value); `timing` in a report however the
+  session ends. `tools/launch-game-vr.ps1`: `-NoEyeReflections`.
+- `tools/probe_frame_pacing.py`; `tools/probe_vr_load.py`: `--pacing`, and
+  `reflection_targets` lists the first shared target's size as well.
+
+**Checked in the game** (no headset; this build's module 2c4f63e5...):
+
+- The game's setting Off (`reports/ssr/lean-off.json`, staged copies):
+  `reflection_targets` 1280 x 720 and 1280 x 720 for the game's view, 1032 x
+  1096 and 0 x 0 for each eye; 65.3 frames a second, 15.27 ms median, 17.01 ms
+  the 99th percentile, 19.37 ms the longest; turning 65.4, 15.23, 17.79,
+  19.64 ms.
+- The setting Normal, set in the game's menu with the virtual controller
+  (`lean-on.json`, image capture as in the section below): the left eye's
+  image has the mirrored sky on the wet roofs again (`lean-on-eyes`) —
+  **wrong: it has no reflections; see the section above**; 51.2
+  frames a second, an eye's GPU time 6.05 and 6.54 ms, video memory 6,269 MB,
+  13,733 MB committed (the section below: 50.9, 6.48 and 6.79, 6,175, 13,626
+  without the targets; 49.7, 6.67 and 7.05, 6,359, 13,858 with all of them);
+  19.47 ms median, 21.53 ms the 99th percentile, 21.96 ms the longest;
+  turning 19.61, 22.89, 24.26 ms.
+- 236 core and 23 launcher checks pass; 108 Python checks (1 new: the
+  setting's rule and the stages' order).
+
+**Not verified.** The headset: nothing here went through OpenXR, so neither
+the stalls' end nor the new samples (`xr_ms`, `gpu_waiting`) were seen in a
+session. The option bit through the launcher (`run_game_vr.py` read this
+shell's own copy of the registry here). The setting High, and ray tracing on.
+
+**The game and its settings afterwards.** Screen Space Reflections is on
+(Normal; the user had set it Off at 11:03). The game wrote its autosave
+(`slot0-s.save`) at 11:24 and 12:07 during these runs, at the mission's
+rooftop each time; the saves of 10:39 are in
+`reports/backups/save-before-ssr-20261011`.
+
+**In the play folder** (`Documents\Spidy-0.2.11`, October 11, 12:10):
+`build\windows-ninja\spidy_stereo_probe.dll` (2c4f63e5...),
+`tools\run_game_vr.py` and `README.txt` (this build's `docs/PLAYERS.md`),
+the files they replaced (the first build's module and its script) in its
+`reports\backups\play-folder-before-reflection-setting-20261011-121052`.
+With the play folder's Python the script lists `--no-eye-reflections`.
+Nothing was started from there.
+
+## Screen-space reflections in the eyes — preceding build
+
+The user, October 11: "screenspace reflections don't seems to work in vr (i
+see them in normal screen during your tests)".
+
+**Cause.** The game's settings (its log): `Screen Space Reflections: Normal`,
+`RT Reflections: Off`. ScreenSpaceReflection is command 0x43 (handler
+`1734a80`, registered at `18890c0`); the October 10 trace
+(`reports/perf/trace-main-on.json`) has it queued once a frame for the game's
+view and for each eye. The handler returns unless the float at `7a2e910` is
+above 0 and the buffer set at the view's `+1648` has `kMrtSsrHistory` and
+`kMrtSsrHistoryDepth` (records 105 and 106 from the set's `+14a0`: `+dcc8`,
+`+deb0`, a size at `+1cc`); its work is `172b180`, with the same tests. In the
+table of targets (`609b060`) those two, `kSsrFinalColor0/1` and
+`kSsrFinalConfidence0/1` have kind 1 and the four `kSharedHalfResFp16Target`
+kind 0x11; an offscreen view's mask (`3d11b18`, third word) is 0x20.
+
+**Change.** `initBuffers` (`src/stereo_probe.cpp`) makes an eye's set with
+the mask's bit 1 as well as bit 4. `SpidyEyeTemporal`'s bit 8 leaves bit 1
+out (`tools/probe_vr_load.py --no-eye-reflections`); the probe reports
+`reflection_targets` (the size of `kSsrHistory` for the game's view and each
+eye).
+
+**Checked in the game** (no headset; the rooftop save, a fresh game for each,
+30 s after the load; `probe_vr_load.py --phases vr,shots --gpu capture
+--seconds 6`, eyes 3072 x 3264 at 67%, views 61):
+
+| | `kSsrHistory`: game, left, right | Frames/s | GPU ms: left, right | Video memory | Committed |
+|---|---|---|---|---|---|
+| Without (`reports/ssr/old.json`) | 1280 x 720, 0 x 0, 0 x 0 | 50.9 | 6.48, 6.79 | 6,175 MB | 13,626 MB |
+| With (`reports/ssr/new.json`) | 1280 x 720, 1032 x 1096, 1032 x 1096 | 49.7 | 6.67, 7.05 | 6,359 MB | 13,858 MB |
+
+Left eye, looking the game camera's way (`reports/ssr/new-eyes/heading0-on.png`
+against `old-eyes`, viewed at half size): with the targets the Statue of
+Liberty's mirror image lies on the water below it and the wet roofs to the
+right mirror the bright sky, as the game's own window shows them
+(`reports/menu-pad/ssr-new-before.png`); without, the water under the statue
+is plain and those roofs flat. Twelve captures at four headings, the views
+stopped and the game closed with no error either time. 2 core and launcher
+test programs pass.
+
+**Not verified.** The headset. The right eye's image (the shots are the left
+eye's). The reflections in motion and at the eyes' edges: they are made from
+what each eye sees, so the two eyes' can differ where one eye's source is off
+its image. Ray-traced reflections (off here; their targets, kind 0x80, are
+still not in an eye's set), volumetric fog (kind 8) and motion blur (kind 2).
+The Python checks were not run.
+
+**In the play folder** (`Documents\Spidy-0.2.11`, October 11, 10:50):
+`build\windows-ninja\spidy_stereo_probe.dll` (5d9037fa..., the module
+measured above), the one it replaced in its
+`reports\backups\play-folder-before-reflections-20261011-105057`. Nothing was
+started from there.
+
+**The user's sessions with it** (`game-vr-20261011-105143`, `-110002`, the
+play folder's reports; `-100710` is the first build's): "much more stuttering
+compared to my first run before the ssr fix (even with ssr disabled its
+stuterry)". The reports do not show it: 42-45 new pairs a second while
+immersive in each (10 s windows), 41-43 before and after Screen Space
+Reflections went to Off in the game's menu at 11:03, video memory at most
+7,387 MB of an 11,227 MB budget (7,201 MB with the first build), no render
+memory overflow. They sample every 50 ms and cannot show single frames. For
+the user's comparison the first build's module (cee13954...) is back in the
+play folder since 11:20; this build's is kept in its
+`reports\backups\play-folder-with-reflections-20261011`.
+
+## The monitor's presents, and one shadow set for both eyes — preceding build
 
 The user, October 11, after running `python tools\vr_display.py --restore`:
 "i ran the command. continue with the rest". Later: "why do we need it as
@@ -365,7 +705,8 @@ committed. The exposure and HUD probes were not run again on it.
   covering both lenses, was one value for both. `-GameMonitorView` is the
   old way.
 - SSR and volumetric fog in the eyes: an eye's buffer set never had their
-  targets (above), before this build or in it.
+  targets (above), before this build or in it. (SSR's since October 11's second
+  build.)
 - Other graphics cards, and the game's other settings (TAA without an
   upscaler, SMAA, DLAA, ray tracing): the eyes' context is set to temporal
   anti-aliasing whatever the game's is.

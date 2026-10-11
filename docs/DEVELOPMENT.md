@@ -603,6 +603,7 @@ reattaching after a stopped session or a rebuilt DLL.
 | `-GameMonitorView` | The game renders its own head view for the monitor while you are in VR, as before October 10's eighth build (a third scene view; the monitor otherwise shows your left eye) |
 | `-MonitorRate 30` | How often the monitor gets your left eye in VR, pictures a second (1-240; 30 by default; 0 is every frame, as before October 11). The launcher's "Monitor frame rate" |
 | `-OwnShadows` | Each eye renders its own sun shadow maps, as before October 11; without it both use one set fitted to a lens covering both |
+| `-NoEyeReflections` | The eyes without the game's screen-space reflections, whatever its Screen Space Reflections setting (they follow it otherwise) |
 | `-NoEyeOcclusion` | Turn off the eyes' occlusion culling, for comparison |
 | `-XrRuntime <manifest>` | Use this OpenXR runtime manifest instead of the one the headset is connected to |
 | `-AttachOnly` | Attach to a game that is already running instead of starting it |
@@ -685,6 +686,18 @@ sets only:
   share, to the eye's full size from the last frames' samples.
   `SpidyEyeTemporal` chooses the parts and the share; the addresses are in
   [VALIDATION.md](VALIDATION.md). DLSS itself is not used for the eyes;
+- the targets screen-space reflections need (since October 11's second
+  build): the game makes `kSsrHistory` and the rest of that kind only for its
+  own views' buffer sets, and its ScreenSpaceReflection command, queued for
+  every view, returns at once without them. An eye's set is made with them
+  (`initBuffers`: the six `kSsr` targets and the four shared half-size ones of
+  the same kind; without those four the pass runs and adds nothing, as
+  October 11's third build showed), unless Screen Space Reflections is off, or
+  Ray-Traced Reflections on, in the game's settings when VR starts
+  (`eye_reflections` in `tools/run_game_vr.py`) or `-NoEyeReflections` is
+  given: then the eyes are as before that build. The buffers are made once,
+  so a change of the setting reaches the eyes at the next VR start; the pass
+  itself stops at once when the setting goes off;
 - the active post-processing profile and the main camera's display path;
 - the main camera's exposure, so both eyes are drawn equally bright. The game
   adapts exposure on the GPU, per view: a view's luminance pass (`18449f0`)

@@ -1189,8 +1189,11 @@ DWORD WINAPI run(void*) {
                         // jittered lens and the engine's temporal anti-aliasing (bits 1,
                         // 2, 4): taken when the views are made.
                         const bool antialiased = !(config.options & 0x8000);
+                        // Bit 8: no targets for screen-space reflections (options
+                        // 0x40000: the game has them off, or --no-eye-reflections).
+                        const uint32_t reflections = (config.options & 0x40000) ? 8u << 8 : 0;
                         check(SpidyEyeTemporal(reinterpret_cast<void*>(static_cast<uintptr_t>(
-                                  antialiased ? config.upscale | 7u << 8 : 100u))),
+                                  (antialiased ? config.upscale | 7u << 8 : 100u) | reflections))),
                               "Eye anti-aliasing");
                         check(SpidyEyeShadows(reinterpret_cast<void*>(
                                   static_cast<uintptr_t>((config.options & 0x20000) ? 0 : 1))),
@@ -1720,7 +1723,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyXrStart(void* input) {
         config.runtime[std::size(config.runtime) - 1] ||
         config.base != reinterpret_cast<uint64_t>(GetModuleHandleW(nullptr)) ||
         !GetModuleHandleW(L"Spider-Man.exe") || !config.queue || !config.bridgeModule || !config.rayModule ||
-        !config.motionModule || config.options > 0x3ffff || config.snapTurn > 90 || config.haptics > 100 ||
+        !config.motionModule || config.options > 0x7ffff || config.snapTurn > 90 || config.haptics > 100 ||
         !validEyeUpscale(config.upscale) || !validMonitorRate(config.monitorRate) ||
         config.screenSize > 2 || config.smoothTurn > 360 || config.hud > 3 || config.flipSpeed < 90 ||
         config.flipSpeed > 480 || !std::isfinite(config.swingSpeed) || config.swingSpeed < 1 ||

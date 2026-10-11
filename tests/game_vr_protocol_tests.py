@@ -12,7 +12,8 @@ from run_game_vr import (snapshot as xr_snapshot, accepted as accepted_xr, timin
                          appearance_snapshot, eye_snapshot, save_eye_snapshot, rgb_rows, crop_origin,
                          game_memory, keep_game_log, body_snapshot,
                          punch_snapshot, shooter_snapshot, start_settings, settings_line, SETTINGS_LINE,
-                         scaled_eye_size, rendering_line, eye_render_size,
+                         scaled_eye_size, rendering_line, eye_render_size, eye_reflections, XR_STAGES,
+                         network_links, link_warning, stream_stalls,
                          slow_motion_snapshot, hud_snapshot, GAME_HOOKS)
 from probe_collision import snapshot as collision_snapshot
 from probe_movement import snapshot as movement_snapshot
@@ -430,6 +431,36 @@ class ProtocolTests(unittest.TestCase):
         self.assertTrue(4 < run_game_vr.process_commit_mb(os.getpid()) < 4096)
         self.assertIsNone(run_game_vr.process_commit_mb(0))  # no such process to ask
         self.assertGreater(run_game_vr.free_commit_mb(), 0)
+
+    def test_a_pc_on_wifi_is_warned_about_and_stream_stalls_are_counted(self):
+        wlan = '    State                  : connected\n    SSID                   : Home 5G\n'
+        cable = 'Ethernet adapter Ethernet:\n\n   IPv4 Address. . . : 192.168.1.20\n'
+        no_cable = 'Ethernet adapter Ethernet:\n\n   Media State . . . : Media disconnected\n' \
+                   'Ethernet adapter Bluetooth Network Connection:\n\n   IPv4 Address. . . : 10.0.0.1\n'
+        self.assertEqual(network_links(wlan, no_cable), dict(wifi='Home 5G', cable=False))
+        self.assertEqual(network_links(wlan, cable), dict(wifi='Home 5G', cable=True))
+        self.assertEqual(network_links('    State   : disconnected\n', cable), dict(wifi=None, cable=True))
+        self.assertIn('by cable', link_warning(dict(wifi='Home 5G', cable=False), 'Virtual Desktop'))
+        self.assertIn("Wi-Fi off", link_warning(dict(wifi='Home 5G', cable=True), 'Virtual Desktop'))
+        self.assertIsNone(link_warning(dict(wifi=None, cable=True), 'Virtual Desktop'))
+        self.assertIsNone(link_warning(dict(wifi='Home 5G', cable=False), 'Oculus'))
+        # xr_ms: frame, wait_frame, ..., end_frame. A held round is sampled twice; a slow copy is not one.
+        held = [100.1, 6.9, .2, 0, 0, .1, .1, 0, 92.9]
+        samples = [dict(frames=10, xr_ms=[13.9, 0, .2, 0, 0, .1, .1, 0, 13.2]), dict(frames=11, xr_ms=held),
+                   dict(frames=11, xr_ms=held), dict(frames=12, xr_ms=held), dict(frames=13),
+                   dict(frames=14, xr_ms=[95.0, 0, .2, 0, 0, 90.0, .1, 0, 4.0])]
+        self.assertEqual(stream_stalls(samples), dict(rounds=2, seconds=.2))
+
+    def test_eye_reflections_follow_the_games_setting(self):
+        # The game's saved Screen Space Reflections value: 0 is Off; the eyes' buffers are made once.
+        self.assertEqual([eye_reflections(value)[0] for value in (None, 0, 1, 2)], [True, False, True, True])
+        self.assertIn('Turn it on', eye_reflections(0)[1])
+        self.assertEqual(eye_reflections(1, refused=True)[0], False)
+        self.assertEqual(eye_reflections(1, ray_traced=1)[0], False)
+        self.assertIn('Ray-Traced', eye_reflections(1, ray_traced=1)[1])
+        self.assertIn('--no-eye-reflections', eye_reflections(1, refused=True)[1])
+        # A sample's xr_ms follows the worker's stages, without its display period.
+        self.assertEqual(XR_STAGES[:2]+XR_STAGES[-1:], ('frame', 'wait_frame', 'end_frame'))
 
     def test_the_render_scale_sizes_the_eyes(self):
         # core_tests.cpp's cases for spidy::scaledEyeSize: the console counts as the DLL does.

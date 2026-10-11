@@ -3,7 +3,137 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 11, first build): the monitor takes fewer of the
+**Latest build (October 11, fifth build): the reflections are back in the
+eyes; the third build had taken them out.** You played on the cable:
+"preformance was good again, but no ssr visible (turned it off and on in the
+menu". Both halves check out.
+
+- **The stutter was the Wi-Fi.** That session's report (12:42, the PC on its
+  cable alone): no frame held by Virtual Desktop in 215 s, where the session
+  before it had 77 in 100 s.
+- **The third build's "fewer buffers" broke the reflections, and its check
+  did not catch it.** It left out four half-size buffers (the
+  `kSharedHalfResFp16Target`s) that the game's code seemed to use only for
+  depth of field and ray tracing. The reflection pass needs them: without
+  them it runs and adds nothing. That build's notes said the wet roofs
+  mirrored the sky "again"; that came from two half-size pictures of different
+  game runs side by side, and was wrong. Enlarged, the same pictures show it
+  plainly: the Statue of Liberty has its mirror image in the water with the
+  second build and none with the third.
+- **Now:** an eye's buffers are made with all ten again, as in the second
+  build. Checked on the statue's mirror image, enlarged, in the eye: there
+  with the head still and with it swaying (2 cm and a degree, as a head does);
+  the game's frames as even as before (19.8 ms median, 22.3 ms the longest;
+  swaying 20.0 and 27.8). An eye's GPU time is 6.8 and 6.9 ms (6.5 and 6.8
+  without reflections).
+- The eyes still follow the game's Screen Space Reflections setting as it is
+  when VR starts, so turning it off and on in the menu while playing changes
+  nothing you can see until the next start (off stops them at once; on brings
+  them back only if they were there). With Ray-Traced Reflections on in the
+  game the eyes get neither kind, and the console says so: the game then
+  takes a way through the pass that an eye's buffers cannot serve, and it was
+  never run.
+
+Not run in the headset.
+
+**Earlier build (October 11, fourth build): the stutter was the PC's Wi-Fi,
+and a session now says so.** You played the third build and found
+"preformance sucked with and a without ssr, huge stutter spikes". Its report
+has what the earlier ones lacked, the time each step of the headset's loop
+took, and it shows where the spikes are:
+
+- **Virtual Desktop held the frames, not the game.** In each spike the call
+  that hands a frame to the headset's runtime (`xrEndFrame`) took 93 ms and
+  the round 100.0 to 100.7 ms, again and again: a time-out, the runtime
+  waiting for a stream that was not taking frames. 77 rounds in 100 s of VR,
+  7.7 s in all. Spidy's own steps in those rounds took 0.1 ms (the copy) and
+  0.1 ms (the hands), the graphics card had 0 to 2 eye pairs waiting, and the
+  game made more pairs than usual (60 a second), having the card to itself.
+- **The PC was on Wi-Fi.** Windows' network log for today: on its cable from
+  09:59 to 10:32:50, when the cable's connection ended and the PC joined
+  the Wi-Fi the headset is on; on the cable again from 12:17:43; off
+  the Wi-Fi at 12:21:48. Your smooth session (10:07) was on the cable alone.
+  The three with stutter (10:51, 11:00, 12:17) had the PC on that Wi-Fi: the
+  last started 13 s after the cable came back, with the Wi-Fi still
+  connected. A picture streamed from a PC on Wi-Fi crosses the air twice, to
+  the router and from it. The reflections came into it by coincidence: the
+  second build went into the play folder 18 minutes after the cable dropped.
+  Not shown: that the headset was still using the Wi-Fi address in the 12:17
+  session, and a session on the cable with the reflections on.
+- **A session warns now.** Started with the PC on Wi-Fi and a wireless
+  runtime, it prints a warning (and a different one with both a cable and
+  Wi-Fi: a headset that connected over the Wi-Fi keeps using it). When the
+  game closes it counts the frames the runtime held for a tenth of a second
+  and says that the stream stalled, not the game. `network` and
+  `stream_stalls` are in the report. `tools/probe_link.py` times the link
+  (the access point answered in 0.7 ms over the cable, 4.7 ms at most in
+  75 s).
+
+The reflections stay as the third build left them.
+
+**Earlier build (October 11, third build): the eyes' reflections follow the game's own setting, with fewer buffers, and the session report says what the
+headset's loop waits for.** You played the second build twice and found it
+"much more stuttering compared to my first run before the ssr fix (even with
+ssr disabled its stuterry)", then asked to "fix the ssr fix". What was found,
+and what was not:
+
+- **Your reports show it.** In both sessions with the second build the loop
+  that feeds the headset fell to about ten rounds a second for 0.3 to 2.3 s
+  at a time (8 such stretches in each session: 3.3% and 0.8% of the half
+  seconds in VR), where your first session of the day has none and October 10's
+  one. The game itself went on rendering 40 to 60 eye pairs a second through
+  them. They went on after you turned Screen Space Reflections off at 11:03.
+- **Without a headset nothing shows it.** A new probe times every frame
+  (`tools/probe_frame_pacing.py`, `probe_vr_load.py --pacing`): with the
+  second build's buffers the game's frames are as even as without (15.1 ms
+  median, 16.7 ms for the slowest in a hundred, none over 20.3 ms; standing,
+  turning, and with the pad held on run, jump and swing). With the setting off the
+  reflection pass does not run in the eyes (checked in an eye's image), so it
+  is not that pass's cost. **What stalls the headset's loop is not found, and
+  that the second build causes it is not shown**: three sessions, one after
+  another.
+- **Fewer buffers.** The second build also gave each eye four half-size
+  buffers that only depth of field and ray-traced reflections use. They are
+  left out again: the eyes get the six the reflections use and nothing else
+  that they did not have. An eye's GPU time with reflections is now what it
+  was without them (6.1 and 6.5 ms where the second build took 6.7 and 7.1
+  and the first 6.5 and 6.8), 51.2 frames a second where it was 49.7, and
+  video memory 90 MB lower.
+- **The game's setting decides.** With Screen Space Reflections off in the
+  game's graphics settings when VR starts, the eyes are made exactly as
+  before the second build. The console says which it is. (An eye's buffers
+  are made once: a change in the menu shows in the eyes from the next VR
+  start; turning it off in the menu stops the pass at once.)
+  `--no-eye-reflections` (`-NoEyeReflections`) does the same whatever the
+  setting.
+- **The report now has the loop's steps.** Every sample has `xr_ms` (what the
+  headset's loop spent on its newest round: waiting for the headset, tracking,
+  the eye images, the copy, the hands, submitting) and `gpu_waiting` (eye
+  pairs the graphics card had not finished). A session that stutters again
+  shows in which step.
+
+Your game's Screen Space Reflections setting is on again (I turned it on
+through the menu for the check; you had turned it off at 11:03). Not run in
+the headset.
+
+**Earlier build (October 11, second build): screen-space reflections in the
+eyes.** You reported that they do not seem to work in VR while the normal
+screen shows them. They did not: the game queues its ScreenSpaceReflection
+command for each eye every frame, but the command (`1734a80`) returns at once
+for a view whose buffer set has no `kSsrHistory` and `kSsrHistoryDepth`, and
+the game makes those only for its own views' sets. An eye's set is now made
+with them (`initBuffers` in `src/stereo_probe.cpp`: the offscreen kind's mask
+gets bit 1 for the call, as it gets bit 4 for the anti-aliasing targets).
+Checked in the game without a headset, a fresh game each, the same rooftop
+(`reports/ssr/new.json`, `old.json`): `kSsrHistory` is 1032 x 1096 in each
+eye's set where it was 0 x 0; in the left eye's image the Statue of Liberty
+is mirrored in the water and the wet roofs mirror the sky, as in the game's
+window, and neither does without. Cost at 3072 x 3264 eyes, 67%: an eye's GPU
+time 6.5 and 6.8 ms to 6.7 and 7.1, 50.9 to 49.7 frames a second, video
+memory 6,175 to 6,359 MB. Not run in the headset. `probe_vr_load.py
+--no-eye-reflections` is the old way.
+
+**Earlier build (October 11, first build): the monitor takes fewer of the
 headset's frames, and both eyes share one set of sun shadows.** You ran
 `vr_display.py --restore` and said to continue with the rest. With your own
 settings back, the game runs full screen (3840 x 2400) when started outside

@@ -151,8 +151,11 @@ thread_local uint32_t sizingEye[2]{};
 // Percent of the eye's size, per side, its scene is rendered at (100: all of
 // it), and what the eyes get (bits): 1 a jittered lens, 2 the engine's
 // temporal anti-aliasing (which upsamples a smaller scene to the eye's size),
-// 4 its render command where the game's settings leave it out. The percent is
-// read when an eye's buffers are made.
+// 4 its render command where the game's settings leave it out, 8 no targets
+// for screen-space reflections (as before October 11's second build: the game
+// has them off, or a comparison). The percent and bits 2 and 8 are read when
+// an eye's buffers are made. (Clearing the job's context +710 in copyJob does
+// not stop the reflection pass: tried on October 11, the eyes kept them.)
 std::atomic<uint32_t> eyeRenderPercent{100}, eyeTemporal{};
 // A view's scene submit, 19206a0(view, parent, flags, last), returns what it
 // made for the frame (0x58 bytes: +18 the view's light set with its shadow
@@ -761,20 +764,31 @@ bool initBuffers(void* buffers, const void* description, const char* name) {
             std::memcpy(local + 4, &render[1], 4);
             const uint64_t noParent{};
             std::memcpy(local + 0x18, &noParent, 8);
-            if (!(eyeTemporal.load() & 2))
-                return originalInitBuffers(buffers, local, name);
             // An offscreen view's buffer set (kind 2) has no targets for
-            // temporal anti-aliasing: 1875270 makes kTaaTarget0/1 and
-            // kTaaDepth0/1 only where the kind's mask (3d11b18) has bit 4. The
-            // eye's set is made with them, at the eye's size (sizeBuffers).
-            sizingEye[0] = config.width;
-            sizingEye[1] = config.height;
+            // temporal anti-aliasing or screen-space reflections: 1875270
+            // makes a target with a kind only where the kind's mask (3d11b18)
+            // has it. Bit 4: kTaaTarget0/1 and kTaaDepth0/1, made at the eye's
+            // size (sizeBuffers). Bit 1: kSsrHistory, kSsrHistoryDepth,
+            // kSsrFinalColor0/1, kSsrFinalConfidence0/1 and the four
+            // kSharedHalfResFp16Target (kind 0x11); without the first two the
+            // ScreenSpaceReflection command (0x43, 1734a80), queued for every
+            // view, returns at once. The shared ones are needed as well: a set
+            // made without them (October 11's third build) had the command
+            // run and no reflection in the eye's image.
+            const uint32_t temporal = eyeTemporal.load();
+            const uint32_t kinds = ((temporal & 2) ? 4 : 0) | ((temporal & 8) ? 0 : 1);
+            if (!kinds)
+                return originalInitBuffers(buffers, local, name);
+            if (temporal & 2) {
+                sizingEye[0] = config.width;
+                sizingEye[1] = config.height;
+            }
             const auto mask = reinterpret_cast<uint32_t*>(base + 0x3d11b18 + 2 * 4);
             DWORD protection{};
             const bool writable = VirtualProtect(mask, 4, PAGE_READWRITE, &protection);
             const uint32_t stock = *mask;
             if (writable)
-                *mask = stock | 4;
+                *mask = stock | kinds;
             const bool made = originalInitBuffers(buffers, local, name);
             if (writable) {
                 *mask = stock;

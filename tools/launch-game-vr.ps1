@@ -32,6 +32,7 @@ param(
     [switch]$NoEyeAntialiasing,
     [switch]$GameMonitorView,
     [switch]$OwnShadows,
+    [switch]$NoEyeReflections,
     [switch]$StockMonitorView,
     [switch]$FullDesktopView,
     [switch]$AttachOnly,
@@ -153,6 +154,7 @@ elseif($GameMonitorView) {
 }
 elseif($MonitorRate) { Write-Host "Monitor: your left eye in immersive VR, $MonitorRate pictures a second (-MonitorRate 0: every frame, slower in the headset; -StockMonitorView: the stock camera)." }
 else { Write-Host 'Monitor: your left eye in immersive VR, every frame (-MonitorRate 30 leaves the headset more).' }
+if($NoEyeReflections) { $captureArgs+=@('--no-eye-reflections') }
 if($OwnShadows) {
     $captureArgs+=@('--own-shadows')
     Write-Host "Shadows: each eye makes its own sun shadow maps, as before October 11 (more work for the processor)."

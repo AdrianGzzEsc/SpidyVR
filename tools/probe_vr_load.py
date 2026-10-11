@@ -8,6 +8,7 @@ At the player's current spot, in phases:
                VR session renders them, looking where the game camera looks
     turn       the same while the head turns a full circle
     narrow     the same eyes with a 60-degree lens: fewer objects in view, the same pixels
+    sway       the same eyes on a head that is never still (2 cm and a degree, about once a second)
     after      the game alone again, once the eyes have left the render list
 
 Each phase reports the game's frame rate (frames counted by spidy_render_memory.dll), its per-frame
@@ -332,6 +333,24 @@ def summarize(name, samples, gpu, threads, cores, settle):
                          for p, tid in per_thread[:8]])
 
 
+def reflection_targets(game):
+    """Width and height of kSsrHistory in the buffer set the ScreenSpaceReflection command (1734a80) reads
+    for the game's own view and each offscreen view (view +0x1648; the set's record 105, its size at
+    +0x1cc), then of kSharedHalfResFp16Target0. The command returns at once for a view whose set has no
+    kSsrHistory: [0, 0, ...], or None with no set."""
+    views = [game.pointer(game.base+0x7a34dd0)]+[game.pointer(game.base+0x7a34e00+slot*8) for slot in range(8)]
+    found = []
+    for view in views[:1]+[v for v in views[1:] if v]:
+        try:
+            buffers = game.pointer(view+0x1648) if view else 0
+            # ... and of kSharedHalfResFp16Target0 (record 121), which an eye's set is made without.
+            found.append([*struct.unpack('<2I', game.read(buffers+0xdcc8+0x1cc, 8)),
+                          *struct.unpack('<2I', game.read(buffers+0xfb48+0x1cc, 8))] if buffers else None)
+        except OSError:
+            found.append(None)
+    return found
+
+
 def shadow_snapshot(game, address):
     """SpidyShadowData: what each eye's scene submit made or took of the other's shadow sets."""
     for _ in range(8):
@@ -369,6 +388,12 @@ def main():
                         "session's --upscale); 100 only anti-aliases")
     p.add_argument('--no-eye-antialiasing', action='store_true',
                    help="the eyes as before October 10's eighth build: no anti-aliasing, no upscaling")
+    p.add_argument('--no-eye-reflections', action='store_true',
+                   help="the eyes' buffers without the targets screen-space reflections need, as before "
+                        "October 11's second build")
+    p.add_argument('--pacing', action='store_true',
+                   help='time every frame and eye pair of each phase (tools/probe_frame_pacing.py beside it): '
+                        "the phase's `pacing`")
     p.add_argument('--eye-shadows', type=int, default=1, choices=range(8),
                    help="what the eye submitted second takes of the first one's shadow sets instead of making "
                         'its own (bits): 1 the key light\'s cascades, as a VR session, 2 the light set, 4 the part '
@@ -393,7 +418,7 @@ def main():
     p.add_argument('--output', type=pathlib.Path, default=ROOT/'reports/vr-load.json')
     a = p.parse_args()
     phases = a.phases.split(',')
-    known = {'stock', 'vr', 'turn', 'narrow', 'after', 'vr_off', 'turn_off', 'narrow_off', 'shots'}
+    known = {'stock', 'vr', 'turn', 'narrow', 'sway', 'after', 'vr_off', 'turn_off', 'narrow_off', 'shots'}
     known |= {f'{name}_s{mode}' for name in ('vr', 'turn', 'narrow') for mode in range(8)}
     known |= {f'{name}_m{rate}' for name in ('vr', 'turn', 'narrow') for rate in (0, 9)}
     if not all(64 <= x <= MAX_EYE_SIZE for x in (a.width, a.height)) or not set(phases) <= known:
@@ -466,6 +491,13 @@ def main():
             if profile_ids and name == 'vr':
                 profiler = Profiler(game, profile_ids, modules(game.pid))
                 threading.Thread(target=profiler.run, args=(seconds-2,), daemon=True).start()
+            pacing = None
+            if a.pacing and name != 'warmup':
+                pacing_report = a.output.with_name(f'{a.output.stem}-pacing-{name}.json')
+                # It takes a second to start, and ends before the phase does.
+                pacing = subprocess.Popen([sys.executable, str(ROOT/'tools/probe_frame_pacing.py'), '--seconds',
+                                           str(seconds-3), '--window', '5', '--output', str(pacing_report)],
+                                          stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
             began = time.perf_counter()
             next_sample = began
             while time.perf_counter()-began < seconds:
@@ -507,6 +539,12 @@ def main():
                 summary['pose_age_ms'] = dict(median=round(ages[len(ages)//2], 1), ninth_decile=round(ages[len(ages)*9//10], 1))
             if waiting:
                 summary['pairs_waiting_on_gpu'] = dict(mean=round(sum(waiting)/len(waiting), 2), most=max(waiting))
+            if pacing:
+                _, problem = pacing.communicate(timeout=30)
+                if pacing.returncode:
+                    raise RuntimeError(f'Frame pacing: {problem.strip()}')
+                summary['pacing'] = {counter: found['all'] for counter, found in
+                                     json.loads(pacing_report.read_text())['counters'].items()}
             result['phases'].append(summary)
             print(json.dumps({k: v for k, v in summary.items() if k != 'busiest_threads'}), flush=True)
             for t in summary.get('busiest_threads', [])[:5]:
@@ -521,6 +559,13 @@ def main():
 
         def narrow(_):
             return eye_rig(feet, heading, NARROW, NARROW, NARROW)
+
+        def sway(elapsed):
+            """A head that is never still: 2 cm to either side and a degree of turn, about once a second."""
+            angle = math.atan2(heading[2], heading[0])+math.radians(1)*math.sin(elapsed*2.9)
+            look = (math.cos(angle), 0., math.sin(angle))
+            side = .02*math.sin(elapsed*4.3)
+            return eye_rig((feet[0]-look[2]*side, feet[1]+.01*math.sin(elapsed*3.7), feet[2]+look[0]*side), look)
 
         eye_views = []
         occluders = {}
@@ -609,7 +654,8 @@ def main():
                 # The eyes' scene at --upscale percent of their size with a jittered lens and the engine's
                 # temporal anti-aliasing (bits 1, 2, 4), as the VR worker asks; taken when the views are made.
                 code = call_remote(process, eyes_dll['SpidyEyeTemporal'],
-                                   100 if a.no_eye_antialiasing else a.upscale | 7 << 8)
+                                   (100 if a.no_eye_antialiasing else a.upscale | 7 << 8) |
+                                   (8 << 8 if a.no_eye_reflections else 0))
                 if code:
                     raise RuntimeError(f'Eye anti-aliasing: {code}')
                 code = call_remote(process, eyes_dll['SpidyEyeShadows'], a.eye_shadows) or \
@@ -633,6 +679,9 @@ def main():
                                            for e in views['eyes']]
                     print('eye views:', result['eye_views'], flush=True)
                     eye_views[:] = [e['view'] for e in views['eyes']]
+                # The game's own view, then each eye.
+                result['reflection_targets'] = reflection_targets(game)
+                print('reflection targets:', result['reflection_targets'], flush=True)
             if name == 'shots':
                 shots()
                 continue
@@ -654,7 +703,7 @@ def main():
                 call_remote(process, eyes_dll['SpidyEyeShadows'], shadows)
                 time.sleep(.5)
             run(name, a.seconds+(2 if name != 'stock' else 1),
-                {'vr': straight, 'turn': turning, 'narrow': narrow}.get(name.split('_')[0]))
+                {'vr': straight, 'turn': turning, 'narrow': narrow, 'sway': sway}.get(name.split('_')[0]))
             if eyes_on:
                 result['phases'][-1]['shadows'] = shadow_snapshot(game, eyes_dll['SpidyShadowData'])
             if shadows is not None:

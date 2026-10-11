@@ -249,11 +249,34 @@ game's own view, and compares how bright the part of the scene both eyes see
 is in each (`--views 61`, the default, as a session has them: the game's view
 rests and the right eye takes the left eye's exposure; `--views 29` renders
 the game's view). `tools/probe_hud.py` takes `--views` and `--upscale` too.
+`tools/probe_frame_pacing.py` times every frame of the game from outside
+(the frame counter, read about a thousand times a second): the intervals'
+median, 99th percentile and longest, and those over 1.5 and 2 medians;
+`probe_vr_load.py --pacing` runs it beside each phase. A frame rate is those
+intervals' mean, stutter their spread.
+`probe_vr_load.py`'s phase `sway` moves the eyes as a head that is never
+still does (2 cm, a degree, about once a second): what holds on a still eye
+(reflections, anti-aliasing) is checked there as well. Judge an effect in an
+eye's image on an enlarged crop of one game run, or of two pictures of one
+spot (the Statue of Liberty's mirror image from the rooftop save): two runs'
+half-size pictures side by side passed a build without reflections on
+October 11.
+`tools/probe_link.py` times the network link a wireless headset's stream
+runs over (echo requests to the access point or the headset, 40 a second):
+spikes there stall the headset's picture whatever the game does.
 `tools/probe_render_commands.py` (the eye views live) counts the render
 commands of a frame by command and by view. `tools/close_game.py` closes the
 game after a probe and restores a launch's settings; `--keep-settings` leaves
 them for the next launch. What they need:
 
+- Game settings are changed in the game's menu (`probe_menu_pad.py pad
+  start`, `down`, `a`, `rb`, `right`, `b`, with `shot` between: Settings >
+  Display and Graphics; never Y, which resets all). This shell's registry
+  writes do not reach the game: a game it starts keeps the user's own window
+  and graphics settings.
+- The rooftop save is inside a mission. A player driven far from it (the
+  harbour) gets the game's "Abandon mission" question; close the game without
+  answering.
 - A fresh game process for every run. Each Spidy module (rays, movement, swing,
   eye views, GPU capture) starts once per process, and a second start is
   rejected with code 1000.

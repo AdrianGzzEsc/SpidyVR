@@ -87,6 +87,13 @@ Balanced or Performance for more frames, High or Off for the sharpest
 picture. The game's own DLSS, FSR or XeSS setting does not reach the
 headset, whatever it is set to.
 
+Wet streets, water and glass mirror their surroundings in the headset when
+Screen Space Reflections is on in the game's own graphics settings (Settings >
+Display and Graphics > Graphics), as on the monitor. Turned off there, they
+are off in the headset too; turned on there while you play, they appear in
+the headset the next time you start VR. With Ray-Traced Reflections on in
+the game, the headset shows neither kind.
+
 
 CONTROLS
 --------
@@ -288,6 +295,12 @@ IF SOMETHING IS WRONG
 - The picture breaks up: start the game from the launcher with the game
   closed. Attached to a game that is already running, Spidy cannot give it
   the larger render memory VR needs.
+- The picture freezes or jumps for a second or two at a time, however fast
+  the game runs: with a wireless headset (Virtual Desktop, Steam Link), connect
+  the PC to the router by network cable and turn the PC's Wi-Fi off, then
+  connect the headset again. A PC on Wi-Fi sends every picture through the
+  air twice. Spidy warns in its window when it starts with the PC on Wi-Fi,
+  and says after a session if the stream stalled.
 - Low frame rate: set "Upscaling" in the launcher's options to Balanced or
   Performance first (the picture keeps its size and gets a little softer;
   on an RTX 4080 laptop, Quality gave 61 frames a second and Performance 77
