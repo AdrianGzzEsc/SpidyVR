@@ -13,6 +13,7 @@
 #include "spidy/game_player.hpp"
 #include "spidy/game_punch.hpp"
 #include "spidy/game_shooter.hpp"
+#include "spidy/game_steam.hpp"
 #include "spidy/game_swing.hpp"
 #include "spidy/game_time.hpp"
 #include "spidy/game_tracking.hpp"
@@ -25,7 +26,6 @@
 #include "spidy/presentation_gate.hpp"
 #include "spidy/slow_motion.hpp"
 #include "spidy/vr_settings.hpp"
-#include "spidy/vr_shortcut.hpp"
 #include "spidy/web_pull.hpp"
 #include "spidy/xr_layers.hpp"
 #include "spidy/xr_session.hpp"
@@ -71,7 +71,9 @@ struct XrConfig {
     // left eye);
     // bit 17: each eye makes its own set of the key light's shadow cascades,
     // as before October 11 (without it both use one set, fitted to a lens
-    // covering both: SpidyEyeShadows)
+    // covering both: SpidyEyeShadows);
+    // bit 18: no targets for screen-space reflections in the eyes;
+    // bit 19: webs as before October 12 (PHYSICAL WEBS: OFF)
     uint32_t options{};
     // OpenXR runtime manifest the launcher chose; empty: Virtual Desktop's if
     // installed, else Windows' active runtime.
@@ -85,7 +87,7 @@ struct XrConfig {
     // Eye resolution in percent of the runtime's recommendation, per side
     // (eye_resolution.hpp; with eyeSize set, 100), and the player's weight
     // while webs fly them, in percent of real gravity (40-300).
-    uint32_t renderScale = 100, weight = 80;
+    uint32_t renderScale = 100, weight = 100;
     // The player's T-pose calibration (body_calibration.hpp): the eye height
     // and arm length their body is sized to, millimetres. Both 0: none yet.
     uint32_t eyeHeightMm{}, armLengthMm{};
@@ -114,7 +116,7 @@ enum GateReason : uint32_t {
     gateTracking = 16,    // the headset's pose or timing was not usable
 };
 struct XrData {
-    uint32_t magic = 0x53585244, version = 24, bytes = sizeof(XrData), status{};
+    uint32_t magic = 0x53585244, version = 25, bytes = sizeof(XrData), status{};
     int64_t sequence{};
     uint64_t frames{}, tracked{}, submitted{}, dropped{}, leftHands{}, rightHands{}, serial{}, generation{};
     uint32_t nativeKeys{}, error{};
@@ -150,7 +152,8 @@ struct XrData {
     // The VR settings now: the SPIDY VR tab in the game's Settings changes
     // them during play. settings bits: 1 web grab,
     // 2 punch, 4 body, 8 webs in open air, 16 web shooter, 32 flips, 64 the
-    // trigger webs (WEB BUTTON: TRIGGER; the grip reels), 128 STAND ON WALLS.
+    // trigger webs (WEB BUTTON: TRIGGER; the grip reels), 128 STAND ON WALLS,
+    // 256 PHYSICAL WEBS.
     // Then the changes
     // made in that tab so far, the times the game built its Settings with it,
     // whether its hooks are in, and why it is missing (game_menu: 93xx-94xx
@@ -203,14 +206,18 @@ struct XrData {
     // the times the right stick began to turn the camera.
     float lookError{};
     uint32_t lookTurns{};
+    // Version 25: the scans a trigger pulled at the temple began (the game's
+    // R3: game_pad::TemplePress), and the Charge Jumps a held A began (its
+    // RT + A: game_pad::ChargeJump).
+    uint32_t scans{}, chargeJumps{};
 };
-static_assert(sizeof(XrData) == 832);
+static_assert(sizeof(XrData) == 840);
 // Slow motion (slow_motion.hpp, game_time.hpp): what the player did with it
 // and what the game's time did. status: 1 before VR starts, then 0 with the
 // game's time hooked, else why it is not (game_time::install) and slow
 // motion does nothing.
 struct SlowMotionData {
-    uint32_t magic = 0x574f4c53, version = 1, bytes = sizeof(SlowMotionData), status = 1;
+    uint32_t magic = 0x574f4c53, version = 2, bytes = sizeof(SlowMotionData), status = 1;
     int64_t sequence{};
     // Presses that started it, ended it, or came with too little focus; the
     // times focus ran out and play stopped it (a menu, the game screen, the
@@ -226,8 +233,14 @@ struct SlowMotionData {
     float gameScale = 1, worldScale = 1, physicsStep{};
     uint32_t physicsScaled{};
     uint64_t updates{}, slowedUpdates{};
+    // Version 2, moments (slow_motion.hpp's SlowMoments): those begun so far
+    // by kind (a heavy blow, a called blow, a thug pulled in the air, a
+    // perfect dodge), whether one is on now, and the time scale it asks for.
+    uint32_t moments[4]{};
+    uint32_t momentActive{};
+    float momentScale = 1;
 };
-static_assert(sizeof(SlowMotionData) == 96);
+static_assert(sizeof(SlowMotionData) == 120);
 extern "C" {
 __declspec(dllexport) XrData SpidyXrData;
 __declspec(dllexport) SlowMotionData SpidySlowMotionData;
@@ -428,6 +441,11 @@ DWORD WINAPI run(void*) {
                               "); the launcher's settings apply";
             message(3, 0, text.c_str());
         }
+        // The game's request for a Steam ticket, on its way back to the main
+        // menu, closed every VR session that quit to it (game_steam). The
+        // guard goes in once the game holds its Steam interface.
+        bool steamGuarded{}, steamWarned{};
+        uint64_t steamRetryMs{};
         // Slow motion slows the game's own time (game_time).
         const uint32_t timeCode = game_time::install(config.base);
         if (timeCode) {
@@ -469,6 +487,23 @@ DWORD WINAPI run(void*) {
         game_pad::StickPush stickPush;
         bool interacting{}, dodging{}, healing{}, zipping{};
         uint32_t interacts{}, dodges{}, heals{}, zips{};
+        // A held on the ground charges a leap of the swing's own (the game's
+        // Charge Jump is a skill a save may lack), and a trigger pulled with
+        // its hand at the temple is the game's R3, its scan. leapOut: the
+        // leap let go of, for the swing's next commands.
+        game_pad::ChargeJump chargeJump;
+        game_pad::TemplePress templePress;
+        uint32_t chargesBefore{}, leapsBefore{}, scansBefore{};
+        float leapOut{};
+        // The game's camera follows the head's pitch too: it offers a thing
+        // at the player's feet or overhead only with that camera on it.
+        game_pad::CameraPitch cameraPitch;
+        // Thugs the web brought to the player's hand so far (an air yank's
+        // arrival among them): in the air, time slows as one arrives.
+        uint64_t catchesBefore{};
+        // A dodge the game itself slows time for is its perfect dodge: for a
+        // moment after B went down with the game's time at full speed.
+        float dodgeWatch{};
         // The VR settings: the launch options, then the SPIDY VR tab in the
         // game's Settings during play.
         vr_settings::Values values;
@@ -481,6 +516,7 @@ DWORD WINAPI run(void*) {
         values.flips = config.options & 2048;
         values.triggerWebs = config.options & 4096;
         values.standOnWalls = !(config.options & 8192);
+        values.physicalWebs = !(config.options & 0x80000);
         values.swingSpeed = config.swingSpeed;
         values.snapTurn = static_cast<int>(config.snapTurn);
         values.smoothTurn = static_cast<int>(config.smoothTurn);
@@ -505,7 +541,6 @@ DWORD WINAPI run(void*) {
         // (native_hud::Follow), and starts in front of it again with play,
         // the immersive view and a recentred room.
         native_hud::Follow hudFollow;
-        VrShortcut shortcut;
         GameScreen gameScreen;
         // Whether the game is playing a scene on the screen (its time runs),
         // and whether that scene's stereo eyes have the HUD's panel.
@@ -549,6 +584,22 @@ DWORD WINAPI run(void*) {
         // since its display time; and the sounds, made once.
         uint64_t blowsBefore{}, strikesBefore{};
         HitStop hitStop;
+        // The called blow's arrow over the thug it is on (web_strike.hpp's
+        // Cues), since the display time it showed.
+        CueView cue{};
+        uint64_t cueTarget{};
+        uint32_t cueWay{};
+        bool cueLocked{};
+        int64_t cueSince{};
+        // The player's knockouts by the previous frame, and the lettering of
+        // the latest, each since its display time.
+        uint64_t knockoutsBefore{};
+        struct Knockout {
+            KnockoutView view;
+            int64_t since{};
+        };
+        std::array<Knockout, 2> knockoutMarks{};
+        size_t nextKnockout{};
         struct Burst {
             ImpactView view;
             int64_t since{};
@@ -614,6 +665,9 @@ DWORD WINAPI run(void*) {
         // a pulse at a change and reports it; without headset frames for a
         // while the loop below steps it to its end.
         SlowMotion slowMotion;
+        // And the moments it slows by itself (a finisher, a called blow, a
+        // thug pulled in the air, a perfect dodge).
+        SlowMoments moments;
         StickPress slowPress;
         SlowMotionData slowCounts;
         uint64_t slowSteppedMs = GetTickCount64();
@@ -625,7 +679,8 @@ DWORD WINAPI run(void*) {
             hitStop.update(seconds);
             if (!allowed)
                 hitStop.reset();
-            game_time::slow(std::min(slowMotion.timeScale(), hitStop.timeScale()));
+            moments.update(seconds, allowed);
+            game_time::slow(std::min({slowMotion.timeScale(), hitStop.timeScale(), moments.timeScale()}));
             slowSteppedMs = GetTickCount64();
             if (before && std::isfinite(seconds))
                 slowCounts.seconds += std::clamp(seconds, 0.f, .1f);
@@ -674,6 +729,10 @@ DWORD WINAPI run(void*) {
             d.physicsScaled = time.physicsScaled;
             d.updates = time.updates;
             d.slowedUpdates = time.slowed;
+            for (unsigned i = 0; i < std::size(d.moments); ++i)
+                d.moments[i] = moments.count(static_cast<Moment>(i));
+            d.momentActive = moments.active();
+            d.momentScale = moments.timeScale();
             InterlockedIncrement64(&d.sequence);
         };
         // Puts the settings into effect: at once, or when the module they
@@ -694,6 +753,7 @@ DWORD WINAPI run(void*) {
                 s.airWebs = values.airWebs;
                 s.gravity = vr_settings::gravity(values.weight);
                 s.walls = !(config.options & 16384);
+                s.physical = values.physicalWebs;
                 if (const auto code = swingSettings(&s)) {
                     const auto text = "VR settings: the swing did not take them (" + std::to_string(code) + ")";
                     message(3, 0, text.c_str());
@@ -776,6 +836,17 @@ DWORD WINAPI run(void*) {
             // This frame shows the game's presented frame on the screen, or
             // (stereoScene) the scene's own two eye images once there are some.
             bool showScreen{}, stereoScene{};
+            if (!steamGuarded && GetTickCount64() >= steamRetryMs) {
+                const uint32_t code = game_steam::install(config.base);
+                steamGuarded = !code;
+                steamRetryMs = GetTickCount64() + 2000;
+                if (code && code != 9801 && !steamWarned) {
+                    steamWarned = true;
+                    const auto text = "Quitting to the game's main menu may close the game: its Steam ticket "
+                                      "call could not be guarded (" + std::to_string(code) + ")";
+                    message(3, 0, text.c_str());
+                }
+            }
             if (!padInstalled && GetTickCount64() >= padRetryMs) {
                 padInstalled = !game_pad::install();
                 padRetryMs = GetTickCount64() + 1000;
@@ -810,17 +881,19 @@ DWORD WINAPI run(void*) {
                     // The headset is worn, focused and tracked: an image can be shown.
                     const bool viewing = frame.focused && frame.valid;
                     displayTime = frame.predictedDisplayTime;
-                    if (shortcut.update(viewing && gameplay, frame.hands[0].stickClick,
-                                        frame.hands[1].stickClick)) {
-                        flatScreen = !flatScreen;
+                    // The flat game screen instead of VR: the SPIDY VR tab's
+                    // VIEW (a click of both thumbsticks until October 12).
+                    if (values.flatScreen != flatScreen && viewing) {
+                        flatScreen = values.flatScreen;
                         rig.reset();
                         history.clear();
                         lastPresentedMs = lastNewImageMs = 0;
                         presented = false;
                         firstImageDeadline = GetTickCount64() + 3000;
-                        screenPose = screenAhead(frame.head);
-                        runtime.haptic(0, .35f);
-                        runtime.haptic(1, .35f);
+                        // Chosen in the pause menu, the flat screen is the
+                        // menu's own, where it stands.
+                        if (!wasScreen)
+                            screenPose = screenAhead(frame.head);
                         std::lock_guard lock(telemetry);
                         InterlockedIncrement64(&SpidyXrData.sequence);
                         ++SpidyXrData.toggles;
@@ -834,6 +907,26 @@ DWORD WINAPI run(void*) {
                     XrFrame controller = frame;
                     // The T-pose calibration has A as it has the other buttons.
                     controller.jump = frame.jump && !jumpFromScreen && !calibrationInput;
+                    // A trigger pulled with its hand at the temple is the game's
+                    // scan, and no web ball or reel meanwhile.
+                    {
+                        const Pose grips[2]{frame.hands[0].grip, frame.hands[1].grip};
+                        const bool tracked[2]{frame.hands[0].valid && validTrackedPose(frame.hands[0].grip),
+                                              frame.hands[1].valid && validTrackedPose(frame.hands[1].grip)};
+                        const float triggers[2]{frame.hands[0].trigger, frame.hands[1].trigger};
+                        templePress.update(frame.seconds,
+                                           viewing && gameplay && !flatScreen && !calibrationInput &&
+                                               validTrackedPose(frame.head),
+                                           frame.head, grips, tracked, triggers);
+                        for (unsigned i = 0; i < 2; ++i)
+                            if (templePress.hands() & (1u << i))
+                                controller.hands[i].trigger = 0;
+                        if (templePress.scans() != scansBefore) {
+                            scansBefore = templePress.scans();
+                            runtime.haptic(0, .3f);
+                            runtime.haptic(1, .3f);
+                        }
+                    }
                     // The player's up (its actor's second row): a wall's normal
                     // while the game holds it on one. Spidy's own flight is on none.
                     const Vec3 heroUp{body[4], body[5], body[6]};
@@ -1055,6 +1148,10 @@ DWORD WINAPI run(void*) {
                         input.move = motion.swing.move;
                         input.trackingYaw = motion.swing.trackingYaw;
                         input.tilt = motion.swing.tilt;
+                        input.leap = input.focused ? leapOut : 0.f;
+                        if (const Vec3 look = motion.headPose.orientation.rotate({0, 0, -1});
+                            input.focused && finite(look) && length(look) > .5f)
+                            input.look = normalized(look);
                         for (unsigned i = 0; i < 2; ++i) {
                             const auto& hand = motion.swing.hands[i];
                             input.hands[i] = {hand.aim, hand.gripRelativeToHead, hand.tracked, hand.trigger,
@@ -1118,6 +1215,17 @@ DWORD WINAPI run(void*) {
                                             frame.predictedDisplayTime);
                         }
                         zipBefore = swingState.zips;
+                        // A thug the web brought to a player in the air has
+                        // arrived within reach: time slows, to hit him there.
+                        // (Until the fifth build of October 12 it slowed as the
+                        // yank began, with the thug still far off.)
+                        if (grabState.catches > catchesBefore && input.focused &&
+                            game_swing::airborne(swingState, now.QuadPart, frequency.QuadPart)) {
+                            moments.start(Moment::airPull);
+                            runtime.haptic(0, .45f);
+                            runtime.haptic(1, .45f);
+                        }
+                        catchesBefore = grabState.catches;
                         // Onto a wall, and off it with a jump: both hands feel it.
                         if (input.focused && swingState.status &&
                             (swingState.walls > wallsBefore || swingState.wallJumps > wallJumpsBefore)) {
@@ -1144,6 +1252,7 @@ DWORD WINAPI run(void*) {
                             // Punching switched off and on again counts from nothing.
                             blowsBefore = std::min(blowsBefore, strikes.blows);
                             strikesBefore = std::min(strikesBefore, strikes.opened);
+                            knockoutsBefore = std::min(knockoutsBefore, strikes.knockouts);
                             if (strikes.opened > strikesBefore && input.focused) {
                                 // Off to him: a tick in both hands, and the rush.
                                 runtime.haptic(0, .35f, .05f);
@@ -1152,7 +1261,14 @@ DWORD WINAPI run(void*) {
                             }
                             if (strikes.blows > blowsBefore && input.focused) {
                                 const auto kind = static_cast<BlowKind>(strikes.lastKind);
-                                const bool finisher = kind == BlowKind::Finisher, heavy = kind != BlowKind::Hit;
+                                const bool called = strikes.lastCalled != 0;
+                                const bool finisher = kind == BlowKind::Finisher,
+                                           heavy = kind != BlowKind::Hit || called;
+                                // Time slows for a moment at the blows worth a look.
+                                if (called)
+                                    moments.start(Moment::called);
+                                else if (finisher || kind == BlowKind::Launch || kind == BlowKind::Slam)
+                                    moments.start(Moment::blow);
                                 const unsigned hand = strikes.lastHand & 1;
                                 const float strength =
                                     heavy ? 1.f
@@ -1171,7 +1287,7 @@ DWORD WINAPI run(void*) {
                                 if (finite(strikes.lastPoint)) {
                                     auto& burst = bursts[nextBurst++ % bursts.size()];
                                     burst.view = {strikes.lastPoint, strength, kind,
-                                                  static_cast<int>(std::min(strikes.lastCount, 999u)), 0};
+                                                  static_cast<int>(std::min(strikes.lastCount, 999u)), 0, called};
                                     burst.since = frame.predictedDisplayTime;
                                 }
                                 play(finisher ? ImpactSound::Finisher
@@ -1179,8 +1295,43 @@ DWORD WINAPI run(void*) {
                                      : strength >= .35f ? ImpactSound::Firm
                                                         : ImpactSound::Light);
                             }
+                            // A knockout of the player's: time eases for an instant, both
+                            // hands feel it, and it is lettered where he stood. This one is
+                            // done.
+                            if (strikes.knockouts > knockoutsBefore && input.focused &&
+                                finite(strikes.knockoutPoint)) {
+                                moments.start(Moment::knockout);
+                                runtime.haptic(0, .8f, .09f);
+                                runtime.haptic(1, .8f, .09f);
+                                auto& mark = knockoutMarks[nextKnockout++ % knockoutMarks.size()];
+                                mark.view = {strikes.knockoutPoint, 0};
+                                mark.since = frame.predictedDisplayTime;
+                            }
                             blowsBefore = strikes.blows;
                             strikesBefore = strikes.opened;
+                            knockoutsBefore = strikes.knockouts;
+                        }
+                        // The mark over the thug the next punch would go to, with
+                        // the arrow of the blow the flow calls. A new call ticks
+                        // in both hands.
+                        if (fighting && input.focused && strikes.cueTarget && finite(strikes.cuePoint)) {
+                            const bool locked = strikes.cueLocked != 0;
+                            if (strikes.cueTarget != cueTarget || strikes.cueWay != cueWay || locked != cueLocked)
+                                cueSince = frame.predictedDisplayTime;
+                            cueLocked = locked;
+                            if (strikes.cueWay && strikes.cueWay != cueWay) {
+                                runtime.haptic(0, .12f);
+                                runtime.haptic(1, .12f);
+                            }
+                            cueTarget = strikes.cueTarget;
+                            cueWay = strikes.cueWay;
+                            cue = {strikes.cuePoint, static_cast<CueWay>(strikes.cueWay), strikes.cueFinisher != 0,
+                                   strikes.cueLeft, 0, locked};
+                        } else {
+                            cue = {};
+                            cueTarget = 0;
+                            cueWay = 0;
+                            cueLocked = false;
                         }
                         game_punch::Data punch{};
                         if (punchStarted && !samplePunch(&punch))
@@ -1230,9 +1381,36 @@ DWORD WINAPI run(void*) {
                     const bool mounting =
                         swingState.status && swingState.mount && swingState.qpc &&
                         static_cast<int64_t>(swingState.qpc) > now.QuadPart - frequency.QuadPart / 10;
-                    const auto keys = swingNativeKeys(
+                    auto keys = swingNativeKeys(
                         steering, swingState.owned != 0 || mounting, motion.nativeKeys,
                         static_cast<SwingTakeoff::Phase>(swingState.takeoffPhase), swingState.takeoff != 0);
+                    // A held on the ground charges a leap, the swing's own, let
+                    // go of with A. A tap is the jump as before, made as it is
+                    // let go. The swing's own jumps (a takeoff, a wall, the
+                    // leap's) are the game's A as they are.
+                    const bool standing = steering && padInstalled && swingState.status && swingState.grounded &&
+                                          !swingState.owned && !mounting && !swingState.takeoff &&
+                                          !swingState.takeoffPhase && !swingState.webs[0].attached &&
+                                          !swingState.webs[1].attached && !calibrationInput;
+                    const auto leap = chargeJump.update(
+                        frame.seconds, (keys & swingJumpKey) && !swingState.takeoff, standing);
+                    if (!swingState.takeoff)
+                        keys = (keys & ~swingJumpKey) | (leap.jump ? swingJumpKey : 0u);
+                    leapOut = leap.leap;
+                    if (chargeJump.charges() != chargesBefore) {
+                        chargesBefore = chargeJump.charges();
+                        runtime.haptic(1, .3f);
+                    } else if (chargeJump.charging()) {
+                        // It builds in both hands, and holds at full.
+                        const float charge = chargeJump.charge();
+                        runtime.haptic(0, .08f + .3f * charge);
+                        runtime.haptic(1, .1f + .4f * charge);
+                    }
+                    if (chargeJump.leaps() != leapsBefore) {
+                        leapsBefore = chargeJump.leaps();
+                        runtime.haptic(0, .8f, .12f);
+                        runtime.haptic(1, 1.f, .12f);
+                    }
                     controls(keys);
                     if (padInstalled) {
                         // The same walking and jumping on the virtual Xbox
@@ -1270,6 +1448,9 @@ DWORD WINAPI run(void*) {
                         walk.look = cameraLook.update(motion.headPose.orientation.rotate({0, 0, -1}),
                                                       {camera[8], camera[9], camera[10]},
                                                       steering && !motion.onSurface);
+                        walk.lookUp = cameraPitch.update(motion.headPose.orientation.rotate({0, 0, -1}),
+                                                         {camera[8], camera[9], camera[10]},
+                                                         steering && !motion.onSurface);
                         if (stepIn > 0 && std::hypot(walk.right, walk.forward) < .1f) {
                             Vec3 look = motion.headPose.orientation.rotate({0, 0, -1});
                             Vec3 ahead{camera[8], 0, camera[10]};
@@ -1318,6 +1499,20 @@ DWORD WINAPI run(void*) {
                         if ((walk.heal && !healing) || (walk.zip && !zipping))
                             runtime.haptic(1, .2f);
                         walk.jump = (keys & swingJumpKey) != 0;
+                        walk.scan = templePress.held() && steering;
+                        // A perfect dodge: the game slows its own time within a
+                        // moment of a B that went down with it at full speed.
+                        if (walk.dodge && !dodging)
+                            dodgeWatch = game_time::telemetry().own > .95f ? .7f : 0.f;
+                        if (dodgeWatch > 0) {
+                            dodgeWatch -= std::isfinite(frame.seconds) ? std::clamp(frame.seconds, 0.f, .1f) : .1f;
+                            if (const auto time = game_time::telemetry(); time.installed && time.own < .9f) {
+                                dodgeWatch = 0;
+                                moments.start(Moment::dodge);
+                                runtime.haptic(0, .5f);
+                                runtime.haptic(1, .5f);
+                            }
+                        }
                         const auto buttons = origins.filtered(frame, mapping);
                         game_pad::submit(game_pad::fromControllers(buttons, mapping, walk), 200);
                         interacts += walk.interact && !interacting;
@@ -1358,7 +1553,9 @@ DWORD WINAPI run(void*) {
                         d.settings = (values.webGrab ? 1u : 0u) | (values.punch ? 2u : 0u) | (values.body ? 4u : 0u) |
                                      (values.airWebs ? 8u : 0u) | (values.webShooter ? 16u : 0u) |
                                      (values.flips ? 32u : 0u) | (values.triggerWebs ? 64u : 0u) |
-                                     (values.standOnWalls ? 128u : 0u);
+                                     (values.standOnWalls ? 128u : 0u) | (values.physicalWebs ? 256u : 0u);
+                        d.scans = templePress.scans();
+                        d.chargeJumps = chargeJump.charges();
                         d.snapTurn = static_cast<uint32_t>(values.snapTurn);
                         d.smoothTurn = static_cast<uint32_t>(values.smoothTurn);
                         d.haptics = static_cast<uint32_t>(values.haptics);
@@ -1578,7 +1775,7 @@ DWORD WINAPI run(void*) {
                     saved.flatScreen = flatScreen;
                     saved.screenPose = screenPose;
                     saved.screenAspect = SpidyFlatAspect();
-                    saved.slow = slowMotion.view();
+                    saved.slow = moments.view(slowMotion.view());
                     for (unsigned i = 0; i < 2; ++i) {
                         saved.webs[i] = swingState.webs[i];
                         saved.webTimes[i] = webTimes[i];
@@ -1847,6 +2044,22 @@ DWORD WINAPI run(void*) {
                                 view.age = static_cast<float>(static_cast<double>(shown - burst.since) * 1e-9);
                                 appendImpact(translucent, view, viewer, pixelAngle);
                             }
+                        // The called blow's arrow, over its thug.
+                        if (!saved->flatScreen && cue.left > 0) {
+                            auto view = cue;
+                            view.age = static_cast<float>(static_cast<double>(shown - cueSince) * 1e-9);
+                            if (view.age >= 0)
+                                appendCue(translucent, view, viewer, pixelAngle);
+                        }
+                        // A knockout's lettering, where he stood.
+                        if (!saved->flatScreen)
+                            for (const auto& mark : knockoutMarks) {
+                                if (!mark.since)
+                                    continue;
+                                auto view = mark.view;
+                                view.age = static_cast<float>(static_cast<double>(shown - mark.since) * 1e-9);
+                                appendKnockout(translucent, view, viewer, pixelAngle);
+                            }
                         // The T-pose calibration's panel and controller rings, moved with
                         // the player to this image as the hands are.
                         if (!saved->flatScreen && saved->calibration.phase != body_calibration::Phase::idle) {
@@ -1960,11 +2173,11 @@ DWORD WINAPI run(void*) {
                                   "controllers work as an Xbox controller - Settings > SPIDY VR > GAME SCREEN 3D "
                                   "sets its depth"
                             : drawn == Presentation::flat
-                                ? "Flat screen - click both thumbsticks for VR"
-                                : "VR active - B dodges, Y interacts (hold: step up to it), X opens the "
-                                  "game menu, the menu button pauses, the left stick's click slows time; "
-                                  "right stick: click is the game's LB + RB, down heals, up is its LT + RT "
-                                  "(vents); click both sticks for flat screen");
+                                ? "Flat screen - pause, Settings > SPIDY VR > VIEW: VR goes back to VR"
+                                : "VR active - A jumps (hold: Charge Jump), B dodges, Y interacts (hold: step "
+                                  "up to it), X opens the game menu, the menu button pauses, the left "
+                                  "stick's click slows time; a trigger pulled at your temple scans; right "
+                                  "stick: click is the game's LB + RB, down heals, up is its LT + RT (vents)");
                 }
             }
             {
@@ -2000,7 +2213,9 @@ DWORD WINAPI run(void*) {
     if (padInstalled)
         game_pad::uninstall();
     game_menu::uninstall();
-    // The game's own time back, and no blow still sounding.
+    // The game's own time back, and no blow still sounding. The ticket's
+    // guard stays for as long as the game runs: it is what keeps a quit to
+    // the main menu after VR from closing the game.
     game_time::uninstall();
     PlaySoundW(nullptr, nullptr, 0);
     bridge::Control release;
@@ -2070,7 +2285,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyXrStart(void* input) {
         config.runtime[std::size(config.runtime) - 1] ||
         config.base != reinterpret_cast<uint64_t>(GetModuleHandleW(nullptr)) ||
         !GetModuleHandleW(L"Spider-Man.exe") || !config.queue || !config.bridgeModule || !config.rayModule ||
-        !config.motionModule || config.options > 0x7ffff || config.snapTurn > 90 || config.haptics > 100 ||
+        !config.motionModule || config.options > 0xfffff || config.snapTurn > 90 || config.haptics > 100 ||
         !validEyeUpscale(config.upscale) || !validMonitorRate(config.monitorRate) ||
         config.screenSize > 2 || config.screenDepth > 3 || config.spare || config.smoothTurn > 360 ||
         config.hud > 3 || config.flipSpeed < 90 ||

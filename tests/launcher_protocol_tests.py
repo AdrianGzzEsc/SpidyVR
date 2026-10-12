@@ -121,6 +121,39 @@ class DesktopViewTests(unittest.TestCase):
         self.assertTrue(display.restore(fresh,self.backup))
         self.assertEqual((fresh.keys[display.INPUT_KEY],fresh.values),({},USER))
 
+    def test_a_session_turns_off_depth_of_field_and_sharpening_unless_told_to_keep_them(self):
+        # In the headset the game's depth of field blurs away from where you look, and its sharpening rings on
+        # edges: off for the session (sharpening at 1, where the game's slider stores its lowest), back after it.
+        graphics={**USER,'DOFQuality':2,'Sharpness':700}
+        registry=FakeRegistry(graphics)
+        display.prepare_launch(registry=registry,backup=self.backup,screen=(1920,1080))
+        self.assertEqual((registry.values['DOFQuality'],registry.values['Sharpness']),(0,1))
+        self.assertTrue(display.restore(registry,self.backup))
+        self.assertEqual(registry.values,graphics)
+        # Kept as the player has them: one, or both. What is kept is not in the backup either.
+        for keep,expected in ((('depth_of_field',),(2,1)),(('sharpening',),(0,700)),
+                              (('depth_of_field','sharpening'),(2,700))):
+            with self.subTest(keep=keep):
+                registry=FakeRegistry(graphics)
+                display.prepare_launch(registry=registry,backup=self.backup,screen=(1920,1080),keep=keep)
+                self.assertEqual((registry.values['DOFQuality'],registry.values['Sharpness']),expected)
+                saved=json.loads(self.backup.read_text())['session'][0]['values']
+                self.assertEqual('DOFQuality' in saved,'depth_of_field' not in keep)
+                self.assertEqual('Sharpness' in saved,'sharpening' not in keep)
+                self.assertTrue(display.restore(registry,self.backup))
+                self.assertEqual(registry.values,graphics)
+        # Values the game never saved stay unsaved, and a backup from before October 12 still restores.
+        fresh=FakeRegistry(USER)
+        display.prepare_launch(registry=fresh,backup=self.backup,screen=(1920,1080))
+        self.assertNotIn('DOFQuality',fresh.values)
+        self.assertNotIn('Sharpness',fresh.values)
+        self.assertTrue(display.restore(fresh,self.backup))
+        old=FakeRegistry({**graphics,'VSync':0})
+        self.backup.write_text(json.dumps(dict(key=display.KEY,values={},session=[
+            dict(key=display.KEY,values=dict(VSync=1)),dict(key=display.INPUT_KEY,values={})])))
+        self.assertTrue(display.restore(old,self.backup))
+        self.assertEqual(old.values,{**graphics,'VSync':1})
+
     def test_every_session_turns_off_vertical_sync(self):
         # The October 10 session started with the game's VSync on at 120 Hz: frames of 36-45 ms, whole
         # numbers of the monitor's 8.3 ms. It comes back afterwards; a value the game never saved stays unsaved.

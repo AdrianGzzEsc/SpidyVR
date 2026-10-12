@@ -6,6 +6,7 @@
 // would not fling, is steered through his mover, the game's rays keeping him
 // out of walls and the ground.
 #include "spidy/game_grab.hpp"
+#include "spidy/game_punch.hpp"
 #include "spidy/native_bodies.hpp"
 #include "spidy/native_movement.hpp"
 #include <algorithm>
@@ -89,6 +90,10 @@ struct Tracked {
     bool flying{}, flew{}, steering{}, grounded{}, flingAsked{}, falling{};
     Vec3 flight{};
     float airborne{};
+    // Snatched: yanked by a player in the air, it comes to him and floats
+    // before him (snatch()). snatchAge: since the yank; floated: beside him.
+    bool snatched{};
+    float snatchAge{}, floated{};
     // Knocked off his feet, his flight starts with `launch` (a yank's arc, an
     // arc to the hand, a throw) while `launching`, for up to launchSeconds
     // (launchAge so far). settle: seconds since a launch or a throw last set
@@ -131,6 +136,9 @@ uint64_t driveSerial{}, stepped{}, botsLanded{};
 // The player's actor record at the latest step: the one who deals the web's
 // blows.
 uint64_t hero{};
+// The player as the latest input sample has him (claim()): his centre, his
+// velocity in the game's time, whether he stands.
+Body heroBody{{}, {}, true};
 size_t counted{};
 // The target each hand's web last let go of, until when its web is drawn
 // trailing it (GetTickCount64). Left where the target was when let go, the
@@ -502,6 +510,63 @@ void pull(Tracked& t, const TargetCommand& c, float dt, const WorldQueries& worl
     t.steering = true;
     t.falling = false;
 }
+void release(Tracked& t, bool thrown, Vec3 velocity, bool flung);
+// An enemy yanked by a player in the air comes to the player, wherever the
+// player goes meanwhile and whether or not the grip still holds, stops an
+// arm's length before him at chest height and floats there, to be hit:
+// "like dmc air combat". Until October 12 an air yank was the ground's: an
+// arc to where the hand was. In that day's 14:06 session all 16 yanks were
+// let go of a quarter of a second in (a flick of the wrist), and none of
+// their thugs came within reach.
+// He flies at snatchSpeed at most, slower near his place (snatchGain per
+// second of what is left), on top of the player's own velocity. Within
+// snatchNear of it he has arrived: the player hangs (game_punch) and the
+// headset slows time (the catch counts). It is over floatSeconds after that,
+// snatchSeconds after the yank, when the player lands, or when a fist takes
+// him (struck()); then the game's flight has him as the web left him.
+constexpr float snatchSpeed = 28, snatchGain = 7, snatchReach = 1.05f, snatchNear = .7f, snatchSeconds = 3,
+                floatSeconds = 1.6f;
+void snatch(Tracked& t, float dt, bool flung) {
+    t.snatchAge += dt;
+    // The player's velocity is the game's; the web's are real.
+    const float scale = std::clamp(native_bodies::timeScale(), .05f, 1.f);
+    const Vec3 carried = finite(heroBody.velocity) ? heroBody.velocity * scale : Vec3{};
+    if (heroBody.grounded || t.snatchAge > snatchSeconds || t.floated > floatSeconds || !finite(heroBody.position)) {
+        t.snatched = false;
+        release(t, false, t.velocity, flung);
+        return;
+    }
+    // His place: before the player on the side he comes from, at chest height.
+    const Vec3 chest = heroBody.position + Vec3{0, .2f, 0};
+    Vec3 side{t.position.x - chest.x, 0, t.position.z - chest.z};
+    side = length(side) > .05f ? normalized(side) : Vec3{0, 0, 1};
+    const Vec3 to = chest + side * (snatchReach + shape(t.who).radius) - t.position;
+    const float left = length(to);
+    Vec3 v = carried;
+    if (left > 1e-3f)
+        v += to * (std::min(snatchSpeed, left * snatchGain) / left);
+    v = limited(v, maxDriveSpeed);
+    if (flung) {
+        fly(t, v, t.launching || !t.flying);
+        t.launching = false;
+        t.flying = t.flew = true;
+    } else if (!t.launching) {
+        launchInto(t, v);
+    } else {
+        t.launch = v;
+    }
+    if (left < snatchNear || t.floated > 0) {
+        if (t.floated == 0) {
+            game_punch::hangInAir(floatSeconds);
+            AcquireSRWLockExclusive(&output);
+            InterlockedIncrement64(&SpidyGrabData.sequence);
+            ++SpidyGrabData.catches;
+            InterlockedIncrement64(&SpidyGrabData.sequence);
+            ReleaseSRWLockExclusive(&output);
+        }
+        t.floated += dt;
+    }
+}
 // The web lets go of an enemy: `thrown` at `velocity`, or let go of.
 void release(Tracked& t, bool thrown, Vec3 velocity, bool flung) {
     if (thrown && t.launching) {
@@ -622,6 +687,14 @@ void count(size_t from) {
     }
     InterlockedIncrement64(&SpidyGrabData.sequence);
     ReleaseSRWLockExclusive(&output);
+    // A thug yanked by a player in the air comes to him (snatch()).
+    for (auto i = from; i < events.size(); ++i)
+        if (events[i].kind == GrabEventKind::Yank && !heroBody.grounded)
+            for (auto& t : tracked)
+                if (t.who.record == events[i].target && t.who.kind == Kind::bot && !t.gone && !t.snatched) {
+                    t.snatched = true;
+                    t.snatchAge = t.floated = 0;
+                }
     // A web let go of trails what it held; a new grab takes the hand's web.
     for (auto i = from; i < events.size(); ++i) {
         const auto& e = events[i];
@@ -725,6 +798,15 @@ void game_grab::cancel() {
         hand = {};
     ReleaseSRWLockExclusive(&output);
 }
+void game_grab::struck(uint64_t record) {
+    for (auto& t : tracked)
+        if (t.snatched && t.who.record == record) {
+            t.snatched = false;
+            t.flying = false;
+            t.launching = false;
+            t.free = 0;
+        }
+}
 bool game_grab::offering() {
     return offered != 0;
 }
@@ -743,6 +825,7 @@ Input game_grab::claim(float inputSeconds, const Input& in, const WorldQueries& 
     // Picks and owners look the targets up in this copy of the watch's list.
     if (inputSeconds > 0)
         watch.current(candidates);
+    heroBody = player;
     auto out = core.claim(inputSeconds, in, world, targets, player);
     count(0);
     counted = core.events().size();
@@ -841,6 +924,10 @@ void game_grab::step(float dt, const WorldQueries& world, uint64_t player) {
         t.back1 = t.position;
         t.dt1 = dt;
         ++t.seenSteps;
+        if (t.snatched) {
+            snatch(t, dt, flung);
+            continue;
+        }
         if (command && !command->thrown) {
             pull(t, *command, dt, world, flung, gravity);
             continue;

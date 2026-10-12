@@ -48,7 +48,7 @@ static_assert(sizeof(Hand) == 32 && sizeof(Data) == 168);
 // strikes and every blow landed, for the headset's feedback and the session
 // report.
 struct Strikes {
-    uint32_t magic = 0x53535452, version = 1, bytes = sizeof(Strikes), status{};
+    uint32_t magic = 0x53535452, version = 3, bytes = sizeof(Strikes), status{};
     int64_t sequence{};
     // Strikes opened; those whose blow landed, and those that ended without
     // it (a wall in the way, the target gone); of the opened, those at the
@@ -67,13 +67,36 @@ struct Strikes {
     // The latest strike: how far off its target was, and how long it took.
     float distance{}, seconds{};
     // The latest blow: where, along what, how hard (0-1), the damage it
-    // asked for, its BlowKind, its count in the flow, its hand, and whether
-    // a strike landed it.
+    // asked for, its BlowKind, its count in the flow, its hand, whether a
+    // strike landed it, and (version 2) whether it was a called blow.
     Vec3 lastPoint{}, lastDirection{};
     float lastStrength{}, lastDamage{};
-    uint32_t lastKind{}, lastCount{}, lastHand{}, lastStrike{}, reserved{};
+    uint32_t lastKind{}, lastCount{}, lastHand{}, lastStrike{}, lastCalled{};
+    // Version 2, called blows (web_strike.hpp's Cues): the ways called, the
+    // fists' blows that answered one, and those that landed while a call
+    // stood and went another way. Then the enemy the player's next punch
+    // would go to (an actor record; 0: none in view), where his mark goes
+    // (his chest), and what the flow calls now: which way (CueWay; 0:
+    // nothing, the mark is a plain ring), whether it calls the finisher, and
+    // how much of the flow's time is left (1 to 0).
+    uint64_t calls{}, called{}, missedCalls{};
+    uint64_t cueTarget{};
+    Vec3 cuePoint{};
+    uint32_t cueWay{}, cueFinisher{};
+    float cueLeft{};
+    // Version 3, one enemy at a time (web_strike.hpp's Lock). The enemy a
+    // blow locked the player onto (0: none, the mark follows his look);
+    // enemies the player's blows knocked out, and where the latest stood
+    // (his chest); whether the mark shown is a lock's. Then strikes opened
+    // by a fist swung the called way, strikes' blows that answered a call,
+    // and swings that would have opened a strike at another enemy than the
+    // marked one and opened none.
+    uint64_t locked{}, knockouts{};
+    Vec3 knockoutPoint{};
+    uint32_t cueLocked{};
+    uint64_t swung{}, strikeCalled{}, passedOver{};
 };
-static_assert(sizeof(Strikes) == 216);
+static_assert(sizeof(Strikes) == 328);
 // Starts the bot watch and the main-thread damage requests.
 uint32_t start(uintptr_t base);
 uint32_t stop();
@@ -113,6 +136,10 @@ Flight fly(float seconds, Vec3 feet, bool grounded, bool waiting = false);
 bool lifting(Vec3 feet);
 // The strike in progress ends with no blow (play stopped, the player changed).
 void cancelStrike();
+// A thug the web pulled to a player in the air has arrived beside him: the
+// player hangs there for `seconds`, to land a blow (not on a web that
+// carries him).
+void hangInAir(float seconds);
 // The game's time per real second (game_time.hpp's clock): the mover's steps
 // are that much shorter than the real time they take.
 float worldScale();

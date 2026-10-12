@@ -70,7 +70,11 @@ VR ended by itself, close the game first, then press START VR.
 
 For VR the launcher starts the game with a small desktop window, without
 frame generation or vertical sync, and with the game's Windows.Gaming.Input
-off (under SteamVR it would take the controllers away from Spidy). Your
+off (under SteamVR it would take the controllers away from Spidy). It also
+turns the game's Depth of Field off and its Sharpness to the lowest: in the
+headset the game blurs away from where its own camera focuses, not from
+where you look, and its sharpening rings on edges. "Game's depth of field"
+and "Game's sharpening" in the launcher's options keep your own. Your
 settings come back when the game closes.
 
 While you swing in VR, the game window on the desktop shows your left eye,
@@ -108,6 +112,16 @@ Swinging
   Release the grip ...... let go
   Trigger ............... reel in while the web is attached
   Pull a hand sharply ... zip toward the web's anchor
+  Pull a hand in ........ the web is a rope in your hand: hanging from it,
+                          you go where you pull it, as fast as you pull
+  A corner in the way ... the web bends round it and holds you from there;
+                          swing back and it lies straight again. Round six
+                          edges at most
+  Walking with a web .... it pays out as you go, and holds you at its new
+                          length when you step off an edge
+  PHYSICAL WEBS ......... switches those three off (Settings > SPIDY VR, or
+                          "Physical webs" in the launcher's options): a wall
+                          in the way then cuts the web off, as before
 
 Grabbing
   Grip aimed at a prop or thug ... catch it with your web
@@ -152,7 +166,9 @@ Your body and fists
 Fighting (web strikes: punching across the room, as in Batman: Arkham Shadow)
   Punch a thug ......... a fist that meets him fast lands a blow, as hard as
                          it moved. Every blow kicks in your hand, sounds,
-                         flashes where it landed and stops time for a moment
+                         bursts where it landed (a comic's star: yellow for
+                         a jab, red for a harder blow) and stops time for a
+                         moment
   Punch at a thug ...... web strike: you fly to him and the blow lands as
   out of reach           you arrive. He can be 10 m away, anywhere you can
                          see him: across the street, below you, in the air.
@@ -170,11 +186,65 @@ Fighting (web strikes: punching across the room, as in Batman: Arkham Shadow)
   thug in the air
   Punch down onto a .... knocks him down, stunned
   thug on his feet
-  Blows in a row ....... count up (X2, X3 ... over each blow): each hits a
-                         little harder than the one before, and every fifth
-                         is a finisher that sends him flying far. Three and a
-                         half seconds without a blow and the count starts
-                         over
+  Blows in a row ....... count up (X2, X3 ... lettered over each blow): each
+                         hits a little harder than the one before, the fifth
+                         is a finisher that sends him flying far, once you
+                         throw it as called (below). Three and a half
+                         seconds without a blow and the count starts over
+  A ring over a thug ... your next punch goes to him and to nobody else.
+                         A thin ring is on the enemy you look at, up to
+                         10 m away, and moves with your look. Hit him and
+                         the ring locks on: it gets four ticks and stays on
+                         him wherever you look, until he is down. A web
+                         that holds a thug locks him too. While one is
+                         marked no punch flies you to another: a fist that
+                         falls short of him is just a miss. No ring, no web
+                         strike: look at him first
+  Changing your mind ... look squarely at another enemy for a third of a
+                         second, with the locked one well off to the side:
+                         the ring goes to him. Four seconds without a blow
+                         at the locked one and the ring follows your look
+                         again
+  KO! .................. a thug your blow knocked out: lettered where he
+                         stood, with a thump in both hands and time easing
+                         for an instant. He is done, the ring is free: look
+                         at the next one
+  An arrow into the .... a called blow, as Arkham Shadow's. From your second
+  ring                   blow on, the arrow shows how your next fist must
+                         travel, as you see him. It comes in from the side
+                         your fist comes from and points where it goes:
+                         from your right to your left (a right hook), from
+                         your left (a left hook), from below (an uppercut)
+                         or from above (a blow down). Do it within arm's
+                         reach and the fist that lands that way is the
+                         called blow. Do it at the marked thug from across
+                         the room and you fly to him and it lands as a
+                         called blow all the same: swing it, do not jab. It
+                         hits half again as hard and throws him that way: a
+                         hook sends him flying, up lifts him, down floors
+                         him or slams him out of the air. Then the arrow
+                         shows a new way. A plain punch or a straight web
+                         strike is an ordinary blow and the arrow stays as
+                         it is. The arrow is white over a blue ring, and
+                         the ring runs down as your combo's time does. A
+                         called blow's burst is printed out of register, a
+                         blue edge and a pink one
+  The yellow arrow ..... into a jagged red ring: it calls the finisher.
+                         After four blows the next one is the finisher only
+                         if a fist lands, or opens a web strike, going the
+                         way the yellow arrow shows; until then your blows
+                         are plain ones and the count stays at four
+  How the marks look ... as a comic prints them, like Spidy's videos: flat
+                         colour with a black outline, popping in rather than
+                         fading. They are drawn the same in both eyes, so a
+                         coloured edge is print and not your lenses
+  Yank a thug from ..... he flies to you, wherever you go meanwhile and
+  the air                whether or not you still hold the grip, and floats
+                         an arm's length in front of you. As he arrives
+                         time slows and you hang in the air (not while a
+                         web carries you): hit him. Each blow in the air
+                         holds you up a little longer. After a second and a
+                         half without a blow he falls
   A hand whose web holds a prop, or carries you through the air, neither
   punches nor strikes. A hand whose web only hangs from a wall while you
   stand does both: clench your fists as you like.
@@ -187,7 +257,14 @@ Moving
                          SMOOTH TURN on, hold it to turn steadily instead:
                          the further you tilt it, the faster
   A .................... jump (from the ground, a wall or a perch; in the
-                         air it flips you, below: no web zip from the wrist)
+                         air it flips you, below: no web zip from the wrist).
+                         On the ground the jump is made as you let A go
+  Hold A ............... a charged leap: hold A on the ground (your hands
+                         buzz as it builds, for most of a second) and let
+                         go. You leap 4 to 11 m high by how long you held,
+                         and forward too with the left stick tilted. It is
+                         Spidy's own: the game's Charge Jump is a skill a
+                         save may not have
   B .................... dodge: the game's B. You dodge the way the left
                          stick points; with the stick at rest the game
                          chooses the way. Not while a web carries you
@@ -212,6 +289,10 @@ Moving
                          game shows LT + RT (a perch, a vent to enter),
                          look at it, push the stick straight up and hold
                          it. Not while a web carries you
+  Hand to your temple, . scan your surroundings: the game's R3. Raise either
+  trigger                hand beside your head and pull its trigger there;
+                         it holds for as long as you hold the trigger. No
+                         web ball from that pull
   Menu button .......... pause
   X .................... game menu (map, suits, skills)
   A, B and Y are the game's own A, B and Y: where the game shows one of
@@ -221,7 +302,9 @@ Moving
   stick pushed down is the game's D-pad down, pushed up its LT + RT. A
   push counts from the stick at rest, straight down or up: turning, a
   diagonal and a quick flick do neither.
-  Click both sticks .... switch between VR and a flat game screen
+  VR or a flat screen .. pause, Settings > SPIDY VR > VIEW: FLAT SCREEN shows
+                         the game on a screen in the headset, VR goes back.
+                         (Clicking both sticks no longer switches.)
 
 Walls
   Walk at one .......... push the left stick straight at a wall beside you
@@ -255,6 +338,13 @@ Slow motion (as in Blade & Sorcery)
                          from empty). With too little left a click flashes
                          it red and does nothing
   A menu, the game screen or the flat screen ends slow motion
+  By itself ............ time also slows for a moment, with no press and
+                         no focus spent: at a finisher, an uppercut that
+                         lifts a thug and a slam; at a called blow; when a
+                         thug you yanked from the air arrives in front of
+                         you; and at a perfect dodge (a dodge the game
+                         itself slows time for). A flurry of blows slows
+                         time once, not for every blow
 
 Flips (experimental, off until you switch FLIPS on in Settings > SPIDY VR or
 in the launcher's options)
@@ -305,9 +395,10 @@ VR settings
   web; the other reels in and shoots web balls), switch the aim markers and
   webs holding in open air (a web that meets nothing within 100 m holds
   there; off, it misses) on or off, or step the
-  swing speed limit, your weight, snap turn, smooth turn, controller
-  vibration, the game screen's size, its 3D depth for cutscenes and the
-  HUD's size (OFF hides it in VR).
+  swing speed limit, your weight, PHYSICAL WEBS, snap turn, smooth turn,
+  controller vibration, the VIEW (VR or FLAT SCREEN; each session starts in
+  VR), the game screen's size, its 3D depth for cutscenes and the HUD's size
+  (OFF hides it in VR).
   Under EXPERIMENTAL, FLIPS (off until
   you switch it on) lets the left stick and A in the air flip you, and FLIP
   SPEED sets how fast. Changes apply at once. The
@@ -409,8 +500,35 @@ IF SOMETHING IS WRONG
   SPIDY VR has both.
 - Swinging feels floaty, or falls too hard: WEIGHT in Settings > SPIDY VR
   (or "Weight" in the launcher's options) sets how heavy you are while
-  swinging and after letting go, until you land: 100% is real gravity, 80%
-  the default, up to 300%. Jumps and falls without a web are the game's own.
+  swinging and after letting go, until you land: 100% is real gravity and
+  the default (80% until October 12; a launcher that still had 80% starts on
+  100%), up to 300%. Jumps and falls without a web are the game's own.
+- A web lets go at a corner, or does something odd as it bends round one:
+  it bends round six edges at most, and lets go where it finds no edge to
+  bend round. Switch PHYSICAL WEBS off in Settings > SPIDY VR for webs as
+  before, and tell us where it happened.
+- Lowering your arm on a web moves you: with PHYSICAL WEBS the web's length
+  is measured to your hand, so a taut web follows it. That is also how you
+  pull yourself along it. Off: PHYSICAL WEBS in Settings > SPIDY VR.
+- A jump comes a moment late: on the ground Spidy waits to see whether you
+  hold A for a charged leap, and jumps as you let go of a tap.
+- The game closed when you chose Quit in the pause menu (every time, up to
+  the fourth build of October 12): on its way to the main menu the game asks
+  Steam for a ticket with one argument missing, and Steam read what happened
+  to lie there. Spidy now guards that call. If it still happens, send the
+  session's report: its "steam_guard" says what the game passed.
+- A vent, a grate or a hatch at your feet or over your head shows no prompt
+  and takes no button: the game offers a thing only when its own camera
+  looks at it, and Spidy turned that camera left and right with your head
+  but not up and down. It follows your head both ways now: look at the
+  thing, then press what the game shows (Y; the right stick's click for
+  LB + RB; the right stick up for LT + RT).
+- The picture is softer, or a cutscene has lost its blurred background:
+  Spidy turns the game's sharpening and depth of field off for VR. "Game's
+  sharpening" and "Game's depth of field" in the launcher's options keep
+  yours.
+- Clicking both sticks no longer shows the flat screen: it is VIEW in
+  Settings > SPIDY VR now.
 - You would rather turn smoothly than in steps: SMOOTH TURN in Settings >
   SPIDY VR (or "Smooth turn" in the launcher's options). If it makes you
   uneasy, try a slower speed, or OFF for snap turning again.
@@ -436,7 +554,7 @@ IF SOMETHING IS WRONG
   in the air (not one already knocked out), within 10 m and in sight, and the
   fist thrown at him, out from your body. A hook, or a hand whose web holds a
   prop or swings you, opens no strike.
-- The blows are too loud or the flashes too bright: tell us; this build has
+- The blows are too loud or the bursts too bold: tell us; this build has
   no switch for them yet.
 - B no longer interacts, or Y no longer opens the game menu: the buttons
   moved to make room for the dodge. B dodges, Y interacts (as the game's

@@ -82,7 +82,7 @@ Write-Host 'doors, prompts; web strike in a fight). Look at the thing and press 
 Write-Host 'hold Y and you step up to what you look at until the game takes it.'
 Write-Host "Where the game shows LB + RB (a door or a grate to pull off), click the right thumbstick."
 Write-Host 'Keep the game window in front on the desktop: the game pauses while another window is.'
-Write-Host 'Click both thumbsticks to switch between immersive VR and a flat game screen in the headset.'
+Write-Host 'Settings > SPIDY VR > VIEW in the pause menu switches between immersive VR and a flat game screen.'
 Write-Host "VR settings are in the game's own Settings: pause, Settings, then SPIDY VR (Up from GAME reaches it)."
 Write-Host 'There change the web button, aim markers, webs in open air, swing speed, weight, your body calibration,'
 Write-Host 'snap turn, smooth turn, vibration, screen size, the HUD, standing on walls, and the experimental flips and'

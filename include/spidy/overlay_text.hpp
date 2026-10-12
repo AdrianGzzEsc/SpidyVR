@@ -11,6 +11,11 @@ struct TextStyle {
     float height = .04f; // capital height, metres
     float weight = .12f; // stroke width, a share of the height
     Vec3 color{1, 1, 1}; // linear RGB, as the overlay's vertices take it
+    // Strokes as a marker draws them: their ends and corners round, and
+    // their edges fading out across `soft` metres so they stay smooth
+    // without multisampling. Otherwise each stroke is a hard-edged bar.
+    bool round{};
+    float soft{};
 };
 // Whether the font has a glyph for `c` (either case for letters).
 bool drawable(char c);

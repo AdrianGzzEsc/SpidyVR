@@ -132,6 +132,194 @@ void strand(std::vector<Vertex>& out, Vec3 from, Vec3 to, Vec3 viewer, float pix
              {p0 + side0 * w0, c0});
     }
 }
+// The combat marks are printed, as the graphics of Spidy's videos are (their
+// style system's plates, keylines and timing): flat colour, every shape keyed
+// in ink, a hard drop to one side where a shadow would be, and nothing soft
+// but an edge's last pixel. They move on twos: a mark is a pose held a
+// twelfth of a second, then the next; nothing eases, slides or fades.
+namespace plate {
+// The style's colour tokens in linear RGB.
+constexpr Vec3 ink{.0033f, .0030f, .0070f};   // #0b0a14: every keyline
+constexpr Vec3 paper{.9301f, .9131f, .8550f}; // #f7f5ee
+constexpr Vec3 red{.7682f, .0194f, .0284f};   // #e3262f, the brand's
+constexpr Vec3 yellow{1.f, .7529f, .0742f};   // #ffe14d: a burst, a finisher
+constexpr Vec3 cyan{.0060f, .6724f, 1.f};     // #12d6ff: the misprint's left ghost
+constexpr Vec3 magenta{1.f, .0273f, .2918f};  // #ff2e93: its right ghost
+constexpr float pose = 1.f / 12, degree = pi / 180;
+// How far the misprint's ghosts lie to either side on the poses a mark
+// lands, as a share of its size.
+constexpr float misprint = .11f;
+} // namespace plate
+// How a mark lands, the style's "pop": three held poses (small and turned,
+// past its size, just short of it), then at rest. `hit`: the poses on which
+// its misprint is wide.
+struct Landing {
+    float scale = 1, turn{};
+    bool hit{};
+};
+Landing landing(float age) {
+    switch (static_cast<int>(age / plate::pose)) {
+    case 0:
+        return {.3f, 10 * plate::degree, true};
+    case 1:
+        return {1.16f, -5 * plate::degree, true};
+    case 2:
+        return {.95f, 2 * plate::degree, false};
+    default:
+        return {};
+    }
+}
+struct Flat {
+    float x{}, y{};
+    Flat operator+(Flat b) const {
+        return {x + b.x, y + b.y};
+    }
+    Flat operator-(Flat b) const {
+        return {x - b.x, y - b.y};
+    }
+    Flat operator*(float s) const {
+        return {x * s, y * s};
+    }
+};
+// One printed mark, flat across the line of sight. Its shapes are placed in
+// its own plane (x to the viewer's right, y up, metres from its centre),
+// sized and turned as a whole by `place`, and laid down a plate at a time by
+// `layers`.
+class Print {
+  public:
+    Print(std::vector<Vertex>& out, Vec3 centre, Vec3 right, Vec3 up, Vec3 view, float px)
+        : out_(out), centre_(centre), right_(right), up_(up), view_(view), px_(px) {
+        place(1, 0);
+    }
+    // From here on the shapes are `scale` their size and turned by `turn`
+    // (radians, anticlockwise) about a centre `moved` from the mark's.
+    void place(float scale, float turn, Flat moved = {}) {
+        scale_ = scale;
+        across_ = right_ * std::cos(turn) + up_ * std::sin(turn);
+        along_ = up_ * std::cos(turn) - right_ * std::sin(turn);
+        moved_ = moved;
+    }
+    // Draws what `draw` draws as print lays it down. Under everything the
+    // misprint's two ghosts, cyan `misprint` to the left and magenta as far
+    // to the right (0: none); then the hard drop in `dropColor`, `drop` to
+    // the right and down (0: none); the keyline, ink `key` wide around every
+    // shape; and the shapes in their own colours.
+    template <class Draw> void layers(float key, float drop, Vec3 dropColor, float misprint, Draw&& draw) {
+        const float grow = std::max(key * scale_, 1.1f * px_);
+        const auto layer = [&](Flat shift, const Vec3* tinted, float grown) {
+            shift_ = shift * scale_;
+            plate_ = tinted;
+            grow_ = grown;
+            draw();
+        };
+        // What lies under the keyline is a pixel smaller than it, so that an
+        // edge both share shows none of it.
+        const float under = std::max(grow - px_, 0.f);
+        if (misprint > 0) {
+            layer({-misprint, 0}, &plate::cyan, under);
+            layer({misprint, 0}, &plate::magenta, under);
+        }
+        if (drop > 0)
+            layer({drop, -drop}, &dropColor, under);
+        layer({}, &plate::ink, grow);
+        layer({}, nullptr, 0);
+    }
+    void disc(Flat at, float radius, Vec3 color) {
+        dot(world(at), radius * scale_ + grow_, tint(color));
+    }
+    // A ring `half` to either side of `radius`, or its arc from angle `from`
+    // to `to` (anticlockwise from the mark's right).
+    void ring(Flat at, float radius, float half, Vec3 color, float from = 0, float to = 2 * pi) {
+        const float r = radius * scale_, h = half * scale_ + grow_;
+        const float beyond = to - from > 2 * pi - 1e-3f ? 0.f : grow_ / std::max(r, 1e-6f);
+        softArc(out_, world(at), across_, along_, std::max(r - h, 0.f), r + h, from - beyond, to + beyond,
+                tint(color), 1, soft(), segments(r + h));
+    }
+    // A stroke with round ends, as a marker draws it. `both` false: one
+    // that goes on from the end of the stroke before, whose round end is its
+    // start.
+    void line(Flat p, Flat q, float half, Vec3 color, bool both = true) {
+        const Vec3 a = world(p), b = world(q), c = tint(color);
+        const float h = half * scale_ + grow_;
+        if (length(b - a) > 1e-6f) {
+            const Vec3 side = normalized(cross(b - a, view_));
+            const float across[4] = {-h - soft(), -h, h, h + soft()}, alpha[4] = {0, 1, 1, 0};
+            for (int i = 0; i < 3; ++i)
+                quad(out_, {a + side * across[i], c, alpha[i]}, {b + side * across[i], c, alpha[i]},
+                     {b + side * across[i + 1], c, alpha[i + 1]}, {a + side * across[i + 1], c, alpha[i + 1]});
+        }
+        if (both)
+            dot(a, h, c);
+        dot(b, h, c);
+    }
+    void triangle(Flat a, Flat b, Flat c, Vec3 color) {
+        softTriangle(out_, {world(a), world(b), world(c)}, view_, tint(color), 1, grow_, soft());
+    }
+    // A burst: a star of `points` spikes from radius `inner` out to `outer`,
+    // each its own length and lean by `seed`.
+    void star(Flat at, float inner, float outer, int points, float seed, Vec3 color) {
+        disc(at, inner, color);
+        const float step = 2 * pi / static_cast<float>(points);
+        const auto on = [&](float angle, float radius) {
+            return Flat{at.x + std::cos(angle) * radius, at.y + std::sin(angle) * radius};
+        };
+        for (int i = 0; i < points; ++i) {
+            const float middle = seed + step * (static_cast<float>(i) + .3f * (hash(seed, i) - .5f));
+            const float tip = inner + (outer - inner) * (.55f + .45f * hash(seed, i + 23));
+            triangle(on(middle - step * .56f, inner * .96f),
+                     on(middle + step * .3f * (hash(seed, i + 47) - .5f), tip),
+                     on(middle + step * .56f, inner * .96f), color);
+        }
+    }
+    // Lettering in the overlay's stroke font, leaning as italics do, from
+    // the left end of its baseline.
+    static constexpr float lean = .18f;
+    void text(std::string_view words, Flat origin, float height, float weight, Vec3 color) {
+        TextStyle style;
+        style.height = height * scale_;
+        style.weight = weight + 2 * grow_ / std::max(style.height, 1e-6f);
+        style.color = tint(color);
+        style.round = true;
+        style.soft = soft();
+        appendText(out_, words, world(origin), across_, along_ + across_ * lean, style);
+    }
+
+  private:
+    Vec3 world(Flat at) const {
+        return centre_ + across_ * (at.x * scale_) + along_ * (at.y * scale_) + right_ * (moved_.x + shift_.x) +
+               up_ * (moved_.y + shift_.y);
+    }
+    Vec3 tint(Vec3 color) const {
+        return plate_ ? *plate_ : color;
+    }
+    // An edge's last pixel.
+    float soft() const {
+        return .9f * px_;
+    }
+    // Enough sides for a circle to stay round to a third of a pixel.
+    int segments(float radius) const {
+        return std::clamp(static_cast<int>(3.4f * std::sqrt(radius / px_)), 8, 48);
+    }
+    // A disc with a soft rim.
+    void dot(Vec3 centre, float radius, Vec3 color) {
+        const int sides = segments(radius);
+        const float rim = radius + soft();
+        Vec3 from = across_;
+        for (int i = 1; i <= sides; ++i) {
+            const float angle = 2 * pi * static_cast<float>(i) / static_cast<float>(sides);
+            const Vec3 to = across_ * std::cos(angle) + along_ * std::sin(angle);
+            const Vertex p{centre + from * radius, color}, q{centre + to * radius, color};
+            out_.insert(out_.end(), {{centre, color}, p, q});
+            quad(out_, p, q, {centre + to * rim, color, 0}, {centre + from * rim, color, 0});
+            from = to;
+        }
+    }
+    std::vector<Vertex>& out_;
+    Vec3 centre_, right_, up_, view_, across_{}, along_{};
+    float px_, scale_ = 1, grow_{};
+    Flat moved_{}, shift_{};
+    const Vec3* plate_{};
+};
 } // namespace
 
 void appendWeb(std::vector<Vertex>& out, const WebLine& web, Vec3 viewer, float pixelAngle, const WebLook& look) {
@@ -369,56 +557,192 @@ void appendImpact(std::vector<Vertex>& out, const ImpactView& impact, Vec3 viewe
     Vec3 right = cross(Vec3{0, 1, 0}, view);
     right = length(right) > .1f ? normalized(right) : perpendicular(view);
     const Vec3 up = cross(view, right);
-    const Vec3 c = impact.point;
-    const float px = pixelAngle * distance, soft = std::max(1.2f * px, .0015f);
     const float strength = std::isfinite(impact.strength) ? std::clamp(impact.strength, 0.f, 1.f) : 0.f;
     const bool finisher = impact.kind == BlowKind::Finisher, heavy = impact.kind != BlowKind::Hit;
-    // How wide the burst gets and how long it lasts; a jab's is the size of
-    // the fist, a finisher's of his chest.
+    // How far the burst reaches; a jab's is the size of the fist, a
+    // finisher's of his chest.
     const float reach = finisher ? .26f : heavy ? .16f : .07f + .08f * strength;
-    const float life = finisher ? .45f : heavy ? .28f : .22f;
-    constexpr Vec3 white{1, 1, 1}, pale{1.f, .93f, .62f}, orange{1.f, .55f, .12f}, red{1.f, .2f, .08f};
-    const Vec3 color = finisher ? red : heavy ? orange : mix(white, pale, strength);
-    const float t = impact.age / life;
-    if (t < 1) {
-        const float fade = 1 - t, out3 = 1 - fade * fade * fade; // bursting out, slowing
-        const float ring = reach * out3;
-        // The flash: bright and gone in the first third.
-        if (t < .35f) {
-            const float flash = 1 - t / .35f;
-            softArc(out, c, right, up, 0, reach * (.25f + .3f * t), 0, 2 * pi, white, .9f * flash * flash,
-                    reach * .25f, 24);
-        }
-        const float half = std::max((.012f + .02f * strength) * fade * (finisher ? 1.6f : 1), .6f * px);
-        softArc(out, c, right, up, std::max(ring - half, 0.f), ring + half, 0, 2 * pi, color, fade, soft, 40);
-        // Rays past the ring, each its own length, turned by where the blow landed.
-        const int rays = finisher ? 12 : heavy ? 10 : 7;
-        const float seed = impact.point.x * 3.1f + impact.point.y * 5.3f + impact.point.z * 7.7f;
-        for (int i = 0; i < rays; ++i) {
-            const float angle = 2 * pi * (static_cast<float>(i) + hash(seed, i)) / static_cast<float>(rays);
-            const Vec3 way = right * std::cos(angle) + up * std::sin(angle);
-            const float from = ring * .7f + reach * .08f, to = ring * (1.15f + .45f * hash(seed, i + 40));
-            softBar(out, c + way * from, c + way * std::max(to, from + .004f), view,
-                    std::max(.0035f * fade * (heavy ? 1.5f : 1), .5f * px), mix(color, white, .5f), fade * .9f, soft);
-        }
+    const int pose = static_cast<int>(impact.age / plate::pose);
+    // Each blow's burst is its own drawing, by where it landed.
+    const float seed = impact.point.x * 3.1f + impact.point.y * 5.3f + impact.point.z * 7.7f;
+    Print print(out, impact.point, right, up, view, pixelAngle * distance);
+    // The star: small, then whole; a finisher's a third pose, wider yet. Each
+    // pose is drawn anew. A called blow's is out of register. A finisher's
+    // star is the smaller share of its reach: an arm's length away it must
+    // not fill the view; its lines carry the rest.
+    if (pose < (finisher ? 3 : 2)) {
+        const float outer = reach * (finisher ? .6f : .75f) * (pose == 0 ? .6f : pose == 1 ? 1.f : 1.15f);
+        const int points = finisher ? 13 : heavy ? 11 : 9;
+        const float turned = seed + static_cast<float>(pose);
+        const Vec3 body = heavy ? plate::red : plate::yellow, heart = heavy ? plate::yellow : plate::paper;
+        print.layers(outer * .045f, 0, {}, impact.called ? outer * plate::misprint : 0, [&] {
+            print.star({}, outer * .5f, outer, points, turned, body);
+            print.star({}, outer * .26f, outer * .56f, points, turned, heart);
+        });
     }
-    // The count: in at once, there for most of its time, out over the last third.
+    // Then its lines, thrown clear of where the star was: a pose for a jab,
+    // two for a harder blow and three for a finisher, each farther out and
+    // thinner.
+    const int lines = pose - 2;
+    if (lines >= 0 && lines < (finisher ? 3 : heavy ? 2 : 1)) {
+        const int count = finisher ? 14 : heavy ? 10 : 7;
+        const float from = reach * ((finisher ? .8f : .7f) + .4f * static_cast<float>(lines));
+        const float width = reach * (.05f - .014f * static_cast<float>(lines));
+        print.layers(reach * .018f, 0, {}, 0, [&] {
+            for (int i = 0; i < count; ++i) {
+                const float angle = seed + 2 * pi * (static_cast<float>(i) + .5f * hash(seed, i + 60)) /
+                                               static_cast<float>(count);
+                const Flat way{std::cos(angle), std::sin(angle)}, side{-way.y * width, way.x * width};
+                const float to = from + reach * (.3f + .35f * hash(seed, i + 80));
+                print.triangle(way * from + side, way * to, way * from - side, plate::paper);
+            }
+        });
+    }
+    // The count: lettered in over the blow as a sound word is. It lands in
+    // three poses, off level; holds; and is gone in two, a pose large and
+    // out of register, a pose small.
     if (impact.count >= 2) {
-        const float u = impact.age / ImpactView::seconds;
-        const float opacity = std::min(1.f, impact.age / .05f) * std::clamp((1 - u) * 3, 0.f, 1.f);
+        const int last = static_cast<int>(ImpactView::seconds / plate::pose + .5f);
+        Landing land = landing(impact.age);
+        if (pose == last - 2)
+            land = {1.12f, 0, true};
+        else if (pose >= last - 1)
+            land.scale = .6f;
         const std::string text = "X" + std::to_string(std::min(impact.count, 999));
-        TextStyle style;
-        style.height = (finisher ? .075f : .05f) * std::clamp(distance / .7f, .8f, 3.f);
-        style.weight = .16f;
-        const Vec3 origin = c + up * (reach * .6f + .05f + .09f * u) - right * (textWidth(text, style.height) / 2);
-        for (const bool shadow : {true, false}) {
-            const size_t first = out.size();
-            style.color = shadow ? shadowColor : finisher ? red : pale;
-            appendText(out, text, shadow ? origin + (right - up) * (style.height * .06f) : origin, right, up, style);
-            for (size_t i = first; i < out.size(); ++i)
-                out[i].alpha = opacity * (shadow ? .7f : 1.f);
-        }
+        const float height = (finisher ? .06f : .042f) * std::clamp(distance / .7f, .8f, 2.5f);
+        const float width = textWidth(text, height) + Print::lean * height;
+        print.place(land.scale, land.turn + 8 * plate::degree, {0, reach * .6f + .05f + height * .5f});
+        print.layers(height * .06f, height * .1f, finisher ? plate::red : plate::ink,
+                     land.hit ? height * plate::misprint : 0,
+                     [&] { print.text(text, {width * -.5f, height * -.5f}, height, .2f, plate::yellow); });
     }
+}
+void appendCue(std::vector<Vertex>& out, const CueView& cue, Vec3 viewer, float pixelAngle) {
+    const float distance = length(viewer - cue.point);
+    if (!finite(cue.point) || !finite(viewer) || !std::isfinite(pixelAngle) || pixelAngle <= 0 ||
+        !std::isfinite(cue.left) || cue.left <= 0 || !std::isfinite(cue.age) || cue.age < 0 ||
+        !(distance >= .15f && distance <= 60))
+        return;
+    // Level and upright across the line of sight, as the bursts are.
+    const Vec3 view = (viewer - cue.point) / distance;
+    Vec3 right = cross(Vec3{0, 1, 0}, view);
+    right = length(right) > .1f ? normalized(right) : perpendicular(view);
+    const Vec3 up = cross(view, right);
+    const bool called = cue.way != CueWay::None, finisher = called && cue.finisher;
+    // The ring's radius: an arm's length away the mark is a hand wide;
+    // farther off it keeps most of its size on screen.
+    const float size = (finisher ? .13f : .1f) * std::clamp(distance / .9f, 1.f, 5.f);
+    const int pose = static_cast<int>(cue.age / plate::pose);
+    Print print(out, cue.point, right, up, view, pixelAngle * distance);
+    if (!called) {
+        // Nothing called: a target and no more. A look's mark is a thin
+        // ring; a lock's is bolder, with four ticks in from it, a little off
+        // level. Either snaps on, a pose wide and a pose short.
+        print.place(pose == 0 ? 1.16f : pose == 1 ? .95f : 1.f, -12 * plate::degree);
+        const float half = size * (cue.locked ? .022f : .014f);
+        print.layers(size * .022f, 0, {}, 0, [&] {
+            print.ring({}, size, half, plate::paper);
+            for (int i = 0; cue.locked && i < 4; ++i) {
+                const float angle = pi / 4 + pi / 2 * static_cast<float>(i);
+                const Flat way{std::cos(angle), std::sin(angle)};
+                print.line(way * (size * .72f), way * size, half, plate::paper);
+            }
+        });
+        return;
+    }
+    const Landing land = landing(cue.age);
+    const Vec3 fill = finisher ? plate::yellow : plate::paper, second = finisher ? plate::red : plate::cyan;
+    // The ring: what is left of the flow's time, running down clockwise from
+    // the top a notch at a time, over a thin ink track that stays whole.
+    const float left = std::clamp(cue.left, 0.f, 1.f);
+    print.place(land.scale, land.turn);
+    if (finisher) {
+        // The finisher's is a burst's edge: a zigzag, a stroke to a notch.
+        constexpr int strokes = 28;
+        const auto corner = [&](int i) {
+            const float angle = pi / 2 - 2 * pi * static_cast<float>(i) / strokes;
+            return Flat{std::cos(angle), std::sin(angle)} * (size * (i % 2 ? 1.14f : .96f));
+        };
+        const int shown = static_cast<int>(std::ceil(left * strokes));
+        print.layers(size * .03f, 0, {}, 0, [&] {
+            for (int i = shown; i < strokes; ++i)
+                print.line(corner(i), corner(i + 1), size * .012f, plate::ink, i == shown);
+            for (int i = 0; i < shown; ++i)
+                print.line(corner(i), corner(i + 1), size * .045f, second, i == 0);
+        });
+    } else {
+        const float turn = 2 * pi * std::ceil(left * 48) / 48;
+        print.layers(size * .03f, 0, {}, 0, [&] {
+            print.ring({}, size, size * .012f, plate::ink);
+            // Angles run from the mark's right toward its top: clockwise
+            // from the top is downward from pi / 2.
+            print.ring({}, size, size * .05f, second, pi / 2 - turn, pi / 2);
+        });
+    }
+    // The arrow: a marker's stroke with a hard drop, pointing the way the
+    // fist must travel. It comes in from outside the ring, on the side the
+    // fist comes from, and ends at his middle. It lands out of register, and
+    // then boils as a held drawing does: drawn in three slightly different
+    // places, two poses each.
+    Flat way{0, -1};
+    switch (cue.way) {
+    case CueWay::Left:
+        way = {-1, 0};
+        break;
+    case CueWay::Right:
+        way = {1, 0};
+        break;
+    case CueWay::Up:
+        way = {0, 1};
+        break;
+    default:
+        break;
+    }
+    const Flat across{-way.y, way.x};
+    struct Boil {
+        float turn;
+        Flat shift;
+    };
+    static constexpr Boil boils[3] = {{0, {}}, {-.8f, {.015f, .022f}}, {.7f, {-.022f, -.015f}}};
+    const Boil& boil = boils[pose < 3 ? 0 : (pose / 2) % 3];
+    print.place(land.scale, land.turn + boil.turn * plate::degree, boil.shift * size);
+    print.layers(size * .04f, size * .06f, second, land.hit ? size * plate::misprint : 0, [&] {
+        const Flat tip = way * (size * .3f), tail = way * (size * -1.3f), neck = way * (size * -.11f);
+        print.line(tail, tip, size * .085f, fill);
+        print.line(tip, neck + across * (size * .4f), size * .085f, fill, false);
+        print.line(tip, neck - across * (size * .4f), size * .085f, fill, false);
+    });
+}
+void appendKnockout(std::vector<Vertex>& out, const KnockoutView& knockout, Vec3 viewer, float pixelAngle) {
+    const float distance = length(viewer - knockout.point);
+    if (!finite(knockout.point) || !finite(viewer) || !std::isfinite(pixelAngle) || pixelAngle <= 0 ||
+        !std::isfinite(knockout.age) || knockout.age < 0 || knockout.age >= KnockoutView::seconds ||
+        !(distance >= .15f && distance <= 60))
+        return;
+    // Level and upright across the line of sight, as the bursts are.
+    const Vec3 view = (viewer - knockout.point) / distance;
+    Vec3 right = cross(Vec3{0, 1, 0}, view);
+    right = length(right) > .1f ? normalized(right) : perpendicular(view);
+    const Vec3 up = cross(view, right);
+    // It lands as a sound word does, holds three poses, and leaves in two.
+    const int pose = static_cast<int>(knockout.age / plate::pose);
+    Landing land = landing(knockout.age);
+    if (pose == 6)
+        land = {1.12f, 0, true};
+    else if (pose >= 7)
+        land.scale = .6f;
+    constexpr std::string_view text = "KO!";
+    const float height = .055f * std::clamp(distance / .7f, .8f, 2.5f);
+    const float width = textWidth(text, height) + Print::lean * height;
+    const float seed = knockout.point.x * 2.3f + knockout.point.y * 4.1f + knockout.point.z * 6.7f;
+    Print print(out, knockout.point, right, up, view, pixelAngle * distance);
+    print.place(land.scale, land.turn + 6 * plate::degree);
+    print.layers(height * .07f, 0, {}, 0, [&] {
+        print.star({}, width * .42f, width * .8f, 12, seed, plate::red);
+        print.star({}, width * .34f, width * .64f, 12, seed, plate::paper);
+    });
+    print.layers(height * .06f, height * .1f, plate::red, land.hit ? height * plate::misprint : 0,
+                 [&] { print.text(text, {width * -.5f, height * -.5f}, height, .2f, plate::yellow); });
 }
 void AimMarkerMotion::reset() {
     *this = {};
