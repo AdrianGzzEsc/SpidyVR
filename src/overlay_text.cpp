@@ -87,6 +87,34 @@ void bar(std::vector<Vertex>& out, Vec3 p, Vec3 q, Vec3 normal, float half, Vec3
         d{p - along + side, color};
     out.insert(out.end(), {a, b, c, a, c, d});
 }
+// A round stroke's two parts. Its length from p to q, with no ends of its
+// own, fading out across `soft` at either side...
+void stroke(std::vector<Vertex>& out, Vec3 p, Vec3 q, Vec3 normal, float half, Vec3 color, float soft) {
+    if (length(q - p) < half * 1e-3f)
+        return;
+    const Vec3 side = normalized(cross(normal, q - p));
+    const float across[4] = {-half - soft, -half, half, half + soft}, alpha[4] = {0, 1, 1, 0};
+    for (int i = soft > 0 ? 0 : 1; i < (soft > 0 ? 3 : 2); ++i) {
+        const Vertex a{p + side * across[i], color, alpha[i]}, b{q + side * across[i], color, alpha[i]},
+            c{q + side * across[i + 1], color, alpha[i + 1]}, d{p + side * across[i + 1], color, alpha[i + 1]};
+        out.insert(out.end(), {a, b, c, a, c, d});
+    }
+}
+// ...and the dot at each of its points, across unit axes a and b.
+void dot(std::vector<Vertex>& out, Vec3 centre, Vec3 a, Vec3 b, float radius, Vec3 color, float soft) {
+    constexpr int sides = 12;
+    constexpr float turn = 6.2831853f / sides;
+    for (int i = 0; i < sides; ++i) {
+        const Vec3 from = a * std::cos(turn * static_cast<float>(i)) + b * std::sin(turn * static_cast<float>(i));
+        const Vec3 to = a * std::cos(turn * static_cast<float>(i + 1)) + b * std::sin(turn * static_cast<float>(i + 1));
+        const Vertex p{centre + from * radius, color}, q{centre + to * radius, color};
+        out.insert(out.end(), {{centre, color}, p, q});
+        if (soft > 0) {
+            const Vertex r{centre + to * (radius + soft), color, 0}, s{centre + from * (radius + soft), color, 0};
+            out.insert(out.end(), {p, q, r, p, r, s});
+        }
+    }
+}
 } // namespace
 
 bool drawable(char c) {
@@ -121,6 +149,17 @@ void appendText(std::vector<Vertex>& out, std::string_view text, Vec3 origin, Ve
                 const char* end = run;
                 while (*end && *end != ' ')
                     ++end;
+                if (style.round) {
+                    const float soft = std::max(style.soft, 0.f);
+                    const Vec3 square = normalized(cross(normal, right));
+                    for (const char* p = run; p + 1 < end; p += 2) {
+                        dot(out, at(p), right, square, half, style.color, soft);
+                        if (p + 3 < end)
+                            stroke(out, at(p), at(p + 2), normal, half, style.color, soft);
+                    }
+                    run = *end ? end + 1 : end;
+                    continue;
+                }
                 for (const char* p = run; p + 3 < end; p += 2)
                     bar(out, at(p), at(p + 2), normal, half, style.color);
                 run = *end ? end + 1 : end;

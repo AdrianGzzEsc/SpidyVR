@@ -1085,6 +1085,10 @@ void App::optionsCard(ImVec2 size) {
     option("Weight", "How heavy you are while swinging and after letting go. 100% is real gravity.", S(150), [&] {
         stepCombo("##weight", kWeights, kWeightValues, static_cast<int>(std::size(kWeightValues)), &o.weight);
     });
+    option("Physical webs",
+           "Webs bend round edges instead of letting go, pulling a web's hand pulls you, and a web pays out while "
+           "you walk. Off: as before.",
+           S(40), [&] { changed |= toggle("##physical", &o.physicalWebs); });
     option("Snap turn", "How far a flick of the right stick turns you.", S(150), [&] {
         stepCombo("##snap", kSnapTurns, kSnapValues, static_cast<int>(std::size(kSnapValues)), &o.snapTurn);
     });
@@ -1118,6 +1122,13 @@ void App::optionsCard(ImVec2 size) {
     });
     option("Small game window", "Saves GPU time while you play in VR.", S(40),
            [&] { changed |= toggle("##small", &o.smallWindow); });
+    option("Game's depth of field",
+           "Off: VR turns the game's Depth of Field off while it runs (its blur is not where you look). On: your "
+           "game setting stays.",
+           S(40), [&] { changed |= toggle("##dof", &o.gameDepthOfField); });
+    option("Game's sharpening",
+           "Off: VR sets the game's Sharpness to its lowest while it runs. On: your game setting stays.", S(40),
+           [&] { changed |= toggle("##sharpen", &o.gameSharpening); });
     option("Normal camera on the monitor", "Off: the monitor shows your left eye.", S(40),
            [&] { changed |= toggle("##stock", &o.stockMonitorView); });
     option("Monitor frame rate",
@@ -1337,7 +1348,9 @@ void App::controls(ImVec2 origin, ImVec2 size) {
          {{"Squeeze a grip", "Shoot that hand's web where the controller points; hold to swing"},
           {"Release the grip", "Let go"},
           {"Trigger", "Reel in while the web is attached"},
-          {"Pull the hand sharply", "Zip toward the web's anchor"}}},
+          {"Pull the hand sharply", "Zip toward the web's anchor"},
+          {"Pull the hand in", "The web is a rope in your hand: you go where you pull it"},
+          {"A corner in the way", "The web bends round it and holds; swing back and it lies straight again"}}},
         {"GRABBING",
          {{"Grip, aimed at a prop or thug", "Catch it with your web"},
           {"Trigger", "Reel it in"},
@@ -1351,20 +1364,35 @@ void App::controls(ImVec2 origin, ImVec2 size) {
           {"Punch along your web at the thug it holds", "The same: you go to him. A sharp pull still yanks him to you"},
           {"Uppercut", "Lifts him into the air. Strike up after him: you hang beside him while your blows land"},
           {"Punch down at a thug in the air", "Slams him into the ground"},
-          {"Blows in a row", "Count up (X2, X3...): each hits harder, and every fifth is a finisher that sends him "
-                             "flying"}}},
+          {"Blows in a row", "Count up (X2, X3...): each hits harder, and the fifth is a finisher that sends him "
+                             "flying, if you throw it the way its arrow points"},
+          {"A ring over a thug", "Your next punch goes to him and to nobody else: the one you look at, up to 10 m "
+                                 "away. Hit him and the ring locks on (four ticks) until he is down"},
+          {"Change target", "Look squarely at another enemy for a third of a second"},
+          {"KO!", "A thug your blow knocked out: the ring is free, look at the next one"},
+          {"An arrow into the ring", "A called blow, from your second blow on. It comes in from the side your fist "
+                                     "comes from: swing a hook from that side, an uppercut from below or a blow "
+                                     "down from above, at arm's reach or at the marked thug across the room. It hits "
+                                     "harder and throws him that way; the yellow arrow into a jagged red ring calls "
+                                     "the finisher"},
+          {"Yank a thug while you are in the air", "He flies to you and floats in front of you; time slows as he "
+                                                   "arrives and you hang there. Hit him"},
+          {"Slow motion by itself", "Time slows for a moment at a finisher, a called blow, a thug who arrives in "
+                                    "front of you in the air, and a perfect dodge"}}},
         {"MOVING",
          {{"Left stick", "Walk and run"},
-          {"A", "Jump"},
+          {"A", "Jump. Hold it on the ground to charge a leap and let go: the longer you hold, the higher; with "
+                "the left stick, forward too"},
           {"B", "Dodge, the way the left stick points: the game's B"},
           {"Y", "Interact with what you look at: the game's Y (backpacks, doors, prompts); web strike in a fight. "
                 "Hold it and you step up to the thing, until the game takes it"},
           {"Click the right stick", "The game's LB + RB: pull a door or a grate where the game shows the two"},
           {"Right stick down", "Heal: the game's D-pad down. Push it right down and hold it a moment"},
           {"Right stick up", "The game's LT + RT: zip to a point, enter a vent, where the game shows the two"},
-          {"Menu button", "Pause; VR settings are in Settings > SPIDY VR"},
-          {"X", "Game menu: map, suits, skills"},
-          {"Click both sticks", "Switch between VR and a flat game screen"}}},
+          {"Hand to your temple, trigger", "Scan your surroundings: the game's R3"},
+          {"Menu button", "Pause; VR settings are in Settings > SPIDY VR, and VIEW there switches between VR "
+                          "and a flat game screen"},
+          {"X", "Game menu: map, suits, skills"}}},
         {"MENUS AND CUTSCENES",
          {{"Left stick", "Move through menus (they show on a screen in the headset)"},
           {"A  /  B", "Select  /  Back"},

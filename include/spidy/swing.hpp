@@ -30,6 +30,10 @@ struct SwingConfig {
     float reelSpeed = 8, maxSpeed = 65, airAcceleration = 2, groundAcceleration = 24;
     float yankSpeed = 1.3f, yankDistance = .14f, yankWindow = .25f, zipMultiplier = 3.5f, maxZipImpulse = 12;
     float jumpSpeed = 6, pointLaunchWindow = .25f, zipLandingWindow = 1.2f;
+    // A charged leap from the ground (Input::leap): up at leapUp for the
+    // least charge and leapUpFull for a full one (4 and 11.5 m high at real
+    // gravity), and along the stick at up to leapForward.
+    float leapUp = 9, leapUpFull = 15, leapForward = 12;
     float fixedStep = 1.0f / 120.0f;
     // A held web lets go only when something stays between the body and the
     // anchor this long. Hits this close to the anchor (or a tenth of the rope,
@@ -72,7 +76,26 @@ struct SwingConfig {
     // above the body too. In the air the stick takes a wall within mountReach
     // the same way, with no speed into it.
     float mountReach = 1.3f, mountSeconds = .1f, mountHold = .5f, mountHeight = 1.2f;
+    // Physical webs: a web is a rope (the VR settings' PHYSICAL WEBS).
+    // - It bends round the edge that comes between the body and its end
+    //   instead of letting go there, round maxBends edges at most, and lies
+    //   straight again when the body swings back. Until October 12 a wall in
+    //   the way for obstructionTime cut the web off. A bend sits bendOut out
+    //   of its edge, and a hit within bendClearance of it is that edge again.
+    //   The rope beyond a bend is at least bendRope long.
+    // - Its length is measured to the hand that holds it, not to the body: a
+    //   taut web keeps its length whatever the arm does, and a hand pulled
+    //   back pulls the body after it, as fast as it moved (maxHandSpeed at
+    //   most). The hand is where the grip is from the head, handHeight above
+    //   the body's centre.
+    // - payOut(): it grows while the game walks the body away from it.
+    //   Until October 12 it kept the length it was shot with, and snapped a
+    //   body that had walked on back by all of that once it left the ground.
+    bool physical = false;
+    float bendOut = .06f, bendClearance = .35f, bendRope = .5f, handHeight = .6f, maxHandSpeed = 8;
 };
+// The edges one web bends round at most (SwingConfig::physical).
+constexpr int maxBends = 6;
 struct HandInput {
     Pose aim{};                // world space, -Z forward
     Vec3 gripRelativeToHead{}; // tracking meters, excludes artificial travel
@@ -89,6 +112,13 @@ struct Input {
     bool focused = true, jump{};
     // A flip's tilt of the tracking space (Rig::tilt), the identity while level.
     Quat tilt{};
+    // A charged leap let go of: its charge, above 0 up to 1, for as long as
+    // the caller holds it out (it counts once, as it appears). The swing's
+    // own Charge Jump: the game's is a skill a save may lack.
+    float leap{};
+    // Where the head looks (world, unit; zero: unknown): the enemy a punch
+    // would go to is the one looked at (game_punch).
+    Vec3 look{};
 };
 // The tracking space's orientation in the world (Rig::orientation): hand
 // motion relative to the head turns into the world with it.
@@ -106,12 +136,28 @@ struct MotionIntent {
 // The longest step predictNativeStep predicts. A longer one counts as this
 // long: the body goes less far in it, and keeps its webs and its flight.
 constexpr float longestNativeStep = .1f;
+// An edge a web bends round (SwingConfig::physical).
+struct Bend {
+    Vec3 from{}; // what the rope hung from before: the web's end, or the bend before
+    Vec3 out{};  // out of the edge, unit: the rope lies on this side of it
+    float span{}; // the rope between `from` and this bend
+};
 struct Web {
     bool attached{};
+    // What the body hangs from: the web's end, or the nearest of its bends.
     Vec3 anchor{};
     std::uint64_t surface{};
+    // length: the rope from `anchor` on (to the body, or with physical webs
+    // to the hand).
     float length{}, tension{};
     bool airAnchor{};
+    // The edges it bends round, from its end on; `anchor` is the last one.
+    std::array<Bend, maxBends> bends{};
+    int bent{};
+    // Where the web sticks.
+    Vec3 end() const {
+        return bent ? bends[0].from : anchor;
+    }
 };
 // What a web shot along an aim would do (Swing::shot): the web it would
 // attach, or nothing when it would miss; and the first surface its ray met,
@@ -139,6 +185,9 @@ enum class EventKind {
     WallOn,   // the body came onto a wall; strength: how hard it came into it
     WallOff,  // it left the wall, or the wall ended
     WallJump, // it jumped off the wall
+    Wrap,     // a web bent round an edge
+    Unwrap,   // it came off its last one
+    Leap,     // a charged leap left the ground; strength: its charge
 };
 struct Event {
     EventKind kind;
@@ -178,6 +227,15 @@ class Swing {
     // Whether a body in the air stays on the walls it comes into from now on
     // (SwingConfig's walls); off, it leaves the one it is on.
     void allowWalls(bool allowed);
+    // Whether webs are ropes from now on (SwingConfig::physical). Off, a web
+    // that bends round an edge hangs from that edge as if it had stuck there.
+    void allowPhysical(bool allowed);
+    // The body, at `position`, stands or moves some other way than this
+    // swing moves it (the game walks it): each physical web is long enough
+    // to reach it with `slack` to spare, so an arm that moves does not lift a
+    // standing body off the ground; a winch, a zip or a step off an edge
+    // does, as before. Before the prediction of such a step.
+    void payOut(Vec3 position, float slack);
     // Off the wall at once, with no jump (the caller lost track of the body).
     // releaseAll() keeps the wall: the body stays on it without input.
     void leaveWall();
@@ -230,6 +288,9 @@ class Swing {
         Vec3 previous{};
         float pullDistance{}, pullTime{}, obstructed{};
         float winch{}; // how fast this hand's rope shortened in the last step
+        // Physical webs: the hand from the body's centre, in the world, and
+        // how fast it moved there in the latest input sample.
+        Vec3 offset{}, rate{};
     };
     void inputs(float dt, const Input&, const WorldQueries&);
     void step(float dt, const Input&, const WorldQueries&, const World* collision);
@@ -245,8 +306,18 @@ class Swing {
     // the wall as the step began.
     void holdWall(float dt, float before, const World* collision);
     void release(int hand, EventKind reason = EventKind::Release);
-    // Whether a hit on the line from `from` to `anchor` is a real wall between them.
-    bool blocks(const RayHit& hit, Vec3 from, Vec3 anchor) const;
+    // Whether a hit on the line from `from` to `anchor` is a real wall between
+    // them; `bend`: the anchor is an edge the web bends round.
+    bool blocks(const RayHit& hit, Vec3 from, Vec3 anchor, bool bend = false) const;
+    // What hand `i`'s rope holds the body's centre to: its web's anchor, less
+    // the hand's offset with physical webs.
+    Vec3 hold(int i) const;
+    // The line from the body to web `i`'s anchor met `first`: bends the web
+    // round the edge between there and `before`, where the body was a step
+    // ago with the line clear. False when no such edge is found.
+    bool wrap(int i, Vec3 before, const RayHit& first, const WorldQueries&);
+    // Takes web `i` off its last bend once the rope lies free of that edge.
+    void unwrap(int i, const WorldQueries&);
     // Rope lengths after winding each hand's rope in at its rate for a time,
     // which may be negative, within what the ropes and their anchors allow.
     std::array<float, 2> reeled(std::array<float, 2> rates, float seconds) const;
@@ -262,6 +333,9 @@ class Swing {
     float sinceZip_ = 100, sinceLanding_ = 100, zipSpeed_{};
     Vec3 zipDirection_{};
     bool jumpHeld_{}, jumpQueued_{};
+    // A leap's charge waiting for the next step, and whether one is held out.
+    float leapQueued_{};
+    bool leapHeld_{};
     WallHold wall_{};
     // Time the wall's ray has missed, time since a wall jump, and what is
     // left of the push over a wall's top edge, against crestNormal_.
@@ -277,5 +351,8 @@ class Swing {
     RayHit mountWall_{};
     float mount_{}, mountLeft_{};
     bool mounting_{}, offered_{}, mountOffered_{};
+    // The step the input sample in hand is for (a hand's rate is no faster
+    // than its travel over that step).
+    float stepSeconds_{};
 };
 } // namespace spidy

@@ -1,6 +1,334 @@
 # Validation — 2026-10-12
 
-## No hand takes a body; web balls web what the game webs up — current build, not tried in the headset
+## One enemy at a time, called strikes, KO — current build, not tried in the headset
+
+The user, after a session with the build below (15:42 to 15:56,
+`C:\Spidy-0.2.12\reports\game-vr-20261012-154237.json`; he plays from
+`C:\Spidy-0.2.12` since 15:41, a copy of `dist\Spidy-0.2.12`, its modules
+identical to that build's): "i had a looot of accidetal targeting and
+chaining of enemies where i just wanted to finish one. also its not clear
+how directional strikes work or they dont register properly since swinging
+from that direction doesnt do anything", and: "maybe finishing an enemy need
+some cue since its not clear when they're dead (maybe a light slow motion or
+visual)".
+
+**The session's fight** (302 to 631 s; `strike_samples`, one row per strike
+opened or ended and per blow):
+
+| | |
+| --- | --- |
+| Blows | 113: 88 by web strike, 25 by a fist at arm's reach |
+| Strikes opened / landed / missed | 96 / 88 / 8, at 64 different thugs (at most 4 at one, 38 thugs once) |
+| Strikes from 4 m or more / 7 m or more | 44 / 22 |
+| Strikes within 1.5 s of the blow before | 51: 16 at the thug that blow was on, 24 at another (1.7 to 9.9 m off, median 5.6), 11 after a fist's punch |
+| Of those 24, the ring on the thug flown to as it opened | 18 |
+| All strikes: the ring on another thug / on nobody as it opened | 12 / 3 of 93 |
+| 474 to 488 s | 14 strikes at 9 thugs, from 2.1 to 9.9 m, 6 to 10 enemies in the fight |
+| Calls / answered / finishers | 27 / 2 / 1 |
+| Blows landed while a call stood (the flow at 2 or more) | 58: 42 strikes (no strike could answer), 16 fists (2 answered, 14 not: the module's own count) |
+| Blows with the finisher called and the count at 4 | 32, of them 29 strikes |
+| The 23 fists' blows sampled, share of their motion toward him | 0.71 to 1.00 in all but a slam straight down; across him at most 0.66 |
+
+So the mark did not hold (it went to the enemy nearest the line of sight
+each sample, with 0.04 of a cosine's stickiness), the strike did not follow
+it (it took the enemy the fist's motion pointed at best within 37 degrees
+and 10 m), and a strike could answer no call. Whether the 16 fists under a
+call were meant as hooks and judged too strictly, or were jabs, the report
+does not say: their direction is the fist's as it lands, and the plain
+punches without a call look the same.
+
+Also in that report, on what the fifth build left open: three "Request load
+save type -1, control 128" (15:47:18, 15:53:50, 15:55:24) with no crash and
+no minidump, the game closed by itself at 15:56. `steam_guard` is not in the
+report (the path for a game that closes by itself left it and `ropes` out;
+fixed here), so the guard's counts for that session are not known. Yanks
+51, catches 9; moments: blow 2, called 2, air pull 9, perfect dodge 1;
+charged leaps 2; scans 3.
+
+**What changed.** `Lock` (web_strike.hpp): the look's mark as before; a
+blow, a strike's opening or a web's hold makes it a lock, which holds until
+he is out of the fight, 4 s pass with no blow at him, or the player looks
+within 20 degrees of another for 0.3 s with the locked one more than 30
+degrees aside. `WebStrike::open` takes a `StrikeWish`: with an enemy marked
+the strike is his alone, from a fist thrown within 60 degrees of him, or
+swung within 60 degrees of the called way with at least 0.15 of its motion
+toward him (such a swing need not go out from the body); a swing that would
+have opened one at another enemy is counted (`passed_over`); with nobody
+marked and the look known, no strike opens. A strike's
+blow is judged against the call by the fist that opened it and, when it
+answers, delivered along that fist's way. An enemy struck within 3 s who is
+up no longer (`game_targets::up`: out of hit points, or in one of the game's
+down states) is a knockout: `Strikes` version 3 carries it with `locked`, `swung` and
+`strike_called`; the headset letters "KO!" (`appendKnockout`), pulses both
+hands (0.8 for 0.09 s) and starts `Moment::knockout` (time at 0.55 for
+0.2 s, in 0.07 s and out 0.35 s, no ripple). `appendCue`: a look's ring is
+plain and thinner, a lock's has the ticks; the arrow runs from 1.3 radii
+outside his middle, on the side the fist comes from, to 0.3 past it.
+
+**Seen.** `tools\preview-marks.ps1 -Scale 6` over the same two captures: the
+looked-at ring, the locked ring, the four calls and the finisher's with the
+arrow coming in from outside, and the knockout's five poses. Nothing else
+of this can be seen without a fight.
+
+**Tests.** 283/283 core checks. New: the lock (a look marks and the mark
+follows; a blow locks; a glance of 0.22 s and looking away for a second
+take nothing; 0.33 s squarely at another 37 degrees aside moves it; two
+thugs 14 degrees apart never trade it; a thug gone frees it at once; 4 s
+idle; one beyond 10 m is no look's mark but stays locked), the strike's
+wish (unmarked the fist picks as ever; marked, a fist at another flies
+nowhere and is counted once a swing; a fist 47 degrees off the marked thug
+goes to him though it points better at another; none with him at arm's
+length; a hook the called way opens one, and not unmarked, uncalled, the
+other way or drawn back; an uppercut and a blow down; the opening fist's
+way answers the call), the knockout's mark and its lighter moment. The
+mark's test follows the arrow's new place. Launcher tests and 112 Python
+checks pass (the strike snapshot at version 3, 328 bytes).
+
+**Not tried in the headset: all of it, and not in the game without one
+either** (no probe was run: the lock, the knockout watch and version 3 of
+the strikes' record have only compiled and passed their unit tests). Open:
+whether `up` calls every knockout and no false one (a live thug the game
+puts in a ragdoll state would read as one); whether 0.3 s is the right
+dwell in a crowd; false strikes from a wide swing while a call stands.
+
+## The combat marks, printed — preceding build, tried in the headset (15:42)
+
+The user: "lets make our custom combat indicators look better and slicker and
+more aligned with this while not being too over the top", with the style
+system of Spidy's videos (its tokens: ink `#0b0a14`, paper `#f7f5ee`, red
+`#e3262f`, yellow `#ffe14d`, cyan `#12d6ff`, magenta `#ff2e93`; keylines and
+hard drops; the misprint, cyan to the left and magenta to the right, wide on
+the pose a graphic lands; twelve held poses a second; a graphic lands in
+three poses, 30%, 116% and 95% of its size).
+
+**What changed.** `appendCue` and `appendImpact` (`src/web_visual.cpp`) draw
+through `Print`: each shape once per plate (the misprint's ghosts when it
+has them, the drop, the ink keyline, the colours), its edges a pixel soft.
+The marks' inputs (`CueView`, `ImpactView`), when they show and what they
+mean are as they were. Sizes: the ring's radius 0.10 of the reach factor
+(was 0.13; the finisher's 0.13, was 0.17), the count's height 0.042 (was
+0.05; a finisher's 0.06, was 0.075) and at most 2.5 times that far off
+(was 3), a burst's star three quarters of the old ring's reach and a
+finisher's six tenths (a filled star the old ring's size filled the view at
+arm's length: seen in the first sheets and cut down).
+
+**Seen** (`tools\preview-marks.ps1 -Scale 6`, new: the overlay's own vertices
+drawn one sample a pixel, source-alpha blended in linear light, over an eye
+capture enlarged six times, to that session's eye images of 3072 x 3264,
+about 1410 pixels a unit of tangent). Over two captures of the 14:06
+session, `game-vr-20261012-140623-eyes\0013-view.png` (a thug standing
+2.6 m off, his chest at 337,262) and `0027-view.png` (one at arm's length,
+300,400), and with the first also over the sunlit wall behind him:
+
+| | Before | Now |
+| --- | --- | --- |
+| Target | White ring at 60%, four ticks across it: a scope | Thin paper ring keyed in ink, four ticks in from it, 12 degrees off level |
+| Call | White block arrow on a dark disc at 45%, in a cyan ring; it covered his torso at 2.6 m | Paper arrow in a marker's stroke on a cyan drop, cyan ring over an ink track; he shows through |
+| Finisher's call | The same in gold | Yellow arrow on a red drop in a red zigzag: told apart by shape |
+| Landing | Eased from 135% over 0.12 s, faded in | Three held poses (30%, 116%, 95%), cyan and magenta ghosts on the first two |
+| Jab | Pale flash, ring and rays, fading | Yellow star around paper, two poses; a pose of paper lines |
+| Called blow | Cyan ring and a second ring | Red star around yellow, a cyan ghost left and a magenta one right |
+| Count | Thin pale strokes with hard ends, rising and fading | Yellow round strokes keyed in ink, 8 degrees off level; a red drop for the finisher's |
+
+On the sunlit wall every mark keeps its outline (the paper ring is the one
+that needs it: without the keyline it is pale on pale). Enlarged five
+times, edges are smooth and no plate shows past a keyline. One fault found
+this way and fixed: where a drop's edge ran along its shape's, a hairline of
+the drop's colour showed outside the keyline; what lies under a keyline is
+now a pixel smaller than it.
+
+**Not seen: the marks in motion, in stereo, or in a fight.** Whether twelve
+poses a second reads as print or as stutter in a headset, whether the
+arrow's boil is noticed at all, and whether the misprint's edges read as
+print or as a lens's colour fringe are the headset's to answer. The marks
+are fixed in the world and drawn alike for both eyes, so nothing of this
+moves an eye's image against the other's.
+
+**Tests.** 280/280 core checks. Rewritten for the look: the mark over a
+thug (every colour one of the plates; an ink keyline on every mark; the
+arrow's barbs ahead of its middle for each of the four ways; the ring runs
+down in notches; the finisher's ring goes in and out where a call's is
+round; a call's three landing poses and the poses its misprint is on; a
+pose is held; the arrow boils by 1 to 6% of the ring's radius and the ring
+keeps still; the plain ring is paper alone, a hand wide, clear of his
+middle), and the burst (a jab's star yellow around paper and growing; its
+lines clear of the middle; a pose held a twelfth of a second; a harder
+blow's red around yellow with two poses of lines; a finisher's wider with a
+third star and three poses of lines; the count above the blow from the
+second blow on, popping in, holding, leaving in two poses, never fading).
+New: round lettering (a dot at each of a stroke's points, a stroke between,
+edges that fade; `TextStyle::round`, which nothing else uses). Launcher
+tests and 112 Python checks pass.
+
+## The crash on Quit, the target ring, the leap, the camera's pitch, the air pull — preceding build, not tried in the headset
+
+The user, after three sessions with the build below (13:59, 14:03 and 14:06;
+`dist/Spidy-0.2.12/reports/game-vr-20261012-135905.json`, `-140346`,
+`-140623`): "game crashes on quit to menu, something is wonky with the
+target indicator - enemies can be targeted for punch but no indicator, hold
+jump jumps like normal, there is a closed vent i need to go through and cant
+interact with, the slowmo trigger for in air pulls feel bad - i dont get
+near the enemy like ever, i intened for it be like a pull to me in the air
+and have slowmo when they're close enough to punch in the air (like dmc air
+combat)".
+
+**The sessions.**
+
+| | 13:59 | 14:03 | 14:06 |
+| --- | --- | --- | --- |
+| Ended | "Request load save type -1, control 128" (Quit), then `[Crash] Unhandled exception at address 0x00000000c26b53ed` 0.2 s later, in each | | |
+| Blows / web strikes' / calls / answered | 0 | 0 | 24 / 13 / 17 / 0; flow at 4 from 28 s to 34 s and from 46 s to 56 s, no finisher |
+| Yanks / catches | 0 | 0 | 16 / 0; every yank let go 0.2-0.5 s later, from 2.6 to 40 m |
+| Moments | 0 | 0 | `air_pull` 7 |
+| Held A (RT + A sent) | 2 | 0 | 1 |
+| Scans (hand at temple) | 12 | 0 | 0 |
+| Y presses in play; LB + RB; LT + RT | 3 (167.9, 169.6, 209.7 s, on a roof by a skylight); never; never | | |
+
+**The crash.** The same record in twelve game logs from October 11, 18:57 on,
+every one a VR session ended by Quit; ten earlier quits (October 10 and 11)
+have none. The minidumps of 22:22 (October 11), 11:42 and 14:09 are alike:
+access violation reading `0x7ff600000000` in `steamclient64.dll+0x11453ed`
+(its memcpy), called from `CUtlBuffer::Put(src, 0x88)` (`+0xce69b0`), under
+the IPC stub at `+0x75b1c0`, whose return address on the stack is
+`Spider-Man.exe+0x2aa6400`. That is the game's call `mov rcx,[rax]; mov
+rax,[rcx]; call [rax+68h]` at `2aa63f7`: slot 13 of the interface its
+context at `5d69010` holds, with `rdx` a buffer, `r8d` 0x400 and `r9` a
+count: `ISteamUser::GetAuthSessionTicket`. The stub writes its fifth
+argument (stack, `[rsp+0xc0]` in its frame) as 0x88 bytes: a
+`SteamNetworkingIdentity`. The game sets no fifth argument on this path
+(`2aa6317`: with its worker thread made already it jumps to `2aa63d0`); on
+the first path `[rsp+20h]` is zeroed at `2aa63c5` for another call. So the
+identity is the game's stale stack: `0x00007ff6` over a zeroed low half.
+
+Quits to the main menu in the game without a headset, October 12, each in a
+freshly started game loaded with the virtual controller (the input bridge
+and the render memory module in, as for every probe):
+
+| With | Result |
+| --- | --- |
+| nothing more | main menu, alive |
+| the settings tab's hooks (`SpidyMenuStart`) | alive |
+| the eye views and the stereo game screen running (`probe_game_screen.py --stereo 0.7 play wait:40`) | alive |
+| the ray, swing and movement modules, after `probe_air_handoff.py` | alive |
+| the guard in, twice in a row | alive; guard: 0 calls |
+| the guard in, after 170 s of play | alive; guard: 0 calls |
+
+So without the VR worker the game does not ask for a new ticket on its way
+to the menu at all (the guard counted none in three quits), and why a VR
+session makes it ask is **not found**. What the guard does when it is asked
+is therefore not seen: `game_steam.cpp` hooks the function (found through
+the game's own interface pointer; in `steamclient64.dll`, checked), and a
+call that returns to `2aa6400` gets a null identity. The session report's
+`steam_guard` has `calls`, `from_game`, `cleared` and `last_identity`.
+
+**Charge Jump and the camera** (the build below measured RT + A; this one the
+right stick): the game's follow camera at rest is pitched 10 degrees down;
+`thumbRY` +1 for 0.6 s took it from -10 to +34 degrees, -1 for 1.5 s to -85
+(its stop), +1 for 2 s to +68 (its stop), +0.6 for 1 s moved it 3; it stays
+where it is left for 3 s at least; `thumbRX` does not pitch it. Sign and
+curve are the yaw's (`CameraLook`), so `CameraPitch` uses its constants.
+
+**Tests.** 279/279 core checks (new: ChargeJump as a charged leap; the
+swing's leap and command version 4; CameraPitch; the flow's call that stands
+until answered, `Flow::left`, the longer hang; the plain ring), the
+launcher's, 112 Python checks.
+
+**Not tried.**
+- The snatch (`game_grab.cpp`): it steers a flung thug with the velocity the
+  web's own pulls use (`native_bodies::fling`), from the player's position
+  and velocity at each input sample. Whether he arrives, how he looks
+  floating, and whether the kinetic blow that knocks him into the flight
+  (`launchInto`) hurts more than a yank should: the headset.
+- The leap in the game: `SwingTakeoff` takes it off the ground as it takes a
+  point launch (the event is counted as one), which sessions have used since
+  October 5; the leap's own numbers are from the unit test only.
+- The mark: it needs `Input::look` (command version 4), which only the VR
+  worker sends.
+- The vent itself: that the game shows a prompt there once its camera looks
+  down is the hypothesis, from the door of October 12's second build.
+
+**The saves.** The probes ran in Profile 1, the user's own (the roof by the
+auction house is "Don't Touch the Art", that profile's mission). During the
+swing probe the game was suspended while the pad walked the pause menu, and
+A landed on MANUAL SAVE: `slot0-s-manual-5.save` appeared (14:32), and the
+game autosaved `slot0-s.save` twice more (14:53). With the game closed,
+`slot0-s.save` was put back from the 14:20 backup, the manual save moved to
+`reports/backups/saves-20261012-quit-crash/made-by-the-tests/`, and the
+folder compared equal to the backup.
+
+## Called blows, moments, ropes, Charge Jump, the scan — preceding build
+
+The user, October 12, in one message: slow motion sprinkled into play ("on
+attacks set, when pulling an enemy while in the air, on perfect dodges etc"),
+"visuals cues and system to and required directional o specific attacks ...
+(like in batman arkham shadow)", "holding jump execute Charge Jump", a scan
+("ingame r3") by "putting my hand to my temple pressing trigger", no "two
+triggers to go to virtual screen mode" but an option in the pause menu, webs
+"physical, less stretchy" that "curle around edges (instead of cutting them
+off)", "the default weight to 100%", and "disable depth of field sharpening
+(allow users to override from settings)". What each became is in
+[CHANGELOG.md](CHANGELOG.md).
+
+**Tests.** 277/277 core checks (11 new: a web bends round a building's corner
+and comes off it again, and without PHYSICAL WEBS the corner cuts it; a
+pulled hand pulls the body 1:1 and gives it its speed, a pushed one pushes
+nobody; a snap turn throws nobody; pay-out; ChargeJump; TemplePress; Cues;
+called deliveries; SlowMoments; the arrow), the launcher's, and 112 Python
+checks in six suites.
+
+**In the game, no headset** (Profile 1, "Don't Touch the Art", level 5; saves
+backed up to `reports/backups/saves-20261012-charge-jump/`, none of the slots
+changed, the game's `-userprefs.save` put back).
+
+| Check | Result |
+| --- | --- |
+| A tap of A on the virtual controller (0.1 s), three times | off the ground 0.07-0.09 s after A went down; 2.2-2.4 m up |
+| RT + A down together for 1.2 s, RT 60 ms longer | off the ground 0.08 s after A went down, 2.9 m up; with RT still down in the air the game began its own swing (17 m away, 4.2 m lower, 5 s later) |
+| RT + A together for 0.4 s | the same jump, 2.1 m; no swing (1.5 m of travel) |
+| RT down 0.2 s before A, then both for 1.2 s | off the ground 0.08 s after A; the game's swing again (17 m) |
+| A alone held 1.5 s; LT + A; LT led | a jump as A went down each time, 1.95 m, no travel |
+| LT + RT led, then A | the game's zip to a point: 9.2 m up, 37 m away |
+| RT alone for 1 s on the ground | nothing |
+| The game's Skills > Webslinger > Charge Jump | "Hold RT + A while running or standing to build up charge, then release A for a huge leap." LOCKED: no Webslinger skill is bought on this save (0%), three skill points, four skills to buy on the way to it |
+| R3 (`rs`) held 0.3 s on the street | the mission's objective panel came up (the scan); nothing else changed |
+| `probe_air_handoff.py` with this build's modules: jump, web up, reel, input unfocused 0.3 s, release, game suspended 0.25 s, coast 2 s, pause 3 s | web attached and kept, 0 airborne steps without Spidy's command in every phase, largest change of vertical speed 0.13 m/s, landed; swing and ray stop 0, every entry restored |
+| `SpidyRopeData` and `SpidyStrikeData` (version 2) read from that game afterwards | physical on, 0 wraps, 0 cut, 0 steps paid out (the web was shot in the air, over open street); no blows, no call |
+
+So the game's Charge Jump is RT + A by its own words, and a hero without the
+skill jumps as A goes down, with RT before it or not. `ChargeJump` therefore
+takes two such holds in a row as "no skill" and passes A straight through
+from then on (`missing()`), and lets RT go the moment the hero is off the
+ground: a second of RT in the air is the game's swing.
+
+**Not found, not tried.**
+- The charge itself: no save here has the skill, and I did not spend the
+  profile's skill points. Whether RT may come up 50 ms after A, as
+  `tailSeconds` has it, is untested.
+- The perfect dodge's signal. `SlowMoments`' dodge starts when the game's
+  own time scale (`game_time::telemetry().own`) drops below 0.9 within 0.7 s
+  of a B that went down with it above 0.95. That the game slows its time for
+  a perfect dodge is an assumption from its time system having a channel per
+  cause; nothing here measured it. The report's `slow_motion.moments
+  .perfect_dodge` counts them.
+- A web round an edge in the game. The unit test's building is a box; the
+  game's facades have sills and ledges, where `wrap()` may find several
+  edges in a row (six at most) or none (then the web lets go as before, and
+  `ropes.cut` counts it). The report's `ropes` has `wraps`, `unwraps`, `cut`
+  and `paid_out`.
+- Everything the XR worker does with these (game_xr.cpp runs only with a
+  headset): the arrow's place and size, the moments' look, the temple's
+  zone, the VIEW row's switch, the Charge Jump's haptics.
+- The game's Sharpness at 1: that it is the slider's lowest is from
+  DEVELOPMENT.md's note on this PC's stored values; that the eyes' image
+  changes with it is not measured.
+
+Headset check, in this order: (1) swing round a building's corner holding
+the web, and back; (2) hang from a web and pull your hand down; (3) walk off
+a roof holding a web shot from where you stood; (4) hit a thug twice and
+follow the arrows through to the gold one; (5) hand to temple, trigger; (6)
+pause, Settings > SPIDY VR > VIEW; (7) hold A on the ground.
+
+## No hand takes a body; web balls web what the game webs up — preceding build, not tried in the headset
 
 The user, October 12, after a session with the build below
 (`dist/Spidy-0.2.12/reports/game-vr-20261012-113823.json`, 225 s): "bodies

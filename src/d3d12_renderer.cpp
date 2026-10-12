@@ -364,7 +364,9 @@ void D3D12Renderer::renderViews(std::span<const ViewTarget> views, std::span<con
     const auto bytes = vertices.size_bytes() + translucent.size_bytes();
     if (bytes > capacity_) {
         vertices_.Reset();
-        capacity_ = std::max<std::size_t>(bytes, 1024 * 1024);
+        // Room from the start for a fight's printed marks (some 80,000
+        // vertices at their most), so the buffer is not made anew mid-fight.
+        capacity_ = std::max<std::size_t>(bytes + bytes / 2, 4 * 1024 * 1024);
         D3D12_RESOURCE_DESC d{};
         d.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
         d.Width = capacity_;

@@ -16,7 +16,6 @@
 #include "spidy/monitor_rate.hpp"
 #include "spidy/eye_snapshot.hpp"
 #include "spidy/vr_settings.hpp"
-#include "spidy/vr_shortcut.hpp"
 #include "spidy/web_visual.hpp"
 #include "spidy/web_pull.hpp"
 #include "spidy/web_grab.hpp"
@@ -722,6 +721,149 @@ int main() {
             for(const auto& e:swing.events())obstructed|=e.kind==EventKind::Obstructed;
         }
         check(obstructed&&!swing.webs()[0].attached,"lasting wall kept the web");
+    });
+    // Physical webs. A building 10 m square from the origin, and a web end in
+    // front of its z = 0 face: from beside its x = 10 face the line to that end
+    // crosses the building once the body is past the corner between the two.
+    struct Corner : Building {
+        Corner(){low={0,0,0};high={10,30,10};anchor={5,20,-4};}
+        std::optional<RayHit> raycast(Vec3 o,Vec3 d,float distance) const override {
+            const auto box=Building::raycast(o,d,distance),point=TestWorld::raycast(o,d,distance);
+            if(box&&point)return length(box->point-o)<length(point->point-o)?box:point;
+            return box?box:point;
+        }
+        bool exists(std::uint64_t id) const override {return id==1||id==7;}
+        // The left hand under the web's end, pointing up at it, its grip held.
+        Input held() const {
+            Input in;
+            in.hands[0]={{{anchor.x,0,anchor.z},{.70710678f,0,0,.70710678f}},{0,0,0},true,0,1};
+            return in;
+        }
+    };
+    const auto physical=[]{auto c=inert();c.physical=true;return c;};
+    test("a physical web bends round a building's corner and comes off it again", [physical] {
+        Corner w;Swing s(physical());const auto in=w.held();
+        Body body{{14,20,2},{-10,0,0},false};
+        auto intent=s.predictNativeStep(1.f/60,in,w,body);
+        check(s.webs()[0].attached&&!s.webs()[0].bent,"no web from beside the building");
+        const float shot=s.webs()[0].length;
+        bool wrapped{},cut{};
+        // On past the corner: the line to the web's end crosses the building.
+        for(int i=0;i<24&&!wrapped;++i) {
+            body={intent.target,{-10,0,0},false};
+            intent=s.predictNativeStep(1.f/60,in,w,body);
+            for(const auto& e:s.events()){wrapped|=e.kind==EventKind::Wrap;cut|=e.kind==EventKind::Obstructed;}
+        }
+        const auto& web=s.webs()[0];
+        check(wrapped&&!cut&&web.attached&&web.bent==1,"the web did not bend round the corner");
+        check(length(Vec3{web.anchor.x-10,0,web.anchor.z})<.2f&&web.anchor.x>10&&web.anchor.z<0,
+              "the bend is not just outside the corner's edge");
+        near(length(web.end()-w.anchor),0);
+        check(web.length<shot&&web.length+web.bends[0].span>=shot-.01f&&web.length+web.bends[0].span<shot+.3f,
+              "the rope changed its length as it bent");
+        // It holds the body from the corner now: flying on, the body goes round it.
+        const Vec3 bend=web.anchor;const float beyond=web.length;
+        float farthest{};
+        for(int i=0;i<90;++i) {
+            body={intent.target,intent.velocity,false};
+            intent=s.predictNativeStep(1.f/60,in,w,body);
+            for(const auto& e:s.events())cut|=e.kind==EventKind::Obstructed;
+            farthest=std::max(farthest,length(intent.target+Vec3{0,.6f,0}-bend));
+        }
+        check(!cut&&s.webs()[0].attached,"the web let go behind the corner");
+        check(farthest<beyond+.05f,"the body left the rope's reach round the corner");
+        // Back the way it came: the rope lies straight again, and as long as it was.
+        bool unwrapped{};
+        body={{11,20,2},{10,0,0},false};
+        for(int i=0;i<60&&!unwrapped;++i) {
+            intent=s.predictNativeStep(1.f/60,in,w,body);
+            for(const auto& e:s.events()){unwrapped|=e.kind==EventKind::Unwrap;cut|=e.kind==EventKind::Obstructed;}
+            body={intent.target,{10,0,0},false};
+        }
+        check(unwrapped&&!cut&&s.webs()[0].attached&&!s.webs()[0].bent,"the web stayed bent round a corner it left");
+        near(length(s.webs()[0].anchor-w.anchor),0);
+        check(s.webs()[0].length>=shot-.01f&&s.webs()[0].length<shot+.3f,"the straightened rope is not as long as it was");
+    });
+    test("without physical webs the corner cuts the web off, as before", [] {
+        Corner w;Swing s(inert());const auto in=w.held();
+        Body body{{14,20,2},{-10,0,0},false};
+        auto intent=s.predictNativeStep(1.f/60,in,w,body);
+        check(s.webs()[0].attached,"no web");
+        bool cut{},wrapped{};
+        for(int i=0;i<40;++i) {
+            body={intent.target,{-10,0,0},false};
+            intent=s.predictNativeStep(1.f/60,in,w,body);
+            for(const auto& e:s.events()){wrapped|=e.kind==EventKind::Wrap;cut|=e.kind==EventKind::Obstructed;}
+        }
+        check(cut&&!wrapped&&!s.webs()[0].attached,"the wall in the way kept the web");
+    });
+    test("a physical web is held by its hand: pulling the hand pulls the body", [physical] {
+        TestWorld w;Swing s(physical());auto in=aimed();in.hands[0].trigger=0;
+        Body body{{0,0,0},{},false};
+        auto intent=s.predictNativeStep(1.f/90,in,w,body);
+        check(s.webs()[0].attached,"no web");
+        // To the hand, 0.6 m above the body's centre.
+        near(s.webs()[0].length,19.4f,.001f);
+        // The hand comes down 0.3 m in a third of a second.
+        for(int i=0;i<30;++i) {
+            in.hands[0].gripRelativeToHead.y-=.01f;
+            body={intent.target,intent.velocity,false};
+            intent=s.predictNativeStep(1.f/90,in,w,body);
+        }
+        near(intent.target.y,.3f,.02f);
+        near(intent.velocity.y,.9f,.15f);
+        near(s.webs()[0].length,19.4f,.001f);
+        // Held still, the body keeps what the pull gave it, and the rope goes slack.
+        body={intent.target,intent.velocity,false};
+        intent=s.predictNativeStep(1.f/90,in,w,body);
+        near(intent.velocity.y,.9f,.15f);
+        // A hand pushed up at the anchor pushes nobody.
+        Swing still(physical());auto up=aimed();up.hands[0].trigger=0;
+        Body hanging{{0,0,0},{},false};
+        auto at=still.predictNativeStep(1.f/90,up,w,hanging);
+        for(int i=0;i<30;++i) {
+            up.hands[0].gripRelativeToHead.y+=.01f;
+            hanging={at.target,at.velocity,false};
+            at=still.predictNativeStep(1.f/90,up,w,hanging);
+        }
+        near(at.target.y,0,.001f);near(length(at.velocity),0,.001f);
+        // As before, the rope is the body's: the hand moves nothing.
+        Swing old(inert());auto same=aimed();same.hands[0].trigger=0;
+        Body other{{0,0,0},{},false};
+        auto kept=old.predictNativeStep(1.f/90,same,w,other);
+        near(old.webs()[0].length,20,.001f);
+        for(int i=0;i<30;++i) {
+            same.hands[0].gripRelativeToHead.y-=.01f;
+            other={kept.target,kept.velocity,false};
+            kept=old.predictNativeStep(1.f/90,same,w,other);
+        }
+        near(kept.target.y,0,.001f);
+    });
+    test("a snap turn carries a held rope's hand round no faster than a hand moves", [physical] {
+        TestWorld w;Swing s(physical());auto in=aimed();in.hands[0].trigger=0;
+        in.hands[0].gripRelativeToHead={0,-.3f,-.5f};
+        Body body{{0,0,0},{},false};
+        auto intent=s.predictNativeStep(1.f/90,in,w,body);
+        check(s.webs()[0].attached,"no web");
+        in.trackingYaw=1.5708f;
+        body={intent.target,intent.velocity,false};
+        intent=s.predictNativeStep(1.f/90,in,w,body);
+        check(length(intent.target)<.1f&&length(intent.velocity)<.01f,"a snap turn threw the body");
+    });
+    test("a physical web pays out while the game walks the body, and only then", [physical] {
+        TestWorld w;Swing s(physical());auto in=aimed();in.hands[0].trigger=0;
+        Body body{{0,0,0},{},true};
+        s.predictNativeStep(1.f/90,in,w,body);
+        check(s.webs()[0].attached,"no web");
+        s.payOut({0,0,0},.1f);
+        near(s.webs()[0].length,19.5f,.001f);
+        s.payOut({6,0,0},.1f);
+        near(s.webs()[0].length,std::hypot(19.4f,6.f)+.1f,.001f);
+        s.payOut({1,0,0},.1f);
+        near(s.webs()[0].length,std::hypot(19.4f,6.f)+.1f,.001f);
+        Swing old(inert());old.predictNativeStep(1.f/90,in,w,body);
+        old.payOut({6,0,0},.1f);
+        near(old.webs()[0].length,20,.001f);
     });
     test("a body that flies into a wall at an angle runs along it", [] {
         // The wall: x = 5, facing -x. The body's centre keeps 0.9 m off it.
@@ -1431,8 +1573,8 @@ int main() {
         Swing s(config);
         const Input none;
         const Body flying{{0,50,0},{},false};
-        near(config.gravity,7.848f);
-        near(s.predictNativeStep(.02f,none,w,flying).velocity.y,-7.848f*.02f);
+        near(config.gravity,9.81f);
+        near(s.predictNativeStep(.02f,none,w,flying).velocity.y,-9.81f*.02f);
         s.setGravity(vr_settings::gravity(150));
         near(s.config().gravity,14.715f);
         near(s.predictNativeStep(.02f,none,w,flying).velocity.y,-14.715f*.02f);
@@ -1663,12 +1805,13 @@ int main() {
         Body actual{{0, 0, 0}, {}, false};
         auto in = aimed();
         swing.predictNativeStep(.02f, in, world, actual);
-        near(swing.webs()[0].length, 20);
+        // To the hand that holds it, 0.6 m above the body's centre (physical webs).
+        near(swing.webs()[0].length, 19.4f);
         // Native movement/yank carried us ten metres toward the existing anchor.
         actual.position.y = 10;
         in.hands[0].trigger = 0;
         swing.predictNativeStep(.02f, in, world, actual);
-        near(swing.webs()[0].length, 20);
+        near(swing.webs()[0].length, 19.4f);
         in.hands[0].trigger = 1;
         const auto pull = swing.predictNativeStep(.02f, in, world, actual);
         check(pull.valid && pull.target.y > 10.1f && pull.target.y < 10.5f,
@@ -1699,7 +1842,7 @@ int main() {
                 actual.position = result.target;
                 actual.velocity = result.velocity;
                 check(length(actual.velocity) <= config.maxSpeed + .1f, "speed limit exceeded");
-                check(length(actual.position - world.anchor) <= swing.webs()[0].length + .01f,
+                check(length(actual.position + Vec3{0, .6f, 0} - world.anchor) <= swing.webs()[0].length + .01f,
                       "native swing escaped the rope");
             }
             check(length(actual.velocity) > 12, "native swing still feels capped at walking speed");
@@ -1992,7 +2135,7 @@ int main() {
             mover.dt = dt;
             const Vec3 observed = mover.run(swing, in, world); // checks that the prediction is valid
             check(swing.webs()[0].attached, "a long step let go of the web");
-            check(length(mover.position - world.anchor) < swing.webs()[0].length + .05f,
+            check(length(mover.position + Vec3{0, .6f, 0} - world.anchor) < swing.webs()[0].length + .05f,
                   "the body left its rope in a long step");
             roughest = std::max(roughest, length(observed - previous));
             lowest = std::min(lowest, observed.y);
@@ -3020,19 +3163,540 @@ int main() {
         // After a pause (a menu, the game screen) the next present goes out at once.
         check(monitorPresentDue(10'000'000, due, 66000, 30) && due == 10'000'000 + 2200,"at once after a pause");
     });
-    test("both thumbsticks toggle once and require full release after focus loss", [] {
-        VrShortcut chord;
-        check(!chord.update(true,true,true),"held startup buttons toggled");
-        check(!chord.update(true,false,false),"release toggled");
-        check(!chord.update(true,true,false),"one stick toggled");
-        check(chord.update(true,true,true),"both sticks failed to toggle");
-        for(int i=0;i<30;++i)check(!chord.update(true,true,true),"held chord repeated");
-        check(!chord.update(true,false,true),"partial release rearmed chord");
-        check(!chord.update(true,true,true),"partial release allowed another toggle");
-        chord.update(true,false,false);
-        check(chord.update(true,true,true),"second full press failed");
-        chord.update(false,false,false);
-        check(!chord.update(true,true,true),"focus recovery toggled held buttons");
+    test("A held on the ground charges a leap; a tap is the game's jump, made as A is let go", [] {
+        using game_pad::ChargeJump;
+        const float dt=1.f/90;
+        // A tap: nothing while it is down, then the game's A alone for a moment.
+        ChargeJump tap;
+        for(int i=0;i<8;++i){const auto k=tap.update(dt,true,true);check(!k.jump&&k.leap==0,"a tap reached the game before it was let go");}
+        int pulse{};
+        for(int i=0;i<30;++i){const auto k=tap.update(dt,false,true);check(k.leap==0,"a tap leapt");pulse+=k.jump;}
+        check(pulse>=6&&pulse<=10&&!tap.charges()&&!tap.leaps(),"a tap was not one short press of A");
+        // Held: it charges from tapSeconds on, the game gets no A, and letting go leaps with the charge.
+        ChargeJump held;
+        int waited{};
+        while(!held.charging()){const auto k=held.update(dt,true,true);check(!k.jump&&k.leap==0,"A reached the game while it waited");++waited;}
+        check(waited>=15&&waited<=18&&held.charges()==1,"a held A did not charge after a fifth of a second");
+        for(int i=0;i<36;++i){const auto k=held.update(dt,true,true);check(!k.jump&&k.leap==0,"the charge went to the game");}
+        near(held.charge(),.5f,.03f);
+        auto k=held.update(dt,false,true);
+        check(!k.jump&&!held.charging()&&held.leaps()==1,"letting go did not leap");
+        near(k.leap,.5f,.03f);
+        // The leap is held out for the swing to see, then over; the game never got an A.
+        int out{};
+        for(int i=0;i<40;++i){k=held.update(dt,false,true);check(!k.jump,"a jump after the leap");out+=k.leap>0;}
+        check(out>=11&&out<=15,"the leap was not held out for a moment");
+        // A full charge is 1, held as long as you like; the briefest one still leaps.
+        ChargeJump full;
+        for(int i=0;i<200;++i)full.update(dt,true,true);
+        near(full.charge(),1);
+        near(full.update(dt,false,true).leap,1);
+        ChargeJump brief;
+        while(!brief.charging())brief.update(dt,true,true);
+        near(brief.update(dt,false,true).leap,ChargeJump::leastCharge,.02f);
+        // Off the ground while it charges (an edge): no leap, and nothing until A is let go.
+        ChargeJump fell;
+        for(int i=0;i<30;++i)fell.update(dt,true,true);
+        check(fell.charging(),"no charge");
+        k=fell.update(dt,true,false);
+        check(!k.jump&&k.leap==0&&!fell.charging(),"a charge kept in the air");
+        for(int i=0;i<10;++i){k=fell.update(dt,true,false);check(!k.jump&&k.leap==0,"a held A came back in the air");}
+        check(fell.update(dt,false,true).leap==0&&!fell.leaps(),"a leap from a charge dropped in the air");
+        // A press that starts off the ground (a wall, a perch) is the game's A as it is held.
+        ChargeJump wall;
+        k=wall.update(dt,true,false);
+        check(k.jump&&k.leap==0,"a wall jump waited");
+        for(int i=0;i<40;++i){k=wall.update(dt,true,true);check(k.jump&&k.leap==0,"a jump from a wall turned into a charge");}
+        check(!wall.update(dt,false,true).jump&&!wall.charges(),"it stayed down");
+        // Off an edge before it is decided: the press is the game's A from there.
+        ChargeJump edge;
+        edge.update(dt,true,true);
+        k=edge.update(dt,true,false);
+        check(k.jump&&k.leap==0,"a press lost at an edge");
+    });
+    test("a charged leap takes the body off the ground: up by its charge, and along the stick", [] {
+        TestWorld w;w.enabled=false;
+        const Body standing{{0,0,0},{},true};
+        const auto leap=[&](float charge,Vec3 stick,Body from) {
+            Swing s(inert());Input in;in.leap=charge;in.move=stick;
+            const auto out=s.predictNativeStep(1.f/60,in,w,from);
+            bool leapt{};
+            for(const auto& e:s.events())leapt|=e.kind==EventKind::Leap;
+            return std::pair{out,leapt};
+        };
+        const auto [low,lowLeapt]=leap(.15f,{},standing);
+        check(lowLeapt,"no leap");
+        near(low.velocity.y,9.9f,.01f);near(std::hypot(low.velocity.x,low.velocity.z),0);
+        const auto [high,highLeapt]=leap(1,{},standing);
+        check(highLeapt,"no full leap");
+        near(high.velocity.y,15,.01f);
+        check(high.target.y>.2f,"the leap did not ask the body up");
+        const auto [far,farLeapt]=leap(1,{0,0,-1},standing);
+        check(farLeapt,"no leap forward");
+        near(far.velocity.z,-12,.01f);near(far.velocity.y,15,.01f);
+        check(!leap(1,{},{{0,5,0},{},false}).second,"a leap in the air");
+        // It counts once, however long it is held out; another needs it let go first.
+        Swing s(inert());Input in;in.leap=.5f;
+        s.predictNativeStep(1.f/60,in,w,standing);
+        int again{};
+        for(int i=0;i<10;++i){s.predictNativeStep(1.f/60,in,w,standing);for(const auto& e:s.events())again+=e.kind==EventKind::Leap;}
+        check(!again,"a leap held out leapt again");
+        in.leap=0;s.predictNativeStep(1.f/60,in,w,standing);
+        in.leap=.5f;s.predictNativeStep(1.f/60,in,w,standing);
+        for(const auto& e:s.events())again+=e.kind==EventKind::Leap;
+        check(again==1,"no second leap after it was let go");
+        // Its command: version 4 carries it and where the head looks; version 3 has neither.
+        game_swing::Command c;c.serial=1;c.leap=.75f;c.look={0,0,-1};
+        check(game_swing::valid(c)&&game_swing::input(c).leap==.75f&&game_swing::input(c).look.z==-1,"a version 4 command lost its leap");
+        c.leap=2;check(!game_swing::valid(c),"a leap past full accepted");
+        c.leap=0;c.look={0,3,0};check(!game_swing::valid(c),"a look that is no direction accepted");
+        game_swing::Command old;old.serial=1;old.version=3;old.bytes=game_swing::commandBytesV3;
+        check(game_swing::valid(old)&&game_swing::input(old).leap==0,"a version 3 command refused");
+    });
+    test("the game's camera follows the head's pitch as it follows its turn", [] {
+        game_pad::CameraPitch pitch;
+        const auto at=[](float degrees){const float r=degrees*.0174533f;return Vec3{0,std::sin(r),-std::cos(r)};};
+        // A head that looks about a little moves nothing.
+        check(pitch.update(at(-5),at(-10),true)==0&&pitch.turns()==0,"five degrees turned the camera");
+        // Looking down at his feet: the stick down, the further the harder, until the camera is there.
+        const float down=pitch.update(at(-60),at(-10),true);
+        check(down<-.9f&&pitch.turns()==1,"looking down did not pitch the camera down");
+        near(pitch.error(),-50,.1f);
+        check(pitch.update(at(-60),at(-45),true)<down+.2f&&pitch.update(at(-60),at(-52),true)<0,"it stopped short");
+        check(pitch.update(at(-60),at(-57),true)==0,"it did not rest once there");
+        // Up, the other way; and no further than the camera goes.
+        check(pitch.update(at(40),at(-10),true)>.9f,"looking up did not pitch the camera up");
+        check(pitch.update(at(89),at(61),true)==0,"straight up drove the camera against its stop");
+        check(pitch.update(at(-89),at(-79),true)==0,"straight down drove the camera against its stop");
+        // Not while it is not the player's to steer.
+        check(pitch.update(at(-60),at(-10),false)==0&&pitch.error()==0,"it steered a camera that is not the player's");
+        game_pad::Walk walk;walk.lookUp=-1;walk.look=.5f;
+        const auto pad=game_pad::fromControllers(XrFrame{},game_pad::Mapping::gameplay,walk);
+        check(pad.thumbRY==-32767&&pad.thumbRX>16000,"the camera's stick is not the game's right stick");
+    });
+    test("a trigger pulled with its hand at the temple is the game's scan, and that trigger's alone", [] {
+        using game_pad::TemplePress;
+        const float dt=1.f/90;
+        const Pose head{{0,1.7f,0},{}};
+        const bool both[2]{true,true};
+        // The right hand a hand's width out from the right temple, the left at the hip.
+        Pose grips[2]{{{-.25f,1.f,-.1f},{}},{{.2f,1.72f,.02f},{}}};
+        float triggers[2]{};
+        TemplePress scan;
+        check(!scan.update(dt,true,head,grips,both,triggers)&&!scan.hands(),"a hand at the temple alone scanned");
+        triggers[1]=1;
+        check(scan.update(dt,true,head,grips,both,triggers)&&scan.hands()==2&&scan.scans()==1,"no scan from the temple");
+        // It holds while the trigger does, wherever the hand goes.
+        grips[1].position={.3f,1.2f,-.4f};
+        for(int i=0;i<30;++i)check(scan.update(dt,true,head,grips,both,triggers)&&scan.hands()==2,"the scan let go of a held trigger");
+        triggers[1]=0;
+        scan.update(dt,true,head,grips,both,triggers);
+        check(!scan.hands(),"a released trigger is still the scan's");
+        for(int i=0;i<20;++i)scan.update(dt,true,head,grips,both,triggers);
+        check(!scan.held()&&scan.scans()==1,"the scan went on");
+        // A quick pull still holds the game's R3 long enough to count.
+        grips[1].position={.2f,1.72f,.02f};
+        triggers[1]=1;scan.update(dt,true,head,grips,both,triggers);
+        triggers[1]=0;
+        int frames{};
+        while(scan.update(dt,true,head,grips,both,triggers))++frames;
+        check(frames>=11&&frames<=14&&scan.scans()==2,"a quick pull was too short for the game");
+        // A trigger pulled anywhere else is a web ball as before; so is one pulled before the hand came up.
+        TemplePress away;
+        grips[1].position={.3f,1.3f,-.4f};triggers[1]=1;
+        check(!away.update(dt,true,head,grips,both,triggers)&&!away.hands(),"a trigger at the chest scanned");
+        grips[1].position={.2f,1.72f,.02f};
+        check(!away.update(dt,true,head,grips,both,triggers),"a trigger already down scanned at the temple");
+        // The head turned: its right is where it looks from. Either hand, either temple.
+        TemplePress turned;
+        const Pose looking{{0,1.7f,0},Quat::yaw(1.5708f)};
+        const Vec3 right=looking.orientation.rotate({1,0,0});
+        Pose hands[2]{{looking.position+right*-.2f,{}},{{.5f,1,0},{}}};
+        float pulls[2]{1,0};
+        check(turned.update(dt,true,looking,hands,both,pulls)&&turned.hands()==1,"the left hand at the left temple of a turned head");
+        // Not outside VR play, and a trigger held through it must be let go first.
+        TemplePress menu;
+        grips[1].position={.2f,1.72f,.02f};triggers[1]=1;
+        check(!menu.update(dt,false,head,grips,both,triggers),"a scan on the game screen");
+        check(!menu.update(dt,true,head,grips,both,triggers),"a trigger held into play scanned");
+        // An untracked hand scans nothing.
+        TemplePress lost;
+        const bool none[2]{};
+        check(!lost.update(dt,true,head,grips,none,triggers),"an untracked hand scanned");
+        game_pad::Walk walk;walk.scan=true;
+        check(game_pad::fromControllers(XrFrame{},game_pad::Mapping::gameplay,walk).buttons==game_pad::rightThumb,
+              "the scan is not the game's R3");
+    });
+    test("called blows: the flow calls its next blow, and the call stands until a fist answers it", [] {
+        Cues cues;
+        const Vec3 ahead{0,0,-1}; // the player looks down -z at him: his right is +x
+        check(!cues.answers({1,0,0},ahead)&&cues.cue().way==CueWay::None,"an answer with nothing called");
+        check(!cues.call(1,false,false,0)&&cues.cue().way==CueWay::None,"the flow's first blow called one");
+        check(cues.call(2,false,false,0)&&cues.cue().way==CueWay::Left&&!cues.cue().finisher,"the second blow called none");
+        // Any other blow leaves it standing, the same way.
+        check(!cues.answers({1,0,0},ahead)&&!cues.answers(ahead,ahead),"the opposite way, or a straight jab, answered LEFT");
+        check(!cues.call(3,false,false,7)&&cues.cue().way==CueWay::Left,"a blow that did not answer changed the call");
+        // The count before the finisher: the same call is the finisher's now.
+        check(!cues.call(4,true,false,9)&&cues.cue().way==CueWay::Left&&cues.cue().finisher,"the standing call did not become the finisher's");
+        check(cues.answers({-1,0,0},ahead),"a fist to the left did not answer LEFT");
+        // Answered: another way.
+        check(cues.call(5,false,true,4)&&cues.cue().way!=CueWay::Left&&cues.cue().way!=CueWay::None&&!cues.cue().finisher,
+              "an answered call did not give way to another");
+        // Within 60 degrees of the way counts; a straight jab answers no way.
+        for(const auto called:{CueWay::Left,CueWay::Right,CueWay::Up,CueWay::Down}) {
+            const Vec3 wanted=Cues::direction(called,ahead);
+            near(length(wanted),1);near(dot(wanted,ahead),0);
+            for(unsigned chance=0;chance<64;++chance) {
+                Cues one;one.call(2,false,false,chance);
+                if(one.cue().way!=called)continue;
+                check(one.answers(normalized(wanted+ahead*.9f),ahead),"a hook thrown forward too");
+                check(!one.answers(ahead,ahead),"a straight jab answered a way");
+                check(!one.answers(normalized(wanted*.4f+ahead),ahead),"barely off straight answered");
+                check(!one.answers({0,0,0},ahead),"no motion answered");
+                break;
+            }
+        }
+        near(Cues::direction(CueWay::Right,ahead).x,1);
+        near(Cues::direction(CueWay::Up,ahead).y,1);
+        near(Cues::direction(CueWay::Left,{1,-.5f,0}).z,-1); // looking down +x and below: his left is -z
+        // Every way comes up, never the one before.
+        unsigned seen{};CueWay last{};Cues many;
+        for(unsigned chance=0;chance<200;++chance) {
+            many.call(2,false,true,chance*2654435761u>>13);
+            check(many.cue().way!=last,"the same way twice running");
+            last=many.cue().way;seen|=1u<<static_cast<unsigned>(last);
+        }
+        check(seen==0x1e,"a way that never comes up");
+        // The finisher is called from the flow's first blow if need be; a flow that starts over calls nothing.
+        Cues first;
+        check(first.call(1,true,false,3)&&first.cue().finisher,"the finisher is not called below the flow's second blow");
+        first.call(1,false,false,3);
+        check(first.cue().way==CueWay::None,"a new flow kept the old call");
+        first.call(2,false,false,3);first.clear();
+        check(first.cue().way==CueWay::None,"a cleared call stands");
+        bool refused{};
+        try{CueConfig c;c.aim=1;Cues bad(c);}catch(const std::invalid_argument&){refused=true;}
+        check(refused,"an aim nobody can meet accepted");
+        // The flow's time, for the call's ring.
+        Flow flow;
+        near(flow.left(),0);
+        flow.hit();near(flow.left(),1);
+        flow.update(1.75f);near(flow.left(),.5f,.01f);
+        flow.keep();near(flow.left(),1);
+        // A thug brought to a player in the air: the player hangs longer than after a blow.
+        WebStrike strike;
+        strike.hangOn(false,1.6f);
+        check(strike.phase()==WebStrike::Phase::Hanging,"no hang");
+        float hung{};
+        while(strike.step(1.f/90,{0,5,0},false,nullptr).drive&&hung<5)hung+=1.f/90;
+        near(hung,1.6f,.03f);
+        WebStrike ground;ground.hangOn(true,1.6f);
+        check(ground.phase()==WebStrike::Phase::Idle,"a hang on the ground");
+    });
+    test("called blows hit harder and throw him the way they went", [] {
+        const Flow flow;
+        const auto blow=[](Vec3 direction,float strength) {
+            PunchEvent e;e.direction=normalized(direction);e.strength=strength;e.damage=10;
+            e.knockback=Knockback::Stagger;return e;
+        };
+        // A light hook that was called: he flies off as from a full blow.
+        const auto hook=deliver(blow({1,0,-.3f},.2f),false,3,flow,{},CueWay::Right);
+        check(hook.kind==BlowKind::Heavy&&hook.kinetic&&hook.fly&&hook.velocity.x>12,"a called hook did not send him flying");
+        near(hook.damage,10*1.2f*1.5f,.01f);
+        check(deliver(blow({1,0,-.3f},.2f),false,3,flow).kind==BlowKind::Hit,"the same blow uncalled is no jab");
+        const auto up=deliver(blow({0,1,-.3f},.2f),false,3,flow,{},CueWay::Up);
+        check(up.kind==BlowKind::Launch&&up.fly&&up.velocity.y>8,"a called uppercut did not lift him");
+        check(deliver(blow({0,1,-.3f},.2f),true,3,flow,{},CueWay::Up).kind==BlowKind::Juggle,"called up at a thug in the air");
+        const auto down=deliver(blow({0,-1,-.3f},.1f),false,3,flow,{},CueWay::Down);
+        check(down.kind==BlowKind::Hit&&!down.fly&&down.knockback==Knockback::Knockdown,"a called blow down did not floor him");
+        check(deliver(blow({0,-1,-.3f},.1f),true,3,flow,{},CueWay::Down).kind==BlowKind::Slam,"called down at a thug in the air");
+        // The finisher is the finisher, called as it must be.
+        const auto finish=deliver(blow({1,0,0},.2f),false,5,flow,{},CueWay::Right);
+        check(finish.kind==BlowKind::Finisher,"a called fifth blow was no finisher");
+        near(finish.damage,10*1.4f*1.5f*2.5f,.01f);
+        // A blow that does not count keeps the flow going.
+        Flow kept;
+        for(int i=0;i<4;++i)kept.hit();
+        kept.update(3);kept.keep();kept.update(3);
+        check(kept.count()==4,"a blow that does not count let the flow end");
+        kept.update(.6f);check(kept.count()==0,"the flow never ends");
+    });
+    test("moments: time slows by itself for an instant, and not for every blow of a flurry", [] {
+        SlowMoments moments;
+        near(moments.timeScale(),1);
+        check(!moments.active()&&moments.start(Moment::blow)&&moments.active(),"no moment");
+        const float dt=1.f/90;
+        float lowest=1,seconds{};
+        while(moments.active()&&seconds<3){moments.update(dt,true);lowest=std::min(lowest,moments.timeScale());seconds+=dt;}
+        near(lowest,.3f,.005f);
+        check(seconds>.65f&&seconds<.8f,"a blow's moment is not about three quarters of a second");
+        near(moments.timeScale(),1);
+        // The rest after it: the next blow slows nothing, a perfect dodge does.
+        check(!moments.start(Moment::blow)&&!moments.start(Moment::called)&&!moments.start(Moment::airPull),
+              "a flurry is one long slow motion");
+        check(moments.start(Moment::dodge)&&moments.count(Moment::dodge)==1&&moments.count(Moment::blow)==1,
+              "a perfect dodge waited for the rest");
+        // One going is kept up for as long as the next one holds, with no second ring.
+        for(int i=0;i<20;++i)moments.update(dt,true);
+        const float since=moments.sinceStart();
+        check(moments.start(Moment::airPull),"a moment refused during another");
+        check(moments.sinceStart()==since,"a second start within one moment");
+        seconds=0;
+        while(moments.active()&&seconds<3){moments.update(dt,true);seconds+=dt;}
+        check(seconds>1.5f&&seconds<1.65f,"the longer hold did not go on");
+        // After the rest, again.
+        for(int i=0;i<140;++i)moments.update(dt,true);
+        check(moments.start(Moment::called),"no moment after the rest");
+        // Without play it ends at once.
+        for(int i=0;i<10;++i)moments.update(dt,true);
+        check(moments.timeScale()<.5f,"not in yet");
+        moments.update(dt,false);
+        near(moments.timeScale(),1);check(!moments.active(),"a moment on the game screen");
+        // The look: slow motion's own, fainter, with a ring as it starts; the meter is slow motion's.
+        SlowMoments look;look.start(Moment::called);
+        look.update(dt,true);
+        SlowMotionView manual;
+        auto view=look.view(manual);
+        check(view.ripple>=0&&view.ripple<.1f&&view.entering&&!view.active&&view.meter==0,"no ring as a moment starts");
+        for(int i=0;i<12;++i)look.update(dt,true);
+        view=look.view(manual);
+        near(view.blend,.6f,.01f);
+        manual.blend=.9f;manual.ripple=.5f;
+        view=look.view(manual);
+        near(view.blend,.9f);near(view.ripple,.5f);
+        // A knockout's is a light one: time eases to about half for a moment, with a fainter look and no ring.
+        SlowMoments light;
+        check(light.start(Moment::knockout)&&light.count(Moment::knockout)==1,"no moment for a knockout");
+        lowest=1;seconds=0;
+        while(light.active()&&seconds<3){
+            light.update(dt,true);lowest=std::min(lowest,light.timeScale());seconds+=dt;
+            check(light.view(SlowMotionView{}).ripple<0,"a ring for a light moment");
+        }
+        near(lowest,.55f,.01f);
+        check(seconds>.5f&&seconds<.72f,"a knockout's moment is not about six tenths of a second");
+        // A deeper one that begins in it takes over.
+        SlowMoments deeper;deeper.start(Moment::knockout);
+        for(int i=0;i<12;++i)deeper.update(dt,true);
+        near(deeper.timeScale(),.55f,.01f);near(deeper.view(SlowMotionView{}).blend,.3f,.02f);
+        check(deeper.start(Moment::blow),"a blow's moment refused during a knockout's");
+        deeper.update(dt,true);near(deeper.timeScale(),.3f,.01f);
+    });
+    test("a knockout is lettered where he stood: KO! in yellow on a red burst, in and gone on twos", [] {
+        const Vec3 viewer{0,1.6f,0},at{0,1.3f,-1.2f};
+        const float pose=1.f/12;
+        const auto draw=[&](int i) {
+            std::vector<Vertex> out;
+            appendKnockout(out,{at,pose*(static_cast<float>(i)+.5f)},viewer,.0005f);
+            return out;
+        };
+        const Vec3 ink{.0033f,.0030f,.0070f},paper{.9301f,.9131f,.8550f},cyan{.0060f,.6724f,1},magenta{1,.0273f,.2918f},
+            yellow{1,.7529f,.0742f},red{.7682f,.0194f,.0284f};
+        const auto count=[](const std::vector<Vertex>& v,Vec3 plate) {
+            size_t n{};
+            for(const auto& x:v)n+=length(x.color-plate)<.01f;
+            return n;
+        };
+        const auto widest=[&](const std::vector<Vertex>& v) {
+            float r{};
+            for(const auto& x:v)r=std::max(r,length(x.position-at));
+            return r;
+        };
+        const auto same=[](const std::vector<Vertex>& a,const std::vector<Vertex>& b) {
+            if(a.size()!=b.size())return false;
+            for(size_t i=0;i<a.size();++i)
+                if(length(a[i].position-b[i].position)>0||length(a[i].color-b[i].color)>0||a[i].alpha!=b[i].alpha)return false;
+            return true;
+        };
+        const auto held=draw(4);
+        check(!held.empty()&&held.size()%3==0,"no knockout's mark");
+        check(count(held,yellow)>0&&count(held,red)>0&&count(held,paper)>0&&count(held,ink)>0,"not yellow lettering on a red burst with a paper heart, keyed in ink");
+        const Vec3 facing=normalized(viewer-at);
+        for(const auto& v:held)check(finite(v.position)&&v.alpha>=0&&v.alpha<=1&&std::abs(dot(v.position-at,facing))<1e-3f,"a vertex off its plane");
+        // No wider than a chest an arm and a half away.
+        check(widest(held)>.08f&&widest(held)<.25f,"the mark is tiny, or fills the view");
+        check(count(held,cyan)+count(held,magenta)==0&&same(draw(3),draw(5)),"it does not hold");
+        check(widest(draw(0))<widest(held)*.5f&&widest(draw(1))>widest(held)*1.05f&&count(draw(1),magenta)>0,"it does not pop in");
+        check(widest(draw(6))>widest(held)*1.05f&&count(draw(6),cyan)>0&&widest(draw(7))<widest(held)*.7f,"it does not leave in two poses");
+        check(draw(8).empty(),"it stayed");
+        std::vector<Vertex> none;
+        appendKnockout(none,{at,-1},viewer,.0005f);
+        appendKnockout(none,{{std::numeric_limits<float>::quiet_NaN(),0,0},.1f},viewer,.0005f);
+        appendKnockout(none,{viewer,.1f},viewer,.0005f);
+        check(none.empty(),"a mark before its time, nowhere, or in the viewer's eye");
+    });
+    test("one enemy at a time: a look marks, a blow locks until he is down, and a square look at another moves it", [] {
+        const Vec3 head{0,1.65f,0};
+        const float dt=1.f/90;
+        const std::vector<FightTarget> thugs{{1,{0,0,-4},1.8f,.3f,false},{2,{3,0,-4},1.8f,.3f,false}};
+        const auto at=[&](Vec3 where){return normalized(where-head);};
+        const Vec3 first=at({0,.9f,-4}),second=at({3,.9f,-4});
+        // A look marks the enemy nearest the line of sight, and the mark goes with the look.
+        Lock lock;
+        check(lock.update(dt,head,first,thugs)==1&&!lock.locked(),"a look does not mark");
+        check(lock.update(dt,head,second,thugs)==2,"the mark does not follow the look");
+        check(lock.update(dt,head,{0,0,1},thugs)==0,"an enemy behind the player is marked");
+        // A blow locks: a glance at another takes nothing.
+        lock.update(dt,head,first,thugs);
+        lock.take(1);
+        check(lock.locked()&&lock.target()==1,"a blow does not lock");
+        for(int i=0;i<20;++i)lock.update(dt,head,second,thugs);
+        check(lock.locked()&&lock.target()==1,"a glance took the lock");
+        // Nor does looking away from everyone.
+        for(int i=0;i<90;++i)lock.update(dt,head,{0,0,1},thugs);
+        check(lock.locked()&&lock.target()==1,"looking away lost the lock");
+        // Looked at squarely for a third of a second, with the locked one well aside, the other takes it: a look's mark.
+        for(int i=0;i<30;++i)lock.update(dt,head,second,thugs);
+        check(lock.target()==2&&!lock.locked(),"a square look at another does not move the lock");
+        // Two thugs side by side in the view: looking from one to the other never moves a lock.
+        const std::vector<FightTarget> pair{{1,{-.5f,0,-4},1.8f,.3f,false},{2,{.5f,0,-4},1.8f,.3f,false}};
+        Lock close;
+        close.update(dt,head,at({-.5f,.9f,-4}),pair);
+        close.take(1);
+        for(int i=0;i<180;++i)close.update(dt,head,at({.5f,.9f,-4}),pair);
+        check(close.locked()&&close.target()==1,"the lock went to the thug beside him");
+        // He is down: gone from the fight. The mark is a look's again at once.
+        const std::vector<FightTarget> left{pair[1]};
+        check(close.update(dt,head,at({.5f,.9f,-4}),left)==2&&!close.locked(),"a lock on a thug who is down");
+        // Left alone for four seconds, a lock is a look's mark again.
+        Lock idle;
+        idle.update(dt,head,first,thugs);
+        idle.take(1);
+        for(int i=0;i<340;++i)idle.update(dt,head,first,thugs);
+        check(idle.locked(),"a lock let go early");
+        for(int i=0;i<30;++i)idle.update(dt,head,first,thugs);
+        check(!idle.locked()&&idle.target()==1,"a lock that is never let go");
+        // A blow at him again starts the four seconds anew; nobody is no one to lock.
+        idle.take(1);idle.take(0);
+        check(idle.locked()&&idle.target()==1,"taking nobody changed the lock");
+        idle.clear();
+        check(!idle.locked()&&idle.target()==0,"a cleared lock");
+        // One beyond a strike's reach is no look's mark, but a lock on him holds.
+        const std::vector<FightTarget> far{{5,{0,0,-12},1.8f,.3f,false}};
+        Lock reach;
+        check(reach.update(dt,head,at({0,.9f,-12}),far)==0,"an enemy beyond reach is marked");
+        reach.take(5);
+        check(reach.update(dt,head,at({0,.9f,-12}),far)==5&&reach.locked(),"a lock let go of a thug knocked out of reach");
+    });
+    test("the mark over a thug is printed: a paper ring, a call's arrow pointing its way over a ring that runs down, the finisher's yellow in a red burst", [] {
+        const Vec3 viewer{0,1.6f,0},point{0,1.4f,-1.5f};
+        const float pose=1.f/12,size=.1f*length(viewer-point)/.9f;
+        const auto draw=[&](CueWay way,float left,bool finisher=false,float age=.52f,bool locked=false) {
+            std::vector<Vertex> out;
+            appendCue(out,{point,way,finisher,left,age,locked},viewer,.0005f);
+            return out;
+        };
+        // The style's plates, linear.
+        const Vec3 ink{.0033f,.0030f,.0070f},paper{.9301f,.9131f,.8550f},cyan{.0060f,.6724f,1},magenta{1,.0273f,.2918f},
+            yellow{1,.7529f,.0742f},red{.7682f,.0194f,.0284f};
+        const auto count=[](const std::vector<Vertex>& v,Vec3 plate) {
+            size_t n{};
+            for(const auto& x:v)n+=length(x.color-plate)<.01f;
+            return n;
+        };
+        const auto widest=[&](const std::vector<Vertex>& v) {
+            float r{};
+            for(const auto& x:v)r=std::max(r,length(x.position-point));
+            return r;
+        };
+        const auto same=[](const std::vector<Vertex>& a,const std::vector<Vertex>& b) {
+            if(a.size()!=b.size())return false;
+            for(size_t i=0;i<a.size();++i)
+                if(length(a[i].position-b[i].position)>0||length(a[i].color-b[i].color)>0||a[i].alpha!=b[i].alpha)return false;
+            return true;
+        };
+        // Nothing but the plates, whole but for an edge's last pixel, and every mark keyed in ink.
+        for(const auto& mark:{draw(CueWay::None,1),draw(CueWay::None,1,false,.52f,true),draw(CueWay::Left,.7f),draw(CueWay::Up,.4f,true),
+                              draw(CueWay::Right,1,false,.01f)}) {
+            check(!mark.empty()&&mark.size()%3==0&&count(mark,ink)>0,"a mark without its keyline");
+            for(const auto& x:mark) {
+                check(finite(x.position)&&x.alpha>=0&&x.alpha<=1,"a bad vertex");
+                bool plate{};
+                for(const Vec3 c:{ink,paper,cyan,magenta,yellow,red})plate|=length(x.color-c)<.01f;
+                check(plate,"a colour that is none of the plates");
+            }
+        }
+        // The arrow is a call's paper. It comes in from outside the ring on the side the fist comes from (its far
+        // end), and its barbs, all of it far to either side of its way, are at its other end, by his middle.
+        const auto ahead=[&](CueWay way,bool level) {
+            float far{},barbs{},m{};
+            for(const auto& x:draw(way,1)) {
+                if(length(x.color-paper)>=.01f||x.alpha<.9f)continue;
+                const Vec3 p=x.position-point;
+                const float along=level?p.x:p.y,across=level?p.y:p.x;
+                if(std::abs(along)>std::abs(far))far=along;
+                if(std::abs(across)>=size*.25f){barbs+=along;m+=1;}
+            }
+            check(m>0,"no arrow");
+            check(std::abs(far)>size*1.2f,"the arrow does not come in from outside the ring");
+            check(std::abs(barbs/m)<size*.35f,"the arrow's head is not by his middle");
+            // The way it points: from its far end to its barbs, more than the ring's radius apart.
+            return barbs/m-far>size?1:far-barbs/m>size?-1:0;
+        };
+        check(ahead(CueWay::Right,true)==1&&ahead(CueWay::Left,true)==-1,"left and right point the wrong way");
+        check(ahead(CueWay::Up,false)==1&&ahead(CueWay::Down,false)==-1,"up and down point the wrong way");
+        // The ring: less of it as the time runs out, a notch at a time.
+        check(count(draw(CueWay::Up,1),cyan)>count(draw(CueWay::Up,.5f),cyan)&&count(draw(CueWay::Up,.5f),cyan)>count(draw(CueWay::Up,.2f),cyan),
+              "the ring does not run down");
+        check(same(draw(CueWay::Up,.5f),draw(CueWay::Up,.49f))&&!same(draw(CueWay::Up,.5f),draw(CueWay::Up,.47f)),"the ring does not run down in notches");
+        // How far a plate's ring lies from the middle, nearest and farthest, above him (an arrow that points up
+        // comes in from below, and its drop is the same plate).
+        const auto band=[&](const std::vector<Vertex>& v,Vec3 plate,float radius) {
+            float least=1e9f,most{};
+            for(const auto& x:v) {
+                const float r=length(x.position-point)/radius;
+                if(length(x.color-plate)>=.01f||x.alpha<.9f||r<.8f||x.position.y-point.y<radius*.3f)continue;
+                least=std::min(least,r);most=std::max(most,r);
+            }
+            return most-least;
+        };
+        // The finisher's call: larger, a yellow arrow, and its ring a burst's edge, in and out where a call's is round.
+        const auto finisher=draw(CueWay::Up,1,true);
+        check(count(finisher,yellow)>0&&count(finisher,red)>0&&count(finisher,cyan)==0&&count(finisher,paper)==0,"the finisher's call is not yellow in red");
+        check(widest(finisher)>widest(draw(CueWay::Up,1))*1.2f,"the finisher's call is no larger");
+        check(band(finisher,red,size*1.3f)>.2f&&band(draw(CueWay::Up,1),cyan,size)<.15f,"the finisher's ring is no burst");
+        check(count(finisher,red)>count(draw(CueWay::Up,.5f,true),red)&&count(draw(CueWay::Up,.5f,true),red)>count(draw(CueWay::Up,.2f,true),red),
+              "the finisher's ring does not run down");
+        // A call lands on twos: a pose small, a pose past its size, both out of register; a pose short; then it holds.
+        const auto rest=draw(CueWay::Right,1);
+        const auto land=[&](int i){return draw(CueWay::Right,1,false,pose*(static_cast<float>(i)+.5f));};
+        check(widest(land(0))<widest(rest)*.4f&&widest(land(1))>widest(rest)*1.1f&&widest(land(2))<widest(rest),"a call does not pop in");
+        check(count(land(0),magenta)>0&&count(land(1),magenta)>0&&count(land(2),magenta)==0&&count(rest,magenta)==0,"a call's misprint on the wrong poses");
+        check(same(draw(CueWay::Right,1,false,.26f),draw(CueWay::Right,1,false,.32f)),"a pose is not held");
+        // Held, the arrow boils (the next place two poses later, a little way off) and the ring keeps still.
+        const auto middle=[&](const std::vector<Vertex>& v) {
+            Vec3 sum{};float n{};
+            for(const auto& x:v)if(length(x.color-paper)<.01f&&x.alpha>.9f){sum+=x.position;n+=1;}
+            return sum/std::max(n,1.f);
+        };
+        // (To his right: the arrow, with its drop, comes in from his left.)
+        const auto ring=[&](const std::vector<Vertex>& v) {
+            std::vector<Vertex> r;
+            for(const auto& x:v)if(length(x.color-cyan)<.01f&&length(x.position-point)>size*.8f&&x.position.x-point.x>size*.3f)r.push_back(x);
+            return r;
+        };
+        const auto a=land(6),b=land(7),c=land(8);
+        check(same(a,b),"a held place changed within its two poses");
+        const float moved=length(middle(c)-middle(a));
+        check(moved>size*.01f&&moved<size*.06f,"the arrow does not boil, or jumps");
+        check(!ring(a).empty()&&same(ring(a),ring(c)),"the ring does not keep still");
+        // Nothing called: a thin paper ring over him, a target and no more; it snaps on a pose wide.
+        const auto plain=draw(CueWay::None,1);
+        check(count(plain,paper)>0&&count(plain,cyan)+count(plain,magenta)+count(plain,yellow)+count(plain,red)==0,"the plain ring is not paper alone");
+        check(widest(plain)>size&&widest(plain)<size*1.1f,"the plain ring is not a hand wide");
+        for(const auto& x:plain)check(length(x.position-point)>size*.6f,"the plain ring covers him");
+        check(widest(draw(CueWay::None,1,false,.01f))>widest(plain)*1.1f&&widest(draw(CueWay::None,1,false,pose*1.5f))<widest(plain),"the plain ring does not snap on");
+        check(draw(CueWay::Up,0).empty()&&draw(CueWay::Up,1,false,-1).empty(),"a mark with nothing to show");
+        // Locked onto him by a blow, the ring is bolder and has four ticks in from it; it snaps on as the lock does.
+        const auto locked=draw(CueWay::None,1,false,.52f,true);
+        float inner=1e9f;
+        for(const auto& x:locked)inner=std::min(inner,length(x.position-point));
+        check(count(locked,paper)>count(plain,paper)&&inner<size*.75f&&inner>size*.6f&&widest(locked)<size*1.1f,"a lock's ring has no ticks");
+        check(widest(draw(CueWay::None,1,false,.01f,true))>widest(locked)*1.1f,"a lock's ring does not snap on");
+        // A called blow's burst is out of register: a cyan ghost and a magenta one.
+        std::vector<Vertex> called,ordinary;
+        appendImpact(called,{point,.5f,BlowKind::Heavy,1,.05f,true},viewer,.0005f);
+        appendImpact(ordinary,{point,.5f,BlowKind::Heavy,1,.05f,false},viewer,.0005f);
+        check(count(called,cyan)>0&&count(called,magenta)>0&&count(ordinary,cyan)+count(ordinary,magenta)==0,"a called blow's burst is not out of register");
     });
     test("flat screen command uses the native camera without requiring tracked eyes", [] {
         native_eyes::Command command;
@@ -5029,6 +5693,29 @@ int main() {
         appendText(out,"X",{0,0,0},{1,0,0},{1,0,0},style);
         check(out.empty(),"text along a degenerate plane");
     });
+    test("round lettering: a dot at each of a stroke's points, a stroke between them, and edges that fade", [] {
+        TextStyle style;style.height=.06f;style.round=true;style.soft=.002f;
+        std::vector<Vertex> out;
+        appendText(out,"L",{0,0,0},{1,0,0},{0,1,0},style);
+        // L: three points and two strokes. A dot: twelve sides, a triangle and a fading quad each; a stroke:
+        // three quads across.
+        check(out.size()==3*12*9+2*18,"not a dot at each point and a stroke between");
+        const float half=style.height*style.weight/2,reach=half+style.soft+1e-5f;
+        bool whole{},faded{};
+        for(const auto& v:out){
+            whole|=v.alpha==1;faded|=v.alpha==0;
+            check(v.position.x>=-reach&&v.position.x<=.04f+reach&&v.position.y>=-reach&&v.position.y<=.06f+reach&&v.position.z==0,
+                  "a round stroke outside the text's box");
+            // Its corner is round: nothing reaches the box's own.
+            check(length(v.position-Vec3{-half-style.soft,-half-style.soft,0})>half*.25f,"a square corner");
+        }
+        check(whole&&faded,"no soft edge");
+        // Without the fade: the dots and strokes alone.
+        style.soft=0;out.clear();
+        appendText(out,"L",{0,0,0},{1,0,0},{0,1,0},style);
+        check(out.size()==3*12*3+2*6,"a hard round stroke has an edge to fade");
+        for(const auto& v:out)check(v.alpha==1,"a hard round stroke fades");
+    });
     // A right fist driven along `path` at 90 Hz; `relative` is the hand
     // relative to the player (the world position minus the player's travel).
     struct Swing {
@@ -5167,10 +5854,11 @@ int main() {
         std::vector<FightTarget> targets{{7,{0,0,-6},1.8f,.3f,false}};
         Vec3 head() const { return feet+Vec3{0,1.65f,0}; }
         float web{}; // the right hand's web button
+        StrikeWish wish; // the enemy marked, and the way the flow calls
         std::optional<WebStrike::Opening> sample(Vec3 fist,Vec3 velocity,bool free,std::uint64_t holds,const WorldQueries* world){
             std::array<FightFist,2> fists{};
             fists[1]={true,fist,velocity,free,holds,web};
-            return strike.open(1.f/90,fists,head(),feet,targets,world?*world:static_cast<const WorldQueries&>(open));
+            return strike.open(1.f/90,fists,head(),feet,targets,world?*world:static_cast<const WorldQueries&>(open),wish);
         }
         // The fist at rest by the shoulder for `seconds`.
         void rest(float seconds=.5f,bool free=true){
@@ -5314,6 +6002,60 @@ int main() {
         walled.targets[0].feet={0,0,-2.5f};
         walled.rest();
         check(walled.punch({0,0,-1},5,&wall).has_value(),"a thug in front of the wall was not struck");
+    });
+    test("web strike: with an enemy marked it is his alone, and a fist swung the way the flow calls opens one at him", [] {
+        // Thug 7 six metres ahead; thug 8 off to the right, nearer.
+        const auto fight=[]{Fight f;f.targets.push_back({8,{5,0,-2},1.8f,.3f,false});f.rest();return f;};
+        const Vec3 atOther{4.8f,-.5f,-1.85f};
+        // Nobody marked: the fist picks the one it points at, as ever.
+        {
+            Fight f=fight();
+            const auto o=f.punch(atOther,5);
+            check(o&&o->target==8&&f.strike.passedOver()==0,"an unmarked fist did not pick the thug it points at");
+        }
+        // Thug 7 marked: the same fist flies nowhere, and is counted once for its swing.
+        {
+            Fight f=fight();f.wish.target=7;
+            check(!f.punch(atOther,5)&&f.strike.phase()==WebStrike::Phase::Idle,"a fist at another thug left the marked one");
+            check(f.strike.passedOver()==1,"a swing passed over was not counted once");
+            f.rest(.2f);
+            check(!f.punch(atOther,5)&&f.strike.passedOver()==2,"the next swing was not counted");
+        }
+        // Thrown between the two, 47 degrees off the marked thug and nearer the other's line: to the marked
+        // one. Unmarked, the same fist goes to the other.
+        {
+            Fight f=fight();f.wish.target=7;
+            const auto o=f.punch({1,-.1f,-1},5);
+            check(o&&o->target==7&&!o->called&&f.strike.passedOver()==0,"a fist thrown the marked thug's way did not go to him");
+            Fight plain=fight();
+            const auto p=plain.punch({1,-.1f,-1},5);
+            check(p&&p->target==8,"the same fist, unmarked, did not go to the thug it points at best");
+        }
+        // The marked thug within the fist's own reach: no strike, at him or at anyone.
+        {
+            Fight f=fight();f.targets[0].feet={0,0,-1};f.wish.target=7;
+            check(!f.punch(atOther,5)&&!f.punch({0,0,-1},5),"a strike with the marked thug at arm's length");
+        }
+        // The flow calls a blow to the left. A hook to the left at the marked thug, across him and a little
+        // toward him, opens the strike; unmarked, with nothing called, or the other way, it opens none.
+        const Vec3 left{-1,0,0};
+        const auto swing=[&](std::uint64_t marked,Vec3 called,Vec3 way){Fight f=fight();f.wish={marked,called};return f.punch(way,5);};
+        const auto hook=swing(7,left,{-1,0,-.35f});
+        check(hook&&hook->target==7&&hook->called,"a hook the called way opened no strike");
+        check(!swing(0,left,{-1,0,-.35f}),"a hook opened a strike with nobody marked");
+        check(!swing(7,{},{-1,0,-.35f}),"a hook opened a strike with nothing called");
+        check(!swing(7,left,{1,0,-.35f}),"a hook the other way opened a strike");
+        // Drawn back from him it is no blow, whatever is called.
+        check(!swing(7,left,{-1,0,.5f}),"a fist going away from him opened a strike");
+        // An uppercut on a call up, a blow down on a call down.
+        check(swing(7,{0,1,0},{0,1,-.45f}).has_value()&&swing(7,{0,-1,0},{0,-1,-.45f}).has_value(),"an uppercut or a blow down, called, opened none");
+        // The fist that opened it is the strike's direction: what answers the call.
+        Fight f=fight();f.wish={7,left};
+        check(f.punch({-1,0,-.35f},5).has_value(),"no strike");
+        check(f.strike.direction().x<-.9f,"the strike lost the way its fist went");
+        Cues cues;
+        cues.call(2,false,false,0);
+        check(cues.cue().way==CueWay::Left&&cues.answers(f.strike.direction(),Vec3{0,-.75f,-6}),"the strike's fist does not answer the call it was swung for");
     });
     test("web strike: a punch along the hand's own web strikes the thug it holds, and him alone", [] {
         Fight f;f.rest(.5f,false);
@@ -5555,40 +6297,80 @@ int main() {
         check(impactWave(ImpactSound::Light)==impactWave(ImpactSound::Light),"the same sound came out differently");
         check(impactWave(ImpactSound::Firm,1).size()==44+2*static_cast<size_t>(std::lround(.16f*8000)),"an absurd rate was not limited");
     });
-    test("impact burst: a flash, a ring and rays where the blow landed, then the flow's count alone, then nothing", [] {
-        const Vec3 viewer{0,1.6f,0};
+    test("impact burst is printed on twos: a star small and then whole, its lines thrown clear, the flow's count lettered over it, then nothing", [] {
+        const Vec3 viewer{0,1.6f,0},at{0,1.4f,-.7f};
+        const float pose=1.f/12;
         const auto draw=[&](float age,BlowKind kind=BlowKind::Hit,int count=1,float strength=.5f){
             std::vector<Vertex> out;
-            appendImpact(out,{{0,1.4f,-.7f},strength,kind,count,age},viewer,.0006f);
+            appendImpact(out,{at,strength,kind,count,age},viewer,.0006f);
             return out;
         };
-        const auto widest=[](const std::vector<Vertex>& v){
+        const Vec3 ink{.0033f,.0030f,.0070f},paper{.9301f,.9131f,.8550f},cyan{.0060f,.6724f,1},magenta{1,.0273f,.2918f},
+            yellow{1,.7529f,.0742f},red{.7682f,.0194f,.0284f};
+        const auto count=[](const std::vector<Vertex>& v,Vec3 plate) {
+            size_t n{};
+            for(const auto& x:v)n+=length(x.color-plate)<.01f;
+            return n;
+        };
+        const auto widest=[&](const std::vector<Vertex>& v){
             float r{};
-            for(const auto& p:v)r=std::max(r,length(p.position-Vec3{0,1.4f,-.7f}));
+            for(const auto& p:v)r=std::max(r,length(p.position-at));
             return r;
         };
-        const auto early=draw(.02f),late=draw(.15f);
-        check(!early.empty()&&early.size()%3==0,"no burst");
-        const Vec3 facing=normalized(viewer-Vec3{0,1.4f,-.7f});
-        for(const auto& v:early)check(finite(v.position)&&v.alpha>=0&&v.alpha<=1&&std::abs(dot(v.position-Vec3{0,1.4f,-.7f},facing))<1e-3f,"a burst vertex off its plane");
-        check(widest(late)>widest(early)&&widest(late)<.35f,"the burst does not spread, or spreads too far");
-        check(draw(.23f).empty()&&draw(-.01f).empty()&&draw(1).empty(),"a burst outside its time");
-        // A finisher's is wider, redder and longer.
-        const auto finisher=draw(.3f,BlowKind::Finisher,5);
-        check(!finisher.empty()&&widest(finisher)>widest(late),"a finisher's burst is no bigger");
-        bool red{};
-        for(const auto& v:finisher)red|=v.color.x>.9f&&v.color.y<.3f;
-        check(red,"a finisher's burst is not red");
-        // The count shows from the second blow on, and outlasts the burst.
-        const auto counted=draw(.4f,BlowKind::Hit,3);
-        check(!counted.empty(),"no count after the burst");
+        const auto same=[](const std::vector<Vertex>& a,const std::vector<Vertex>& b) {
+            if(a.size()!=b.size())return false;
+            for(size_t i=0;i<a.size();++i)
+                if(length(a[i].position-b[i].position)>0||length(a[i].color-b[i].color)>0||a[i].alpha!=b[i].alpha)return false;
+            return true;
+        };
+        // A jab: a yellow star around paper, keyed in ink, small and then whole; then its paper lines, clear of the middle.
+        const auto first=draw(pose*.5f),second=draw(pose*1.5f),third=draw(pose*2.5f);
+        check(!first.empty()&&first.size()%3==0,"no burst");
+        const Vec3 facing=normalized(viewer-at);
+        for(const auto& v:first)check(finite(v.position)&&v.alpha>=0&&v.alpha<=1&&std::abs(dot(v.position-at,facing))<1e-3f,"a burst vertex off its plane");
+        check(count(first,yellow)>0&&count(first,paper)>0&&count(first,ink)>0&&count(first,red)==0,"a jab's star is not yellow around paper, keyed in ink");
+        check(widest(second)>widest(first)*1.15f,"the star does not grow");
+        check(widest(third)>widest(second)&&widest(third)<.35f,"the lines are not thrown past the star, or too far");
+        check(count(third,yellow)==0&&count(third,paper)>0&&count(third,ink)>0,"a jab's lines are not paper keyed in ink");
+        for(const auto& v:third)check(length(v.position-at)>.11f*.6f,"a line across the middle");
+        // On twos: a pose is held, then the next.
+        check(same(draw(.01f),draw(.07f))&&!same(draw(.07f),draw(.09f)),"a pose is not held a twelfth of a second");
+        check(draw(.26f).empty()&&draw(-.01f).empty()&&draw(1).empty(),"a burst outside its time");
+        // A harder blow's is red around yellow, with a pose of lines more.
+        const auto heavy=draw(pose*1.5f,BlowKind::Heavy);
+        check(count(heavy,red)>0&&count(heavy,yellow)>0&&widest(heavy)>widest(second),"a harder blow's star is not red around yellow, or no wider");
+        check(!draw(pose*3.5f,BlowKind::Heavy).empty()&&draw(pose*4.5f,BlowKind::Heavy).empty(),"a harder blow's lines do not last two poses");
+        // A finisher's is wider and longer: a third star, three poses of lines.
+        const auto finisher=draw(pose*1.5f,BlowKind::Finisher);
+        check(count(finisher,red)>0&&widest(finisher)>widest(heavy)*1.1f&&widest(finisher)<.2f,"a finisher's burst is no bigger, fills the view, or is not red");
+        check(count(draw(pose*2.5f,BlowKind::Finisher),red)>0&&!draw(pose*4.5f,BlowKind::Finisher).empty()&&draw(pose*5.5f,BlowKind::Finisher).empty(),
+              "a finisher's burst is no longer");
+        // The count shows from the second blow on, above the blow, and outlasts the burst.
+        const auto counted=draw(pose*5.5f,BlowKind::Hit,3);
+        check(!counted.empty()&&count(counted,yellow)>0&&count(counted,ink)>0,"no count after the burst");
         for(const auto& v:counted)check(v.position.y>1.4f,"the count is not above the blow");
-        check(draw(.4f,BlowKind::Hit,1).empty(),"a first blow shows a count");
+        check(draw(pose*5.5f,BlowKind::Hit,1).empty(),"a first blow shows a count");
         check(draw(.76f,BlowKind::Hit,3).empty(),"the count stayed");
-        float faint{},full{};
-        for(const auto& v:draw(.72f,BlowKind::Hit,3))faint=std::max(faint,v.alpha);
-        for(const auto& v:counted)full=std::max(full,v.alpha);
-        check(faint<full*.3f,"the count does not fade");
+        // Its lettering (above a light jab's star) lands small, then past its size and out of register; holds;
+        // and leaves in two poses, large and out of register, then small. Nothing of it fades.
+        const auto lettering=[&](int i){
+            std::vector<Vertex> v;
+            for(const auto& x:draw(pose*(static_cast<float>(i)+.5f),BlowKind::Hit,3,0))if(x.position.y>1.465f)v.push_back(x);
+            return v;
+        };
+        const auto wide=[&](const std::vector<Vertex>& v){
+            float low=1e9f,high=-1e9f;
+            for(const auto& x:v)if(length(x.color-yellow)<.01f){low=std::min(low,x.position.x);high=std::max(high,x.position.x);}
+            return high-low;
+        };
+        const float held=wide(lettering(5));
+        check(held>.03f&&held<.2f,"no lettering, or too large");
+        check(wide(lettering(0))<held*.5f&&wide(lettering(1))>held*1.05f&&count(lettering(1),magenta)>0&&count(lettering(1),cyan)>0,"the count does not pop in");
+        check(count(lettering(5),magenta)+count(lettering(5),cyan)==0&&same(lettering(4),lettering(5)),"the count does not hold");
+        check(wide(lettering(7))>held*1.05f&&count(lettering(7),cyan)>0&&wide(lettering(8))<held*.7f,"the count does not leave in two poses");
+        float full{};
+        for(const auto& x:lettering(8))full=std::max(full,x.alpha);
+        check(full==1,"the count fades");
         // Nothing for nonsense.
         std::vector<Vertex> none;
         appendImpact(none,{{0,1.4f,-.7f},.5f,BlowKind::Hit,1,.02f},{0,1.4f,-.7f},.0006f);
@@ -5735,29 +6517,35 @@ int main() {
             for (const char* c : row.choices)
                 check(c && *c, "an empty choice");
         }
-        check(headings == 4 && all[0].item == Item::none && all[6].item == Item::none && all[8].item == Item::none &&
-                  all[16].item == Item::none,
+        check(headings == 4 && all[0].item == Item::none && all[7].item == Item::none && all[9].item == Item::none &&
+                  all[18].item == Item::none,
               "the sections: webs, body, comfort, experimental");
-        check(all[17].item == Item::flips && all[17].choices.empty() && std::strcmp(all[16].title, "EXPERIMENTAL") == 0,
+        check(all[19].item == Item::flips && all[19].choices.empty() && std::strcmp(all[18].title, "EXPERIMENTAL") == 0,
               "the flips: a switch under EXPERIMENTAL");
-        check(all.size() == 19 && all[18].item == Item::flipSpeed && all[18].choices.size() == std::size(flipSpeeds),
+        check(all.size() == 21 && all[20].item == Item::flipSpeed && all[20].choices.size() == std::size(flipSpeeds),
               "the flip speed under the flips, the last row");
-        check(all[15].item == Item::standOnWalls && all[15].choices.empty() &&
-                  std::strcmp(all[15].title, "STAND ON WALLS") == 0,
+        check(all[17].item == Item::standOnWalls && all[17].choices.empty() &&
+                  std::strcmp(all[17].title, "STAND ON WALLS") == 0,
               "standing on walls: a switch, the last row of COMFORT");
-        check(all[12].item == Item::screenSize && all[14].item == Item::hud && all[14].choices.size() == 4 &&
-                  std::strcmp(all[14].choices[0], "OFF") == 0 && std::strcmp(all[14].choices[3], "LARGE") == 0,
+        check(all[14].item == Item::screenSize && all[16].item == Item::hud && all[16].choices.size() == 4 &&
+                  std::strcmp(all[16].choices[0], "OFF") == 0 && std::strcmp(all[16].choices[3], "LARGE") == 0,
               "the HUD after the game screen's rows: OFF, SMALL, MEDIUM, LARGE");
-        check(all[13].item == Item::screenDepth && std::strcmp(all[13].title, "GAME SCREEN 3D") == 0 &&
-                  all[13].choices.size() == 4 && std::strcmp(all[13].choices[0], "OFF") == 0 &&
-                  std::strcmp(all[13].choices[3], "HIGH") == 0,
+        check(all[15].item == Item::screenDepth && std::strcmp(all[15].title, "GAME SCREEN 3D") == 0 &&
+                  all[15].choices.size() == 4 && std::strcmp(all[15].choices[0], "OFF") == 0 &&
+                  std::strcmp(all[15].choices[3], "HIGH") == 0,
               "the game screen's depth under its size: OFF, LOW, MEDIUM, HIGH");
+        check(all[6].item == Item::physicalWebs && all[6].choices.empty() &&
+                  std::strcmp(all[6].title, "PHYSICAL WEBS") == 0,
+              "physical webs: a switch, the last row of WEBS");
+        check(all[13].item == Item::view && std::strcmp(all[13].title, "VIEW") == 0 && all[13].choices.size() == 2 &&
+                  std::strcmp(all[13].choices[0], "VR") == 0 && std::strcmp(all[13].choices[1], "FLAT SCREEN") == 0,
+              "the view above the game screen's rows: VR, or FLAT SCREEN");
         check(all[1].item == Item::webButton && all[1].choices.size() == 2 &&
                   std::strcmp(all[1].choices[0], "GRIP") == 0 && std::strcmp(all[1].choices[1], "TRIGGER") == 0,
               "the web button first under WEBS: GRIP, or TRIGGER");
         check(all[4].item == Item::swingSpeed && all[5].item == Item::weight, "the weight under the swing speed");
-        check(all[7].item == Item::calibrate && all[7].choices.size() == 2 &&
-                  std::strcmp(all[7].choices[1], "ON RESUME") == 0,
+        check(all[8].item == Item::calibrate && all[8].choices.size() == 2 &&
+                  std::strcmp(all[8].choices[1], "ON RESUME") == 0,
               "the body's calibration: NO, or ON RESUME");
         check(seen == (2u << static_cast<unsigned>(lastItem)) - 2, "a setting missing");
         auto choicesOf = [&](Item item) {
@@ -5777,8 +6565,9 @@ int main() {
         check(choice(Item::aimMarkers, defaults) == 1 && choice(Item::swingSpeed, defaults) == 4 &&
                   choice(Item::snapTurn, defaults) == 2 && choice(Item::smoothTurn, defaults) == 0 &&
                   choice(Item::haptics, defaults) == 4 && choice(Item::screenSize, defaults) == 1 &&
-                  choice(Item::weight, defaults) == 2,
-              "the defaults as the tab shows them: ON, 32 m/s, 30 degrees, no smooth turning, 100%, medium, 80%");
+                  choice(Item::weight, defaults) == 3,
+              "the defaults as the tab shows them: ON, 32 m/s, 30 degrees, no smooth turning, 100%, medium, 100%");
+        check(defaults.weight == 100, "the default weight is real gravity");
         Values v;
         check(choose(Item::swingSpeed, 5, v) && v.swingSpeed == 40, "faster");
         check(!choose(Item::swingSpeed, 5, v), "the same choice changed something");
@@ -5797,7 +6586,9 @@ int main() {
         v.smoothTurn = 100;
         check(choice(Item::smoothTurn, v) == 2, "a launcher speed shows the step nearest to it");
         check(choose(Item::haptics, 1, v) && v.haptics == 25, "a quarter of the vibration");
-        check(choose(Item::weight, 3, v) && v.weight == 100 && choice(Item::weight, v) == 3, "real gravity");
+        check(!choose(Item::weight, 3, v) && choose(Item::weight, 2, v) && v.weight == 80 &&
+                  choose(Item::weight, 3, v) && v.weight == 100 && choice(Item::weight, v) == 3,
+              "real gravity, the default, and lighter");
         check(choose(Item::weight, 8, v) && v.weight == 300 && !choose(Item::weight, 9, v) &&
                   choose(Item::weight, 0, v) && v.weight == 40 && !choose(Item::weight, -1, v),
               "300% is the heaviest, 40% the lightest");
@@ -5820,6 +6611,14 @@ int main() {
         check(!defaults.flips && choice(Item::flips, defaults) == 0 && defaultChoice(Item::flips) == 0 &&
                   choose(Item::flips, 1, v) && v.flips && choice(Item::flips, v) == 1,
               "the experimental flips: OFF by default, a switch to ON");
+        check(defaults.physicalWebs && choice(Item::physicalWebs, defaults) == 1 &&
+                  defaultChoice(Item::physicalWebs) == 1 && choose(Item::physicalWebs, 0, v) && !v.physicalWebs &&
+                  !choose(Item::physicalWebs, 0, v) && choose(Item::physicalWebs, 1, v) && v.physicalWebs,
+              "physical webs: ON by default, a switch");
+        check(!defaults.flatScreen && choice(Item::view, defaults) == 0 && defaultChoice(Item::view) == 0 &&
+                  choose(Item::view, 1, v) && v.flatScreen && choice(Item::view, v) == 1 &&
+                  !choose(Item::view, 2, v) && choose(Item::view, 0, v) && !v.flatScreen,
+              "the view: VR by default, FLAT SCREEN the other choice");
         check(defaults.standOnWalls && choice(Item::standOnWalls, defaults) == 1 &&
                   defaultChoice(Item::standOnWalls) == 1 && choose(Item::standOnWalls, 0, v) && !v.standOnWalls &&
                   !choose(Item::standOnWalls, 0, v) && choose(Item::standOnWalls, 1, v) && v.standOnWalls,
@@ -6468,7 +7267,10 @@ int main() {
         game_swing::Command c;
         c.focused = 1;
         c.serial = 1;
-        check(c.version == 3 && c.bytes == 184 && game_swing::valid(c), "a level version 3 command was rejected");
+        check(c.version == 4 && c.bytes == 200 && game_swing::valid(c), "a level version 4 command was rejected");
+        c.version = 3;
+        c.bytes = game_swing::commandBytesV3;
+        check(game_swing::valid(c), "a level version 3 command was rejected");
         c.tilt = Quat::around({1, 0, .2f}, 2.f);
         check(game_swing::valid(c), "a flip's tilt was rejected");
         const auto tilt = game_swing::input(c).tilt;

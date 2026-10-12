@@ -44,7 +44,10 @@ enum class Mapping {
     // web pull), that stick pushed down (the game's D-pad down: heal) and
     // up (its LT + RT: the zip to a point) reach it as the swing leaves
     // them (Walk). The virtual controller's own right stick turns the
-    // game's camera to where the player looks (CameraLook).
+    // game's camera to where the player looks (CameraLook, CameraPitch). A
+    // held on the ground charges the swing's own leap (ChargeJump), and a
+    // trigger pulled with its hand at the temple is the game's R3, its scan
+    // (TemplePress).
     gameplay,
     // The game screen: every control as on an Xbox controller. A, B, X and Y
     // sit where Xbox has them; grips are the bumpers.
@@ -73,12 +76,189 @@ enum class Mapping {
 // D-pad, and their triggers and grips are the webs in VR play, so the right
 // thumbstick pushed down and up gives them (StickPush): until October 12
 // nothing did, and the first mission stopped at the heal it asks for and at
-// its vent. look: the virtual controller's own right stick, its X, which
-// turns the game's camera (CameraLook).
+// its vent. look and lookUp: the virtual controller's own right stick, its
+// X and Y, which turn the game's camera (CameraLook, CameraPitch). scan: the
+// game's R3, held: its scan of the surroundings (TemplePress).
 struct Walk {
     float right{}, forward{};
     bool jump{}, interact{}, dodge{}, pull{}, heal{}, zip{};
-    float look{};
+    float look{}, lookUp{};
+    bool scan{};
+};
+// A held on the ground: a charged leap, Spidy's own. The game has one, its
+// Charge Jump ("Hold RT + A while running or standing to build up charge,
+// then release A for a huge leap"), but as a Webslinger skill: a hero
+// without it jumps as RT + A go down, and RT held on in the air is the
+// game's own web swing (in the game, October 12, on a save with no
+// Webslinger skill: off the ground 0.08 s after A, a jump like a tap's, and
+// 17 m away on the game's web a second later). The fourth build of that day
+// sent RT + A; the user: "hold jump jumps like normal". So the swing leaps
+// itself (Input::leap, Swing's Leap), with or without the skill.
+//
+// The game's A waits for the player's: let go within tapSeconds it is the
+// jump as before, made then (a pulse of pulseSeconds). Held longer it
+// charges, to full in fullSeconds more, and the game gets no A; let go, the
+// leap goes out with its charge (leastCharge at least) for leapSeconds: the
+// swing takes it once. Only for a press that starts on the ground in VR play
+// with no web holding: any other press is the game's A as it is held (a
+// wall, a perch, the swing's own takeoff). Off the ground meanwhile, a
+// charge is dropped.
+class ChargeJump {
+  public:
+    static constexpr float tapSeconds = .18f, pulseSeconds = .09f, fullSeconds = .8f, leastCharge = .15f,
+                           leapSeconds = .15f;
+    struct Keys {
+        bool jump{};  // the game's A
+        float leap{}; // a leap let go of: its charge, above 0 up to 1 (Input::leap)
+    };
+    // seconds: since the previous update. held: the player's A as the game
+    // would get it. ground: he stands on the ground in VR play, free to jump.
+    Keys update(float seconds, bool held, bool ground) {
+        const float dt = std::isfinite(seconds) ? std::clamp(seconds, 0.f, .1f) : 0.f;
+        const bool pressed = held && !down_;
+        down_ = held;
+        if (pressed)
+            phase_ = ground ? Phase::waiting : Phase::plain, time_ = 0;
+        else
+            time_ += dt;
+        switch (phase_) {
+        case Phase::plain:
+            if (!held)
+                phase_ = Phase::idle;
+            return {held, 0};
+        case Phase::waiting:
+            // Off the ground meanwhile (an edge, a web): the press is the game's A as it is.
+            if (!ground) {
+                phase_ = held ? Phase::plain : Phase::idle;
+                return {held, 0};
+            }
+            if (!held) {
+                phase_ = Phase::pulse;
+                time_ = 0;
+                return {true, 0};
+            }
+            if (time_ < tapSeconds)
+                return {};
+            phase_ = Phase::charging;
+            ++charges_;
+            return {};
+        case Phase::pulse:
+            if (time_ < pulseSeconds)
+                return {true, 0};
+            phase_ = Phase::idle;
+            return {};
+        case Phase::charging:
+            if (!ground) {
+                phase_ = held ? Phase::spent : Phase::idle;
+                return {};
+            }
+            if (held)
+                return {};
+            leap_ = std::max(charge(), leastCharge);
+            phase_ = Phase::leaping;
+            time_ = 0;
+            ++leaps_;
+            return {false, leap_};
+        case Phase::leaping:
+            if (time_ < leapSeconds)
+                return {false, leap_};
+            phase_ = Phase::idle;
+            return {};
+        case Phase::spent: // held on into the air: nothing until it is let go
+            if (!held)
+                phase_ = Phase::idle;
+            return {};
+        case Phase::idle:
+            break;
+        }
+        return {};
+    }
+    // A is held and a leap charges.
+    bool charging() const {
+        return phase_ == Phase::charging;
+    }
+    // How far: 0 to 1.
+    float charge() const {
+        return phase_ == Phase::charging ? std::clamp((time_ - tapSeconds) / fullSeconds, 0.f, 1.f) : 0.f;
+    }
+    // Charges begun so far, and leaps let go of.
+    uint32_t charges() const {
+        return charges_;
+    }
+    uint32_t leaps() const {
+        return leaps_;
+    }
+
+  private:
+    enum class Phase { idle, plain, waiting, pulse, charging, leaping, spent };
+    Phase phase_{};
+    bool down_{};
+    float time_{}, leap_{};
+    uint32_t charges_{}, leaps_{};
+};
+// A hand at the temple with its trigger pulled: the game's R3, its scan of
+// the surroundings, for as long as the trigger stays pulled (minSeconds at
+// least). The hand: its grip within `reach` of a point `side` to either side
+// of the head (the controller sits a hand's width out from the temple it
+// touches), as the trigger goes down; it may move away while it holds. That
+// trigger is the scan's alone meanwhile: no web ball, no reel (hands()).
+// Outside VR play nothing holds, and a trigger held through that must be let
+// go first.
+class TemplePress {
+  public:
+    static constexpr float side = .15f, reach = .19f, pressed = .6f, released = .3f, minSeconds = .15f;
+    // seconds: since the previous update. play: the controllers play VR.
+    // head and grips: the headset's and each hand's grip pose, in one space;
+    // tracked and triggers: each hand's. Returns the game's R3: down or not.
+    bool update(float seconds, bool play, const Pose& head, const Pose grips[2], const bool tracked[2],
+                const float triggers[2]) {
+        const float dt = std::isfinite(seconds) ? std::clamp(seconds, 0.f, .1f) : 0.f;
+        left_ = std::max(0.f, left_ - dt);
+        for (unsigned i = 0; i < 2; ++i) {
+            const float trigger = std::isfinite(triggers[i]) ? triggers[i] : 0.f;
+            const bool down = tracked[i] && trigger > (down_[i] ? released : pressed);
+            const bool press = down && !down_[i];
+            down_[i] = down;
+            const uint32_t bit = 1u << i;
+            if (!down || !play) {
+                hands_ &= ~bit;
+                continue;
+            }
+            if (!press || !finite(head.position) || !finite(grips[i].position))
+                continue;
+            // The grip in the head's own axes: x to its right.
+            const Vec3 local = head.orientation.conjugate().rotate(grips[i].position - head.position);
+            if (!finite(local))
+                continue;
+            for (const float x : {-side, side})
+                if (length(local - Vec3{x, 0, 0}) <= reach) {
+                    hands_ |= bit;
+                    scans_ += !held();
+                    left_ = minSeconds;
+                    break;
+                }
+        }
+        if (!play)
+            left_ = 0;
+        held_ = hands_ != 0 || left_ > 0;
+        return held_;
+    }
+    bool held() const {
+        return held_;
+    }
+    // A bit per hand whose trigger is the scan's.
+    uint32_t hands() const {
+        return hands_;
+    }
+    // Scans begun so far.
+    uint32_t scans() const {
+        return scans_;
+    }
+
+  private:
+    bool down_[2]{}, held_{};
+    uint32_t hands_{}, scans_{};
+    float left_{};
 };
 // The right thumbstick pushed straight down or up, as Walk::heal and
 // Walk::zip. In VR play that stick turns the player with its left and right;
@@ -189,9 +369,55 @@ class CameraLook {
     bool turning_{};
     uint32_t turns_{};
 };
+// The same for the camera's pitch. The game offers a thing only with its
+// camera on it, and that camera rests 10 degrees below level wherever the
+// player looks: a vent at his feet or a grate overhead was never in its view
+// (the user, October 12: "there is a closed vent i need to go through and
+// cant interact with", on a roof, looking down). The stick's Y pitches it
+// as its X turns it (in the game, October 12: 73 degrees a second over 0.6 s
+// at full tilt, 3 a second at 0.6, up for up; it stays where it is left,
+// from 85 degrees down to 68 up), so the same curve brings it to the head's
+// pitch, within the camera's own range.
+class CameraPitch {
+  public:
+    static constexpr float lowest = -80, highest = 62;
+    // look: where the head looks; camera: the game camera's forward (both in
+    // the world). steer: as CameraLook's. Returns the right stick's Y, -1..1.
+    float update(Vec3 look, Vec3 camera, bool steer) {
+        if (!steer || !finite(look) || !finite(camera) || length(look) < .5f || length(camera) < .5f) {
+            turning_ = false;
+            error_ = 0;
+            return 0;
+        }
+        const auto pitch = [](Vec3 v) { return std::asin(std::clamp(v.y / length(v), -1.f, 1.f)) * 57.29578f; };
+        error_ = std::clamp(pitch(look), lowest, highest) - pitch(camera);
+        const float off = std::abs(error_);
+        const bool turn = off > (turning_ ? CameraLook::stopDegrees : CameraLook::startDegrees);
+        turns_ += turn && !turning_;
+        turning_ = turn;
+        if (!turn)
+            return 0;
+        const float rate = std::min(1.f, off / (CameraLook::fullRate * CameraLook::seconds));
+        return std::copysign(CameraLook::floor + (1 - CameraLook::floor) * std::cbrt(rate), error_);
+    }
+    // From the camera's pitch to the head's, degrees (the head higher: more
+    // than 0); 0 while it is not steered.
+    float error() const {
+        return error_;
+    }
+    uint32_t turns() const {
+        return turns_;
+    }
+
+  private:
+    float error_{};
+    bool turning_{};
+    uint32_t turns_{};
+};
 // The right thumbstick's click as Walk::pull. Like the left one's
-// (StickPress, slow_motion.hpp) it is not half of clicking both, which
-// switches between VR and the flat screen: it holds once the stick has been
+// (StickPress, slow_motion.hpp) it is not half of clicking both (which
+// switched between VR and the flat screen until October 12, and is neither
+// stick's press since): it holds once the stick has been
 // down chordSeconds without the other, for as long as it stays down, and a
 // click let go sooner holds for tapSeconds after it. Outside VR play
 // nothing holds, and a stick held through that must be let go first.
@@ -364,9 +590,12 @@ inline State fromControllers(const XrFrame& frame, Mapping mapping, const Walk& 
             s.buttons |= dpadDown;
         if (walk.zip)
             s.leftTrigger = s.rightTrigger = 255;
+        if (walk.scan)
+            s.buttons |= rightThumb;
         s.thumbLX = stick(walk.right);
         s.thumbLY = stick(walk.forward);
         s.thumbRX = stick(walk.look);
+        s.thumbRY = stick(walk.lookUp);
         return s;
     }
     const auto trigger = [](float v) {

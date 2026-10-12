@@ -25,9 +25,20 @@ struct Values {
     // turns instead.
     int smoothTurn = 0;
     // How heavy you are while webs fly you (swinging, and after letting go
-    // until you land), percent of real gravity: the swing's gravity. 80 since
-    // October 9; before, 60 (the 6 m/s^2 Spidy flew at from October 5).
-    int weight = 80;
+    // until you land), percent of real gravity: the swing's gravity. 100, real
+    // gravity, since October 12; 80 from October 9; before, 60 (the 6 m/s^2
+    // Spidy flew at from October 5).
+    int weight = 100;
+    // Webs are ropes (the tab's PHYSICAL WEBS; SwingConfig::physical): a web
+    // bends round the edge that comes between you and its end instead of
+    // letting go, its length is measured to the hand that holds it, so a pull
+    // of that hand pulls you, and it pays out while you walk. Off, as before
+    // October 12.
+    bool physicalWebs = true;
+    // The flat game screen instead of VR, in the headset (the tab's VIEW).
+    // Each session starts in VR: the launcher does not keep it. Until October
+    // 12 a click of both thumbsticks switched it.
+    bool flatScreen = false;
     // A T-pose calibration of your body is wanted at the next gameplay (the
     // tab's CALIBRATE BODY: ON RESUME); the XR worker clears it once the
     // calibration starts (body_calibration.hpp).
@@ -110,8 +121,10 @@ enum class Item : uint8_t {
     flipSpeed,
     standOnWalls,
     screenDepth,
+    physicalWebs,
+    view,
 };
-inline constexpr Item lastItem = Item::screenDepth;
+inline constexpr Item lastItem = Item::view;
 // The SPIDY VR tab, top to bottom: a section's heading (item none) or a
 // setting. A setting without choices is an ON/OFF switch, the game's own;
 // one with choices steps through them. Titles are upper case, as the game's
@@ -122,7 +135,7 @@ struct Row {
     const char* help{};
     std::span<const char* const> choices{};
 };
-const std::array<Row, 19>& rows();
+const std::array<Row, 21>& rows();
 // The choice a setting shows for these values: a switch 0 (off) or 1 (on), a
 // list its step nearest to the value (a launcher value between two steps
 // shows the nearer one, the lower on a tie).

@@ -16,6 +16,8 @@ extern "C" {
 __declspec(dllexport) Data SpidySwingData;
 // The aim markers' previews (SpidyAimSample); odd `sequence` while it changes.
 __declspec(dllexport) AimData SpidyAimData;
+// Physical webs' telemetry (Ropes); odd `sequence` while it changes.
+__declspec(dllexport) Ropes SpidyRopeData;
 }
 namespace {
 using Call = DWORD(WINAPI*)(void*);
@@ -41,6 +43,8 @@ uint64_t deadline{}, inputDeadline{}, motionSerial{}, lastStep{}, worldIdentity{
 // Step length the last prediction assumed, and the native step it was made in.
 float predictedDt{};
 uint64_t predictedStep{};
+// The rope a web has to spare while the game walks the player (Swing::payOut), m.
+constexpr float groundSlack = .1f;
 SwingTakeoff takeoffTransition;
 // The same jump for a player who goes up onto a wall from the ground or out
 // of the game's crawl (Swing::mounting): the wall takes the body as it leaves.
@@ -370,6 +374,16 @@ void visit(const native_rays::QueryContext& world) {
                 solver.offerWall({hit->point, crawl, hit->surface, true});
         }
     }
+    // A player the game walks (or jumps off the ground for a takeoff) takes
+    // his webs along: they are ropes that pay out, and hold him at their new
+    // length once he is in the air (Swing::payOut).
+    uint32_t paid{};
+    if (!owned) {
+        const float before[2]{solver.webs()[0].length, solver.webs()[1].length};
+        solver.payOut(body.position, groundSlack);
+        for (unsigned i = 0; i < 2; ++i)
+            paid |= solver.webs()[i].attached && solver.webs()[i].length > before[i] + 1e-3f;
+    }
     // A press aimed at something a web can catch belongs to the grab: the
     // swing gets the input without that hand's grip.
     const auto predicted = solver.predictNativeStep(motion.dt, focused ? game_grab::forSwing(in) : in, world,
@@ -385,7 +399,9 @@ void visit(const native_rays::QueryContext& world) {
     const bool attached = solver.webs()[0].attached || solver.webs()[1].attached;
     bool pointLaunched{}, newAttachment{}, zipped{};
     for (const auto& event : solver.events()) {
-        pointLaunched |= event.kind == EventKind::PointLaunch;
+        // A charged leap leaves the ground as a point launch does: by the
+        // game's own jump, then at the leap's velocity.
+        pointLaunched |= event.kind == EventKind::PointLaunch || event.kind == EventKind::Leap;
         newAttachment |= event.kind == EventKind::Attach;
         zipped |= event.kind == EventKind::Zip;
     }
@@ -480,6 +496,26 @@ void visit(const native_rays::QueryContext& world) {
         relinquishMotion();
     }
     AcquireSRWLockExclusive(&output);
+    {
+        auto& r = SpidyRopeData;
+        InterlockedIncrement64(&r.sequence);
+        r.physical = solver.config().physical;
+        r.paidOut += paid;
+        for (auto event : solver.events()) {
+            r.wraps += event.kind == EventKind::Wrap;
+            r.unwraps += event.kind == EventKind::Unwrap;
+            r.cut += event.kind == EventKind::Obstructed;
+        }
+        for (unsigned i = 0; i < 2; ++i) {
+            const auto& w = solver.webs()[i];
+            r.bends[i] = w.attached ? static_cast<uint32_t>(w.bent) : 0u;
+            r.free[i] = w.attached ? w.length : 0.f;
+            r.whole[i] = r.free[i];
+            for (int b = 0; w.attached && b < w.bent; ++b)
+                r.whole[i] += w.bends[static_cast<size_t>(b)].span;
+        }
+        InterlockedIncrement64(&r.sequence);
+    }
     auto& d = SpidySwingData;
     InterlockedIncrement64(&d.sequence);
     d.status = drive ? 2 : 1;
@@ -623,14 +659,17 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingRetarget(void* input) {
 // walls are the swing's own. All apply from the next step; the visit holds
 // `simulation`.
 extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingSettings(void* input) {
-    // Version 3 settings (the probes') are shorter: read as many bytes as they say.
+    // Version 3 and 4 settings (the probes') are shorter: read as many bytes as they say.
     Settings s;
     uint32_t header[3]{};
-    if (!copy(header, input, sizeof(header)) || (header[2] != settingsBytesV3 && header[2] != sizeof(s)) ||
+    if (!copy(header, input, sizeof(header)) ||
+        (header[2] != settingsBytesV3 && header[2] != settingsBytesV4 && header[2] != sizeof(s)) ||
         !copy(&s, input, header[2]) || s.magic != 0x53575354 ||
-        !((s.version == 3 && s.bytes == settingsBytesV3) || (s.version == 4 && s.bytes == sizeof(s))) ||
+        !((s.version == 3 && s.bytes == settingsBytesV3) || (s.version == 4 && s.bytes == settingsBytesV4) ||
+          (s.version == 5 && s.bytes == sizeof(s))) ||
         s.grab > 1 || !std::isfinite(s.maxSpeed) || s.maxSpeed <= 0 || s.maxSpeed > motionSpeedLimit ||
-        s.airWebs > 1 || !std::isfinite(s.gravity) || s.gravity < 0 || s.gravity > maxGravity || s.walls > 1)
+        s.airWebs > 1 || !std::isfinite(s.gravity) || s.gravity < 0 || s.gravity > maxGravity || s.walls > 1 ||
+        s.physical > 1)
         return 2001;
     AcquireSRWLockExclusive(&lifecycle);
     DWORD result{};
@@ -645,6 +684,8 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingSettings(void* input) {
         solver.allowAirAnchors(s.airWebs != 0);
         if (s.version >= 4)
             solver.allowWalls(s.walls != 0);
+        if (s.version >= 5)
+            solver.allowPhysical(s.physical != 0);
         // A swing started without the grab (-NoWebGrab) offers it from now on.
         if (s.grab && !game_grab::offering() && driveMotion && sampleDriven) {
             config.grabKinds = game_grab::movableKinds;
@@ -658,10 +699,11 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingSettings(void* input) {
     return result;
 }
 extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingSubmit(void* input) {
-    // A version 2 command (the probes') is shorter: read as many bytes as it says.
+    // A version 2 or 3 command (the probes') is shorter: read as many bytes as it says.
     Command c;
     uint32_t header[3]{};
-    if (!copy(header, input, sizeof(header)) || (header[2] != commandBytesV2 && header[2] != sizeof(c)) ||
+    if (!copy(header, input, sizeof(header)) ||
+        (header[2] != commandBytesV2 && header[2] != commandBytesV3 && header[2] != sizeof(c)) ||
         !copy(&c, input, header[2]) || !valid(c))
         return 2001;
     AcquireSRWLockExclusive(&control);

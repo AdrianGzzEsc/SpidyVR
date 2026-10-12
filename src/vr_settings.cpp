@@ -18,6 +18,9 @@ constexpr const char* screenChoices[] = {"SMALL", "MEDIUM", "LARGE"};
 constexpr const char* calibrateChoices[] = {"NO", "ON RESUME"};
 // WEB BUTTON, a switch named by the button that webs: TRIGGER swaps it with the grip.
 constexpr const char* webButtonChoices[] = {"GRIP", "TRIGGER"};
+// VIEW, a switch named by what the headset shows: FLAT SCREEN is the game's
+// own picture on a screen ahead, as menus are.
+constexpr const char* viewChoices[] = {"VR", "FLAT SCREEN"};
 constexpr const char* hudChoices[] = {"OFF", "SMALL", "MEDIUM", "LARGE"};
 constexpr const char* flipSpeedChoices[] = {"90\xC2\xB0/S",  "120\xC2\xB0/S", "150\xC2\xB0/S", "180\xC2\xB0/S",
                                             "240\xC2\xB0/S", "300\xC2\xB0/S", "360\xC2\xB0/S", "480\xC2\xB0/S"};
@@ -95,6 +98,10 @@ template <class V> auto switchOf(Item item, V& v) -> decltype(&v.aimMarkers) {
         return &v.triggerWebs;
     case Item::standOnWalls:
         return &v.standOnWalls;
+    case Item::physicalWebs:
+        return &v.physicalWebs;
+    case Item::view:
+        return &v.flatScreen;
     default:
         return nullptr;
     }
@@ -113,9 +120,9 @@ Values sanitized(Values v) {
     v.screenDepth = std::clamp(v.screenDepth, 0, 3);
     return v;
 }
-const std::array<Row, 19>& rows() {
+const std::array<Row, 21>& rows() {
     // The help fits the game's description column beside the rows.
-    static const std::array<Row, 19> all{{
+    static const std::array<Row, 21> all{{
         {Item::none, "WEBS", nullptr, {}},
         {Item::webButton, "WEB BUTTON",
          "Which button shoots and holds a web; the other reels in and shoots web balls.", webButtonChoices},
@@ -125,6 +132,8 @@ const std::array<Row, 19>& rows() {
         {Item::swingSpeed, "SWING SPEED LIMIT", "How fast a swing can carry you.", swingChoices},
         {Item::weight, "WEIGHT", "How heavy you are while swinging and after letting go. 100% is real gravity.",
          weightChoices},
+        {Item::physicalWebs, "PHYSICAL WEBS",
+         "Webs bend round edges, and pulling one pulls you. Off: a wall cuts them off.", {}},
         {Item::none, "BODY", nullptr, {}},
         {Item::calibrate, "CALIBRATE BODY", "Fit Spider-Man to you: pick ON RESUME, then hold both triggers in a T-pose.",
          calibrateChoices},
@@ -135,6 +144,7 @@ const std::array<Row, 19>& rows() {
          smoothChoices},
         {Item::haptics, "CONTROLLER VIBRATION", "How strongly webs, grabs and punches buzz in your hands.",
          hapticChoices},
+        {Item::view, "VIEW", "Play in VR, or on the flat game screen in the headset.", viewChoices},
         {Item::screenSize, "GAME SCREEN SIZE", "The screen that shows menus, cutscenes and flat mode.",
          screenChoices},
         {Item::screenDepth, "GAME SCREEN 3D",

@@ -87,6 +87,74 @@ SlowMotionView SlowMotion::view() const {
 void SlowMotion::reset() {
     *this = SlowMotion(tuning_);
 }
+SlowMoments::SlowMoments(const MomentTuning& tuning) : tuning_(tuning) {
+    const MomentTuning defaults;
+    tuning_.scale = std::isfinite(tuning.scale) ? std::clamp(tuning.scale, .05f, 1.f) : defaults.scale;
+    tuning_.light = std::isfinite(tuning.light) ? std::clamp(tuning.light, tuning_.scale, 1.f) : defaults.light;
+    scale_ = tuning_.scale;
+    tuning_.in = positive(tuning.in, defaults.in);
+    tuning_.out = positive(tuning.out, defaults.out);
+    tuning_.rest = std::isfinite(tuning.rest) ? std::max(tuning.rest, 0.f) : defaults.rest;
+    for (unsigned i = 0; i < momentKinds; ++i)
+        tuning_.hold[i] = positive(tuning.hold[i], defaults.hold[i]);
+}
+bool SlowMoments::start(Moment kind) {
+    const unsigned k = static_cast<unsigned>(kind) % momentKinds;
+    const bool going = left_ > 0;
+    if (!going && kind != Moment::dodge && sinceEnd_ < tuning_.rest)
+        return false;
+    if (!going)
+        sinceStart_ = 0;
+    const float scale = kind == Moment::knockout ? tuning_.light : tuning_.scale;
+    scale_ = going || level_ > 0 ? std::min(scale_, scale) : scale;
+    left_ = std::max(left_, tuning_.hold[k]);
+    ++counts_[k];
+    return true;
+}
+void SlowMoments::update(float seconds, bool allowed) {
+    const float dt = std::isfinite(seconds) ? std::clamp(seconds, 0.f, .1f) : 0.f;
+    sinceStart_ = std::min(sinceStart_ + dt, 1e9f);
+    if (!allowed) {
+        if (left_ > 0)
+            sinceEnd_ = 0;
+        left_ = level_ = 0;
+        sinceEnd_ = std::min(sinceEnd_ + dt, 1e9f);
+        return;
+    }
+    if (left_ > 0) {
+        // It holds once it is in.
+        if (level_ >= 1)
+            left_ -= dt;
+        level_ = std::min(1.f, level_ + dt / tuning_.in);
+        if (left_ <= 0) {
+            left_ = 0;
+            sinceEnd_ = 0;
+        }
+    } else {
+        level_ = std::max(0.f, level_ - dt / tuning_.out);
+        sinceEnd_ = std::min(sinceEnd_ + dt, 1e9f);
+    }
+}
+float SlowMoments::blend() const {
+    return level_ * level_ * (3 - 2 * level_);
+}
+float SlowMoments::timeScale() const {
+    return std::exp(blend() * std::log(scale_));
+}
+SlowMotionView SlowMoments::view(SlowMotionView v) const {
+    // Fainter than slow motion's own: it is over in a moment. A light one
+    // fainter yet, by how much less it slows, and with no ring.
+    const float depth = tuning_.scale < 1 ? std::log(scale_) / std::log(tuning_.scale) : 0.f;
+    v.blend = std::max(v.blend, .6f * blend() * depth);
+    if (depth >= 1 && v.ripple < 0 && sinceStart_ < SlowMotion::rippleSeconds) {
+        v.ripple = sinceStart_ / SlowMotion::rippleSeconds;
+        v.entering = true;
+    }
+    return v;
+}
+void SlowMoments::reset() {
+    *this = SlowMoments(tuning_);
+}
 bool StickPress::update(float seconds, bool focused, bool mine, bool other) {
     if (!focused) {
         // Held through it, the stick waits for a release.

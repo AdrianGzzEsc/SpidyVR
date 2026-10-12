@@ -499,7 +499,7 @@ struct SessionOptions {
     int screenSize = 1; // the game screen in the headset: 0 small, 1 medium, 2 large
     int screenDepth = 2; // the depth cutscenes have on that screen: 0 off (flat), 1 low, 2 medium, 3 high
     int smoothTurn = 0; // degrees a second the right stick turns you while held over; 0: it snap turns
-    int weight = 80;    // how heavy you are while webs fly you, percent of real gravity
+    int weight = 100;   // how heavy you are while webs fly you, percent of real gravity
     bool flips = false; // experimental: in the air the left stick turns you over, and a tap of A flips you
     int flipSpeed = 180; // degrees a second a flip turns you at full tilt of the left stick
     // The trigger shoots and holds webs, and the grip reels them in and shoots web balls; off, the other way round.
@@ -507,6 +507,12 @@ struct SessionOptions {
     int hud = 2; // the game's HUD in the headset: 0 off, 1 small, 2 medium, 3 large
     // Walking a wall or stopped on it, your view turns so that the wall is your floor; off, you stay upright.
     bool standOnWalls = true;
+    // Webs are ropes: they bend round edges instead of letting go, a pull of the hand that holds one pulls
+    // you, and they pay out while you walk; off, as before October 12.
+    bool physicalWebs = true;
+    // The game's own Depth of Field and Sharpness settings stay as they are in VR; off (the default), a
+    // session turns the first off and the second to its lowest, and puts both back when the game closes.
+    bool gameDepthOfField = false, gameSharpening = false;
     // Your T-pose calibration in the headset (body_calibration.hpp): the eye height and arm length Spider-Man's
     // body is sized to, millimetres. Both 0: none yet, and VR asks for one at the first gameplay unless
     // calibrationPrompt is off (you skipped it).
@@ -551,6 +557,12 @@ inline std::vector<std::wstring> sessionArguments(const SessionOptions& options,
         args.emplace_back(L"--trigger-webs");
     if (!options.standOnWalls)
         args.emplace_back(L"--no-stand-on-walls");
+    if (!options.physicalWebs)
+        args.emplace_back(L"--no-physical-webs");
+    if (options.gameDepthOfField)
+        args.emplace_back(L"--game-depth-of-field");
+    if (options.gameSharpening)
+        args.emplace_back(L"--game-sharpening");
     if (calibrated(options)) {
         args.emplace_back(L"--eye-height");
         args.emplace_back(std::to_wstring(options.eyeHeightMm));
@@ -571,7 +583,7 @@ inline std::vector<std::wstring> sessionArguments(const SessionOptions& options,
         {std::clamp(options.haptics, 0, 100), {L"--haptics", 100}},
         {std::clamp(options.screenSize, 0, 2), {L"--screen-size", 1}},
         {std::clamp(options.screenDepth, 0, 3), {L"--screen-depth", 2}},
-        {std::clamp(options.weight, 40, 300), {L"--weight", 80}},
+        {std::clamp(options.weight, 40, 300), {L"--weight", 100}},
         {std::clamp(options.hud, 0, 3), {L"--hud", 2}},
         {std::clamp(options.flipSpeed, 90, 480), {L"--flip-speed", 180}},
         {std::clamp(options.monitorRate, 0, static_cast<int>(maximumMonitorRate)),
@@ -629,6 +641,8 @@ inline bool headsetSettings(std::string_view line, SessionOptions& options) {
             next.triggerWebs = number != 0;
         else if (key == "stand_on_walls")
             next.standOnWalls = number != 0;
+        else if (key == "physical_webs")
+            next.physicalWebs = number != 0;
         else if (key == "swing_speed")
             next.swingSpeed = std::clamp(number, 10, 65);
         else if (key == "snap_turn")

@@ -3,7 +3,284 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 12, third build): bodies are nobody's target; web
+**Latest build (October 12, seventh build): one enemy at a time, called
+blows that register, and KO!** You said, after the 15:42 session with the
+sixth build: "i had a looot of accidetal targeting and chaining of enemies
+where i just wanted to finish one. also its not clear how directional strikes
+work or they dont register properly since swinging from that direction doesnt
+do anything", and then: "maybe finishing an enemy need some cue since its not
+clear when they're dead (maybe a light slow motion or visual)".
+
+What the session's report shows (5.5 minutes of fighting, 113 blows):
+
+- **Chaining.** 88 of the 113 blows were web strikes; 96 strikes opened, at
+  64 different thugs, 44 of them from 4 m or more. Of the 51 strikes thrown
+  within a second and a half of a blow, 16 went to the thug that blow was
+  on and 24 to another one, 5.6 m off in the middle and up to 9.9 m. From
+  474 to 488 s, 14 strikes went to 9 thugs. Two things made it so. The
+  strike went to whoever the fist's motion pointed at best within 10 m,
+  never mind the ring. And the ring itself went to whoever was nearest your
+  line of sight that instant: in 18 of those 24 hops it had already moved
+  to the thug you flew to.
+- **Called blows.** 27 arrows, 2 answered, 1 finisher. 58 blows landed
+  while an arrow stood; 42 of them were web strikes, which could not answer
+  one. 32 blows landed with the finisher called and the count at 4. And the
+  16 fists that landed at arm's reach under an arrow all went nearly
+  straight at him (at least 0.72 of their motion), whichever way was called.
+- **Knockouts.** A street thug has about 50 hit points and a strike's blow
+  deals 25 or more, so two blows put most of them out; nothing said so.
+
+What changed:
+
+- **One enemy at a time.** The thin ring is on the enemy you look at, as
+  before. Land a blow on him, open a strike at him or hold him with a web,
+  and the ring **locks**: it gets four ticks and stays on him wherever you
+  look, until he is down, or four seconds pass with no blow at him.
+- **A strike goes to the marked enemy only.** With a ring up, a fist thrown
+  his way (within 60 degrees now, was 37) flies you to him. A fist that
+  points at somebody else flies you nowhere, and so does a punch that falls
+  short of him at arm's length. With no ring up (no enemy within 40 degrees
+  of where you look and 10 m) no strike opens at all: look at him first.
+- **Changing target** is a look: squarely at another enemy for a third of a
+  second, with the locked one well to the side.
+- **KO!** When a thug your blow landed on runs out of hit points: "KO!" is
+  lettered where he stood, both hands thump, and time eases to about half
+  speed for a fifth of a second (lighter and shorter than the other
+  moments, no ripple). The ring is free at that instant.
+- **Called blows from across the room.** A hook, an uppercut or a blow
+  down, swung the called way at the marked thug, now opens a web strike
+  (before, only a fist thrown straight out at him did), and its blow lands
+  as the called one: it answers the arrow, counts toward the finisher and
+  throws him the way your fist went. A straight strike is still an
+  ordinary blow.
+- **The arrow comes in from the side.** It starts outside the ring on the
+  side your fist should come from and ends at his middle, so "from there"
+  and "that way" read the same: from the right for a right hook, from
+  below for an uppercut, from above for a blow down.
+- **Left alone:** how a plain punch at arm's reach is judged (the fist's
+  direction as it lands, within 60 degrees of the called way). Your 16
+  punches under an arrow do not show whether that rule is too strict or
+  you were jabbing, so I did not loosen it blind; the next report counts
+  strikes opened by a swing (`swung`) and those that answered
+  (`strike_called`).
+- **Also in the 15:42 report:** three quits to the main menu and no crash.
+  The guard's counters did not get into the report (it left them out when
+  the game closes by itself; fixed), so whether the guard caught the call
+  or the call did not happen is still not known.
+- **Your play folder** is now `C:\Spidy-0.2.12`; this build went there.
+- **Checked:** 283 core tests (new: the lock, marked strikes and swings,
+  the knockout's mark and its moment), the launcher's, 112 Python checks,
+  and the marks drawn over your eye captures. **Not tried in the headset.**
+  Worth watching: whether a look-switch of a third of a second is too slow
+  or too quick in a crowd, and whether a wide swing with an arrow up ever
+  flies you when you did not mean it.
+
+**Earlier build (October 12, sixth build): the combat marks, printed.** You
+said: "lets make our custom combat indicators look better and slicker and
+more aligned with this while not being too over the top", with the style
+system of Spidy's videos (the comic's print: ink keylines, flat colour,
+lettering out of register, drawings held on twos).
+
+The ring over a thug, the called blow's arrow, the burst where a blow lands
+and the count over it are drawn anew. What they mean and when they show is
+as before; only the sizes named below changed.
+
+- **One look.** Flat colour from the style system's palette, a black (ink)
+  outline round every shape, a hard offset drop where the soft shadow was,
+  and nothing translucent: the dark disc under the arrow is gone, so the
+  thug shows through the mark.
+- **On twos.** A mark is a pose held a twelfth of a second, then the next.
+  A call lands in three poses (small and turned, a little too large, a
+  little too small) and is then at rest; nothing eases or fades. The arrow,
+  once at rest, shifts a hair every sixth of a second, as a held drawing
+  does. The ring does not.
+- **The target ring** is a thin white ring with four short ticks in from
+  it, a little off level, where it was a scope's crosshair.
+- **A call** is a white arrow drawn as a marker's stroke, on a blue drop,
+  in a blue ring that runs down a notch at a time. The ring is a quarter
+  smaller than it was (20 cm across at arm's length, was 26).
+- **The finisher's call** is a yellow arrow on a red drop inside a jagged
+  red ring, a burst's edge: its shape tells it from a plain call, not its
+  colour alone. It was gold in a gold ring.
+- **A blow's burst** is a comic's star: yellow around white for a jab, red
+  around yellow for a harder blow, small for one pose and whole for the
+  next, then a pose of white lines thrown clear (two for a harder blow,
+  three for a finisher). It was a white flash, a ring and rays. A called
+  blow's star is printed out of register, a blue ghost to its left and a
+  pink one to its right, where it was a blue ring.
+- **The count** (X2, X3 ...) is yellow lettering with round strokes and a
+  black outline, tilted, that pops in with the blow, holds, and is gone in
+  two poses. It no longer rises and fades. It is a sixth smaller.
+- **Left alone:** the webs' aim markers and the focus meter on your wrist.
+  The style system takes the aim markers' two colours as they are.
+- **Seen how:** not in the headset. A new tool draws the marks over a VR
+  session's eye captures at about the headset's pixel density
+  (`tools\preview-marks.ps1`); I looked at every state and pose over two
+  captures of your 14:06 session (a thug 2.6 m off, and one at arm's
+  length) and over a sunlit wall. What that cannot show: the marks in
+  motion, in stereo, and in a real fight's pace. **If the held poses read
+  as stutter, or the misprint as a lens fault, say so**: both are one line
+  each to soften.
+- **Checked:** 280 core tests (the two for the marks rewritten for the new
+  look, one new for round lettering), the launcher's, 112 Python checks.
+
+**Earlier build (October 12, fifth build): what your first session with the
+fourth build found.** You said: "game crashes on quit to menu, something is
+wonky with the target indicator - enemies can be targeted for punch but no
+indicator, hold jump jumps like normal, there is a closed vent i need to go
+through and cant interact with, the slowmo trigger for in air pulls feel bad
+- i dont get near the enemy like ever, i intened for it be like a pull to me
+in the air and have slowmo when they're close enough to punch in the air
+(like dmc air combat)".
+
+- **The crash on Quit.** Not new with the fourth build: every VR session
+  that quit to the main menu since the evening of October 11 ended so
+  (twelve reports; the ten quits before that were fine), always at the same
+  place inside Steam. On its way to the main menu the game asks Steam for a
+  login ticket and passes three arguments where Steam's function takes four;
+  the fourth is whatever the game's stack holds. In a VR session that was an
+  address nobody can read, and Steam's copy from it closed the game. Spidy
+  now hooks that function and gives the game's call an empty fourth
+  argument, as it has at the game's start. **Not seen working:** without the
+  headset the game never made that call (five quits to the menu, with the
+  guard in and counting: none), so the first VR session that quits is the
+  test. Its report has `steam_guard`.
+- **The target indicator.** Three things were wrong. The arrow belonged to
+  the thug a blow had just landed on, showed 0.2 s later, and any other blow
+  at him replaced it with a new one: in your fight 17 arrows were made in 24
+  blows and a flurry replaced each before it showed. 13 of those blows were
+  web strikes, which go straight at him and could answer no arrow, yet each
+  took the arrow away. And with the finisher needing its arrow, your count
+  stood at 4 for a minute with no finisher. Now:
+  - A thin white **ring** is over the enemy your next punch would go to:
+    the one you look at, within a web strike's 10 m.
+  - The **arrow** belongs to your combo, not to a thug. From your second
+    blow on it shows in that ring, at once, and it stays, pointing the same
+    way, until a fist lands going that way or the combo ends. Then it points
+    a new way. Its ring runs down with the combo's 3.5 seconds.
+  - A web strike's blow counts as before and leaves the arrow alone.
+- **Hold jump.** The game's Charge Jump is a skill, and your save does not
+  have it: RT + A is a plain jump there. Holding A now charges a leap of
+  Spidy's own instead, with or without the skill: 4 m up after the shortest
+  hold, 11.5 m after 0.8 s, and up to 12 m/s forward with the left stick. It
+  leaves the ground by the game's jump and flies as a swing's release does.
+- **The vent.** You were on the auction house's roof, looking down, and
+  pressed Y three times. The game offers a thing only with its own camera on
+  it. Spidy turned that camera left and right to follow your head (October
+  12's second build), never up and down: it stayed 10 degrees below level,
+  so nothing at your feet or overhead was ever in its view. It follows your
+  head's pitch now. In the game the pad's stick pitches that camera from 85
+  degrees down to 68 up, as fast as it turns it. **Not tried at your vent:**
+  if a prompt shows now and asks for LB + RB, that is the right stick's
+  click.
+- **The air pull.** All 16 of your yanks were let go a quarter of a second
+  in (the flick of the wrist a yank is), so each thug was thrown at where
+  your hand had been while you flew on. Now a thug yanked while you are in
+  the air comes to you: he is steered to a spot an arm's length in front of
+  you at chest height, at up to 28 m/s on top of your own speed, whether or
+  not you still hold the grip. Time slows when he gets there, not when you
+  yank (for 1.2 s), and you hang in the air for 1.6 s unless a web carries
+  you. Hit him and the blow has him: an uppercut or a blow in the air keeps
+  him up, and you hang on with each. Without a blow he falls after 1.6 s.
+- **Your save.** My checks ran in your profile's game. One of them pressed A
+  on MANUAL SAVE by mistake and the game autosaved during two others. I put
+  `slot0-s.save` back as it was at 14:20 and moved the stray manual save out
+  (both are in `reports/backups/saves-20261012-quit-crash/made-by-the-tests`).
+- **Checked:** 279 core tests, the launcher's, 112 Python checks. **Not
+  tried in the headset: all of it.**
+
+**Earlier build (October 12, fourth build): called blows, slow motion by
+itself, ropes for webs, Charge Jump, the scan, and four changes of
+defaults.** You asked for eight things in one list; each is quoted below.
+
+- **"lets add visuals cues and system to and required directional o specific
+  attacks to our combat (like in batman arkham shadow)".** Called blows. From
+  your second blow on, a blow that leaves a thug standing calls the next one:
+  an arrow over his chest points left, right, up or down, inside a ring that
+  runs down in 3.5 seconds. Throw your next fist at him that way, as you see
+  him (within 60 degrees of it; a straight jab answers none), and it is a
+  called blow: half again the damage, a cyan burst, and he goes the way it
+  went (a hook sends him flying as a full blow does, up lifts him, down
+  floors him, or slams him if he is in the air). Any other blow at him is an
+  ordinary one. The finisher must be called: after four blows a gold arrow
+  shows, and the next blow is the finisher only if it follows it. A blow that
+  does not is a plain one that leaves him standing, the count stays at four,
+  and the gold arrow comes back pointing another way. The way is never the
+  same twice running.
+- **"lets sprinkle slow motion to the gameplay (maybe on attacks set, when
+  pulling an enemy while in the air, on perfect dodges etc)".** Time slows to
+  0.3 for a moment by itself, with slow motion's look, fainter, and no focus
+  spent: at a finisher, an uppercut that lifts a thug and a slam (0.3 s, after
+  the blow's own stop); at a called blow (0.35 s); when your web yanks a thug
+  off his feet while you are in the air (0.7 s); and at a perfect dodge
+  (0.6 s). After one ends, none starts for 1.5 s, so a flurry is not one long
+  slow motion; a dodge's starts all the same. The perfect dodge is read from
+  the game: a B that went down with the game's time at full speed, and the
+  game slowing its own time within 0.7 s of it. **That signal is a guess**: I
+  have not seen the game do it, so that one may never fire, or fire for
+  something else the game slows time for after a dodge.
+- **"lets make the webs physical, less stretchy and allow them to curle
+  around edges (instead of cutting them off)".** Webs are ropes now
+  (PHYSICAL WEBS in Settings > SPIDY VR and the launcher, on unless switched
+  off). Three things:
+  - *Round edges.* A wall that came between you and your web's end cut the
+    web off after 0.15 s. Now the web bends round the edge it met (found by
+    halving the step back to where the line was still clear) and holds you
+    from there, with what is left of its length; swing back and it comes off
+    the edge again. Round six edges at most; where no edge is found it lets
+    go as before. The game draws the web as far as its nearest bend: the rest
+    lies behind the corner.
+  - *In your hand.* A web's length was measured from its end to the middle of
+    your body, so the line from your wrist grew and shrank with every move of
+    your arm. It is measured to the hand that holds it now: a taut web keeps
+    its length, and a hand pulled back pulls you after it, at the speed it
+    moved (8 m/s at most). The sharp pull still zips on top of that.
+  - *Paid out.* A web kept the length it was shot with while the game walked
+    you. Walk 10 m on and step off a roof, and it pulled you back those 10 m
+    at once, at up to your speed limit: the snap that made it feel like
+    rubber. It grows as you walk now, with a hand's width to spare, and holds
+    at its new length once you are in the air. A reel, a zip, a jump or an
+    edge takes you off the ground as before; an arm that moves does not.
+- **"lets make holding jump execute Charge Jump".** A held on the ground for
+  0.18 s is the game's RT + A until you let go, and the game leaps. The
+  price: a tap of A jumps as you let it go, not as it goes down. In the game
+  the Charge Jump turned out to be a skill ("Hold RT + A while running or
+  standing to build up charge, then release A for a huge leap": Skills >
+  Webslinger), locked on the save I tried, where RT + A jumps at once. So
+  after two holds that end in a plain jump Spidy takes the skill as missing
+  and stops waiting for A (no delay at all), until you have been in the
+  game's menus, where it is bought. **I could not try the charge itself**:
+  no save here has the skill.
+- **"lets add and ability to scan the environment (ingame r3) to putting my
+  hand to my temple pressing trigger".** A trigger pulled with its hand
+  beside your head (either hand, either side: within 19 cm of a point 15 cm
+  out from the middle of your eyes) is the game's R3 for as long as you hold
+  it, with a tick in both hands. That pull shoots no web ball and reels
+  nothing. In the game R3 on Spidy's controller brought up the scan (the
+  objective panel).
+- **"lets disable the two triggers to go to virtual screen mode (instead we
+  can put an option to switch to between that and full vr in the pause
+  menu".** I took "the two triggers" for the two thumbstick clicks, which was
+  the switch. Clicking both now does nothing. VIEW in Settings > SPIDY VR
+  (VR, or FLAT SCREEN) is the switch; chosen there, the flat screen is the
+  menu's own screen, where it stands. Each session starts in VR.
+- **"lets set the default weight to 100%".** Done, in the game's tab, the
+  launcher and the session. A launcher that still has the old default (80%)
+  saved starts on 100%; one where you chose another weight keeps it.
+- **"lets disable depth of field sharpening (allow users to override from
+  settings)".** I read that as the game's two settings, Depth of Field and
+  Sharpness. A VR session turns the first off and sets the second to its
+  lowest, as it already does with frame generation and vertical sync, and
+  puts both back when the game closes. "Game's depth of field" and "Game's
+  sharpening" in the launcher's options keep yours.
+- **Checked:** 277 core tests (11 new), the launcher's, and 112 Python
+  checks. In the game without a headset: a jump, a web, a reel, a release and
+  a landing with the new rope code (no fault, every hook restored); the
+  Charge Jump's input and the scan's. **Not tried: anything in the headset.**
+  The arrows, the moments, how a rope in the hand and a web round a corner
+  feel, the temple, the VIEW row: all of it is yours to try first.
+
+**Earlier build (October 12, third build): bodies are nobody's target; web
 balls web turrets, and whatever else the game webs up.** You said: "bodies are
 still targetable by hands (for webbing i guess), they shouldnt be. after
 entering the door there are turrents that the game tells me to press rb

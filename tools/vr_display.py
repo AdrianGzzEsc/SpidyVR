@@ -11,7 +11,8 @@ has closed.
 Every VR session also turns off three game settings, whatever its window (SESSION):
 frame generation, vertical sync, and the game's Windows.Gaming.Input, which under
 SteamVR takes the controllers away from Spidy's XInput controller. They are saved
-and restored with the window's.
+and restored with the window's. So are the game's depth of field and its sharpening,
+which a session turns off unless told to keep them (PICTURE).
 """
 import argparse
 import ctypes
@@ -48,7 +49,13 @@ ASPECT = 16/9
 #   gamepads (Valve 28de:11ff) there, then logged "XInput disabled, disconnecting controller" and never
 #   read Spidy's XInput controller again (pad_reads 0): its menus did not move. At 0 the game skips
 #   Windows.Gaming.Input altogether (Spider-Man.exe 1d14c89); XInput and DualSense (libScePad) stay.
-SESSION = ((KEY, dict(DLSSG=0, FrameGen=0, VSync=0), False),
+# - Depth of field off (DOFQuality 0) and sharpening at its lowest (Sharpness 1, where the game's slider
+#   stores its 0), since October 12: the game blurs by distance from its own camera's focus, which in the
+#   headset is not where you look (the 3D game screen's cutscenes most of all), and its sharpening pass
+#   rings and shimmers on edges at the eyes' resolution. `keep` in prepare_session leaves either as the
+#   player has it (the launcher's "Game's depth of field" and "Game's sharpening").
+PICTURE = dict(depth_of_field='DOFQuality', sharpening='Sharpness')
+SESSION = ((KEY, dict(DLSSG=0, FrameGen=0, VSync=0, DOFQuality=0, Sharpness=1), False),
            (INPUT_KEY, dict(EnableWindowsGamingInput=0), True))
 
 
@@ -154,17 +161,19 @@ def shrink(registry=None, backup=BACKUP, screen=None):
     return wanted
 
 
-def prepare_session(registry=None, backup=BACKUP):
+def prepare_session(registry=None, backup=BACKUP, keep=()):
     """Turn off what SESSION lists, adding the user's values to the backup (made here if the window
-    keeps the user's settings). Returns the values written."""
+    keeps the user's settings). keep: PICTURE names ('depth_of_field', 'sharpening') to leave as the
+    player has them. Returns the values written."""
     registry = registry or Registry()
+    kept = {PICTURE[name] for name in keep}
     saved = json.loads(backup.read_text()) if backup.exists() else dict(key=KEY, values={})
     if 'session' not in saved:
         saved['session'] = []
         for key, wanted, create in SESSION:
             current = registry.read(tuple(wanted), key)
             saved['session'].append(dict(key=key, values={name: current.get(name) for name in wanted
-                                                          if name in current or create}))
+                                                          if (name in current or create) and name not in kept}))
         backup.parent.mkdir(parents=True, exist_ok=True)
         backup.write_text(json.dumps(saved, indent=2)+'\n')
     before = {entry['key']: entry['values'] for entry in saved['session']}
@@ -177,10 +186,10 @@ def prepare_session(registry=None, backup=BACKUP):
     return written
 
 
-def prepare_launch(small=True, registry=None, backup=BACKUP, screen=None):
+def prepare_launch(small=True, registry=None, backup=BACKUP, screen=None, keep=()):
     """Called with the game closed, just before it starts. A previous session's values are restored
-    first, so a backup always holds the user's own settings. Returns the window's values written
-    (None when the window keeps the user's settings).
+    first, so a backup always holds the user's own settings. keep: as prepare_session's. Returns the
+    window's values written (None when the window keeps the user's settings).
 
     Raises OSError when a settings change or its backup fails. Any changes made during this attempt
     are restored where possible; if restoration also fails, the backup stays for a later retry."""
@@ -188,7 +197,7 @@ def prepare_launch(small=True, registry=None, backup=BACKUP, screen=None):
     restore(registry, backup)
     try:
         window = shrink(registry, backup, screen) if small else None
-        prepare_session(registry, backup)
+        prepare_session(registry, backup, keep)
     except OSError:
         try:
             restore(registry, backup)

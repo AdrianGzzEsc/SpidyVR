@@ -61,6 +61,19 @@ struct FightFist {
     // The hand's web button, 0..1 (HandInput::grip).
     float web{};
 };
+// What the player has in mind as a fist is thrown.
+struct StrikeWish {
+    // The enemy his next punch goes to (Lock; 0: nobody is marked, and the
+    // fist picks as it points). With one marked a strike goes to him and to
+    // no other: a punch that falls short of the thug in front of the player
+    // does not fly him to another the fist happens to point at.
+    std::uint64_t target{};
+    // The way the flow's call asks a fist to travel (Cues::direction: world,
+    // unit; zero: nothing is called). A fist swung that way at the marked
+    // enemy opens the strike too: a hook, an uppercut or a blow down, which
+    // go across and not out at him.
+    Vec3 called{};
+};
 struct WebStrikeConfig {
     // A strike opens with a fist at least this fast relative to the player
     // (a punch lands from 2.2 m/s, PunchConfig), going out from the player:
@@ -89,6 +102,10 @@ struct WebStrikeConfig {
     // the fist to his middle (37 degrees), wider for the one enemy this
     // hand's web holds. Of several, the one it points at best.
     float aim = .8f, heldAim = .4f;
+    // At the enemy the player has marked (StrikeWish): thrown his way within
+    // 60 degrees. And a fist that travels the way the flow calls (within
+    // calledAim of it, a cosine) need only not go away from him.
+    float markedAim = .5f, calledAim = .5f, calledToward = .15f;
     // He is this far from the player's chest at least (nearer, the fist
     // reaches him by itself) and at most, with nothing fixed in between.
     float minDistance = 1.3f, maxDistance = 10, chest = 1.2f;
@@ -126,6 +143,7 @@ class WebStrike {
         std::uint64_t target{};
         float distance{}; // from the chest to his middle, metres
         bool held{};      // the hand's own web held him
+        bool called{};    // the fist travelled the way the flow calls
     };
     // One step of the player's body.
     struct Step {
@@ -138,7 +156,13 @@ class WebStrike {
     // feet: the player's, in the world. Opens a strike when a fist asks for
     // one: the flight starts with the next step().
     std::optional<Opening> open(float seconds, const std::array<FightFist, 2>& fists, Vec3 head, Vec3 feet,
-                                std::span<const FightTarget> targets, const WorldQueries& world);
+                                std::span<const FightTarget> targets, const WorldQueries& world,
+                                const StrikeWish& wish = {});
+    // Swings that would have opened a strike at another enemy than the
+    // marked one, and opened none.
+    std::uint64_t passedOver() const {
+        return passedOver_;
+    }
     // One step of the player's body, `seconds` (real) long, from `feet`;
     // target: the strike's, where he is now (nullptr: gone).
     Step step(float seconds, Vec3 feet, bool grounded, const FightTarget* target);
@@ -151,8 +175,9 @@ class WebStrike {
     // game's jump is taking it off the ground). `seconds` real.
     void wait(float seconds);
     // A blow landed while the player or the one it hit was off the ground:
-    // the player hangs (WebStrikeConfig::hang).
-    void hangOn(bool grounded);
+    // the player hangs (WebStrikeConfig::hang, or `seconds` if longer: a thug
+    // pulled to him in the air has just arrived).
+    void hangOn(bool grounded, float seconds = 0);
     // This hand landed a punch: its swing opens no strike.
     void spent(int hand);
     // Idle at once, with no blow.
@@ -194,10 +219,61 @@ class WebStrike {
     Vec3 destination_{}, direction_{}, away_{0, 0, 1};
     float fistSpeed_{}, elapsed_{}, duration_{}, hangLeft_{}, hung_{}, sinceEnd_ = 100, sinceStep_{}, waited_{};
     std::array<float, 2> freeFor_{}, thrownFor_{}, sincePress_{100, 100};
-    std::array<bool, 2> armed_{true, true}, pressed_{};
+    std::array<bool, 2> armed_{true, true}, pressed_{}, passed_{};
+    std::uint64_t passedOver_{};
 };
 // The fist speed whose blow has this strength (PunchEvent::strength).
 float speedOf(const PunchConfig& config, float strength);
+
+// One enemy at a time. A look marks the enemy the next punch goes to; a blow
+// makes that mark a lock, and the lock stays on him wherever the player
+// looks, until he is down. The user, October 12, after a session of 96 web
+// strikes at 64 thugs: "i had a looot of accidental targeting and chaining of
+// enemies where i just wanted to finish one". Until then the mark went to
+// whoever was nearest the line of sight that instant, and a strike to
+// whoever the fist's motion pointed at best: 24 of the 51 strikes thrown
+// within a second and a half of a blow flew to another thug, 5.6 m off in
+// the middle.
+struct LockConfig {
+    // A look takes the enemy nearest the line of sight, within `cone` of it
+    // (a cosine: 40 degrees) and within `reach`; another takes the look's
+    // mark from him only when this much nearer to that line.
+    float cone = .766f, reach = 10, nearer = .04f;
+    // A lock holds for this long (real seconds) after the latest blow at him.
+    float idle = 4;
+    // The player turns to another: one within `square` of the line of sight
+    // (20 degrees) while the locked one is farther off it than `aside` (30
+    // degrees), for `dwell` seconds.
+    float square = .94f, aside = .866f, dwell = .3f;
+};
+class Lock {
+  public:
+    explicit Lock(LockConfig config = {});
+    // One input sample, `seconds` (real) after the one before: the player's
+    // head, where it looks (unit; zero: unknown) and the enemies in the
+    // fight. Returns the enemy the next punch goes to, 0 for none.
+    std::uint64_t update(float seconds, Vec3 head, Vec3 look, std::span<const FightTarget> enemies);
+    // A blow landed on him, a strike opened at him, or a web holds him: he
+    // is the one.
+    void take(std::uint64_t id);
+    void clear();
+    std::uint64_t target() const {
+        return target_;
+    }
+    // Held by a blow, where a look alone only marks.
+    bool locked() const {
+        return locked_;
+    }
+    const LockConfig& config() const {
+        return config_;
+    }
+
+  private:
+    LockConfig config_;
+    std::uint64_t target_{};
+    bool locked_{};
+    float since_{}, away_{};
+};
 
 struct FlowConfig {
     // Real seconds from one blow to the next for the flow to go on.
@@ -214,6 +290,15 @@ class Flow {
     void update(float seconds); // real
     // A blow landed: the count it brings the flow to.
     int hit();
+    // A blow landed that does not count (a finisher that was not called,
+    // Cues): the flow goes on from it as it stands.
+    void keep() {
+        since_ = 0;
+    }
+    // 1..0 of the time the flow has left before it starts over; 0 with no flow.
+    float left() const {
+        return count_ ? std::clamp(1 - since_ / config_.window, 0.f, 1.f) : 0.f;
+    }
     void reset();
     int count() const {
         return count_;
@@ -228,6 +313,77 @@ class Flow {
     FlowConfig config_;
     int count_{};
     float since_{};
+};
+
+// Called blows. In Arkham Shadow a mark on the enemy asks for one blow in
+// particular (a hook from one side, an uppercut, a blow down), and a combo
+// runs through the blows it calls. Here the flow calls its next blow, from
+// its `from`th on: an arrow (web_visual.hpp's appendCue) over the enemy the
+// player's next punch would go to shows which way the fist must travel, as
+// the player sees him, drawn from the side it comes from. A fist that lands
+// going that way, or opens a web strike swung that way, is a called blow: it
+// hits harder and throws him the way it went (up lifts him, down slams or
+// floors him, a hook sends him flying to that side), and the flow calls
+// another way. Any other blow is an ordinary one and the call stands, the
+// same way, until a blow answers it or the flow ends. The flow's finisher
+// must be called: at the count before it the call is the finisher's, and
+// until a blow answers it the count stays where it is.
+//
+// The first version (October 12, fourth build) tied each call to the thug a
+// blow landed on, showed it 0.2 s later for 3.5 s, and let any other blow at
+// him replace it with a new way. In that day's 14:06 session 17 calls were
+// made in 24 blows and none answered: a flurry replaced each before it
+// showed, 13 of the blows were web strikes, which go straight at him and
+// answer nothing, and the count stood at 4 for a minute with no finisher.
+//
+// The second (fifth build) kept one call for the flow, and web strikes still
+// answered nothing. The 15:42 session: 27 calls, 2 answered. Of the 58 blows
+// that landed while a call stood, 42 were web strikes; 32 blows landed with
+// the finisher called and the count at 4. Since then a strike answers with
+// the fist that opened it (StrikeWish::called), a swing the called way at
+// the marked enemy opens one, and the arrow comes in from its side.
+enum class CueWay : std::uint8_t { None, Left, Right, Up, Down };
+struct CueConfig {
+    // The flow's count from which it calls the next blow.
+    int from = 2;
+    // The cosine between a fist's motion and the called way, at least: 60
+    // degrees to either side.
+    float aim = .5f;
+    // A called blow's damage, times.
+    float damage = 1.5f;
+};
+struct Cue {
+    CueWay way{};    // None: nothing is called
+    bool finisher{}; // the blow it calls is the flow's finisher
+};
+class Cues {
+  public:
+    explicit Cues(CueConfig config = {});
+    // Whether a fist's blow along `direction` (world, unit) goes the called
+    // way, for a player who sees the enemy along `toTarget` (world, from the
+    // head to him). False while nothing is called.
+    bool answers(Vec3 direction, Vec3 toTarget) const;
+    // A blow landed and brought the flow to `count`; the next one is its
+    // finisher if `finisherNext`. A call that stands stays, the finisher's
+    // from then on; one that was `answered` gives way to another. True when
+    // a new way is called. `chance`: any number that differs from blow to
+    // blow; the way called is never the one before.
+    bool call(int count, bool finisherNext, bool answered, std::uint32_t chance);
+    void clear();
+    const Cue& cue() const {
+        return cue_;
+    }
+    const CueConfig& config() const {
+        return config_;
+    }
+    // The way `way` points in the world for a player who sees the target
+    // along `toTarget`: level across his view to his left or right, or up or down.
+    static Vec3 direction(CueWay way, Vec3 toTarget);
+
+  private:
+    CueConfig config_;
+    Cue cue_{};
+    CueWay last_{};
 };
 
 // What a landed blow is, for how it is delivered and how it feels.
@@ -264,9 +420,11 @@ struct Delivery {
     Vec3 velocity{};
 };
 // How the blow `blow` goes to the game: the `count`th of its flow, at a
-// target on his feet or in the air.
+// target on his feet or in the air. called: the way it was called and went
+// (Cues::answers), None for an ordinary blow; calledDamage: such a blow's
+// damage, times.
 Delivery deliver(const PunchEvent& blow, bool targetAirborne, int count, const Flow& flow,
-                 const DeliveryConfig& config = {});
+                 const DeliveryConfig& config = {}, CueWay called = CueWay::None, float calledDamage = 1.5f);
 
 // The game's time around a landed blow: it all but stops for a moment, then
 // eases back, as fighting games freeze on a hit. The head and the hands keep

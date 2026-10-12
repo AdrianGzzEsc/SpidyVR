@@ -32,6 +32,8 @@ inline SwingConfig physicsConfig(const Config& c) {
     physics.zipMultiplier = 4.5f;
     // Walls are the swing's own from the start (Settings::walls).
     physics.walls = true;
+    // And webs are ropes (Settings::physical).
+    physics.physical = true;
     return physics;
 }
 // MoverStandard applies a velocity command during the physics step after the
@@ -111,7 +113,7 @@ struct Hand {
     float trigger{}, grip{};
 };
 struct Command {
-    uint32_t magic = 0x5357434d, version = 3, bytes = sizeof(Command), focused{};
+    uint32_t magic = 0x5357434d, version = 4, bytes = sizeof(Command), focused{};
     uint64_t serial{};
     uint32_t leaseMs = 100, jump{};
     Hand hands[2];
@@ -123,8 +125,13 @@ struct Command {
     // Version 3: a flip's tilt of the tracking space (Input::tilt). Version 2
     // (commandBytesV2, the probes') ends before it: level.
     Quat tilt{};
+    // Version 4: a charged leap let go of (Input::leap, 0: none), and where
+    // the head looks (Input::look; zero: unknown). Version 3
+    // (commandBytesV3) ends before them.
+    float leap{};
+    Vec3 look{};
 };
-constexpr uint32_t commandBytesV2 = 168;
+constexpr uint32_t commandBytesV2 = 168, commandBytesV3 = 184;
 struct WebState {
     uint32_t attached{}, bodyId{};
     Vec3 anchor{};
@@ -160,8 +167,8 @@ struct Data {
     float wallDistance{};
     uint32_t walls{}, wallJumps{}, mount{};
 };
-static_assert(sizeof(Config) == 64 && sizeof(Hand) == 52 && sizeof(Command) == 184 &&
-              offsetof(Command, tilt) == commandBytesV2);
+static_assert(sizeof(Config) == 64 && sizeof(Hand) == 52 && sizeof(Command) == 200 &&
+              offsetof(Command, tilt) == commandBytesV2 && offsetof(Command, leap) == commandBytesV3);
 // SpidySwingSettings: what the VR settings (the SPIDY VR tab in the game's
 // Settings) change during play.
 // grab: webs catch props and thugs (a swing started without them starts
@@ -172,16 +179,36 @@ static_assert(sizeof(Config) == 64 && sizeof(Hand) == 52 && sizeof(Command) == 1
 // VR settings' weight), up to maxGravity. Version 4, walls: a player in the
 // air stays on the walls it comes into (Swing::allowWalls); off, the game's
 // own wall crawl takes it as before. Version 3 (settingsBytesV3, the
-// probes') ends before it and leaves the walls as they are.
+// probes') ends before it and leaves the walls as they are. Version 5,
+// physical: webs are ropes (SwingConfig::physical: they bend round edges,
+// are held by the hand and pay out on the ground); off, as before October
+// 12. Version 4 (settingsBytesV4) ends before it and leaves the webs as they
+// are.
 struct Settings {
-    uint32_t magic = 0x53575354, version = 4, bytes = sizeof(Settings), grab = 1;
+    uint32_t magic = 0x53575354, version = 5, bytes = sizeof(Settings), grab = 1;
     float maxSpeed = 32;
     uint32_t airWebs = 1;
     float gravity = 6;
     uint32_t walls = 1;
+    uint32_t physical = 1;
 };
-constexpr uint32_t settingsBytesV3 = 28;
-static_assert(sizeof(Settings) == 32 && offsetof(Settings, walls) == settingsBytesV3);
+constexpr uint32_t settingsBytesV3 = 28, settingsBytesV4 = 32;
+static_assert(sizeof(Settings) == 36 && offsetof(Settings, walls) == settingsBytesV3 &&
+              offsetof(Settings, physical) == settingsBytesV4);
+// Physical webs (SpidyRopeData): what the ropes did, for the session report.
+struct Ropes {
+    uint32_t magic = 0x53575250, version = 1, bytes = sizeof(Ropes), physical{};
+    int64_t sequence{};
+    // Bends made round an edge and taken off again; webs let go because
+    // something stayed in the way (no edge found, or too many); steps a web
+    // grew while the game walked the player.
+    uint64_t wraps{}, unwraps{}, cut{}, paidOut{};
+    // Each hand's web now: its bends, the rope beyond the last (m), and all
+    // of it from its end (m).
+    uint32_t bends[2]{};
+    float free[2]{}, whole[2]{};
+};
+static_assert(sizeof(Ropes) == 80);
 // The movement module's own limit: every speed the VR settings offer.
 constexpr float motionSpeedLimit = 65;
 // The most gravity a swing takes, m/s^2: every weight the VR settings offer.
@@ -227,7 +254,9 @@ inline bool valid(const Command& c) {
     const auto& t = c.tilt;
     const float tilt = t.x * t.x + t.y * t.y + t.z * t.z + t.w * t.w;
     if (c.magic != 0x5357434d ||
-        !((c.version == 2 && c.bytes == commandBytesV2) || (c.version == 3 && c.bytes == sizeof(c))) ||
+        !((c.version == 2 && c.bytes == commandBytesV2) || (c.version == 3 && c.bytes == commandBytesV3) ||
+          (c.version == 4 && c.bytes == sizeof(c))) ||
+        !std::isfinite(c.leap) || c.leap < 0 || c.leap > 1 || !finite(c.look) || length(c.look) > 1.01f ||
         !c.serial || c.focused > 1 || c.jump > 1 || c.leaseMs > 250 || (c.focused && !c.leaseMs) ||
         !finite(c.move) || length(c.move) > 1.001f || !std::isfinite(c.trackingYaw) || c.reserved ||
         !std::isfinite(c.sampleSeconds) || c.sampleSeconds <= 0 || c.sampleSeconds > .1f ||
@@ -304,8 +333,12 @@ inline Input input(const Command& c) {
     out.trackingYaw = c.trackingYaw;
     const float n =
         std::sqrt(c.tilt.x * c.tilt.x + c.tilt.y * c.tilt.y + c.tilt.z * c.tilt.z + c.tilt.w * c.tilt.w);
-    if (c.version == 3 && n > .5f)
+    if (c.version >= 3 && n > .5f)
         out.tilt = {c.tilt.x / n, c.tilt.y / n, c.tilt.z / n, c.tilt.w / n};
+    if (c.version >= 4) {
+        out.leap = c.leap;
+        out.look = c.look;
+    }
     for (unsigned i = 0; i < 2; ++i)
         out.hands[i] = {c.hands[i].aim, c.hands[i].relative, c.hands[i].tracked != 0, c.hands[i].trigger,
                         c.hands[i].grip};

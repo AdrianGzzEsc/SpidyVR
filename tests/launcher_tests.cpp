@@ -237,6 +237,27 @@ int main() {
         options.standOnWalls = false;
         args = sessionArguments(options, L"r.json", L"", L"");
         check(args.size() == 8 && args[7] == L"--no-stand-on-walls", "standing on walls switched off");
+        // Real gravity is the default weight since October 12, and goes unsaid; the old default is passed.
+        options = {};
+        check(options.weight == 100, "the weight in a new launcher is not real gravity");
+        args = sessionArguments(options, L"r.json", L"", L"");
+        check(args.size() == 7, "the default weight said to the session");
+        options.weight = 80;
+        args = sessionArguments(options, L"r.json", L"", L"");
+        check(args.size() == 9 && args[7] == L"--weight" && args[8] == L"80", "a lighter weight");
+        // Physical webs are on, and the game's depth of field and sharpening are the session's to turn
+        // off, unless switched.
+        options = {};
+        check(options.physicalWebs && !options.gameDepthOfField && !options.gameSharpening,
+              "physical webs off, or the game's picture kept, in a new launcher");
+        options.physicalWebs = false;
+        args = sessionArguments(options, L"r.json", L"", L"");
+        check(args.size() == 8 && args[7] == L"--no-physical-webs", "physical webs switched off");
+        options = {};
+        options.gameDepthOfField = options.gameSharpening = true;
+        args = sessionArguments(options, L"r.json", L"", L"");
+        check(args.size() == 9 && args[7] == L"--game-depth-of-field" && args[8] == L"--game-sharpening",
+              "the game's own depth of field and sharpening kept");
         options = {};
         check(options.screenDepth == 2, "cutscenes at medium depth in a new launcher");
         options.screenDepth = 0;
@@ -288,6 +309,10 @@ int main() {
                   options.flipSpeed == 300 && options.triggerWebs && options.hud == 0 && !options.standOnWalls &&
                   options.screenDepth == 3 && options.screenSize == 2,
               "every value, the last one before a carriage return");
+        check(options.physicalWebs && headsetSettings("VR settings from the headset: physical_webs=0", options) &&
+                  !options.physicalWebs && headsetSettings("VR settings from the headset: physical_webs=1", options) &&
+                  options.physicalWebs,
+              "physical webs switched in the headset");
         const auto kept = options;
         check(!headsetSettings("VR settings from the headset: aim_markers=0 air_webs=0", options) && options == kept,
               "the same values again");
@@ -306,7 +331,7 @@ int main() {
         SessionOptions options;
         check(!calibrated(options) && options.calibrationPrompt, "a new launcher has one");
         // Calibrated in the headset: eyes 1.63 m high, arms 0.59 m.
-        check(headsetSettings("VR settings from the headset: aim_markers=1 air_webs=1 swing_speed=32 weight=80 "
+        check(headsetSettings("VR settings from the headset: aim_markers=1 air_webs=1 swing_speed=32 weight=100 "
                               "snap_turn=30 smooth_turn=0 haptics=100 screen_size=1 eye_height_mm=1630 "
                               "arm_length_mm=590 calibration_prompt=1",
                               options) &&

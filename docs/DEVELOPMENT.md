@@ -212,10 +212,9 @@ of impact:
 - `Launch Spidy VR.cmd`: checks the headset, starts Steam Spider-Man with its
   launcher skipped, and attaches VR when your save has loaded. It stays running
   until game exit or Ctrl+C in its console. Eye resolution follows the active
-  runtime recommendation, times `-RenderScale`. Click both thumbsticks to
-  switch between VR and a flat game screen inside the headset. These new
-  launch/toggle features are built and locally tested; headset validation is
-  pending.
+  runtime recommendation, times `-RenderScale`. VIEW in the game's Settings >
+  SPIDY VR switches between VR and a flat game screen inside the headset
+  (a click of both thumbsticks did until October 12).
 - `spidy_render_memory.dll`: replaces the game's 128 MB per-frame render memory
   with a 512 MB ring where the game creates it, and reports how much of it
   frames use. The VR launcher loads it while the game starts.
@@ -233,6 +232,11 @@ of impact:
   command expiry, and hook restoration checks.
 - `tools/probe_game_swing.py`: a six-second native web attachment/release/landing
   test with automatic hook restoration. No headset is required.
+- `tools/preview-marks.ps1` (and `spidy_mark_preview`, `apps/mark_preview.cpp`):
+  draws the combat marks over two eye captures of a VR session, or over a
+  plain backdrop, as PNG sheets of their states and poses. The overlay's own
+  vertices, one sample a pixel, at about the headset's pixel density. No
+  game and no headset.
 - `tools/probe_game_grab.py`: webs the nearest throwable prop in sight from where
   the player stands, reels (or with `--yank` yanks) it in, carries it and throws
   it, in a freshly started game; `--watch SECONDS` watches it land and come to
@@ -448,7 +452,19 @@ hard as you hit him; the controller kicks, time stops for a moment, a burst
 shows where the blow landed and it sounds. A fist thrown at a thug up to 10 m
 away flies you to him and lands as you arrive (the web strike), blows in a row
 count up to a finisher, an uppercut lifts him and you can follow him up
-(`include/spidy/web_strike.hpp`). `-NoBody` hides the hero and draws
+(`include/spidy/web_strike.hpp`). He fights one enemy at a time (`Lock`): a
+look marks the enemy the next punch goes to, a blow locks the mark on him
+until he is down, and a strike goes to the marked enemy alone
+(`StrikeWish`); a knockout of his is lettered and eases time for an instant.
+The marks of a fight (the ring over the
+thug the next punch goes to, the called blow's arrow, the bursts, the count)
+are printed as the graphics of Spidy's videos are: the style system's colours
+(ink `#0b0a14` for every keyline, paper `#f7f5ee`, red `#e3262f`, yellow
+`#ffe14d`, cyan `#12d6ff` and magenta `#ff2e93` for the misprint's two
+ghosts), a keyline round every shape, a hard drop instead of a shadow, and
+motion on twos: a pose held a twelfth of a second, then the next
+(`Print` in `src/web_visual.cpp`). To see a change to them without a
+headset, run `tools/preview-marks.ps1`. `-NoBody` hides the hero and draws
 gloves instead; `-NoPunch` lets fists pass through and switches the strike off
 with them. See [docs/BODY.md](BODY.md).
 
@@ -514,8 +530,11 @@ pressed a button, the game ignores the keyboard for the player. The screen has t
 game's desktop window, small when the launcher starts the game;
 `-FullDesktopView` makes it sharper.
 
-Click **both thumbsticks** to switch between immersive VR and a flat screen
-inside the headset. Release both before clicking again. Flat mode uses the
+VIEW in the SPIDY VR tab (FLAT SCREEN, or VR) switches between immersive VR
+and a flat screen inside the headset; until October 12 a click of both
+thumbsticks did, which a player hit by accident (each stick's click has a use
+of its own: slow motion, the game's LB + RB). Each session starts in VR. Flat
+mode uses the
 stock game camera and the game's own controls on a real gamepad (not the
 keyboard, as above; the Touch controllers pass only the menu button and X);
 VR movement and web input are released. In immersive VR the monitor shows your

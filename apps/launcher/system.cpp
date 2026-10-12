@@ -520,7 +520,7 @@ Settings loadSettings() {
     Settings settings;
     std::istringstream lines(readText(settingsPath(), 1 << 16));
     std::string line;
-    int weight = 0, legacyWeight = 0;
+    int weight = 0, percentWeight = 0, legacyWeight = 0;
     while (std::getline(lines, line)) {
         if (!line.empty() && line.back() == '\r')
             line.pop_back();
@@ -543,6 +543,9 @@ Settings loadSettings() {
         else if (key == "flips") o.flips = number() != 0;
         else if (key == "trigger_webs") o.triggerWebs = number() != 0;
         else if (key == "stand_on_walls") o.standOnWalls = number() != 0;
+        else if (key == "physical_webs") o.physicalWebs = number() != 0;
+        else if (key == "game_depth_of_field") o.gameDepthOfField = number() != 0;
+        else if (key == "game_sharpening") o.gameSharpening = number() != 0;
         // eye_size (a square size, before October 8) is no longer read: 2048 x 2048 rendered one player's game
         // below the 2496 x 2688 their headset asked for, and it looked blurry.
         else if (key == "render_scale") o.renderScale = spidy::validRenderScale(number()) ? number() : 100;
@@ -560,9 +563,11 @@ Settings loadSettings() {
         else if (key == "screen_depth") o.screenDepth = std::clamp(number(), 0, 3);
         else if (key == "hud") o.hud = std::clamp(number(), 0, 3);
         else if (key == "flip_speed") o.flipSpeed = std::clamp(number(), 90, 480);
-        // "weight" (before October 9) was saved whether chosen or not: its old default, 60, starts on today's.
+        // "weight" (before October 9) and "weight_percent" (until October 12) were saved whether chosen or
+        // not: their old defaults, 60 and 80, start on today's, real gravity.
         else if (key == "weight") legacyWeight = std::clamp(number(), 40, 300);
-        else if (key == "weight_percent") weight = std::clamp(number(), 40, 300);
+        else if (key == "weight_percent") percentWeight = std::clamp(number(), 40, 300);
+        else if (key == "gravity_percent") weight = std::clamp(number(), 40, 300);
         else if (key == "eye_height_mm") o.eyeHeightMm = number();
         else if (key == "arm_length_mm") o.armLengthMm = number();
         else if (key == "calibration_prompt") o.calibrationPrompt = number() != 0;
@@ -575,7 +580,9 @@ Settings loadSettings() {
     }
     if (weight)
         settings.options.weight = weight;
-    else if (legacyWeight && legacyWeight != 60)
+    else if (percentWeight && percentWeight != 80)
+        settings.options.weight = percentWeight;
+    else if (!percentWeight && legacyWeight && legacyWeight != 60)
         settings.options.weight = legacyWeight;
     // A calibration is both measurements within their ranges, or none.
     if (!text::calibrated(settings.options))
@@ -595,9 +602,11 @@ void saveSettings(const Settings& settings) {
          << "\nsmall_window=" << o.smallWindow << "\nstock_monitor_view=" << o.stockMonitorView
          << "\naim_markers=" << o.aimMarkers << "\nair_webs=" << o.airWebs << "\nflips=" << o.flips
          << "\ntrigger_webs=" << o.triggerWebs << "\nstand_on_walls=" << o.standOnWalls
+         << "\nphysical_webs=" << o.physicalWebs << "\ngame_depth_of_field=" << o.gameDepthOfField
+         << "\ngame_sharpening=" << o.gameSharpening
          << "\nrender_scale=" << o.renderScale << "\nupscale=" << o.upscale
          << "\nmonitor_rate=" << o.monitorRate
-         << "\nswing_speed=" << o.swingSpeed << "\nweight_percent=" << o.weight << "\nsnap_turn=" << o.snapTurn
+         << "\nswing_speed=" << o.swingSpeed << "\ngravity_percent=" << o.weight << "\nsnap_turn=" << o.snapTurn
          << "\nsmooth_turn=" << o.smoothTurn
          << "\nhaptics=" << o.haptics << "\nscreen_size=" << o.screenSize << "\nscreen_depth=" << o.screenDepth
          << "\nhud=" << o.hud

@@ -158,19 +158,64 @@ Vec3 onAimLine(Vec3 point, Vec3 normal, Vec3 origin, Vec3 direction);
 // pulse. pixelAngle as for appendWeb.
 void appendSlowMotionMeter(std::vector<Vertex>& out, const SlowMotionView& view, Pose hand, Vec3 viewer,
                            float pixelAngle, float seconds);
+// The combat marks below are printed, as the graphics of Spidy's videos are
+// (their style system: flat plates of colour, every shape keyed in ink, a
+// hard drop where a shadow would be, lettering out of register as it lands),
+// and they move on twos: a pose held a twelfth of a second, then the next,
+// with nothing eased or faded.
+//
 // A landed blow where the fist met him (web_strike.hpp), facing the viewer:
-// a white flash, a ring bursting out of it and rays thrown past the ring,
-// gone in a quarter of a second; the harder the blow, the wider, and warmer
-// in colour (a finisher's is red and twice as long). Above it the blow's
-// count in the flow, from the second on ("X3"), rising as it fades.
+// a comic's burst. A star, small and then whole, yellow around paper for a
+// jab and red around yellow for a harder blow; then its lines thrown clear,
+// a pose for a jab and two for a harder blow. A finisher's has a third,
+// widest star and three poses of lines. Above it the blow's count in the
+// flow, from the second on ("X3"): yellow lettering keyed in ink that pops
+// in off level, holds, and is gone in two poses.
 struct ImpactView {
-    static constexpr float seconds = .75f; // until the count has faded too
+    static constexpr float seconds = .75f; // until the count has gone too
     Vec3 point{};
     float strength{}; // 0..1
     BlowKind kind{};
     int count{};
     float age = -1; // seconds since it landed; below 0, or past `seconds`: nothing
+    // A called blow (Cues): its star is out of register, a cyan ghost to its
+    // left and a magenta one to its right.
+    bool called{};
 };
 // pixelAngle as for appendWeb.
 void appendImpact(std::vector<Vertex>& out, const ImpactView& impact, Vec3 viewer, float pixelAngle);
+// The mark over the chest of the enemy the player's next punch would go to
+// (game_punch), facing the viewer, with what the flow calls (web_strike.hpp's
+// Cues). Nothing called: a thin paper ring, a target and no more; once a
+// blow has locked the player onto him (Lock) the ring is bolder, with four
+// ticks in from it. A call: an arrow in a marker's stroke pointing the way
+// the fist must travel, as the viewer sees him (left, right, up or down),
+// coming in from the side the fist comes from and ending at his middle, so
+// that "from there" and "that way" are one reading; paper on a cyan drop,
+// over a cyan ring that runs down clockwise, a notch at a time, as the
+// flow's time does. The call for the flow's finisher is
+// larger: a yellow arrow on a red drop inside a burst's edge, a red zigzag
+// that runs down the same way. A call pops in (three poses, the first two
+// out of register) and its arrow then boils as a held drawing does; the mark
+// keeps a readable size at a distance.
+struct CueView {
+    Vec3 point{};
+    CueWay way{}; // None: the plain ring
+    bool finisher{};
+    float left{}; // 1..0 of the flow's time; 0: nothing at all
+    float age{};  // seconds since it showed
+    bool locked{}; // a blow holds the mark on him: it does not follow the look
+};
+// pixelAngle as for appendWeb.
+void appendCue(std::vector<Vertex>& out, const CueView& cue, Vec3 viewer, float pixelAngle);
+// A knockout of the player's, lettered where the enemy stood: "KO!" in yellow
+// on a red burst with a paper heart, as a sound word is. It pops in, holds,
+// and is gone in two poses: this one is done, look for the next.
+struct KnockoutView {
+    static constexpr float seconds = 8.f / 12; // eight poses
+    Vec3 point{};
+    float age = -1; // seconds since he went down; below 0, or past `seconds`: nothing
+};
+// pixelAngle as for appendWeb.
+void appendKnockout(std::vector<Vertex>& out, const KnockoutView& knockout, Vec3 viewer, float pixelAngle);
 } // namespace spidy

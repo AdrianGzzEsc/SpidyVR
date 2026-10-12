@@ -444,7 +444,8 @@ def start_settings(a):
                 swing_speed=round(a.swing_speed, 1), weight=a.weight,
                 snap_turn=a.snap_turn, smooth_turn=a.smooth_turn, haptics=a.haptics, screen_size=a.screen_size,
                 flips=a.flips, flip_speed=a.flip_speed, trigger_webs=a.trigger_webs, hud=a.hud,
-                stand_on_walls=not a.no_stand_on_walls, screen_depth=a.screen_depth, eye_height_mm=a.eye_height,
+                stand_on_walls=not a.no_stand_on_walls, physical_webs=not a.no_physical_webs,
+                screen_depth=a.screen_depth, eye_height_mm=a.eye_height,
                 arm_length_mm=a.arm_length, calibration_prompt=not a.no_calibration_prompt)
 
 
@@ -488,10 +489,10 @@ CALIBRATION_HINTS = {0: None, 1: 'tracking', 2: 'stand_up', 3: 'arms_out', 4: 's
 
 def snapshot(game, address):
     for _ in range(8):
-        raw = game.read(address, 832)
-        if len(raw) != 832:
+        raw = game.read(address, 840)
+        if len(raw) != 840:
             return None
-        if struct.unpack_from('<3I', raw) != (0x53585244, 24, 832):
+        if struct.unpack_from('<3I', raw) != (0x53585244, 25, 840):
             raise RuntimeError('Game XR protocol mismatch')
         if struct.unpack_from('<Q', raw, 16)[0] & 1 or raw[16:24] != game.read(address+16, 8):
             continue
@@ -537,6 +538,9 @@ def snapshot(game, address):
         # times the virtual controller's right stick began to turn the camera there.
         look_error, look_turns = struct.unpack_from('<fI', raw, 824)
         result.update(look_error=round(look_error, 1), look_turns=look_turns)
+        # The scans a trigger pulled at the temple began (the game's R3), and the Charge Jumps a held A
+        # began (its RT + A).
+        result.update(zip(('scans', 'charge_jumps'), struct.unpack_from('<2I', raw, 832)))
         result.update(interacts=interacts, aim_markers=bool(aim_markers),
                       markers=struct.unpack_from('<Q', raw, 656)[0])
         # The VR settings now (the SPIDY VR tab in the game's Settings changes them),
@@ -566,7 +570,8 @@ def snapshot(game, address):
                                        smooth_turn=smooth_turn, haptics=haptics, screen_size=screen_size,
                                        flips=bool(flags & 32), flip_speed=flip_speed,
                                        trigger_webs=bool(flags & 64), hud=hud,
-                                       stand_on_walls=bool(flags & 128), screen_depth=screen_depth,
+                                       stand_on_walls=bool(flags & 128), physical_webs=bool(flags & 256),
+                                       screen_depth=screen_depth,
                                        eye_height_mm=eye_height, arm_length_mm=arm_length,
                                        calibration_prompt=not calibration_flags & 1),
                       setting_changes=changes,
@@ -627,18 +632,42 @@ def body_snapshot(game, address):
 
 
 BLOW_KINDS = ('hit', 'heavy', 'launch', 'juggle', 'slam', 'finisher')
+CUE_WAYS = ('none', 'left', 'right', 'up', 'down')
+
+
+def rope_snapshot(game, address):
+    """Physical webs (game_swing::Ropes): the bends made round edges and taken off again, the webs cut off
+    because something stayed in the way, the steps a web paid out while the game walked the player, and each
+    hand's web now (its bends, the rope beyond the last and all of it, metres)."""
+    for _ in range(8):
+        raw = game.read(address, 80)
+        if len(raw) != 80:
+            return None
+        if struct.unpack_from('<3I', raw) != (0x53575250, 1, 80):
+            raise RuntimeError('Rope protocol mismatch')
+        if struct.unpack_from('<Q', raw, 16)[0] & 1 or raw[16:24] != game.read(address+16, 8):
+            continue
+        wraps, unwraps, cut, paid_out = struct.unpack_from('<4Q', raw, 24)
+        return dict(physical=bool(struct.unpack_from('<I', raw, 12)[0]), wraps=wraps, unwraps=unwraps, cut=cut,
+                    paid_out=paid_out, bends=list(struct.unpack_from('<2I', raw, 56)),
+                    free_m=[round(x, 2) for x in struct.unpack_from('<2f', raw, 64)],
+                    whole_m=[round(x, 2) for x in struct.unpack_from('<2f', raw, 72)])
+    return None
 STRIKE_PHASES = ('idle', 'flying', 'hanging')
 
 
 def strike_snapshot(game, address):
     """Fighting across the room (game_punch::Strikes): the web strikes opened, landed and missed, every blow
     landed (fists' and strikes') and of what kind, the thugs' flights given a blow's velocity, the strike in
-    progress, the flow's count, and the latest strike and blow."""
+    progress, the flow's count, and the latest strike and blow. One enemy at a time: `locked` is the enemy a blow
+    locked the player onto, `knockouts` those his blows knocked out, `swung` the strikes a fist opened by
+    travelling the called way, `strike_called` the strikes' blows that answered a call, and `passed_over` the
+    swings that pointed at another enemy than the marked one and opened nothing."""
     for _ in range(8):
-        raw = game.read(address, 216)
-        if len(raw) != 216:
+        raw = game.read(address, 328)
+        if len(raw) != 328:
             return None
-        if struct.unpack_from('<3I', raw) != (0x53535452, 1, 216):
+        if struct.unpack_from('<3I', raw) != (0x53535452, 3, 328):
             raise RuntimeError('Strike protocol mismatch')
         if struct.unpack_from('<Q', raw, 16)[0] & 1 or raw[16:24] != game.read(address+16, 8):
             continue
@@ -647,8 +676,23 @@ def strike_snapshot(game, address):
         phase, hand, flow, enemies = struct.unpack_from('<4I', raw, 120)
         distance, seconds = struct.unpack_from('<2f', raw, 156)
         strength, damage = struct.unpack_from('<2f', raw, 188)
-        kind, count, last_hand, by_strike = struct.unpack_from('<4I', raw, 196)
+        kind, count, last_hand, by_strike, last_called = struct.unpack_from('<5I', raw, 196)
+        # Called blows: the calls made, answered and taken away by another blow; and the call that shows
+        # now (on whom, which way its arrow points, whether it calls the finisher, how much time it has).
+        calls, called, missed_calls, cue_target = struct.unpack_from('<4Q', raw, 216)
+        cue_way, cue_finisher, cue_left = struct.unpack_from('<2If', raw, 260)
+        locked, knockouts = struct.unpack_from('<2Q', raw, 272)
+        cue_locked, = struct.unpack_from('<I', raw, 300)
+        swung, strike_called, passed_over = struct.unpack_from('<3Q', raw, 304)
         return dict(status=struct.unpack_from('<I', raw, 12)[0], opened=opened, landed=landed, missed=missed,
+                    calls=calls, called=called, missed_calls=missed_calls, last_called=bool(last_called),
+                    cue=dict(target=hex(cue_target), way=CUE_WAYS[cue_way] if cue_way < len(CUE_WAYS) else cue_way,
+                             finisher=bool(cue_finisher), left=round(cue_left, 2), locked=bool(cue_locked),
+                             point=[round(x, 3) for x in struct.unpack_from('<3f', raw, 248)]) if cue_target
+                    else None,
+                    locked=hex(locked), knockouts=knockouts,
+                    knockout_point=[round(x, 3) for x in struct.unpack_from('<3f', raw, 288)],
+                    swung=swung, strike_called=strike_called, passed_over=passed_over,
                     held=held, blows=blows, heavies=heavies, launches=launches, juggles=juggles, slams=slams,
                     finishers=finishers, flown=flown, unflown=unflown,
                     phase=STRIKE_PHASES[phase] if phase < len(STRIKE_PHASES) else phase, hand=hand, flow=flow,
@@ -888,16 +932,31 @@ def timing_snapshot(game, address):
 
 
 # Slow motion's counters (SlowMotionData in game_xr.cpp); a change of one is a sample.
+def steam_snapshot(game, address):
+    """The guard on the game's Steam ticket call (game_steam.hpp): whether it is in (status 9801: the game held
+    no Steam interface yet), the tickets asked for, those from the game's call on its way to the main menu, of
+    those the ones that came with something for an identity (the game passes none: its stack's), and the latest
+    such something."""
+    raw = game.read(address, 56)
+    if len(raw) != 56 or struct.unpack_from('<3I', raw) != (0x53544b54, 1, 56):
+        return None
+    installed, status = struct.unpack_from('<2I', raw, 12)
+    calls, from_game, cleared, identity = struct.unpack_from('<4Q', raw, 24)
+    return dict(installed=bool(installed), status=status, calls=calls, from_game=from_game, cleared=cleared,
+                last_identity=hex(identity))
+
+
 SLOW_MOTION_COUNTS = ('starts', 'stops', 'refused', 'emptied', 'interrupted')
+SLOW_MOMENTS = ('blow', 'called_blow', 'air_pull', 'perfect_dodge')
 
 
 def slow_motion_snapshot(game, address):
     """Slow motion: the player's presses, focus and the game's time (status 0: the game's time is hooked)."""
     for _ in range(8):
-        raw = game.read(address, 96)
-        if len(raw) != 96:
+        raw = game.read(address, 120)
+        if len(raw) != 120:
             return None
-        if struct.unpack_from('<3I', raw) != (0x574f4c53, 1, 96):
+        if struct.unpack_from('<3I', raw) != (0x574f4c53, 2, 120):
             raise RuntimeError('Slow motion protocol mismatch')
         if struct.unpack_from('<Q', raw, 16)[0] & 1 or raw[16:24] != game.read(address+16, 8):
             continue
@@ -910,6 +969,11 @@ def slow_motion_snapshot(game, address):
                           (round(v, 6) for v in struct.unpack_from('<7f', raw, 48))))
         result['physics_scaled'] = bool(struct.unpack_from('<I', raw, 76)[0])
         result.update(zip(('updates', 'slowed_updates'), struct.unpack_from('<2Q', raw, 80)))
+        # Moments (time slowed by itself): those begun by kind, whether one is on, and its time scale.
+        moments = struct.unpack_from('<4I', raw, 96)
+        active, scale = struct.unpack_from('<If', raw, 112)
+        result.update(moments=dict(zip(SLOW_MOMENTS, moments)), moment_active=bool(active),
+                      moment_scale=round(scale, 3))
         return result
     return None
 
@@ -1031,6 +1095,12 @@ def settle_display(running):
               r'starts the game it tries again (or run tools\vr_display.py --restore).', flush=True)
 
 
+def picture_kept(a):
+    """The game's picture settings a session leaves as the player has them (vr_display.PICTURE names)."""
+    return tuple(name for name, kept in (('depth_of_field', a.game_depth_of_field),
+                                         ('sharpening', a.game_sharpening)) if kept)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--seconds', type=float, default=0,help='0 runs until game exit or Ctrl+C; 2..25 runs a timed test')
@@ -1072,6 +1142,15 @@ def main():
     p.add_argument('--flip-speed', type=int, default=180,
                    help='How fast a flip turns you at full tilt of the left stick, in degrees a second (90..480; '
                         'default 180)')
+    p.add_argument('--no-physical-webs', action='store_true',
+                   help='Webs as before October 12: a wall that comes between you and a web cuts it off instead '
+                        'of bending it, its length is measured to your body, not your hand, and it keeps the '
+                        'length it was shot with while you walk')
+    p.add_argument('--game-depth-of-field', action='store_true',
+                   help="Keep the game's own Depth of Field setting; without it a session turns it off (in the "
+                        'headset the blur is not where you look)')
+    p.add_argument('--game-sharpening', action='store_true',
+                   help="Keep the game's own Sharpness setting; without it a session sets it to its lowest")
     p.add_argument('--no-stand-on-walls', action='store_true',
                    help='Walking a wall or stopped on it, your view stays upright beside it instead of turning so '
                         'that the wall is your floor')
@@ -1095,8 +1174,8 @@ def main():
     p.add_argument('--stock-monitor-view', action='store_true',
                    help="Keep the stock camera as the game's active view; culling and shadows then follow it, not the head")
     p.add_argument('--swing-speed', type=float, default=32, help='Native swing speed cap in m/s (default 32)')
-    p.add_argument('--weight', type=int, default=80,
-                   help='How heavy you are while webs fly you, in percent of real gravity (40..300; default 80)')
+    p.add_argument('--weight', type=int, default=100,
+                   help='How heavy you are while webs fly you, in percent of real gravity (40..300; default 100)')
     p.add_argument('--eye-height', type=int, default=0,
                    help="Your eye height in millimetres from a T-pose calibration (with --arm-length): Spider-Man's "
                         'body is sized to it. 0 (default): none yet, the first gameplay asks for one')
@@ -1181,7 +1260,7 @@ def session(a, startup):
 
     def prepare_display():
         try:
-            values = vr_display.prepare_launch(small=not a.full_desktop_view)
+            values = vr_display.prepare_launch(small=not a.full_desktop_view, keep=picture_kept(a))
         except OSError as error:
             # VR runs without them: the window only saves GPU time, and the two settings matter where
             # frame generation is on or under SteamVR.
@@ -1201,6 +1280,12 @@ def session(a, startup):
         print('Game settings for VR: frame generation off, vertical sync off (the game would wait for the '
               "monitor), controllers through XInput only (SteamVR's virtual gamepads would take the menus from "
               'the VR controllers); they return when the game closes.', flush=True)
+        kept = picture_kept(a)
+        off = [text for name, text in (('depth_of_field', 'depth of field off'),
+                                       ('sharpening', 'sharpening at its lowest')) if name not in kept]
+        if off:
+            print(f"Game picture for VR: {' and '.join(off)} (the launcher's options keep the game's own); "
+                  'they return when the game closes.', flush=True)
 
     render_module = {}
 
@@ -1255,7 +1340,7 @@ def session(a, startup):
         rays, ray_hash = prepare(game.pid, process, ROOT/'build/windows-ninja/spidy_ray_bridge.dll',
             ROOT/'reports/ray-modules', ('SpidyRayStart', 'SpidyRaySubmit', 'SpidyRayStop',
                                        'SpidyRaySample', 'SpidyRayData', 'SpidySwingData', 'SpidyGrabData',
-                                       'SpidyPunchData', 'SpidyStrikeData', 'SpidyShooterData'))
+                                       'SpidyPunchData', 'SpidyStrikeData', 'SpidyShooterData', 'SpidyRopeData'))
         # Imported here: probe_game_grab imports from this module.
         from probe_game_grab import grab_snapshot
         ray_module = next(m['base'] for m in modules(game.pid) if m['name'].lower() == 'spidy_ray_bridge.dll')
@@ -1267,7 +1352,8 @@ def session(a, startup):
             ROOT/'reports/stereo-modules', ('SpidyXrStart', 'SpidyXrStop', 'SpidyXrKeepAlive', 'SpidyXrData',
                                            'SpidyGpuData', 'SpidyXrTimingData', 'SpidyAppearanceData',
                                            'SpidyStereoFrames', 'SpidyXrSnapshot', 'SpidyStereoData',
-                                           'SpidyBodyData', 'SpidySlowMotionData', 'SpidyHudData'))
+                                           'SpidyBodyData', 'SpidySlowMotionData', 'SpidyHudData',
+                                           'SpidySteamData'))
         saved = vr_display.Registry().read(('ScreenSpaceReflections', 'RTReflections'))
         reflections, reflections_line = eye_reflections(saved.get('ScreenSpaceReflections'), a.no_eye_reflections,
                                                         saved.get('RTReflections', 0))
@@ -1283,7 +1369,8 @@ def session(a, startup):
                              (4096 if a.trigger_webs else 0) | (8192 if a.no_stand_on_walls else 0) |
                              (16384 if a.no_wall_run else 0) | (0x8000 if a.no_eye_antialiasing else 0) |
                              (0x10000 if a.game_monitor_view else 0) |
-                             (0x20000 if a.own_shadows else 0) | (0 if reflections else 0x40000)) + \
+                             (0x20000 if a.own_shadows else 0) | (0 if reflections else 0x40000) |
+                             (0x80000 if a.no_physical_webs else 0)) + \
             runtime_path(manifest) + struct.pack('<14I', a.snap_turn, a.haptics, a.screen_size, a.smooth_turn,
                                                  a.render_scale, a.weight, a.eye_height, a.arm_length, a.hud,
                                                  a.flip_speed, a.upscale, a.monitor_rate, a.screen_depth, 0)
@@ -1307,6 +1394,8 @@ def session(a, startup):
         body = punch = None
         punch_samples = deque(maxlen=2000)
         strikes, strike_samples = None, deque(maxlen=2000)
+        # Read while the game runs: a session that ends with the game has nothing to read them from.
+        ropes = steam = None
         # The web shooter: the latest, and a sample when a shot is asked for, fired or dropped.
         shooter = None
         shooter_samples = deque(maxlen=2000)
@@ -1354,6 +1443,7 @@ def session(a, startup):
                         swing_samples=list(swing_samples), motion_samples=list(motion_samples),
                         grab_samples=list(grab_samples), body=body, punch=punch,
                         punch_samples=list(punch_samples), strikes=strikes, strike_samples=list(strike_samples),
+                        ropes=ropes, steam_guard=steam,
                         shooter=shooter, shooter_samples=list(shooter_samples),
                         slow_motion=slow_motion, slow_motion_samples=list(slow_motion_samples), hud=hud_last,
                         ray_samples=list(ray_samples), appearance=appearance, eye_jobs=eye_jobs,
@@ -1414,10 +1504,14 @@ def session(a, startup):
                         if any(landed[k] != (punch or {}).get(k) for k in ('punches', 'dropped', 'unnamed')):
                             punch_samples.append(dict(landed, seconds=round(time.monotonic()-started, 3)))
                         punch = landed
+                    ropes = rope_snapshot(game, rays['SpidyRopeData']) or ropes
+                    steam = steam_snapshot(game, xr['SpidySteamData']) or steam
                     fight = strike_snapshot(game, rays['SpidyStrikeData'])
                     if fight:
                         # One row per web strike opened or ended and per blow landed.
-                        if any(fight[k] != (strikes or {}).get(k) for k in ('opened', 'landed', 'missed', 'blows')):
+                        if any(fight[k] != (strikes or {}).get(k)
+                               for k in ('opened', 'landed', 'missed', 'blows', 'calls', 'knockouts', 'locked',
+                                         'passed_over')):
                             strike_samples.append(dict(fight, seconds=round(time.monotonic()-started, 3)))
                         strikes = fight
                     shots = shooter_snapshot(game, rays['SpidyShooterData'])
@@ -1570,6 +1664,8 @@ def session(a, startup):
             body=body_snapshot(game, xr['SpidyBodyData']) or body,
             punch=punch_snapshot(game, rays['SpidyPunchData']) or punch, punch_samples=list(punch_samples),
             strikes=strike_snapshot(game, rays['SpidyStrikeData']) or strikes, strike_samples=list(strike_samples),
+            ropes=rope_snapshot(game, rays['SpidyRopeData']) or ropes,
+            steam_guard=steam_snapshot(game, xr['SpidySteamData']) or steam,
             shooter=shooter_snapshot(game, rays['SpidyShooterData']) or shooter,
             shooter_samples=list(shooter_samples),
             slow_motion=slow_motion_snapshot(game, xr['SpidySlowMotionData']) or slow_motion,

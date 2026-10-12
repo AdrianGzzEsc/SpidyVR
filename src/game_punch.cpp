@@ -2,6 +2,7 @@
 // target watch, blows as the game's own damage; and fighting across the
 // room, the web strike and the flow (game_punch.hpp).
 #include "spidy/game_punch.hpp"
+#include "spidy/game_grab.hpp"
 #include "spidy/game_targets.hpp"
 #include "spidy/game_time.hpp"
 #include "spidy/native_bodies.hpp"
@@ -53,6 +54,22 @@ bool turnSeen{};
 // for their thugs' flights.
 WebStrike strike{WebStrikeConfig{}};
 Flow flow{FlowConfig{}};
+// Called blows: what the flow calls, and the player's head at the latest
+// sample (which way he sees the one he hits).
+Cues cues{CueConfig{}};
+Vec3 headAt{};
+// The enemy his next punch goes to: the one a blow locked him onto, else the
+// one he looks at within a strike's reach (web_strike.hpp's Lock).
+Lock lock{LockConfig{}};
+// The enemies his blows landed on lately, each with where his chest was: one
+// of them out of hit points is a knockout, and the player's.
+struct Struck {
+    uint64_t record{};
+    Vec3 chest{};
+    float age{};
+};
+std::vector<Struck> struckLately;
+constexpr float struckSeconds = 3, chestHeight = 1.3f;
 std::vector<FightTarget> enemies;
 struct Near {
     uint64_t record{}, machine{};
@@ -98,6 +115,22 @@ void publishStrikes(uint32_t status) {
     tally.target = strike.phase() == WebStrike::Phase::Flying ? strike.target() : 0;
     tally.destination = strike.destination();
     tally.seconds = strike.elapsed();
+    // The mark over the chest of the one the next punch would go to, with
+    // what the flow calls.
+    tally.cueTarget = 0;
+    tally.cueWay = tally.cueFinisher = tally.cueLocked = 0;
+    tally.cueLeft = 0;
+    tally.locked = lock.locked() ? lock.target() : 0;
+    tally.passedOver = strike.passedOver();
+    for (const auto& e : enemies)
+        if (lock.target() && e.id == lock.target()) {
+            tally.cueTarget = e.id;
+            tally.cueLocked = lock.locked();
+            tally.cuePoint = e.feet + Vec3{0, e.height * .72f, 0};
+            tally.cueWay = static_cast<uint32_t>(cues.cue().way);
+            tally.cueFinisher = cues.cue().finisher;
+            tally.cueLeft = cues.cue().way == CueWay::None ? 1.f : flow.left();
+        }
     AcquireSRWLockExclusive(&output);
     // Odd while it changes, as a reader outside the game expects.
     tally.sequence = InterlockedIncrement64(&SpidyStrikeData.sequence);
@@ -110,6 +143,9 @@ void resetFight() {
     turnSeen = false;
     strike.cancel();
     flow.reset();
+    cues.clear();
+    lock.clear();
+    struckLately.clear();
     enemies.clear();
     nearby.clear();
     launches.clear();
@@ -134,15 +170,81 @@ void steerFlights(float seconds) {
         it = done ? launches.erase(it) : it + 1;
     }
 }
+// The player's knockouts: an enemy one of his blows landed on lately who is
+// up no longer (game_targets::up: out of hit points, or in one of the game's
+// states for a bot who is down).
+void knockouts(float seconds) {
+    for (auto it = struckLately.begin(); it != struckLately.end();) {
+        it->age += seconds;
+        const game_targets::Candidate* bot{};
+        for (const auto& b : bots)
+            if (b.record == it->record)
+                bot = &b;
+        bool out{};
+        if (bot) {
+            out = !game_targets::up(base, *bot);
+            Vec3 feet{};
+            if (!out && game_targets::position(*bot, feet))
+                it->chest = feet + Vec3{0, bot->size.height(chestHeight), 0};
+        }
+        if (out) {
+            ++tally.knockouts;
+            tally.knockoutPoint = it->chest;
+        }
+        it = out || !bot || it->age > struckSeconds ? struckLately.erase(it) : it + 1;
+    }
+}
 // One blow, a fist's or a strike's, into the flow and to the game.
-void land(const PunchEvent& e, bool byStrike) {
+void land(PunchEvent e, bool byStrike) {
     uint64_t machine{};
     for (const auto& n : nearby)
         if (n.record == e.target)
             machine = n.machine;
     const bool airborne = machine && native_bodies::flung(machine);
-    const int count = flow.hit();
-    const auto d = deliver(e, airborne, count, flow);
+    // A thug the web is bringing to the player is his to hit from here.
+    game_grab::struck(e.target);
+    // He is the one from here on, and his knockout would be this blow's.
+    lock.take(e.target);
+    {
+        Vec3 chest = e.point;
+        for (const auto& enemy : enemies)
+            if (enemy.id == e.target)
+                chest = enemy.feet + Vec3{0, enemy.height * .72f, 0};
+        const auto known = std::find_if(struckLately.begin(), struckLately.end(),
+                                        [&](const Struck& s) { return s.record == e.target; });
+        if (known != struckLately.end())
+            *known = {e.target, chest, 0};
+        else
+            struckLately.push_back({e.target, chest, 0});
+    }
+    // What the flow calls, and whether this blow answers it. A web strike's
+    // blow goes straight at him: what answers is the fist that opened it,
+    // and he then goes the way that fist went.
+    const Cue before = cues.cue();
+    const Vec3 went = byStrike ? strike.direction() : e.direction;
+    const bool called = cues.answers(went, e.point - headAt);
+    if (called && byStrike)
+        e.direction = normalized(went);
+    tally.called += called;
+    tally.strikeCalled += called && byStrike;
+    tally.missedCalls += !byStrike && !called && before.way != CueWay::None;
+    // The flow's finisher must be called: a blow that would be it and
+    // answers no such call is a plain one that leaves him standing, to be
+    // called on, and the count stays.
+    const bool uncalled = flow.finisher(flow.count() + 1) && !(called && before.finisher);
+    if (uncalled)
+        flow.keep();
+    const int count = uncalled ? flow.count() : flow.hit();
+    auto d = deliver(e, airborne, count, flow, {}, called ? before.way : CueWay::None, cues.config().damage);
+    if (uncalled && (d.fly || d.knockback >= Knockback::Knockdown)) {
+        d.kind = BlowKind::Hit;
+        d.kinetic = d.fly = false;
+        d.knockback = Knockback::Knockback;
+        d.velocity = {};
+    }
+    // The flow's next call: the one that stands, or after an answer another way.
+    tally.calls += cues.call(flow.count(), flow.finisher(flow.count() + 1), called,
+                             static_cast<uint32_t>((tally.blows + 1) * 2654435761u >> 13));
     native_bodies::Damage request;
     request.victim = e.target;
     request.damager = fighter.record;
@@ -186,6 +288,7 @@ void land(const PunchEvent& e, bool byStrike) {
     tally.lastCount = static_cast<uint32_t>(count);
     tally.lastHand = static_cast<uint32_t>(e.hand);
     tally.lastStrike = byStrike;
+    tally.lastCalled = called;
 }
 } // namespace
 
@@ -277,6 +380,7 @@ Opened game_punch::update(float seconds, const Input& in, const Player& player, 
         }
     }
     head = tracked ? head / static_cast<float>(tracked) : player.feet + Vec3{0, 1.6f, 0};
+    headAt = head;
     inReach.clear();
     enemies.clear();
     nearby.clear();
@@ -306,9 +410,18 @@ Opened game_punch::update(float seconds, const Input& in, const Player& player, 
             enemies.push_back({target.id, target.feet, target.height, target.radius,
                                b.machine && native_bodies::flung(b.machine)});
     }
+    // The enemy the next punch goes to: the one a blow locked the player
+    // onto, else the one he looks at. A web that holds an enemy makes him
+    // the one. And of those his blows landed on, the ones knocked out.
+    for (const uint64_t held : player.holds)
+        lock.take(held);
+    lock.update(seconds, head, in.look, enemies);
+    knockouts(seconds);
     events.clear();
     punches.update(seconds, hands, inReach, events);
     flow.update(seconds);
+    if (!flow.count())
+        cues.clear();
     steerFlights(seconds);
     for (const auto& e : events) {
         // The swing that landed a punch opens no strike behind it.
@@ -320,12 +433,26 @@ Opened game_punch::update(float seconds, const Input& in, const Player& player, 
         fists[i] = {hands[i].tracked, hands[i].fist, punches.velocity(i), !hands[i].busy, player.holds[i],
                     in.hands[i].grip};
     const bool flying = strike.phase() == WebStrike::Phase::Flying;
-    if (const auto strikeOpened = strike.open(seconds, fists, head, player.feet, enemies, world)) {
+    // A strike goes to the marked enemy alone; a fist swung the way the flow
+    // calls opens one at him too.
+    StrikeWish wish;
+    wish.target = lock.target();
+    for (const auto& e : enemies)
+        if (e.id == wish.target)
+            wish.called = Cues::direction(cues.cue().way, e.middle() - head);
+    // With a look to mark by, a strike needs its mark: nobody marked, nobody
+    // to fly to. (Without one, from an older headset module, the fist picks.)
+    const bool looking = finite(in.look) && length(in.look) > .5f;
+    const std::span<const FightTarget> strikeable =
+        looking && !wish.target ? std::span<const FightTarget>{} : std::span<const FightTarget>{enemies};
+    if (const auto strikeOpened = strike.open(seconds, fists, head, player.feet, strikeable, world, wish)) {
         // The blow lands as the player arrives: not on the way, off a fist
         // the flight carries through him.
         punches.spend(strikeOpened->hand);
+        lock.take(strikeOpened->target);
         opened = {true, strikeOpened->held};
         ++tally.opened;
+        tally.swung += strikeOpened->called;
         tally.held += strikeOpened->held;
         tally.distance = strikeOpened->distance;
     } else if (flying && strike.phase() == WebStrike::Phase::Idle) {
@@ -412,6 +539,13 @@ Flight game_punch::fly(float seconds, Vec3 feet, bool grounded, bool waiting) {
     if (step.landed || step.missed)
         publishStrikes(2);
     return out;
+}
+void game_punch::hangInAir(float seconds) {
+    if (!enabled.load(std::memory_order_relaxed) || !TryAcquireSRWLockShared(&updating))
+        return;
+    if (enabled && !fighter.grounded && !fighter.swinging)
+        strike.hangOn(false, seconds);
+    ReleaseSRWLockShared(&updating);
 }
 void game_punch::cancelStrike() {
     if (!TryAcquireSRWLockShared(&updating))

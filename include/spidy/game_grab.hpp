@@ -103,6 +103,9 @@ bool due(float& dt);
 void step(float dt, const WorldQueries&, uint64_t player);
 // Lets every web go; a bot on a flight the web steered is handed to the game.
 void cancel();
+// A fist landed on this bot: one the web was bringing to a player in the air
+// (an air yank) is the blow's from here.
+void struck(uint64_t record);
 Data data();
 // The kinds this build can move.
 constexpr uint32_t movableKinds = 1u << static_cast<unsigned>(game_targets::Kind::throwable) |

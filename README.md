@@ -107,7 +107,10 @@ Spidy changes nothing in the game's folder.
 | Grab a prop or thug | Grip aimed at it; trigger reels it, a sharp pull yanks it, release throws it |
 | Webs on the trigger instead | Set **WEB BUTTON** to TRIGGER in VR settings (or *Web button* in the launcher): the trigger shoots and holds webs, the grip reels and shoots web balls |
 | Punch | A fast fist into a thug |
-| Walk and run / jump | **Left stick** / **A** (from the ground, a wall or a perch; no web zip in the air) |
+| Walk and run / jump | **Left stick** / **A** (from the ground, a wall or a perch; no web zip in the air). Hold **A** on the ground to charge a leap and let go: the longer you hold, the higher; with the left stick, forward too |
+| Scan (the game's R3) | Raise a hand to your temple and pull its **trigger** |
+| One enemy at a time | A ring marks the thug your next punch goes to: the one you look at. Hit him and the ring locks on until he is down (**KO!**); look squarely at another for a moment to change |
+| Called blows | An arrow comes into the ring from the side your fist should come from: swing a hook from that side, an uppercut from below or a blow down from above, at arm's reach or from across the room. The yellow arrow into a jagged red ring calls the finisher |
 | Walls | Walk at one, or fly or jump into it, and you stay on it: at speed you run along it, then stop. **Left stick** walks it (pushed at the wall: up it), **A** jumps off, a web pulls you off. Walking it or stopped, your view turns so the wall is your floor (STAND ON WALLS in VR settings or the launcher) |
 | Flip (experimental, off by default: FLIPS and FLIP SPEED in VR settings or the launcher) | **Left stick** in the air: turns you over, as fast as you tilt it; let go to come back level. Tap **A** in the air: one flip toward where the stick points. Hold **A**: you stay turned while the stick rests |
 | Turn | **Right stick**: snap 30° (adjustable or off), or hold to turn smoothly with SMOOTH TURN on in VR settings |
@@ -118,7 +121,7 @@ Spidy changes nothing in the game's folder.
 | Zip to a point, enter a vent (the game's LT + RT) | Push the **right stick** straight up and hold it; not while a web carries you |
 | Pause (VR settings: Settings > SPIDY VR) | **Menu** button |
 | Game menu (map, suits, skills) | **X** |
-| Switch between VR and a flat screen | Click **both sticks** |
+| Switch between VR and a flat screen | Pause, **Settings > SPIDY VR > VIEW** |
 
 **Aim markers** show where each free hand's web would go, blue for the left
 hand and orange for the right: a ring holds, a dashed ring holds in open air,
