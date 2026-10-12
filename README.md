@@ -172,6 +172,12 @@ your tracked hands.
 | [Web grab](docs/WEB-GRAB.md) · [Body](docs/BODY.md) | Design and measurements of those features |
 | [Milestone 1](docs/MILESTONE-1.md) · [Reference](docs/REFERENCE.md) | Acceptance criteria, game research, sources |
 
+## Contributing
+
+Fixes and features are welcome as pull requests, one feature each.
+[CONTRIBUTING.md](CONTRIBUTING.md) says how, and what applies when you run or
+share your own build.
+
 ## Support
 
 Spidy is free, and built with a lot of AI help whose tokens aren't. If you
@@ -180,6 +186,9 @@ enjoy it, [support it on Ko-fi](https://ko-fi.com/ilyamezerowsky) and
 
 Please share the original release zip with its credit intact, so players get
 working files and know where updates come from.
+
+Spidy is Copyright (C) 2026 Ilya Mezerowsky, and free software under the
+[GNU General Public License, version 3](LICENSE).
 
 Spidy is a free fan project, not affiliated with or endorsed by Insomniac Games,
 Sony Interactive Entertainment, Marvel or Valve. Third-party licences are in

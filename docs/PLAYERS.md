@@ -434,6 +434,10 @@ SHARING
 Please share the original zip with this credit intact, so players get working
 files and know where updates come from.
 
+Spidy is Copyright (C) 2026 Ilya Mezerowsky, and free software under the GNU
+General Public License, version 3 (LICENSE.txt). Its source code is at
+https://github.com/IlyaMez/SpidyVR
+
 Spidy is a free fan project, not affiliated with or endorsed by Insomniac
 Games, Sony Interactive Entertainment, Marvel or Valve. Third-party licences
 are in THIRD_PARTY_NOTICES.md and docs\licenses.
