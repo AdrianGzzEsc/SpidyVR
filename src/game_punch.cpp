@@ -284,7 +284,9 @@ Opened game_punch::update(float seconds, const Input& in, const Player& player, 
     const float striking = strike.config().maxDistance + beyondReach;
     for (const auto& b : bots) {
         Vec3 feet{};
-        if ((b.traits & game_targets::neutral) || !game_targets::position(b, feet))
+        // Nor a thug of a later wave, waiting unseen where he will appear,
+        // nor one knocked out.
+        if ((b.traits & game_targets::neutral) || !game_targets::up(base, b) || !game_targets::position(b, feet))
             continue;
         const float bottom = b.size.height(0), top = b.size.height(botHeight);
         const Vec3 middle = feet + Vec3{0, b.size.height(1), 0};
@@ -299,9 +301,8 @@ Opened game_punch::update(float seconds, const Input& in, const Player& player, 
         if (close)
             inReach.push_back(target);
         // A strike goes to an enemy who still stands, or flies: not to one
-        // knocked out (no hit points left).
-        float points{};
-        if (ranged && !(game_targets::health(b, points) && points <= 0))
+        // knocked out.
+        if (ranged && game_targets::fighting(base, b))
             enemies.push_back({target.id, target.feet, target.height, target.radius,
                                b.machine && native_bodies::flung(b.machine)});
     }

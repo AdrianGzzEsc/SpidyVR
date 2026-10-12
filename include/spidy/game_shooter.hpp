@@ -48,8 +48,16 @@
 // takes the webbing the game's web hits deal: a kWebImpact blow with
 // webbingPerHit of kWebEncase (native_bodies::Damage), enough at the third
 // hit in quick succession to web a street thug up (his threshold is 30).
-// A throwable prop that is no breakable is knocked along the shot
-// (native_bodies, as a throw launches it).
+// Whatever else the game webs up (game_targets' Kind::device: an actor that
+// is no bot with the game's webbing tracker, by that component and not by
+// its class) takes the same webbing and no damage. A gun turret is one: the
+// game has its own shots web it up in three hits, 10 each of 30 (in the
+// game, October 12, at Fisk's turrets: "Tap RB repeatedly to web up the
+// turret", then "Hold LB + RB to yank and throw turrets"), and VR play has
+// no RB; until then Spidy's balls did nothing to one (135 fired at them in a
+// session that day, none webbed). The aim takes a device as it takes a
+// thug. A throwable prop that is no breakable is knocked along the
+// shot (native_bodies, as a throw launches it).
 namespace spidy::game_shooter {
 // What a hit does.
 constexpr float webbingPerHit = 11, webDamage = .5f, pushSpeed = 3.5f, pushLift = 1;

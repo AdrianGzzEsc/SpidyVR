@@ -57,6 +57,16 @@ class BirdBot : public Component {};
 class ThrowableHelper : public Component {};
 class StatusEffectTrackerWebbed : public Component {};
 class Unrelated : public Component {};
+// A bot's states: the ones that have him down, by their own classes and by
+// the ones the game derives from them, and one that has him fighting.
+class BotStateBase : public Component {};
+class BotStateAim : public BotStateBase {};
+class BotStateDeathAnim : public BotStateBase {};
+class BotStateDeathAnimGame : public BotStateDeathAnim {};
+class BotStateRagdoll : public BotStateBase {};
+class BotStateRagdollGame : public BotStateRagdoll {};
+class BotStateWallStuck : public BotStateBase {};
+class EnemyTurret : public Component {};
 extern "C" char __ImageBase;
 #endif
 using namespace spidy;
@@ -3262,7 +3272,8 @@ int main() {
     test("Y held walks the player up to what it is for; a tap, a fight and a wall do not", [] {
         using game_pad::InteractStep;
         const float dt=1.f/90;
-        // Frames of Y held, allowed and moving at `speed`; the walk's time in them.
+        const float turn=InteractStep::turnSeconds;
+        // Frames of Y held, allowed and moving at `speed`; the time the stick points ahead in them.
         const auto run=[&](InteractStep& s,float seconds,bool allowed=true,float speed=3) {
             float walked=0;
             for(float t=0;t<seconds;t+=dt)
@@ -3270,21 +3281,23 @@ int main() {
             return walked;
         };
         InteractStep step;
-        // A tap interacts where the player stands.
-        check(run(step,.2f)==0 && !step.steps(),"a tap of Y walked the player");
+        // A tap interacts where the player stands: the hero turns to it, and no walk begins.
+        check(std::abs(run(step,.2f)-turn)<.03f && !step.steps(),"a tap of Y walked the player, or did not turn him");
         check(step.update(dt,false,true,0)==0,"Y let go still walked");
         // Held on, the walk begins after holdSeconds, at walkStick, and ends after walkSeconds.
         const float walked=run(step,5);
         check(step.steps()==1,"Y held began no walk, or more than one");
-        check(std::abs(walked-InteractStep::walkSeconds)<.03f,"the walk did not last walkSeconds");
+        check(std::abs(walked-turn-InteractStep::walkSeconds)<.04f,"the walk did not last walkSeconds");
         check(step.update(dt,true,true,3)==0,"a walk that ended went on while Y stayed held");
         step.update(dt,false,true,0);
-        check(run(step,InteractStep::holdSeconds-.05f)==0,"the walk began before holdSeconds");
+        const uint32_t walks=step.steps();
+        check(std::abs(run(step,InteractStep::holdSeconds-.05f)-turn)<.03f && step.steps()==walks,
+              "the walk began before holdSeconds");
         check(step.update(.1f,true,true,3)==InteractStep::walkStick,"the walk is not at walkStick");
         check(step.steps()==2,"another press began no second walk");
         // At a wall the walk gets its start, then ends; the same hold walks no more.
         step.update(dt,false,true,0);
-        const float blocked=run(step,3,true,0);
+        const float blocked=run(step,3,true,0)-turn;
         check(blocked>InteractStep::startSeconds && blocked<InteractStep::startSeconds+InteractStep::stallSeconds+.05f,
               "a walk into a wall went on");
         check(run(step,1,true,3)==0,"a walk a wall ended began again in the same press");
@@ -3295,9 +3308,104 @@ int main() {
         // A fight that begins on the way ends the walk.
         step.update(dt,false,true,0);
         check(run(step,1)>0 && step.update(dt,true,false,3)==0 && run(step,1)==0,"the walk went on into a fight");
-        // Bad timing moves nobody.
+        // Bad timing moves nobody, and holds no Y of its own.
         step.update(dt,false,true,0);
         check(step.update(std::numeric_limits<float>::quiet_NaN(),true,true,3)==0,"a bad frame time walked the player");
+        check(step.pressed() && step.update(std::numeric_limits<float>::quiet_NaN(),false,true,0)==0 && !step.pressed(),
+              "a press without a frame time went on");
+    });
+    test("a tap of Y turns the hero to what the player looks at and stays down while he turns", [] {
+        using game_pad::InteractStep;
+        const float dt=1.f/90;
+        // A press of `held` seconds, then let go, `after` in all: how long the stick pointed ahead, and how long
+        // the game's Y was down.
+        struct Press { float stick{}, y{}; };
+        const auto press=[&](InteractStep& s,float held,float after,bool allowed=true,float endsAt=1e9f) {
+            Press p;
+            for(float t=0;t<after;t+=dt) {
+                if(s.update(dt,t<held,allowed && t<endsAt,0)>0) p.stick+=dt;
+                if(s.pressed()) p.y+=dt;
+            }
+            return p;
+        };
+        InteractStep step;
+        check(!step.pressed() && step.update(dt,false,true,0)==0 && !step.pressed(),"Y is down before any press");
+        // A tap of a tenth of a second: the stick for turnSeconds, the game's Y for pressSeconds.
+        const auto tap=press(step,.1f,2);
+        check(std::abs(tap.stick-InteractStep::turnSeconds)<.03f,"a tap's turn is not turnSeconds long");
+        check(std::abs(tap.y-InteractStep::pressSeconds)<.03f,"a tap's Y is not down for pressSeconds");
+        check(!step.steps(),"a tap began a walk");
+        // A press longer than that is down as long as the player holds it.
+        const auto longer=press(step,1,2);
+        check(std::abs(longer.y-1)<.03f,"a held Y is not the player's own");
+        // In a fight Y is the web strike: the player's own press, and no turn.
+        const auto strike=press(step,.1f,2,false);
+        check(strike.stick==0 && std::abs(strike.y-.1f)<.03f,"a web strike turned the hero or was held on");
+        // A fight that begins while a tap is held on lets the Y go.
+        const auto cut=press(step,.1f,2,true,.3f);
+        check(std::abs(cut.y-.3f)<.03f,"a tap was held on into a fight");
+        // Two taps in a row are two presses: the game's Y comes up between them.
+        InteractStep twice;
+        press(twice,.1f,1);
+        check(!twice.pressed(),"Y stayed down after the press's time");
+        const auto second=press(twice,.1f,1);
+        check(std::abs(second.stick-InteractStep::turnSeconds)<.03f,"a second tap did not turn the hero");
+    });
+    test("the game's own camera is turned to where the player looks", [] {
+        using game_pad::CameraLook;
+        const Vec3 north{0,0,-1}, east{1,0,0}, west{-1,0,0};
+        const auto at=[](float degrees) {
+            const float a=degrees*3.14159265f/180;
+            return Vec3{std::sin(a),0,-std::cos(a)};
+        };
+        CameraLook look;
+        // Looking the camera's way, or a little off it: the stick rests.
+        check(look.update(north,north,true)==0 && look.error()==0 && !look.turns(),"an aligned camera was turned");
+        check(look.update(at(CameraLook::startDegrees-2),north,true)==0 && !look.turns(),"a glance turned the camera");
+        check(std::abs(look.error()-(CameraLook::startDegrees-2))<.1f,"the angle to the right is not its own");
+        // To the camera's right the stick goes right, to its left left; far off, all the way.
+        check(look.update(east,north,true)==1 && look.turns()==1,"a look to the right did not push the stick right");
+        check(std::abs(look.error()-90)<.1f,"a quarter turn to the right is not 90 degrees");
+        CameraLook left;
+        check(left.update(west,north,true)==-1 && std::abs(left.error()+90)<.1f,"a look to the left did not push it left");
+        // Once it turns it goes on to within stopDegrees, never weaker than the game's camera answers.
+        const float near=look.update(at(CameraLook::stopDegrees+2),north,true);
+        check(near>CameraLook::floor && near<.8f && look.turns()==1,"the turn stopped short, or crept");
+        check(look.update(at(CameraLook::stopDegrees-1),north,true)==0,"the turn went on inside its rest");
+        check(look.update(at(CameraLook::stopDegrees+2),north,true)==0,"a rested camera turned again for a little");
+        // Where the head looks up or down counts for its level direction alone.
+        CameraLook tilted;
+        check(tilted.update(normalized(Vec3{1,2,0}),Vec3{0,-.5f,-1},true)==1,"looking up changed the way to turn");
+        // Out of VR play, straight up, or without a reading: at rest, and the next turn starts anew.
+        check(look.update(east,north,false)==0 && look.error()==0,"the camera was turned out of play");
+        check(look.update(at(CameraLook::stopDegrees+2),north,true)==0,"a turn went on across a break");
+        check(look.update({0,1,0},north,true)==0 && look.update(east,{0,1,0},true)==0,"a look straight up turned the camera");
+        const float nan=std::numeric_limits<float>::quiet_NaN();
+        check(look.update({nan,0,0},north,true)==0 && look.update(east,{0,0,nan},true)==0,"a bad reading turned the camera");
+        // Against a camera that answers as the game's does (180 degrees a second at full tilt, the cube of the tilt
+        // above the floor below that, a tenth of a second behind): from 170 degrees off it is there within two
+        // seconds, in one turn, and stays.
+        CameraLook steer;
+        float yaw=0, rate=0, worst=0;
+        const float dt=1.f/90;
+        for(int i=0;i<270;++i) {
+            const float stick=steer.update(at(170),at(yaw),true);
+            const float over=std::max(0.f,(std::abs(stick)-CameraLook::floor)/(1-CameraLook::floor));
+            const float wanted=std::copysign(CameraLook::fullRate*over*over*over,stick);
+            rate+=(wanted-rate)*std::min(1.f,dt/.1f);
+            yaw+=rate*dt;
+            if(i>=180) worst=std::max(worst,std::abs(steer.error()));
+        }
+        check(worst<=CameraLook::startDegrees && steer.turns()==1,"the camera did not settle on the look in one turn");
+        // The stick is the virtual controller's right one, in VR play alone.
+        using namespace game_pad;
+        Walk walk;
+        walk.look=-.75f;
+        XrFrame f;
+        check(fromControllers(f,Mapping::gameplay,walk).thumbRX==-24575 && !fromControllers(f,Mapping::gameplay,walk).thumbRY,
+              "the look is not the right stick's X");
+        check(!fromControllers(f,Mapping::menus,walk).thumbRX && !fromControllers(f,Mapping::none,walk).thumbRX,
+              "the camera was turned on the game screen");
     });
     test("the right thumbstick's click is the game's LB + RB, and not half of clicking both", [] {
         using game_pad::PullPress;
@@ -6617,10 +6725,78 @@ int main() {
         check(classOf(bird) >> 8 == game_targets::neutral, "a bird was not neutral");
         check(classOf(prop) == throwable, "a throwable was not one");
         check(classOf(tracker) >> 8 == game_targets::webbable, "the webbing tracker was missed");
+        // No class makes a device: a gun turret is one by the webbing tracker on its actor, not by its name.
+        const std::unique_ptr<Component> turret(new EnemyTurret);
+        check(!classOf(turret), "a turret's class was taken for something");
         check(!classOf(other), "an unrelated class was taken for something");
         static const uintptr_t plain[2]{};
         check(!game_targets::classOf(base, reinterpret_cast<uintptr_t>(&plain[1])),
               "data was taken for a class");
+    });
+    test("a thug waiting for his wave or knocked out is nobody to fight", [] {
+        const auto base = reinterpret_cast<uintptr_t>(&__ImageBase);
+        // A bot's state machine as the game lays it out: its state at +0x70, in use at +0x80; and his health
+        // component, the hit points at +0x88.
+        std::vector<uint8_t> machine(0x100), health(0x100);
+        const auto put = [](std::vector<uint8_t>& in, size_t at, const auto& value) {
+            std::memcpy(in.data() + at, &value, sizeof(value));
+        };
+        const auto state = [&](const Component* object) {
+            put(machine, 0x70, reinterpret_cast<uintptr_t>(object));
+            put(machine, 0x80, static_cast<uint8_t>(object != nullptr));
+        };
+        game_targets::Candidate thug;
+        thug.kind = game_targets::Kind::bot;
+        thug.traits = game_targets::thug | game_targets::webbable;
+        thug.machine = reinterpret_cast<uint64_t>(machine.data());
+        thug.health = reinterpret_cast<uint64_t>(health.data());
+        put(health, 0x88, 70.f);
+        const std::unique_ptr<Component> aiming(new BotStateAim), dying(new BotStateDeathAnimGame),
+            limp(new BotStateRagdollGame), stuck(new BotStateWallStuck), fallen(new BotStateDeathAnim);
+        // Waiting where his wave will appear: hit points and all, and no state.
+        check(!game_targets::inPlay(thug) && !game_targets::up(base, thug) && !game_targets::fighting(base, thug),
+              "a thug who has not appeared yet was someone to fight");
+        put(machine, 0x80, static_cast<uint8_t>(1));
+        check(!game_targets::inPlay(thug), "a state machine in use without a state has its bot in play");
+        // In the fight.
+        state(aiming.get());
+        check(game_targets::inPlay(thug) && game_targets::up(base, thug) && game_targets::fighting(base, thug),
+              "a thug who aims at the player was nobody to fight");
+        // Knocked out: no hit points, and the game's own states for it, each by itself.
+        put(health, 0x88, 0.f);
+        check(game_targets::inPlay(thug) && !game_targets::up(base, thug) && !game_targets::fighting(base, thug),
+              "a thug without hit points fights on");
+        put(health, 0x88, 70.f);
+        for (const auto* down : {dying.get(), limp.get(), stuck.get(), fallen.get()}) {
+            state(down);
+            check(game_targets::inPlay(thug) && !game_targets::up(base, thug) && !game_targets::fighting(base, thug),
+                  "a thug who is down fights on");
+        }
+        // Without a health component, or without a state machine, a bot counts as in the fight.
+        state(aiming.get());
+        thug.health = 0;
+        check(game_targets::fighting(base, thug), "a bot whose health cannot be read was nobody to fight");
+        thug.machine = 0;
+        check(game_targets::inPlay(thug) && game_targets::fighting(base, thug),
+              "a bot without a state machine was nobody to fight");
+        // A civilian is up, to be hit by a fist that meets him, and nobody to fight.
+        thug.traits = game_targets::civilian;
+        check(game_targets::up(base, thug) && !game_targets::fighting(base, thug), "a civilian was someone to fight");
+        // A device (a gun turret) stands while it has hit points; one without a health component counts as
+        // standing. It is no bot: nobody to hit or to fight, whatever its hit points.
+        game_targets::Candidate gun;
+        gun.kind = game_targets::Kind::device;
+        gun.traits = game_targets::webbable;
+        gun.health = reinterpret_cast<uint64_t>(health.data());
+        put(health, 0x88, 3.f);
+        check(game_targets::standing(gun) && !game_targets::up(base, gun) && !game_targets::fighting(base, gun),
+              "a turret does not stand, or is a bot");
+        put(health, 0x88, 0.f);
+        check(!game_targets::standing(gun), "a turret without hit points stands");
+        gun.health = 0;
+        check(game_targets::standing(gun), "a turret whose health cannot be read does not stand");
+        thug.traits = game_targets::thug;
+        check(!game_targets::standing(thug), "a thug is a device");
     });
     test("a bot's size comes from his mover and carries a street thug's measures over", [] {
         // A mover manager as the game lays one out: its body's class at

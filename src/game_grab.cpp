@@ -154,10 +154,12 @@ bool read(uintptr_t p, void* out, size_t n) {
 bool offers(Kind kind) {
     return offered & (1u << static_cast<unsigned>(kind));
 }
-// What the webs catch: props, and the enemies among the bots. On October 8,
-// 15:36, pulls took civilians: every bot was offered.
+// What the webs catch: props, and the enemies among the bots who are still
+// in the fight. On October 8, 15:36, pulls took civilians: every bot was
+// offered; until October 12 they took the knocked out and the thugs of waves
+// to come.
 bool takes(const Candidate& c) {
-    return offers(c.kind) && (c.kind != Kind::bot || game_targets::enemy(c));
+    return offers(c.kind) && (c.kind != Kind::bot || game_targets::fighting(base, c));
 }
 Tracked* track(uint64_t record) {
     for (auto& t : tracked)
@@ -554,7 +556,8 @@ void strike(Tracked& t, float dt, bool flung, const Vec3& gravity) {
         if (speed >= strikes.strikeSpeed)
             for (const auto& c : candidates) {
                 Vec3 feet{};
-                if (!game_targets::enemy(c) || c.record == t.who.record || !game_targets::position(c, feet) ||
+                if (!game_targets::fighting(base, c) || c.record == t.who.record ||
+                    !game_targets::position(c, feet) ||
                     !touchesBot(t.position, shape(t.who).radius, c, feet, strikes))
                     continue;
                 // The one struck is knocked away from the one flying into him.
@@ -590,7 +593,7 @@ void strikeWith(const Tracked& t) {
     uint64_t struck{};
     for (const auto& c : candidates) {
         Vec3 feet{};
-        if (!game_targets::enemy(c) || !game_targets::position(c, feet) ||
+        if (!game_targets::fighting(base, c) || !game_targets::position(c, feet) ||
             !touchesBot(t.position, shape(t.who).radius, c, feet, strikes))
             continue;
         struck += blow(c.record, hero, feet + Vec3{0, shape(c).lift, 0}, t.velocity,

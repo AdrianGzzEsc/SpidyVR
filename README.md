@@ -112,7 +112,7 @@ Spidy changes nothing in the game's folder.
 | Flip (experimental, off by default: FLIPS and FLIP SPEED in VR settings or the launcher) | **Left stick** in the air: turns you over, as fast as you tilt it; let go to come back level. Tap **A** in the air: one flip toward where the stick points. Hold **A**: you stay turned while the stick rests |
 | Turn | **Right stick**: snap 30° (adjustable or off), or hold to turn smoothly with SMOOTH TURN on in VR settings |
 | Dodge (the game's B) | **B**, the way the **left stick** points; not while a web carries you |
-| Interact (the game's Y) | **Y**, within about a metre of the thing; hold **Y** and you step up to what you look at until the game takes it |
+| Interact (the game's Y) | **Y**, looking at the thing from within about a metre of it; hold **Y** and you step up to what you look at until the game takes it |
 | Pull a door or a grate (the game's LB + RB) | Click the **right stick**, or hold it; not while a web carries you |
 | Heal (the game's D-pad down) | Push the **right stick** straight down and hold it a moment |
 | Zip to a point, enter a vent (the game's LT + RT) | Push the **right stick** straight up and hold it; not while a web carries you |

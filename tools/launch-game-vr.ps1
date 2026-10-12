@@ -78,8 +78,8 @@ Write-Host 'VR starts with the game: its intro, menus, loading and cutscenes sho
 Write-Host 'There the controllers are an Xbox controller: thumbstick moves, A selects, B goes back, grips switch tabs.'
 Write-Host 'In VR the menu button pauses and X opens the game menu (map, suits, skills).'
 Write-Host "In VR B and Y are the game's own: B dodges the way the left stick points, Y interacts (backpacks,"
-Write-Host 'doors, prompts; web strike in a fight). The game takes its Y only within about a metre of the thing:'
-Write-Host 'hold Y and you step up to what you look at until it does.'
+Write-Host 'doors, prompts; web strike in a fight). Look at the thing and press Y within about a metre of it;'
+Write-Host 'hold Y and you step up to what you look at until the game takes it.'
 Write-Host "Where the game shows LB + RB (a door or a grate to pull off), click the right thumbstick."
 Write-Host 'Keep the game window in front on the desktop: the game pauses while another window is.'
 Write-Host 'Click both thumbsticks to switch between immersive VR and a flat game screen in the headset.'

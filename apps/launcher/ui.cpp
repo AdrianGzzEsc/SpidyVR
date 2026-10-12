@@ -1357,8 +1357,8 @@ void App::controls(ImVec2 origin, ImVec2 size) {
          {{"Left stick", "Walk and run"},
           {"A", "Jump"},
           {"B", "Dodge, the way the left stick points: the game's B"},
-          {"Y", "Interact: the game's Y (backpacks, doors, prompts); web strike in a fight. Hold it and you step "
-                "up to what you look at, until the game takes it"},
+          {"Y", "Interact with what you look at: the game's Y (backpacks, doors, prompts); web strike in a fight. "
+                "Hold it and you step up to the thing, until the game takes it"},
           {"Click the right stick", "The game's LB + RB: pull a door or a grate where the game shows the two"},
           {"Right stick down", "Heal: the game's D-pad down. Push it right down and hold it a moment"},
           {"Right stick up", "The game's LT + RT: zip to a point, enter a vent, where the game shows the two"},

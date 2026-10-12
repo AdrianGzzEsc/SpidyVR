@@ -39,6 +39,11 @@ constexpr uint32_t marker(Kind kind) {
 constexpr uint32_t trait(Trait t) {
     return static_cast<uint32_t>(t) << 8;
 }
+// Between the kinds and the traits: what a class is by itself, not what it
+// makes its actor. A health component (BossHealth and ArmoredHealth derive
+// from the two the scan knows by their vtables), and a state of a bot's
+// state machine that has him out of the fight.
+constexpr uint32_t downState = 1u << 5, healthClass = 1u << 6, botHealthClass = 1u << 7;
 constexpr Rule rules[] = {
     {".?AVThrowableHelper@@", marker(Kind::throwable)},
     {".?AVBotMoverManager@@", marker(Kind::bot)},
@@ -53,6 +58,11 @@ constexpr Rule rules[] = {
     {".?AVBirdBot@@", trait(neutral)},
     {".?AVHelicopter@@", trait(neutral)},
     {".?AVSilverSableCraftBot@@", trait(neutral)},
+    {".?AVHealth@@", healthClass},
+    {".?AVBotHealth@@", botHealthClass},
+    {".?AVBotStateDeathAnim@@", downState},
+    {".?AVBotStateRagdoll@@", downState},
+    {".?AVBotStateWallStuck@@", downState},
 };
 // A type descriptor's decorated name (at +0x10), its first 63 characters.
 bool typeName(uintptr_t descriptor, char (&out)[64]) {
@@ -130,6 +140,13 @@ bool game_targets::scan(uintptr_t base, uint32_t kinds, std::vector<Candidate>& 
         return false;
     std::unordered_map<uint64_t, uint64_t> physics, machines, healths;
     std::unordered_map<uint64_t, uint32_t> traits;
+    // The component the game webs an actor up with, by its actor.
+    struct Tracker {
+        uint64_t component{}, vtable{};
+        uint32_t handle{};
+    };
+    std::unordered_map<uint64_t, Tracker> trackers;
+    std::unordered_map<uint64_t, bool> bots;
     const auto size = imageSize(base);
     std::lock_guard lock(classesLock);
     for (uint32_t i = 0; i < static_cast<uint32_t>(count); ++i) {
@@ -168,12 +185,25 @@ bool game_targets::scan(uintptr_t base, uint32_t kinds, std::vector<Candidate>& 
         if (head.vtable - base >= size)
             continue;
         const uint32_t bits = lookup(base, head.vtable);
+        if (bits & botHealthClass)
+            healths[head.record] = entry.address;
+        else if (bits & healthClass)
+            healths.emplace(head.record, entry.address);
         if (bits >> 8)
             traits[head.record] |= bits >> 8;
-        for (unsigned k = 1; k < 4; ++k)
+        if (bits & trait(webbable))
+            trackers.emplace(head.record, Tracker{entry.address, head.vtable, head.handle});
+        if (bits & marker(Kind::bot))
+            bots[head.record] = true;
+        for (unsigned k = 1; k < 5; ++k)
             if (kinds & bits & marker(static_cast<Kind>(k)))
                 out.push_back({entry.address, head.record, head.handle, static_cast<Kind>(k), head.vtable});
     }
+    // What the game webs up and is no bot: a device, by its tracker.
+    if (kinds & marker(Kind::device))
+        for (const auto& [record, tracker] : trackers)
+            if (!bots.count(record))
+                out.push_back({tracker.component, record, tracker.handle, Kind::device, tracker.vtable});
     for (auto& c : out) {
         if (c.kind == Kind::bot)
             sizeOf(base, c.component, c.size);
@@ -187,6 +217,20 @@ bool game_targets::scan(uintptr_t base, uint32_t kinds, std::vector<Candidate>& 
             c.health = h->second;
     }
     return true;
+}
+bool game_targets::inPlay(const Candidate& c) {
+    uint8_t stated{};
+    return !c.machine || (read(c.machine + 0x80, &stated, 1) && stated && pointer(c.machine + 0x70));
+}
+bool game_targets::up(uintptr_t base, const Candidate& c) {
+    float points{};
+    if (c.kind != Kind::bot || !inPlay(c) || (health(c, points) && points <= 0))
+        return false;
+    return !c.machine || !(classOf(base, pointer(pointer(c.machine + 0x70))) & downState);
+}
+bool game_targets::standing(const Candidate& c) {
+    float points{};
+    return c.kind == Kind::device && !(health(c, points) && points <= 0);
 }
 bool game_targets::sizeOf(uintptr_t base, uint64_t moverManager, Size& out) {
     struct Body {

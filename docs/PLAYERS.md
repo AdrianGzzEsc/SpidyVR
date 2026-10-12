@@ -192,9 +192,9 @@ Moving
                          stick points; with the stick at rest the game
                          chooses the way. Not while a web carries you
   Y .................... interact: the game's Y (backpacks, doors, prompts;
-                         web strike in a fight). The game takes it only
-                         within about a metre of the thing, where its Y
-                         prompt shows
+                         web strike in a fight). Look at the thing and
+                         press Y, within about a metre of it: you turn to
+                         it and the game takes it
   Hold Y ............... you step up to what you look at until the game
                          takes it (2 seconds at most; let go to stop). At a
                          door or a console: look at it and hold Y. Not in a
@@ -441,10 +441,22 @@ IF SOMETHING IS WRONG
 - B no longer interacts, or Y no longer opens the game menu: the buttons
   moved to make room for the dodge. B dodges, Y interacts (as the game's
   prompts say) and X opens the game menu.
-- Y does nothing at a door, a console or a backpack: you stand too far from
-  it. The game wants you within about a metre, closer than feels natural at
-  a wall in VR, and shows its Y prompt only there. Look at the thing and
-  hold Y: you step up to it and it opens. B there dodges, away from it.
+- Y does nothing at a door, a console or a backpack: look at the thing as
+  you press it, from within about a metre (closer than feels natural at a
+  wall in VR). The game takes its Y only for what its own camera sees and
+  its hero faces; Spidy turns both to where you look. From further away
+  hold Y: you step up to the thing and it opens. B there dodges, away from
+  it.
+- A punch flew you to an empty spot, or hit nothing you could see: thugs of
+  a fight's later waves wait unseen where they will appear, and until
+  October 12 fists, webs and punches across the room took them for enemies.
+  A thug who is knocked out is nobody's target either.
+- The game says "Tap RB repeatedly to web up the turret" (Fisk's office):
+  shoot web balls at the turret, three in a row. Then, for "Hold LB + RB to
+  yank and throw turrets": from within about 15 m, look at the webbed turret
+  and hold the right stick's click until it is thrown. Being shot during the
+  first second and a half stops the yank, as in the plain game: web both
+  turrets first, or wait until they reload. The webbing lasts four seconds.
 - The view turning onto a wall makes you uneasy: switch STAND ON WALLS off in
   Settings > SPIDY VR (or "Stand on walls" in the launcher's options). You
   still stay on walls, upright beside them.

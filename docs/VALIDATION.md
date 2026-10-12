@@ -1,6 +1,226 @@
 # Validation — 2026-10-12
 
-## Heal and LT + RT on the right stick; OpenXR Toolkit switched off for the game — current build, not run in the game
+## No hand takes a body; web balls web what the game webs up — current build, not tried in the headset
+
+The user, October 12, after a session with the build below
+(`dist/Spidy-0.2.12/reports/game-vr-20261012-113823.json`, 225 s): "bodies
+are still targetable by hands (for webbing i guess), they shouldnt be. after
+entering the door there are turrents that the game tells me to press rb
+repeatedly to web but it doesnt work"; and while it was looked into: "can you
+implement a global solution so we wont need to redo every enemy?"
+
+**The session.** The door opened at the third Y press (82.7, 83.3 and 87.2 s,
+the fight over at 67 s; `look_error` +5 to +7 degrees, `look_turns` 52 in
+all). In Fisk's office from 145 s: 135 web balls fired, `collisions` 135,
+`webbed` 0; LB + RB held for 2 s at 153 s; the checkpoint loaded again at
+160 s; the session ended at 225 s.
+
+**The turrets in the game without a headset** (profile 2's checkpoint in the
+office; scratch scripts over `probe_combat.py`'s `World` and the virtual
+controller; the hero's hit points kept up from outside):
+
+| | |
+|---|---|
+| What they are | two `EnemyTurret` actors, at (-604.1, 172.1, -676.1) and (-618.3, 172.1, -661.9): no bot mover manager; `Health` 3.0; `StatusEffectTrackerWebbed` 0 of 30; `PhysicsComponent`, `BreakableComponent`, `AimModHeroYankState` |
+| The game's RB, tapped | "Tap RB repeatedly to web up the turret": the tracker 10, 20, 30 of 30 in three hits, the hit points untouched; the turret wrapped in web, the game's "LB·RB" marker on it and "Hold LB + RB to yank and throw turrets" |
+| How long | the webbing full for 4.3 and 4.4 s, then 0; balls in the 7 s after that added nothing, 10 s after it they did |
+| LB + RB held, its camera on the turret | the turret left its base 1.56 to 2.61 s into the hold, went round the hero and was gone 4.9 to 5.0 s in (eight times, from 13.5 to 17.8 m) |
+| From further off | nothing from 22.2, 23.9 and 27.2 m |
+| With the hero hit during the hold | nothing (hits 1.27, 1.51 and 3.82 s in); with no hit, the yank, twice in the same game minutes later. Seven earlier holds that came to nothing were made with the other turret firing; the hits were not counted in them |
+| The hero turned 66 degrees off the turret | the yank all the same |
+
+Not Spidy's doing, each checked by itself: the game's yank works with
+Spidy's ray and swing modules running and fed (the turret off its base
+2.61 s in), with the web shooter's too (1.57 s), and after Spidy's balls
+have been fired (1.56 s). For an hour the holds that came to nothing looked
+like Spidy's; they were the other turret's fire.
+
+**Changes.**
+
+- `include/spidy/game_targets.hpp`, `src/game_targets.cpp`: `up` (a bot in
+  play with hit points left and in no state for one who is down);
+  `fighting` is an enemy who is up; `foe` is gone. `Kind::device`: an actor
+  that is no bot and has a `StatusEffectTrackerWebbed`, its marker component
+  that tracker, found by the component and not by a class's name;
+  `standing` (a device with hit points left where it has any).
+- `src/game_grab.cpp`: the webs, the throw's aim and the blow of a thrown
+  thug take the `fighting`. `src/game_punch.cpp`: a fist lands on a bot who
+  is `up`.
+- `src/game_shooter.cpp`: its watch has the devices; the aim takes one that
+  stands, at its transform, within 1.5 m of the line (its housing; with
+  0.6 m the line of sight to its middle counted the housing as a wall); a
+  ball that strikes one deals the webbing and no damage; never the player's
+  own actor.
+
+**The build in the game** (the same office; Spidy's ray, swing and web
+shooter modules running):
+
+| Check | Result |
+|---|---|
+| The hand's own pulls, aimed 4 degrees beside a turret 25.8 m off (the first build of the rule, the turret by its class) | 4 fired, 4 `targeted`, 4 `resolved`, 4 `webbed`: 11, 22, 30 of 30; hit points 3.0 |
+| Test shots at the other, 20 m off | 3 `webbed`: 11, 22, 30 |
+| With the turret by its tracker (this build): test shots at both, 15 to 17 m off | 4 and 3 balls, 30 of 30 each |
+| Then LB + RB, the game's camera on the nearer one, 14.8 m off, the hero 66 degrees off it | the turret left its base 1.56 s into the hold; no hit on the hero meanwhile |
+| A capture 0.5 s into a hold on a turret Spidy had webbed | the web on it, and the game's "LB·RB" marker |
+
+**Tests.** Core 267 (the thug's test has the knocked out for fists and
+webs, and a device; the class test, that no class makes one), launcher 23,
+Python 111.
+
+**Not shown.**
+- Anything in the headset: that a ball aimed by a real hand reaches a
+  turret, and the hold on the right stick's click (the worker's part).
+- The webs' and the fists' new rule in the game: no thug was knocked out
+  with this build running. The rule is the one the strike has had since the
+  second build, with the same reads.
+- What else in the game carries a webbing tracker without being a bot, and
+  what a ball's webbing does to it. The player's own actor is left out.
+- Whether a throw needs LB + RB held to its end: every hold here went on
+  until the turret was gone.
+- The saves: as the user left them (`reports/backups/saves-before-turret-check-20261012`
+  is that state). The Steam client lost its connection during the checks
+  and asked "Unable to Sync ... Play anyway"; the user answered it.
+
+## The thugs a punch goes to are the ones in play; Y takes what the player looks at — preceding build, tried in the headset
+
+The user, October 12: "in combat "dead" enemies and random objects are being
+targeted by the lockon system"; then "in the same section there was also a
+door that i needed to go through to progress but i couldnt interact with at
+all (maybe because i started walking on it when coming close enough?"; and,
+from footage of the mission on a PS4: the door shows a triangle prompt when
+the player comes close.
+
+**The session** (`dist/Spidy-0.2.12/reports/game-vr-20261011-221822.json`,
+248 s: the hall on the 170 m floor of Fisk Tower in "The Main Event", from
+the checkpoint at the fight's start):
+
+| | |
+|---|---|
+| The fight | combat camera from 25.2 s to 90.5 s |
+| Both fights of the session | 14 strikes opened and landed, 35 blows; `punch.unnamed` 10 (blows to a bot whose `BotAttackResponseManager` names no `AwarenessDB`); `unflown` 8; at the end, the second fight over, `strikes.enemies` 9 |
+| The door | reached at 107 s (17 s after the fight); 25 Y presses up to 155.9 s, the last seven standing at (-589.14, 170.0, -646.20), 0.40 m from the door's face; three clicks of the right stick (LB + RB); `interact_steps` 0 (no press held 0.3 s) |
+| On the way to it | a zip onto the wall above the door (103.6 s, 5 m up); the swing stood the player on the door four times (`mount` at 109.1, 112.6, 128.6 and 142.9 s); his last steps went (-0.89, 0, 0.45), along the door's face, which runs (-0.71, 0, 0.71) |
+| The game's time | 1.00 of real time from 85 s to 120 s (the mover's steps against the clock) |
+| After | Start, Restart Last Checkpoint (173.6 s), the fight again to 236 s, the game closed at 244 s |
+
+**In the game without a headset** (`probe_menu_pad.py`: profile 2 on the
+profile screen, Continue; scratch scripts over `probe_combat.py`'s `World`;
+the game window must stay in front, or the game ignores the controller). The
+fight opens with a hint card and three prompts that stop the game's time
+(Y: web strike, B: dodge under, X: attack from behind); test blows sent
+before they are through leave the hero unable to walk.
+
+*The bots*, as Spidy's scan lists them at the fight's start:
+
+| Bots | Count | State machine | Attack responses' `AwarenessDB` (+0xa4) | Hit points | Where |
+|---|---|---|---|---|---|
+| Thugs in the fight | 5 | a state (`BotStateGotoGame`, `BotStateAim`, ...), in use | resolves | 50-80 | in the hall |
+| Thugs waiting | 17 | no state (+0x70 null, +0x80 0) | names nothing | 60-80, three at 6 | stacked where they will appear: 3 at (-554.4, 170.0, -612.1), 1.4 m from the player's start; 1 at (-555.8, 169.9, -613.5); 1 at (-557.7, 170.0, -611.7); 4 at (-549.4, 170.0, -618.7); 8 on the floors at 152 m and 133 m |
+| A civilian, waiting | 1 | no state | none | 100 | the floor at 152 m |
+
+None of the waiting ones is drawn. All 23 have an `AwarenessDB` component.
+A thug knocked out (a test blow of 500, `SpidyPunchTest`): `BotStateDeathAnimGame`,
+then `BotStateRagdollGame`, 0.0 hit points, still set up. So the old rule
+(an enemy bot whose health does not read 0 or less) had 22 targets at the
+start and 17 with all five thugs down, 9 of them within 13 m: the session's
+count. With the game's own punches as the last blows (hit points set to 3,
+the controller's X) the thugs end the same way.
+
+*The fight's end.* Ended by test blows alone (twice) the fight finishes as
+with the game's own blows: the call to Yuri Watanabe begins about 3 s after
+the last thug falls, and the door then shows its prompt, whether the player
+walks to it during the call or after. Spidy's blows were not the cause.
+
+*The door* (its face through (-589.2, y, -646.7), normal (0.71, 0, 0.71);
+the hero 0.4 m from it at (-588.9, 170.0, -646.4), the fight over):
+
+| The game's camera | The hero | Prompt | Y |
+|---|---|---|---|
+| on the door | faces it | "Y Open Door" | |
+| turned away with the right stick | faces it | none | a tap: nothing |
+| 30 degrees off, either side | faces it | "Y Open Door" | |
+| 50 degrees off: one side / the other | faces it | none / "Y Open Door" | |
+| 70 degrees off, either side | faces it | none | |
+| on the door | turned away (the stick pushed 0.13 s) | none, the objective's marker instead | two taps: nothing |
+| on the door | turned away; Y with the left stick toward the door at half tilt for 0.15 s, Y down 0.6 s | | the door opened: the scene beyond it began |
+
+In VR the game's follow camera is not the view (the bridge only reads it,
+`game_bridge.cpp`; the tracking rig takes its forward once and for the walk's
+axes), and `Mapping::gameplay` sent no right stick: nothing turned it.
+
+*The camera under the right stick* (the bridge's `before` matrix, row 2 its
+forward): +X turns it toward cross(forward, up). At full tilt 95.6 degrees in
+0.6 s and the coast after it, 180 degrees a second from 0.2 s on; at 0.76
+tilt 22 degrees a second, at 0.6 nine, at 0.5 three. Steered with the stick
+as `CameraLook` sets it, from 170 degrees off: within 4 degrees in 1.43 s,
+and at rest there (three runs: -3.8, -3.8, +3.8 degrees left).
+
+*The hero under the left stick* (the player's matrix, row 2 his forward):
+0.3 tilt for 0.4 s: no turn, no step. 0.4 for 0.4 s: 176 degrees round by
+0.33 s, 0.38 m moved. 0.5 for 0.15 s: round by 0.55 s, 0.13 m moved.
+
+**Changes.**
+
+- `include/spidy/game_targets.hpp`, `src/game_targets.cpp`: `inPlay` (a bot
+  with a state in his state machine; one without a state machine counts),
+  `foe` (an enemy in play), `fighting` (a foe with hit points left where they
+  can be read, in none of `BotStateDeathAnim`, `BotStateRagdoll`,
+  `BotStateWallStuck` or a class derived from them, by the game's type
+  information). A health component is known by deriving from `Health` or
+  `BotHealth` too, not by the two vtables alone.
+- `src/game_punch.cpp`: fists pass through a bot not in play; a strike's
+  targets are the `fighting` ones. `src/game_grab.cpp`, `src/game_shooter.cpp`:
+  webs, the blows of a thrown thug, web balls' webbing and the pull's aim
+  take `foe`s.
+- `include/spidy/game_pad.hpp`: `CameraLook` (the right stick's X from the
+  angle between the head's level direction and the camera's forward: it
+  starts beyond 12 degrees and rests within 4; the cube root of the turn
+  wanted above 0.45, full from 45 degrees); `Walk::look`, the virtual
+  controller's right stick X in `Mapping::gameplay`. `InteractStep`: a press
+  out of a fight points the stick where the player looks for 0.15 s and keeps
+  the game's Y down 0.6 s at least (`pressed`); held 0.3 s it walks as before.
+- `src/game_xr.cpp`: the worker steers the camera all through VR play, not on
+  a wall the player stands on; XrData is version 24, 832 bytes (`lookError`,
+  `lookTurns` after the first build's `heals` and `zips`; a sample's
+  `look_error`, `look_turns`).
+- `tools/probe_combat.py`: `--target` takes several records.
+- `docs/PLAYERS.md`, the launcher's CONTROLS page, `tools/launch-game-vr.ps1`,
+  `README.md`: look at the thing and press Y.
+
+**The build in the game** (`probe_combat.py --phases strike,strike` at two
+chosen thugs, one waiting 4.7 m off and one in play, after the fight's
+prompts; `reports/combat-probe-lockon.json`): the strike's `enemies` was 5 in
+all 111 samples, with 5 thugs in play and 9 waiting within 13 m. The fist
+thrown at the waiting thug opened a strike that ended 3.6 m from him (a
+strike at him stops 0.95 m from his axis): it went to a thug in play that
+way.
+
+**Tests.** Core 267 with the first build's (3 new: a thug waiting or knocked
+out; the camera's turn, against a camera that answers as the game's; a tap's
+turn and its Y; the walk's test counts the turn), launcher 23, Python 111
+(`look_error`, `look_turns`; 832 bytes). The two builds of the day met in
+`game_pad.hpp`, `game_xr.cpp`, the tool and its test: the player's right
+thumbstick pushed down or up is the first build's (`StickPush`), the virtual
+controller's right stick X this one's; XrData has both builds' fields.
+
+**Not shown.**
+- The camera's turning and the turn on Y in the headset: the worker's part
+  needs one. The stick's signs and both matrices' rows were measured in the
+  game; that `headPose`'s forward is the look the session's `head` rows show
+  is read from the code.
+- Whether the camera turns as fast with another camera sensitivity in the
+  game's settings, and what the combat camera does with the stick in a fight.
+- The camera's pitch: nothing turns it. A thing far above or below the
+  hero's chest may still be out of its view.
+- Whether the game's LB + RB prompts ask for the same (the pull has the
+  camera now, not the turn).
+- `BotStateWallStuck` (a thug webbed to a wall) was not seen; it is taken by
+  its name.
+- A press of Y held 0.6 s where the game tells a tap from a hold.
+- The saves: profile 2's is as it was before the checks; the save the game
+  wrote past the door is in `reports/backups/saves-after-fisk-door-20261012`.
+
+## Heal and LT + RT on the right stick; OpenXR Toolkit switched off for the game — preceding build, not run in the game
 
 The user, October 12: "check out the bugs section in discord, map out the
 bugs you think we have enough data to handle", then "fix the things you know

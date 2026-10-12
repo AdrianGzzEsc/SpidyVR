@@ -3,7 +3,77 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 12, first build): heal and vents in VR; OpenXR
+**Latest build (October 12, third build): bodies are nobody's target; web
+balls web turrets, and whatever else the game webs up.** You said: "bodies are
+still targetable by hands (for webbing i guess), they shouldnt be. after
+entering the door there are turrents that the game tells me to press rb
+repeatedly to web but it doesnt work", and then: "can you implement a global
+solution so we wont need to redo every enemy?"
+
+- **Bodies.** The second build kept punches across the room off the knocked
+  out; webs, web balls and fists still took them. Now nothing does: a thug
+  with no hit points left, or in one of the game's states for one who is
+  down, is no target for any hand.
+- **Turrets.** In VR there is no RB: your web balls are the web shooter, and
+  they webbed enemy bots only. A turret is no bot. In your session 135 balls
+  hit things at the turrets and webbed nothing.
+- **The general rule.** A web ball now webs anything the game itself can web
+  up: any actor that carries the game's webbing tracker, whatever it is
+  called. No turret is named in the code, and the next such thing needs no
+  change. The aim helps a ball to one as it does to a thug. Such a thing
+  takes the webbing and no damage (a turret has 3 hit points, and the game's
+  own web shots leave them alone).
+- **In the game, with this build:** three of Spidy's balls web a turret up
+  (11, 22, 30 of 30), from 15 to 26 m, also when aimed 4 degrees beside it;
+  the game then shows its LB + RB marker on it, and holding LB + RB ripped it
+  off and threw it, 1.6 s into the hold.
+- **How the game wants it done** (the same with a plain controller): web the
+  turret, then hold LB + RB (the right stick's click, held) from within
+  about 15 m (it worked from 18 m and not from 22), looking at it. A hit on
+  you in the first second and a half stops the yank: web both turrets first,
+  or wait until they reload. The webbing lasts about four seconds.
+- **Not tried in the headset.**
+
+**Earlier build (October 12, second build): punches go to thugs who are there, and Y opens
+what you look at.** You said: "in combat 'dead' enemies and random objects are
+being targeted by the lockon system", and "there was also a door that i needed
+to go through to progress but i couldnt interact with at all (maybe because i
+started walking on it when coming close enough?".
+
+- **What your punches flew to.** In that hall the game keeps the thugs of
+  other waves and other floors ready long before they appear: unseen, where
+  they will spawn, with hit points and all. Of 22 "enemies" within 60 m of
+  where the fight starts, 5 were in the room and 17 were waiting, three of
+  them 1.4 m from where you stand. Fists, webs, web balls and punches across
+  the room took all of them. In your session of the evening before the fight
+  ended with 9 such "enemies" still in reach, and ten of your blows went to
+  thugs who were not there.
+- **Now only thugs in play count,** for every fist and every web. A punch
+  across the room also leaves a thug alone once he is down (the game's own
+  states for it, besides his hit points).
+- **The door.** The game takes its Y only for a thing its own camera has in
+  view and its hero faces. In VR you see neither: that camera stayed wherever
+  the last run left it, and the hero faced the way he last walked (along the
+  door, when you slid to its middle). In the game without a headset, at that
+  door: no "Open Door" with the camera 50 degrees off it, or with the hero
+  turned away, and Y did nothing there; with both on the door one tap opened
+  it.
+- **Now the game looks where you look.** Its camera turns to where your head
+  points, all the time, unseen (within 12 degrees; from behind you in a
+  second and a half). And a press of Y turns the hero to what you look at
+  first, and stays down for the half second that takes. Look at the door,
+  press Y. Holding Y still walks you up to it from further away.
+- **Not the cause:** your blows. A fight ended by Spidy's punches alone
+  finished as the game's own does (Yuri's call, then the door's prompt).
+- **Not tried in the headset yet.** The targets were checked in the game with
+  this build (5 of 5 in that hall, 9 waiting thugs left alone); the camera and
+  the turn were worked out there with a controller, and the part that runs in
+  the headset has only its own tests.
+- **With the first build of the day.** Heal and the zip on your right
+  thumbstick (down, up) are in this build as 0.3.1 has them. Its "look at the
+  perch or the vent" is the game's camera too, which now does look there.
+
+**Earlier build (October 12, first build): heal and vents in VR; OpenXR
 Toolkit; Steam Input.** You asked: "check out the bugs section in discord,
 map out the bugs you think we have enough data to handle", then "fix the
 things you know how."

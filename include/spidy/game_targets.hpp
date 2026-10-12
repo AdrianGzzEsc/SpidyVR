@@ -8,9 +8,10 @@
 
 // Things in the game a web can catch, found in the component registry (the
 // table game_player searches): throwable props (ThrowableHelper), bots
-// (enemies and scripted civilians) and pedestrians (PedestrianMover). A
-// registry scan takes milliseconds, far too long for a physics step, so a
-// thread keeps the list and a pick only reads transforms.
+// (enemies and scripted civilians), pedestrians (PedestrianMover) and the
+// things that are no bots and that the game webs up all the same (a gun
+// turret). A registry scan takes milliseconds, far too long for a physics
+// step, so a thread keeps the list and a pick only reads transforms.
 //
 // What a component is comes from the game's own type information (RTTI):
 // the class of a component, or any class it derives from, marks its actor.
@@ -22,7 +23,16 @@
 // enemies (a player's report: the flying Sable agents) and web balls did
 // nothing to them.
 namespace spidy::game_targets {
-enum class Kind : uint8_t { throwable = 1, bot = 2, pedestrian = 3 };
+// device: an actor that is no bot and has the component the game webs
+// things up with, a StatusEffectTrackerWebbed, whatever its class: the web
+// shooter's balls web it up as the game's own shots do. Its marker component
+// is that tracker. The user, October 12, at the two gun turrets of Fisk's
+// office (EnemyTurret: 3 hit points, a tracker with threshold 30 that the
+// game's own web hit adds 10 to, a PhysicsComponent, the transform 2.1 m
+// above the floor): "the game tells me to press rb repeatedly to web but it
+// doesnt work", and then "can you implement a global solution so we wont
+// need to redo every enemy?" So no class is named for it.
+enum class Kind : uint8_t { throwable = 1, bot = 2, pedestrian = 3, device = 4 };
 // What else an actor is, from its other components: a thug (ThugBot and the
 // bosses derived from it), a civilian (CivilianBot; scripted crime victims
 // are bots too), one the game webs up (StatusEffectTrackerWebbed), a
@@ -88,6 +98,33 @@ constexpr uint64_t botHealth = 0x3839e98, plainHealth = 0x3839e08;
 inline bool enemy(const Candidate& c) {
     return c.kind == Kind::bot && !(c.traits & (civilian | ally | neutral));
 }
+// A bot the game has in play. The thugs of a fight's later waves and of
+// other rooms exist long before they appear: unseen where they will spawn,
+// with their hit points and every component, but with no state in their
+// state machine (its first layer's state at +0x70, in use at +0x80) and a
+// BotAttackResponseManager not set up yet (a blow to one goes out as
+// nobody's: native_bodies). In the hall of the first mission's shield fight,
+// October 12: 22 enemy bots within 60 m of the player, 5 of them in play and
+// 17 waiting, three of those 1.4 m from where he stood; a fist, a web or a
+// punch across the room took each of them for an enemy. A bot without a state
+// machine counts as in play.
+bool inPlay(const Candidate&);
+// A bot who is up: in play, with hit points left where his health can be
+// read, and in none of the game's states for a bot who is down
+// (BotStateDeathAnim, then BotStateRagdoll, as a thug knocked out went that
+// day with 0 hit points; BotStateWallStuck; the classes derived from them).
+// A fist lands on such a bot alone: a body on the floor is nobody to hit.
+bool up(uintptr_t base, const Candidate&);
+// An enemy in the fight: an enemy who is up. What a punch across the room,
+// a web, a web ball and the blow of a thrown thug take. The user, October 12,
+// with webs still taking the knocked out: "bodies are still targetable by
+// hands (for webbing i guess), they shouldnt be".
+inline bool fighting(uintptr_t base, const Candidate& c) {
+    return enemy(c) && up(base, c);
+}
+// A device that still stands: one with hit points left, where it has any
+// (a turret torn off and thrown has none).
+bool standing(const Candidate& device);
 // Every live candidate of the kinds in `kinds` (bit 1 << Kind).
 bool scan(uintptr_t base, uint32_t kinds, std::vector<Candidate>& out);
 // What a component of the class whose vtable this is makes its actor, in the

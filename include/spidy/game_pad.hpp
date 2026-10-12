@@ -43,7 +43,8 @@ enum class Mapping {
     // Y: interact), the right stick's click (the game's LB + RB: its
     // web pull), that stick pushed down (the game's D-pad down: heal) and
     // up (its LT + RT: the zip to a point) reach it as the swing leaves
-    // them (Walk).
+    // them (Walk). The virtual controller's own right stick turns the
+    // game's camera to where the player looks (CameraLook).
     gameplay,
     // The game screen: every control as on an Xbox controller. A, B, X and Y
     // sit where Xbox has them; grips are the bumpers.
@@ -72,10 +73,12 @@ enum class Mapping {
 // D-pad, and their triggers and grips are the webs in VR play, so the right
 // thumbstick pushed down and up gives them (StickPush): until October 12
 // nothing did, and the first mission stopped at the heal it asks for and at
-// its vent.
+// its vent. look: the virtual controller's own right stick, its X, which
+// turns the game's camera (CameraLook).
 struct Walk {
     float right{}, forward{};
     bool jump{}, interact{}, dodge{}, pull{}, heal{}, zip{};
+    float look{};
 };
 // The right thumbstick pushed straight down or up, as Walk::heal and
 // Walk::zip. In VR play that stick turns the player with its left and right;
@@ -126,6 +129,66 @@ class StickPush {
     bool spent_{};
     float held_{};
 };
+// The game's own camera, kept looking where the player looks. VR shows the
+// world from the headset; the game's follow camera is still there, turns
+// with the right stick alone (which in VR play turns the player's view with
+// its left and right, and heals and zips with its down and up: StickPush)
+// and otherwise stays where the last run left it. The game offers
+// its Y only for a thing that camera has in view. In the game, October 12,
+// 0.4 m from the red door at the end of the first mission's hall: "Open
+// Door" showed with the camera within 30 degrees of the door and not from 50
+// (to one side) or 70 (to the other) on, and there Y did nothing; in the
+// headset the evening before, 25 presses at that door opened nothing.
+//
+// So the virtual controller's right stick turns that camera until it looks
+// along the head's level direction. The game's camera answers the stick
+// steeply (measured there, degrees a second: 180 at full tilt after a fifth
+// of a second, 22 at 0.76, 9 at 0.6, 3 at 0.5), so the stick is the cube
+// root of the turn wanted, above `floor`: from 170 degrees off the camera
+// was within 4 in 1.4 s and stayed there. It starts beyond startDegrees and
+// rests within stopDegrees: a head that looks about turns nothing.
+class CameraLook {
+  public:
+    static constexpr float startDegrees = 12, stopDegrees = 4, fullRate = 180, seconds = .25f, floor = .45f;
+    // look: where the head looks; camera: the game camera's forward (both in
+    // the world). steer: VR play, with that camera the player's own. Returns
+    // the right stick's X, -1..1.
+    float update(Vec3 look, Vec3 camera, bool steer) {
+        look.y = camera.y = 0;
+        // Straight up or down says no way to look.
+        if (!steer || !finite(look) || !finite(camera) || length(look) < .3f || length(camera) < .3f) {
+            turning_ = false;
+            error_ = 0;
+            return 0;
+        }
+        look = normalized(look);
+        camera = normalized(camera);
+        // To the camera's right, as the game takes the stick: cross(forward, up).
+        error_ = std::atan2(dot(look, cross(camera, {0, 1, 0})), dot(look, camera)) * 57.29578f;
+        const float off = std::abs(error_);
+        const bool turn = off > (turning_ ? stopDegrees : startDegrees);
+        turns_ += turn && !turning_;
+        turning_ = turn;
+        if (!turn)
+            return 0;
+        const float rate = std::min(1.f, off / (fullRate * seconds));
+        return std::copysign(floor + (1 - floor) * std::cbrt(rate), error_);
+    }
+    // From the camera's forward to the head's level direction, degrees (to
+    // the camera's right: more than 0); 0 while it is not steered.
+    float error() const {
+        return error_;
+    }
+    // The times the stick began to turn the camera.
+    uint32_t turns() const {
+        return turns_;
+    }
+
+  private:
+    float error_{};
+    bool turning_{};
+    uint32_t turns_{};
+};
 // The right thumbstick's click as Walk::pull. Like the left one's
 // (StickPress, slow_motion.hpp) it is not half of clicking both, which
 // switches between VR and the flat screen: it holds once the stick has been
@@ -173,22 +236,45 @@ class PullPress {
 // look, at walkStick of the stick, for walkSeconds at most; the game takes a
 // Y held on the way in (in the game, October 11), and the scene that follows
 // ends the walk. A walk that meets a wall (slower than stallSpeed for
-// stallSeconds, once it has had startSeconds to get going) ends too. A tap
-// moves nobody, and a walk that ended starts again only with another press.
+// stallSeconds, once it has had startSeconds to get going) ends too. A walk
+// that ended starts again only with another press.
+//
+// The game also takes its Y only from a hero who faces the thing, and in VR
+// he faces wherever he last walked: a player who slid along that door to its
+// middle, or dropped off the wall above it, stood with his back or his side
+// to it. In the game, October 12, at the red door of the first mission's
+// hall, the camera on it: no "Open Door" for a hero turned away, and two Y
+// taps did nothing. So every press begins with the stick where the player
+// looks for turnSeconds (at walkStick the hero turned right round within
+// 0.55 s and took a step of 0.13 m; a tilt of 0.3 turned nobody), and the
+// game's Y stays down for pressSeconds at least, the turn's time: such a tap
+// opened the door.
 class InteractStep {
   public:
     static constexpr float holdSeconds = .3f, walkSeconds = 2, walkStick = .5f, startSeconds = .4f,
-                           stallSeconds = .25f, stallSpeed = .3f;
-    // seconds: since the previous update. held: Walk::interact. allowed: the
+                           stallSeconds = .25f, stallSpeed = .3f, turnSeconds = .15f, pressSeconds = .6f;
+    // seconds: since the previous update. held: the player's Y. allowed: the
     // game has the player on the ground, out of a fight (there Y is the web
-    // strike). speed: the player's over the ground, m/s. Returns how hard
-    // the player walks ahead: 0, or walkStick.
+    // strike, as long as the player presses it). speed: the player's over
+    // the ground, m/s. Returns how hard the stick points where the player
+    // looks: 0, or walkStick.
     float update(float seconds, bool held, bool allowed, float speed) {
-        const float dt = std::isfinite(seconds) ? std::clamp(seconds, 0.f, .1f) : 0.f;
+        const bool timed = std::isfinite(seconds);
+        const float dt = timed ? std::clamp(seconds, 0.f, .1f) : 0.f;
+        if (held && !down_) {
+            since_ = 0;
+            turns_ = allowed;
+        } else {
+            since_ = std::min(since_ + dt, pressSeconds);
+        }
+        down_ = held;
+        // A frame without a time turns nobody: no turn that never ends.
+        turns_ = turns_ && allowed && timed && since_ < pressSeconds;
+        const float turn = turns_ && since_ < turnSeconds ? walkStick : 0.f;
         if (!held) {
             held_ = walked_ = stalled_ = 0;
             walking_ = done_ = false;
-            return 0;
+            return turn;
         }
         held_ += dt;
         done_ = done_ || !allowed;
@@ -199,11 +285,16 @@ class InteractStep {
         }
         if (done_ || held_ < holdSeconds) {
             walking_ = false;
-            return 0;
+            return turn;
         }
         steps_ += !walking_;
         walking_ = true;
         return walkStick;
+    }
+    // The game's Y is down: the player's, or the rest of pressSeconds after
+    // a press that turned the hero.
+    bool pressed() const {
+        return down_ || turns_;
     }
     // Walks begun so far.
     uint32_t steps() const {
@@ -211,8 +302,8 @@ class InteractStep {
     }
 
   private:
-    float held_{}, walked_{}, stalled_{};
-    bool walking_{}, done_{};
+    float held_{}, walked_{}, stalled_{}, since_ = pressSeconds;
+    bool walking_{}, done_{}, down_{}, turns_{};
     uint32_t steps_{};
 };
 // Where B, X and Y went down. On the game screen they are the game's own B,
@@ -275,6 +366,7 @@ inline State fromControllers(const XrFrame& frame, Mapping mapping, const Walk& 
             s.leftTrigger = s.rightTrigger = 255;
         s.thumbLX = stick(walk.right);
         s.thumbLY = stick(walk.forward);
+        s.thumbRX = stick(walk.look);
         return s;
     }
     const auto trigger = [](float v) {

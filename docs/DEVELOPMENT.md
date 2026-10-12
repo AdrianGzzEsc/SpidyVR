@@ -418,8 +418,9 @@ options bit 13 for off, XrData settings bit 128), and step GAME SCREEN 3D
 `vr_settings::screenDepths`, XrConfig and XrData `screenDepth`); XrConfig is
 version 23 (664 bytes: `screenDepth`; `upscale`, `monitorRate`; options bit 15
 for no eye anti-aliasing, bit 16 for the game's own monitor view, bit 17 for
-each eye's own shadow set) and XrData version 23 (824 bytes: `heals`, `zips`;
-`screenDepth`, `stereoSubmitted`; `interactSteps`).
+each eye's own shadow set) and XrData version 24 (832 bytes: `lookError`,
+`lookTurns`; `heals`, `zips`; `screenDepth`, `stereoSubmitted`;
+`interactSteps`).
 X resets a setting, Y the
 whole tab (to Spidy's defaults). Web grabbing, the web
 shooter, your body and punching are not in it or in the launcher's options
@@ -478,7 +479,19 @@ only within about a metre of the thing (a door's "Open Door" prompt showed
 1.1 m from its middle and not 1.2 m), so Y held past 0.3 s walks the player
 on where they look, at half stick, until the game's scene ends play, Y is let
 go, the walk meets a wall, or 2 s have passed; not in a fight, in the air or
-on a wall (`game_pad::InteractStep`, XrData `interactSteps`). The right thumbstick's
+on a wall (`game_pad::InteractStep`, XrData `interactSteps`). The game also
+takes its Y only for a thing its own follow camera has in view (about 30
+degrees to either side at a door) and its hero faces, and VR shows neither:
+the virtual controller's right stick turns that camera to the head's level
+direction all through VR play (`game_pad::CameraLook`, `Walk::look`, XrData
+`lookError` and `lookTurns`), and every press of Y out of a fight starts with
+the left stick where the player looks for 0.15 s, which turns the hero, the
+game's Y staying down 0.6 s at least. The targets of fists, webs and web
+balls are chosen by what the game says of them, not by their classes
+(`game_targets`): a bot in play (a state in its state machine) that is up
+(hit points left, none of the game's states for one who is down), and for
+web balls any other actor with the game's webbing tracker, a `Kind::device`
+(a gun turret). The right thumbstick's
 click is the game's LB + RB together, its web pull where it shows the two (a
 door, a grate), under the same condition (`game_pad::PullPress`,
 `Walk::pull`): the grips shoot webs in VR and are no bumpers there. That

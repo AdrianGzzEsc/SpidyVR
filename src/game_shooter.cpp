@@ -55,6 +55,10 @@ constexpr uint64_t leaseMs = 250;
 // A street thug's aim point above his feet, and how wide he is to the aim
 // assist; other bots' by their size (game_targets::Size).
 constexpr float chest = 1.15f, botRadius = .45f;
+// A device's housing about its transform, for the aim: the line to its
+// middle meets the housing first, which is no wall in the ball's way (with
+// 0.6 m the aim took no gun turret from 22 m, in the game, October 12).
+constexpr float deviceRadius = 1.5f;
 // The gadget belongs to the player: its actor is this close to the player's.
 constexpr float gadgetReach = 10;
 // A shot flies at most a second (60 m); one older is gone.
@@ -473,14 +477,21 @@ void collided(uintptr_t shot, uintptr_t event) {
             Vec3 at{};
             if (!placed && game_targets::position(c, at))
                 point = at + Vec3{0, c.size.height(chest), 0};
-            if (game_targets::enemy(c) && (c.traits & game_targets::webbable)) {
+            // An enemy in the fight, or a device that stands (never the
+            // player's own actor): the game's own web shots web both up.
+            if ((game_targets::fighting(base, c) ||
+                 (game_targets::standing(c) && record != heroRecord.load(std::memory_order_relaxed))) &&
+                (c.traits & game_targets::webbable)) {
                 native_bodies::Damage d;
                 d.victim = record;
                 d.damager = heroRecord.load(std::memory_order_relaxed);
                 d.point = point;
                 d.direction = f.direction;
                 d.normal = normalized(normal);
-                d.amount = webDamage;
+                // A gun turret has 3 hit points and the game's own web shots
+                // take none of them: it is to be webbed up and thrown, not shot
+                // down. So a device takes the webbing alone.
+                d.amount = c.kind == game_targets::Kind::device ? 0 : webDamage;
                 d.type = 20;     // kWebImpact
                 d.knockback = 1; // kTwitch
                 d.knockbackAmount = 1;
@@ -667,9 +678,10 @@ uint32_t game_shooter::start(uintptr_t gameBase) {
             f = {};
         ReleaseSRWLockExclusive(&flyingLock);
         gadgets.start();
-        // Thugs to aim at and to web; props a shot may knock.
+        // Thugs and devices to aim at and to web; props a shot may knock.
         watch.start(base, 1u << static_cast<unsigned>(game_targets::Kind::bot) |
-                              1u << static_cast<unsigned>(game_targets::Kind::throwable));
+                              1u << static_cast<unsigned>(game_targets::Kind::throwable) |
+                              1u << static_cast<unsigned>(game_targets::Kind::device));
         // The muzzle and the collisions first: a frame may fire as soon as
         // it is hooked.
         for (auto* hook : {hooks[1], hooks[2], hooks[0]})
@@ -750,13 +762,20 @@ void game_shooter::update(float seconds, const Input& in, uint32_t busy, uint64_
     uint64_t requested{}, dropped{};
     if (pulls) {
         // The enemies a pull may aim at, where they stand now: never a
-        // civilian or the police.
+        // civilian or the police, nor a thug who is down. And the devices
+        // that stand, at their own transforms (a turret's: its guns' middle).
         watch.current(bots);
         targets.clear();
-        for (const auto& b : bots)
-            if (Vec3 at{}; game_targets::enemy(b) && game_targets::position(b, at))
+        for (const auto& b : bots) {
+            Vec3 at{};
+            if (!game_targets::position(b, at))
+                continue;
+            if (game_targets::fighting(base, b))
                 targets.push_back(
                     {b.record, at + Vec3{0, b.size.height(chest), 0}, b.size.width(botRadius)});
+            else if (game_targets::standing(b) && (b.traits & game_targets::webbable) && b.record != record)
+                targets.push_back({b.record, at, deviceRadius});
+        }
         for (int i = 0; i < 2; ++i) {
             if (!((pulls >> i) & 1))
                 continue;

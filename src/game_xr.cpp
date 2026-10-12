@@ -114,7 +114,7 @@ enum GateReason : uint32_t {
     gateTracking = 16,    // the headset's pose or timing was not usable
 };
 struct XrData {
-    uint32_t magic = 0x53585244, version = 23, bytes = sizeof(XrData), status{};
+    uint32_t magic = 0x53585244, version = 24, bytes = sizeof(XrData), status{};
     int64_t sequence{};
     uint64_t frames{}, tracked{}, submitted{}, dropped{}, leftHands{}, rightHands{}, serial{}, generation{};
     uint32_t nativeKeys{}, error{};
@@ -197,8 +197,14 @@ struct XrData {
     // Version 23: pushes of the right stick that reached the game as its
     // D-pad down (heal) and as its LT + RT (the zip to a point).
     uint32_t heals{}, zips{};
+    // Version 24: the game's own camera against where the head looks
+    // (game_pad::CameraLook): the angle between them now, degrees (the head to
+    // the camera's right: more than 0; 0 while the camera is not steered), and
+    // the times the right stick began to turn the camera.
+    float lookError{};
+    uint32_t lookTurns{};
 };
-static_assert(sizeof(XrData) == 824);
+static_assert(sizeof(XrData) == 832);
 // Slow motion (slow_motion.hpp, game_time.hpp): what the player did with it
 // and what the game's time did. status: 1 before VR starts, then 0 with the
 // game's time hooked, else why it is not (game_time::install) and slow
@@ -448,6 +454,9 @@ DWORD WINAPI run(void*) {
         // its Y only within about a metre of the thing.
         game_pad::InteractStep interactStep;
         uint32_t interactStepsBefore{};
+        // The game's own camera, turned to where the player looks: the game
+        // takes its Y for what that camera has in view.
+        game_pad::CameraLook cameraLook;
         // The game's LB + RB (its web pull): both web buttons on a thing no
         // web holds on, then a yank (WebPull); or the right thumbstick's
         // click. aimed: what each hand's web button would do, markers or not.
@@ -1241,8 +1250,9 @@ DWORD WINAPI run(void*) {
                             walk.interact = (origins.play() & buttonY) != 0;
                             walk.dodge = (origins.play() & buttonB) && !calibrationInput;
                         }
-                        // Y held on: the player walks where they look, until the
-                        // game takes the press. The player's own stick goes first.
+                        // A press of Y turns the hero to where the player looks; held
+                        // on, he walks there, until the game takes the press. The
+                        // player's own stick goes first.
                         const bool fight = moverTable == config.base + bridge::combatCamera;
                         const float stepIn = interactStep.update(
                             frame.seconds, walk.interact,
@@ -1252,6 +1262,14 @@ DWORD WINAPI run(void*) {
                             interactStepsBefore = interactStep.steps();
                             runtime.haptic(0, .2f);
                         }
+                        // The game's Y: the player's, and after a tap the time the
+                        // hero takes to turn to what they look at.
+                        walk.interact = interactStep.pressed();
+                        // Not on a wall the player stands on: the game's camera
+                        // there is not the follow camera's level turn.
+                        walk.look = cameraLook.update(motion.headPose.orientation.rotate({0, 0, -1}),
+                                                      {camera[8], camera[9], camera[10]},
+                                                      steering && !motion.onSurface);
                         if (stepIn > 0 && std::hypot(walk.right, walk.forward) < .1f) {
                             Vec3 look = motion.headPose.orientation.rotate({0, 0, -1});
                             Vec3 ahead{camera[8], 0, camera[10]};
@@ -1351,6 +1369,8 @@ DWORD WINAPI run(void*) {
                         d.flipSpeed = static_cast<uint32_t>(values.flipSpeed);
                         d.viewTilt = motion.active ? motion.viewTilt * 180 / 3.14159265f : 0.f;
                         d.interactSteps = interactStep.steps();
+                        d.lookError = cameraLook.error();
+                        d.lookTurns = cameraLook.turns();
                         d.screenDepth = static_cast<uint32_t>(values.screenDepth);
                         d.settingChanges = settingChanges;
                         const auto menu = game_menu::telemetry();

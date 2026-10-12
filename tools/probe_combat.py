@@ -13,7 +13,7 @@ HoverMoverManager flies the ones that hover), with the same traits (thug, civili
 from the classes its components are or derive from. For each it lists the bot's own class, its mover manager, its
 state machine's two states, its health, its webbing against its threshold, its MoverStandard, and where it is. It
 also lists any actor with a Bot component but no bot mover manager: one the scan would miss. --target picks the
-enemies to try: the nearest (any), a flyer (hover) or a walker, or one actor record (0x...). Each phase takes the
+enemies to try: the nearest (any), a flyer (hover) or a walker, or actor records (0x...,0x...). Each phase takes the
 nearest target not tried yet, the first one when all are.
 
   shoot  --shots web balls (SpidyShooterTest) from 6 m before the target's chest, at it, --every apart: the shooter's
@@ -208,7 +208,8 @@ def main():
         user32.SetProcessDPIAware()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--list', action='store_true', help='list the bots and stop (reads the game only)')
-    parser.add_argument('--target', default='nearest', help='nearest, flyer, walker, or an actor record 0x...')
+    parser.add_argument('--target', default='nearest',
+                        help='nearest, flyer, walker, or actor records 0x...[,0x...] (the nearest of them first)')
     parser.add_argument('--phases', default='shoot,punch,pull')
     parser.add_argument('--range', type=float, default=40)
     parser.add_argument('--shots', type=int, default=3)
@@ -246,7 +247,7 @@ def main():
         if args.target == 'walker':
             return 'hover' not in bot['traits']
         if args.target.startswith('0x'):
-            return bot['record'] == int(args.target, 16)
+            return bot['record'] in {int(record, 16) for record in args.target.split(',')}
         return True
     targets = [b for b in seen['bots'] if wanted(b)]
     report['hero'] = dict(record=hex(seen['hero']), feet=feet)

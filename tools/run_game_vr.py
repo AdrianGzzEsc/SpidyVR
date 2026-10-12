@@ -488,10 +488,10 @@ CALIBRATION_HINTS = {0: None, 1: 'tracking', 2: 'stand_up', 3: 'arms_out', 4: 's
 
 def snapshot(game, address):
     for _ in range(8):
-        raw = game.read(address, 824)
-        if len(raw) != 824:
+        raw = game.read(address, 832)
+        if len(raw) != 832:
             return None
-        if struct.unpack_from('<3I', raw) != (0x53585244, 23, 824):
+        if struct.unpack_from('<3I', raw) != (0x53585244, 24, 832):
             raise RuntimeError('Game XR protocol mismatch')
         if struct.unpack_from('<Q', raw, 16)[0] & 1 or raw[16:24] != game.read(address+16, 8):
             continue
@@ -532,6 +532,11 @@ def snapshot(game, address):
         result.update(interact_steps=struct.unpack_from('<I', raw, 800)[0])
         # Pushes of the right stick the game got as its D-pad down (heal) and as its LT + RT (the zip to a point).
         result.update(zip(('heals', 'zips'), struct.unpack_from('<2I', raw, 816)))
+        # The game's own camera, which decides what its Y takes, against where the head looks: the angle between
+        # them now in degrees (the head to the camera's right: more than 0; 0 while it is not steered), and the
+        # times the virtual controller's right stick began to turn the camera there.
+        look_error, look_turns = struct.unpack_from('<fI', raw, 824)
+        result.update(look_error=round(look_error, 1), look_turns=look_turns)
         result.update(interacts=interacts, aim_markers=bool(aim_markers),
                       markers=struct.unpack_from('<Q', raw, 656)[0])
         # The VR settings now (the SPIDY VR tab in the game's Settings changes them),

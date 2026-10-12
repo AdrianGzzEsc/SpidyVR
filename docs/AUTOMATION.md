@@ -143,7 +143,10 @@ the screen names the camera the gate is missing), `camera_commits` and
 `player_record` (each player the worker followed), and `pad_buttons`,
 `pad_installed` and `pad_reads` (the virtual controller and the game's reads of
 it), `interacts` and `dodges` (Y and B presses in VR play that reached the
-game as its Y and its B), and `interact_steps` (the walks a held Y began). The native mover controls collision; requests expire if the swing
+game as its Y and its B), `interact_steps` (the walks a held Y began), and
+`look_error` and `look_turns` (degrees from the game's own camera to where
+the head looks, and the times the right stick began to turn that camera
+there: the game takes its Y for what that camera has in view). The native mover controls collision; requests expire if the swing
 or XR worker stops renewing them. Owned movement synchronizes the native airborne
 velocity and clears the mover's duplicate fall accumulator. This correction
 still needs an in-game handoff test. Reports now include native movement samples
