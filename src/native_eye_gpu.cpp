@@ -45,7 +45,11 @@ std::array<void*, 4> hooks{};
 std::array<void*, 2> presentHooks{};
 std::atomic<bool> enabled{};
 std::atomic<uint32_t> fault{};
-std::mutex lifecycle, submission, recording, telemetry;
+std::mutex lifecycle, submission, telemetry;
+// Recursive: under Proton (vkd3d-proton) one function serves every command list, so the hooks below
+// also see Spidy's own D3D12 calls and can re-enter on a thread that already holds this lock. A plain
+// std::mutex then throws resource_deadlock_would_occur and the game closes.
+std::recursive_mutex recording;
 std::condition_variable copyReady;
 uint64_t deadline{};
 bool hooked{};
