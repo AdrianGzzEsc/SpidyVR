@@ -3,7 +3,81 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 12, first build): heal and vents in VR; OpenXR
+**Latest build (October 12, second build): "Copy for Discord" in the
+launcher.** Of the 34 help posts on Spidy's Discord, 3 named their Spidy
+version and 3 came with a report: whoever answers has to ask for the basics
+first, every time.
+
+- **A button that copies them.** "Copy for Discord", beside Reports above the
+  launcher's session log, puts a few lines about this PC and the last session
+  on the clipboard, wrapped as a Discord code block, and says "Copied" for two
+  seconds. The player pastes them into the post.
+- **What it says.** Its first line is `Spidy 0.3.1 summary`, with the
+  version of the launcher: a bot can know the block by it. Then one fact a
+  line, `Label: value`, always in this order: `VR runtime` (the one chosen
+  and the ones installed), `Headset` (the headset check's line; unchecked,
+  what the last session found, or "not checked"), `Game` (the supported
+  version, or what is wrong with it), `GPU` (the card with the most memory of
+  its own, as DXGI names it), `RAM`, `Commit limit` (RAM plus page file, and
+  how much of it is free), `Upscaling`, `Render resolution`, `Web button`,
+  and after a session `Last session` (the last line it printed) and
+  `Last error` (its last error line). What the launcher does not know reads
+  "unknown"; a session that never ran has no lines. From this PC:
+
+  ```
+  Spidy 0.3.1 summary
+  VR runtime: Automatic; installed: Virtual Desktop (Windows' active), Meta Quest Link, SteamVR
+  Headset: Connected: Meta Quest Pro via Virtual Desktop - 3072x3264 per eye (in the last session)
+  Game: Steam, supported version 4.630.0.0
+  GPU: NVIDIA GeForce RTX 5090, 31.4 GB
+  RAM: 61.6 GB
+  Commit limit: 65.5 GB (RAM plus page file), 39.8 GB free
+  Upscaling: Quality (67%)
+  Render resolution: 125%
+  Web button: Grip
+  Last session: Game closed. Session report: ~\OneDrive\Documents\GitHub\Spidy\dist\Spidy-0.2.8\reports\game-vr-20261009-195140.json
+  ```
+- **The last session** is the one this launcher ran. A launcher started
+  since reads the console log written last in its reports folder. Most
+  sessions end with a notice about the game's own settings ("Restored your
+  game settings..."): it says nothing of how the session went, and is
+  passed over.
+- **No user name.** A path loses the profile folder: `C:\Users\<name>\...`
+  reads `~\...`, with either slash, single or doubled (as Python prints a
+  file's name in an error). The game's folder is left out. Nothing with a
+  serial number is read.
+- **Short.** 1200 characters at most, the code fence included (a Discord
+  message holds 2000). Every value has a cap, and the session's two lines
+  share what is left, 300 characters each at most. Line ends and code fences
+  inside a value are taken out.
+- **Where it is.** `launcher_text.hpp` makes the text (`supportSummary`,
+  `sessionEnd`, `withoutUserName`). `system.cpp` reads the card and the
+  memory when the button is pressed (`hardware`) and finds the log
+  (`lastConsoleLog`).
+
+What ran: the launcher's 29 checks (6 new: paths without the user name; how
+a session went, with the three notices `run_game_vr.py` prints after it;
+every line of the summary; what is unknown or left out; values with line
+ends and code fences in them; the limit, with every value too long) and the
+264 core checks. The launcher itself, on this PC at 150% scaling, driven by
+posted clicks: the button fits beside Reports at the window's first size and
+at its smallest, it says "Copied" after a click, and the clipboard held the
+block above with `Headset: not checked` and no `Last session` (no session
+had run in that folder). With October 9's console log from `dist\Spidy-0.2.8`
+copied into the reports folder it held the block as shown. A scratch program
+with the launcher's own `lastConsoleLog` and `sessionEnd` read the last logs
+of four play folders: two gave "Game closed. Session report: ...", two the
+last state the session printed ("VR active..."), where those logs stop.
+
+Not run: no game and no VR session was started, so the summary after a
+session of the same launcher, a failed start's `Last error` among them, was
+not seen in the launcher; nor an unsupported game's line, nor a PC with two
+graphics cards. The Python tools did not change and their checks were not
+run. Nothing was pasted into Discord, and no bot reads the block yet.
+
+The launcher and PLAYERS.md changed. In no play folder.
+
+**Earlier build (October 12, first build): heal and vents in VR; OpenXR
 Toolkit; Steam Input.** You asked: "check out the bugs section in discord,
 map out the bugs you think we have enough data to handle", then "fix the
 things you know how."

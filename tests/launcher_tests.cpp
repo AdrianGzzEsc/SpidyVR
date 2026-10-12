@@ -482,6 +482,160 @@ int main() {
               "stale files in the package's folders; the player's files beside the launcher, subfolders the "
               "package has no files in, reports and other folders stay");
     });
+    test("a path is posted without the Windows user name", [] {
+        check(withoutUserName(R"(Game closed. Session report: C:\Users\lianm\Spidy\reports\r.json)") ==
+                  R"(Game closed. Session report: ~\Spidy\reports\r.json)",
+              "a report's path");
+        // As Python prints a file's name in an error: slashes doubled. A name may have a space.
+        check(withoutUserName(R"([WinError 5] Access is denied: 'c:\\users\\Peter Parker\\Spidy\\x.dll')") ==
+                  R"([WinError 5] Access is denied: '~\\Spidy\\x.dll')",
+              "doubled slashes, lower case, a name of two words");
+        check(withoutUserName(R"(File "D:/Users/mj/Spidy/tools/run_game_vr.py", line 12, in main)") ==
+                  R"(File "~/Spidy/tools/run_game_vr.py", line 12, in main)",
+              "forward slashes, another drive");
+        check(withoutUserName(R"(open "C:\Users\gwen" and C:\Users\miles)") == R"(open "~" and ~)",
+              "a path that ends with the name");
+        const std::string plain = R"(C:\Program Files (x86)\Steam\steamapps and D:\Games\Users\x, C:\Users\)";
+        check(withoutUserName(plain) == plain, "paths with no user name in them");
+        check(withoutUserName("").empty(), "no text");
+    });
+    test("how a session went: its last error, and its last line when that is another", [] {
+        auto end = sessionEnd("Rendering 3072 x 3264 pixels per eye.\nGame closed. Session report: r.json");
+        check(end.error.empty() && end.last == "Game closed. Session report: r.json",
+              "no error; a last line without a line end");
+        end = sessionEnd("Waiting for the headset\r\nOSError: [WinError 299] x\r\nHeadset active\r\n\r\n");
+        check(end.error == "OSError: [WinError 299] x" && end.last == "Headset active", "an error, and more");
+        end = sessionEnd("Traceback (most recent call last):\n  File \"run_game_vr.py\", line 1, in main\n"
+                         "KeyError: 'final'\n");
+        check(end.error == "KeyError: 'final'" && end.last.empty(), "a traceback's last line, said once");
+        // What tools/run_game_vr.py's settle_display prints after the end is not the end.
+        for (const char* notice :
+             {"Restored your game settings (display, frame generation, controllers).",
+              "Your game settings (display, frame generation, controllers) are restored after the game "
+              "closes, the next time Spidy VR starts it (or run tools\\vr_display.py --restore).",
+              "WARNING: Windows refused restoring your game settings ([WinError 5] Access is denied); the "
+              "next time Spidy VR starts the game it tries again (or run tools\\vr_display.py --restore)."}) {
+            end = sessionEnd("VR settings from the headset: hud=1\nGame closed. Session report: r.json\n" +
+                             std::string(notice) + "\n");
+            check(end.error.empty() && end.last == "Game closed. Session report: r.json", notice);
+        }
+        end = sessionEnd("Spidy VR unavailable: no headset.\nRestored your game settings (display, frame "
+                         "generation, controllers).\n");
+        check(end.error == "Spidy VR unavailable: no headset." && end.last.empty(), "an error, the notice");
+        end = sessionEnd(" \r\n\n");
+        check(end.error.empty() && end.last.empty(), "nothing printed");
+    });
+    // What the launcher of a PC with a Quest 3 on Virtual Desktop knows after a session.
+    SupportFacts known;
+    known.version = "0.3.1";
+    known.runtime = "Automatic; installed: Virtual Desktop, SteamVR (Windows' active)";
+    known.headset = "Connected: Oculus Quest3 via Virtual Desktop - 3072x3264 per eye";
+    known.game = "Steam, supported version 4.630.0.0";
+    known.pc = {"NVIDIA GeForce RTX 4080 Laptop GPU", 12282, 32479, 51935, 35020};
+    known.upscaling = "Quality (67%)";
+    known.renderResolution = "100%";
+    known.webButton = "Grip";
+    known.session.last = R"(Game closed. Session report: C:\Users\lianm\Documents\Spidy-0.3.1\reports\)"
+                         "game-vr-20261012-101500.json";
+    known.session.error = "OSError: [WinError 299] Only part of a ReadProcessMemory or WriteProcessMemory "
+                          "request was completed";
+    test("the summary for a help post: a code block, Spidy's version first, then one fact a line", [&] {
+        const std::string summary = supportSummary(known);
+        check(summary.rfind("```\nSpidy 0.3.1 summary\n", 0) == 0, "the first line, which a bot knows it by");
+        check(summary ==
+                  "```\n"
+                  "Spidy 0.3.1 summary\n"
+                  "VR runtime: Automatic; installed: Virtual Desktop, SteamVR (Windows' active)\n"
+                  "Headset: Connected: Oculus Quest3 via Virtual Desktop - 3072x3264 per eye\n"
+                  "Game: Steam, supported version 4.630.0.0\n"
+                  "GPU: NVIDIA GeForce RTX 4080 Laptop GPU, 12.0 GB\n"
+                  "RAM: 31.7 GB\n"
+                  "Commit limit: 50.7 GB (RAM plus page file), 34.2 GB free\n"
+                  "Upscaling: Quality (67%)\n"
+                  "Render resolution: 100%\n"
+                  "Web button: Grip\n"
+                  "Last session: Game closed. Session report: ~\\Documents\\Spidy-0.3.1\\reports\\"
+                  "game-vr-20261012-101500.json\n"
+                  "Last error: OSError: [WinError 299] Only part of a ReadProcessMemory or "
+                  "WriteProcessMemory request was completed\n"
+                  "```",
+              "every fact in its order, the report's path without the user name");
+        check(summary.size() < 700 && std::count(summary.begin(), summary.end(), '\n') == 13, "twelve lines");
+    });
+    test("what the launcher does not know reads unknown in a summary; no session, no lines for one", [&] {
+        SupportFacts facts;
+        facts.version = "0.3.1";
+        check(supportSummary(facts) ==
+                  "```\nSpidy 0.3.1 summary\nVR runtime: unknown\nHeadset: unknown\nGame: unknown\n"
+                  "GPU: unknown\nRAM: unknown\nCommit limit: unknown\nUpscaling: unknown\n"
+                  "Render resolution: unknown\nWeb button: unknown\n```",
+              "nothing known but the version");
+        facts = known;
+        facts.pc.gpuMemoryMb = 0;
+        facts.session.last.clear();
+        std::string summary = supportSummary(facts);
+        check(summary.find("\nGPU: NVIDIA GeForce RTX 4080 Laptop GPU\n") != std::string::npos,
+              "a card whose memory Windows did not say");
+        check(summary.find("Last session:") == std::string::npos &&
+                  summary.find("\nWeb button: Grip\nLast error: OSError: ") != std::string::npos,
+              "an error alone");
+        facts.session = {};
+        facts.headset = "not checked";
+        summary = supportSummary(facts);
+        check(summary.find("\nHeadset: not checked\n") != std::string::npos &&
+                  summary.rfind("\nWeb button: Grip\n```") == summary.size() - 21,
+              "no session yet: the block ends after the options");
+    });
+    test("a summary's values stay on their lines and inside the code block", [&] {
+        SupportFacts facts = known;
+        facts.headset = " Quest\r\n```3`\t";
+        facts.session.error = "Traceback:\n  File \"C:\\Users\\lianm\\Spidy\\tools\\x.py\"";
+        const std::string summary = supportSummary(facts);
+        check(summary.find("\nHeadset: Quest  '''3'\n") != std::string::npos, "line ends and code fences");
+        check(summary.find("\nLast error: Traceback:   File \"~\\Spidy\\tools\\x.py\"\n```") !=
+                  std::string::npos,
+              "an error of two lines, its path without the user name");
+        check(summary.find("lianm") == std::string::npos, "no user name");
+    });
+    test("a summary fits a Discord message: long values are cut, the session's lines first", [&] {
+        // One long line keeps 300 characters.
+        SupportFacts facts = known;
+        facts.session.error = std::string(1000, 'x');
+        std::string summary = supportSummary(facts);
+        check(summary.find("\nLast error: " + std::string(297, 'x') + "...\n```") != std::string::npos,
+              "a long error");
+        // Everything too long: every label still there, within the limit, no character cut in half.
+        const std::string accents = [] {
+            std::string text;
+            for (int i = 0; i < 2000; ++i)
+                text += "\xC3\xA9";
+            return text;
+        }();
+        facts.version = facts.runtime = facts.headset = facts.game = facts.pc.gpu = accents;
+        facts.upscaling = facts.renderResolution = facts.webButton = accents;
+        facts.session = {accents + "x", accents};
+        facts.pc.gpuMemoryMb = facts.pc.ramMb = facts.pc.commitLimitMb = facts.pc.commitFreeMb = ~uint64_t{};
+        summary = supportSummary(facts);
+        check(summary.size() <= kSummaryLimit && summary.size() > kSummaryLimit - 100, "the limit, used");
+        check(std::count(summary.begin(), summary.end(), '\n') == 13 &&
+                  summary.rfind("\n```") == summary.size() - 4,
+              "twelve lines and the block's end");
+        size_t at = 0;
+        for (const char* label :
+             {"```\nSpidy ", "\nVR runtime: ", "\nHeadset: ", "\nGame: ", "\nGPU: ", "\nRAM: ",
+              "\nCommit limit: ", "\nUpscaling: ", "\nRender resolution: ", "\nWeb button: ",
+              "\nLast session: ", "\nLast error: "}) {
+            at = summary.find(label, at);
+            check(at != std::string::npos, label);
+        }
+        for (size_t i = 0; i < summary.size(); ++i)
+            if (summary[i] == '\xC3')
+                check(summary[i + 1] == '\xA9', "half a character");
+            else if (summary[i] == '\xA9')
+                check(i && summary[i - 1] == '\xC3', "the other half");
+        const size_t last = summary.find("\nLast session: ") + 15, error = summary.find("\nLast error: ");
+        check(error - last >= 50 && summary.size() - error >= 50, "room for both of the session's lines");
+    });
     std::cout << (total - failed) << '/' << total << " launcher checks passed\n";
     return failed ? 1 : 0;
 }

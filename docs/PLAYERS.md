@@ -65,6 +65,11 @@ picture, click the game window once.
 
 Press STOP VR, or close the game, to end the session. Each session leaves a
 report in the "reports" folder; send it along when you report a problem.
+Asking for help on Spidy's Discord (https://discord.gg/x27ZXDpdNt)? Press
+"Copy for Discord" above the launcher's session log and paste what it copied
+into your post: a few lines with your Spidy version, VR runtime, headset,
+game version, graphics card, memory, options and how the last session ended.
+Your Windows user name is not in them.
 VR starts once per game launch: to play in VR again after STOP VR, or after
 VR ended by itself, close the game first, then press START VR.
 

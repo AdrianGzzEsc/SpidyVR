@@ -80,6 +80,15 @@ constexpr const char* kFlipSpeeds[] = {"90\xC2\xB0/s",  "120\xC2\xB0/s", "150\xC
                                        "240\xC2\xB0/s", "300\xC2\xB0/s", "360\xC2\xB0/s", "480\xC2\xB0/s"};
 constexpr int kFlipSpeedValues[] = {90, 120, 150, 180, 240, 300, 360, 480};
 
+// A value a list of steps does not have counts as the nearest one.
+int nearestStep(const int* values, int count, int value) {
+    int index = 0;
+    for (int i = 1; i < count; ++i)
+        if (std::abs(values[i] - value) < std::abs(values[index] - value))
+            index = i;
+    return index;
+}
+
 } // namespace
 
 void theme(ImGuiStyle& style) {
@@ -235,6 +244,55 @@ std::vector<std::string> App::blockers() {
     if (!scan_.vcCurrent)
         reasons.push_back("The Visual C++ runtime is needed.");
     return reasons;
+}
+
+std::string App::summary() {
+    namespace text = spidy::launcher;
+    text::SupportFacts facts;
+    facts.version = kVersion;
+    // The session this launcher ran last; before it has run one, the last one in the reports folder.
+    std::string session;
+    for (const auto& line : log_)
+        session += line.text + "\n";
+    if (session.empty() && !scan_.root.empty())
+        session = lastConsoleLog(scan_.root);
+    facts.session = text::sessionEnd(session);
+    if (scan_.done) {
+        const Runtime* chosen = runtime();
+        facts.runtime = scan_.runtimes.empty() ? "none installed" : chosen ? chosen->name : "Automatic";
+        for (const auto& r : scan_.runtimes)
+            facts.runtime += (&r == &scan_.runtimes.front() ? "; installed: " : ", ") + r.name +
+                             (r.active ? " (Windows' active)" : "");
+        // The game's row, without its path.
+        const std::string version = scan_.gameVersion.empty() ? "" : " " + scan_.gameVersion;
+        if (scan_.gameExe.empty())
+            facts.game = scan_.epicFound ? "only the Epic Games Store version, which Spidy does not work with"
+                                         : "not found";
+        else if (scan_.build == Build::supported)
+            facts.game = scan_.gameSource + ", supported version" + version;
+        else if (scan_.build == Build::unsupported)
+            facts.game = scan_.gameSource == "Epic Games Store"
+                             ? "Epic Games Store version" + version + ", which Spidy does not work with"
+                             : scan_.gameSource + ", not supported. " +
+                                   text::unsupportedGame(scan_.gameVersion, scan_.expectedVersion,
+                                                         scan_.steamApp);
+        else if (scan_.build == Build::unreadable)
+            facts.game = scan_.gameSource + ", Spider-Man.exe could not be read";
+    }
+    // The headset as the check found it; unchecked, as the session found it.
+    if (headset_.state() != Outcome::idle)
+        facts.headset = headset_.summary();
+    else if (session.find("Headset available: ") != std::string::npos)
+        facts.headset = text::headsetSummary(session, true) + " (in the last session)";
+    else
+        facts.headset = "not checked";
+    facts.pc = hardware();
+    const auto& o = settings_.options;
+    facts.upscaling =
+        kUpscales[nearestStep(kUpscaleValues, static_cast<int>(std::size(kUpscaleValues)), o.upscale)];
+    facts.renderResolution = format("%d%%", o.renderScale);
+    facts.webButton = kWebButtons[o.triggerWebs ? 1 : 0];
+    return text::supportSummary(facts);
 }
 
 void App::start() {
@@ -1019,10 +1077,7 @@ void App::optionsCard(ImVec2 size) {
     });
     // A value the list does not have shows as the nearest one.
     const auto stepCombo = [&](const char* id, const char* const* labels, const int* values, int count, int* value) {
-        int index = 0;
-        for (int i = 1; i < count; ++i)
-            if (std::abs(values[i] - *value) < std::abs(values[index] - *value))
-                index = i;
+        int index = nearestStep(values, count, *value);
         ImGui::PushFont(fonts_.semibold, 13.5f);
         if (ImGui::Combo(id, &index, labels, count)) {
             *value = values[index];
@@ -1263,7 +1318,7 @@ void App::logCard(ImVec2 size) {
         return;
     }
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(S(8), 0));
-    const float buttons = S(84) + S(8) + S(92);
+    const float buttons = S(84) + S(8) + S(92) + S(8) + S(152);
     cardTitle("SESSION LOG", buttons);
     ImGui::BeginDisabled(log_.empty());
     if (secondaryButton(fonts_.icons ? "  Copy" : "Copy", S(84))) {
@@ -1276,6 +1331,19 @@ void App::logCard(ImVec2 size) {
     ImGui::SameLine(0, S(8));
     if (secondaryButton(fonts_.icons ? "  Reports" : "Reports", S(92)) && !scan_.root.empty())
         openPath((std::filesystem::path(scan_.root) / L"reports").wstring());
+    ImGui::SameLine(0, S(8));
+    // For a help post: what a helper asks first, ready to paste. The button says so for two seconds.
+    const std::string label =
+        ImGui::GetTime() - summaryCopied_ < 2
+            ? "Copied###summary"
+            : (fonts_.icons ? std::string(kCopy) + "  " : std::string()) + "Copy for Discord###summary";
+    if (secondaryButton(label.c_str(), S(152))) {
+        ImGui::SetClipboardText(summary().c_str());
+        summaryCopied_ = ImGui::GetTime();
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("Copies your Spidy version, headset, PC and last session in a few lines.\n"
+                          "Paste them into your post when you ask for help on Discord.");
     ImGui::PopStyleVar();
     ImGui::Dummy(ImVec2(0, S(8)));
     ImGui::PushStyleColor(ImGuiCol_ChildBg, vec({15, 18, 25}));
