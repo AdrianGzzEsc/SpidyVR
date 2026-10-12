@@ -40,8 +40,10 @@ enum class Mapping {
     // VR gameplay: the controllers swing, walk and jump. The menu button
     // (Start: pause) and X (Back: map, suits, skills) reach the game as
     // buttons; walking, jumping, B (the game's B: dodge), Y (the game's
-    // Y: interact) and the right stick's click (the game's LB + RB: its
-    // web pull) reach it as the swing leaves them (Walk).
+    // Y: interact), the right stick's click (the game's LB + RB: its
+    // web pull), that stick pushed down (the game's D-pad down: heal) and
+    // up (its LT + RT: the zip to a point) reach it as the swing leaves
+    // them (Walk).
     gameplay,
     // The game screen: every control as on an Xbox controller. A, B, X and Y
     // sit where Xbox has them; grips are the bumpers.
@@ -64,10 +66,65 @@ enum class Mapping {
 // a grate to tear off). The grips are no bumpers in VR play (they shoot the
 // webs), so the right thumbstick's click gives them (PullPress): until
 // October 11 nothing did, and a door of the first mission that asks for
-// LB + RB could not be opened in VR.
+// LB + RB could not be opened in VR. heal: the game's D-pad down, held: its
+// heal. zip: the game's LT and RT together, held: its zip to a point, where
+// it shows the two (a perch, a vent to enter). The VR controllers have no
+// D-pad, and their triggers and grips are the webs in VR play, so the right
+// thumbstick pushed down and up gives them (StickPush): until October 12
+// nothing did, and the first mission stopped at the heal it asks for and at
+// its vent.
 struct Walk {
     float right{}, forward{};
-    bool jump{}, interact{}, dodge{}, pull{};
+    bool jump{}, interact{}, dodge{}, pull{}, heal{}, zip{};
+};
+// The right thumbstick pushed straight down or up, as Walk::heal and
+// Walk::zip. In VR play that stick turns the player with its left and right;
+// its down and up did nothing. A push counts from the stick at rest, once it
+// has been `pushed` far and no more than `aside` off the line for
+// holdSeconds, and holds until the stick is back within `released`: a turn
+// rolled round to the top, a diagonal and a flick through the line are none.
+// Outside VR play nothing holds, and a stick held through that must be let
+// go first (on the game screen it is the game's own right stick).
+class StickPush {
+  public:
+    static constexpr float pushed = .75f, aside = .45f, released = .5f, holdSeconds = .15f;
+    enum class Way { none, down, up };
+    // seconds: since the previous update. play: the controllers play VR.
+    // x, y: the right thumbstick, -1..1 (0 for a hand that is not tracked).
+    Way update(float seconds, bool play, float x, float y) {
+        const float dt = std::isfinite(seconds) ? std::clamp(seconds, 0.f, .1f) : 0.f;
+        // A bad reading is a stick at rest.
+        const bool rest = !std::isfinite(x) || !std::isfinite(y) || std::hypot(x, y) < released;
+        if (!play || rest) {
+            way_ = Way::none;
+            held_ = 0;
+            spent_ = !rest;
+            return Way::none;
+        }
+        if (spent_)
+            return Way::none;
+        if (way_ == Way::none) {
+            if (std::abs(x) > aside) {
+                spent_ = true;
+                return Way::none;
+            }
+            if (std::abs(y) < pushed)
+                return Way::none;
+            way_ = y < 0 ? Way::down : Way::up;
+        } else if ((way_ == Way::down) != (y < 0) || std::abs(y) < released) {
+            way_ = Way::none;
+            held_ = 0;
+            spent_ = true;
+            return Way::none;
+        }
+        held_ += dt;
+        return held_ >= holdSeconds ? way_ : Way::none;
+    }
+
+  private:
+    Way way_{};
+    bool spent_{};
+    float held_{};
 };
 // The right thumbstick's click as Walk::pull. Like the left one's
 // (StickPress, slow_motion.hpp) it is not half of clicking both, which
@@ -212,6 +269,10 @@ inline State fromControllers(const XrFrame& frame, Mapping mapping, const Walk& 
             s.buttons |= y;
         if (walk.pull)
             s.buttons |= leftShoulder | rightShoulder;
+        if (walk.heal)
+            s.buttons |= dpadDown;
+        if (walk.zip)
+            s.leftTrigger = s.rightTrigger = 255;
         s.thumbLX = stick(walk.right);
         s.thumbLY = stick(walk.forward);
         return s;

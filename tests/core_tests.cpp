@@ -29,6 +29,7 @@
 #include "spidy/slow_motion.hpp"
 #include "spidy/impact_sound.hpp"
 #include "spidy/web_strike.hpp"
+#include "spidy/xr_layers.hpp"
 #include <algorithm>
 #include <cstring>
 #include <functional>
@@ -3203,6 +3204,13 @@ int main() {
         // The game's web pull is its LB and RB together; the grips alone are no bumpers in VR.
         check(fromControllers(f,Mapping::gameplay,{0,0,false,false,false,true}).buttons==(start|back|leftShoulder|rightShoulder),
               "a pull is not the game's LB + RB");
+        // The right stick pushed down is the game's D-pad down (heal), pushed up its LT and RT together (the zip
+        // to a point): until October 12 neither reached the game in VR play.
+        check(fromControllers(f,Mapping::gameplay,{0,0,false,false,false,false,true}).buttons==(start|back|dpadDown),
+              "a heal is not the game's D-pad down");
+        const auto zipping=fromControllers(f,Mapping::gameplay,{0,0,false,false,false,false,false,true});
+        check(zipping.buttons==(start|back) && zipping.leftTrigger==255 && zipping.rightTrigger==255,
+              "a zip is not the game's LT + RT");
         XrFrame gripping;gripping.hands[0].squeeze=gripping.hands[1].squeeze=1;
         check(fromControllers(gripping,Mapping::gameplay)==game_pad::State{},"the grips were bumpers in VR play");
         XrFrame pressed;pressed.buttons=buttonB|buttonY;
@@ -3338,6 +3346,110 @@ int main() {
         for (int i = 0; i < 20; ++i)
             screen.update(.011f, true, true, false);
         check(screen.update(.011f, true, true, false), "a new click after the screen did not pull");
+    });
+    test("the right stick pushed down heals and pushed up is the game's LT + RT; a turn, a diagonal and a flick are neither", [] {
+        using game_pad::StickPush;
+        using Way = StickPush::Way;
+        const float dt = .011f;
+        // Frames of the stick held at (x, y); what the last one gave.
+        const auto hold = [&](StickPush& s, float x, float y, int frames = 30, bool play = true) {
+            Way way = Way::none;
+            for (int i = 0; i < frames; ++i)
+                way = s.update(dt, play, x, y);
+            return way;
+        };
+        StickPush push;
+        // Held down, it heals from holdSeconds on, for as long as the stick stays down.
+        float began = -1;
+        for (int i = 0; i < 40; ++i)
+            if (push.update(dt, true, 0, -1) == Way::down && began < 0)
+                began = (i + 1) * dt;
+        check(began >= StickPush::holdSeconds - dt && began <= StickPush::holdSeconds + dt,
+              "a push down healed at the wrong time");
+        check(hold(push, .2f, -.6f) == Way::down, "a push eased a little let go");
+        check(hold(push, 0, 0, 1) == Way::none, "the heal outlasted the stick");
+        // Up is the zip, a little off the line too.
+        check(hold(push, -.3f, .9f) == Way::up, "a push up is not the zip");
+        hold(push, 0, 0, 1);
+        // A flick through the line is neither.
+        check(hold(push, 0, -1, 5) == Way::none && hold(push, 0, 0, 1) == Way::none, "a flick healed");
+        // The stick turns the player with its left and right; a turn rolled round the rim pushes nothing.
+        check(hold(push, 1, 0) == Way::none && hold(push, .3f, .95f) == Way::none && hold(push, 0, -1) == Way::none,
+              "a turn rolled round to the top or the bottom pushed");
+        hold(push, 0, 0, 1);
+        check(hold(push, .6f, -.75f) == Way::none && hold(push, 0, -1) == Way::none, "a diagonal healed");
+        hold(push, 0, 0, 1);
+        // From down straight over to up is no zip, nor is a push slid aside into a turn and back.
+        check(hold(push, 0, -1) == Way::down && hold(push, 0, 1) == Way::none, "a heal swung over into a zip");
+        hold(push, 0, 0, 1);
+        check(hold(push, 0, 1) == Way::up, "a new push from rest did not zip");
+        check(hold(push, .9f, .3f) == Way::none && hold(push, 0, 1) == Way::none, "a push slid into a turn came back");
+        // Outside VR play nothing is pushed, and a stick held through it waits for a release.
+        StickPush screen;
+        check(hold(screen, 0, -1, 30, false) == Way::none, "the game screen's right stick healed");
+        check(hold(screen, 0, -1) == Way::none, "a stick held into play healed");
+        hold(screen, 0, 0, 1);
+        check(hold(screen, 0, -1) == Way::down, "a new push after the screen did not heal");
+        // Bad readings and bad timing push nothing.
+        StickPush broken;
+        const float bad = std::numeric_limits<float>::quiet_NaN();
+        check(hold(broken, bad, -1) == Way::none && hold(broken, 0, bad) == Way::none, "a bad stick reading pushed");
+        for (int i = 0; i < 30; ++i)
+            check(broken.update(bad, true, 0, -1) == Way::none, "a bad frame time pushed");
+    });
+    test("OpenXR Toolkit is switched off by the variable its own manifest names; other layers stay on", [] {
+        using namespace xr_layers;
+        // The Toolkit's manifest as its repository has it (mbucchia/OpenXR-Toolkit, October 12).
+        const std::string toolkit = R"({
+  "file_format_version" : "1.0.0",
+  "api_layer": {
+    "name": "XR_APILAYER_MBUCCHIA_toolkit",
+    "library_path": ".\\XR_APILAYER_MBUCCHIA_toolkit.dll",
+    "api_version": "1.0",
+    "implementation_version": "1",
+    "description": "OpenXR toolkit API layer",
+    "functions": {
+      "xrNegotiateLoaderApiLayerInterface": "xrNegotiateLoaderApiLayerInterface"
+    },
+    "disable_environment": "DISABLE_XR_APILAYER_MBUCCHIA_toolkit"
+  }
+})";
+        const auto off = switchOff(toolkit);
+        check(off.variable == "DISABLE_XR_APILAYER_MBUCCHIA_toolkit" && off.name == "OpenXR Toolkit",
+              "the Toolkit's own switch was not found");
+        check(member(toolkit, "library_path") == ".\\XR_APILAYER_MBUCCHIA_toolkit.dll", "an escaped path was misread");
+        // Other layers stay on: Virtual Desktop's and ReShade's as a PC has them, and one whose text
+        // only mentions the Toolkit.
+        const std::string reshade = "{\n\t\"file_format_version\": \"1.0.0\",\n\t\"api_layer\": {\n"
+                                    "\t\t\"name\": \"XR_APILAYER_reshade\",\n"
+                                    "\t\t\"library_path\": \".\\\\ReShade64.dll\",\n"
+                                    "\t\t\"disable_environment\": \"DISABLE_XR_APILAYER_reshade_1\"\n\t}\n}";
+        check(switchOff(reshade).variable.empty(), "ReShade's layer was switched off");
+        check(switchOff(R"({"api_layer": {"name": "XR_APILAYER_VIRTUALDESKTOP_oculus_compatibility",
+            "disable_environment": "DISABLE_XR_APILAYER_VIRTUALDESKTOP_OCULUS_COMPATIBILITY"}})").variable.empty(),
+              "Virtual Desktop's layer was switched off");
+        check(switchOff(R"({"api_layer":{"name":"XR_APILAYER_NOVENDOR_other","description":"XR_APILAYER_MBUCCHIA_toolkit",
+                            "disable_environment":"DISABLE_OTHER"}})").variable.empty(),
+              "a layer Spidy runs with was switched off");
+        // A layer is switched off for being on the list, by the variable it names itself.
+        const Layer listed[] = {{"XR_APILAYER_reshade", "ReShade"}};
+        const auto other = switchOff(reshade, listed);
+        check(other.variable == "DISABLE_XR_APILAYER_reshade_1" && other.name == "ReShade" &&
+                  switchOff(toolkit, listed).variable.empty(),
+              "the list did not decide which layer is switched off");
+        // The manifest's own word counts: compact text, another case, another variable.
+        check(switchOff(R"({"api_layer":{"disable_environment":"OXRTK_OFF","name":"xr_apilayer_mbucchia_TOOLKIT"}})")
+                      .variable == "OXRTK_OFF",
+              "the variable was not taken from the manifest");
+        // No variable, or one no process could set: nothing is set.
+        check(switchOff(R"({"api_layer":{"name":"XR_APILAYER_MBUCCHIA_toolkit"}})").variable.empty(),
+              "a manifest without a switch gave one");
+        check(switchOff(R"({"api_layer":{"name":"XR_APILAYER_MBUCCHIA_toolkit","disable_environment":"A=B C"}})")
+                  .variable.empty(),
+              "a variable no process could set was taken");
+        // A key's text as a value is no key; a cut-off file gives nothing.
+        check(member(R"({"description":"name","name":"x"})", "name") == "x", "a value was read as a key");
+        check(member(R"({"name":"cut)", "name").empty() && member("", "name").empty(), "a cut-off manifest gave a value");
     });
     test("both web buttons on a thing no web holds on, and a yank, are the game's LB + RB", [] {
         // A door 3 m ahead (-Z); the hands a shoulder's width apart, each pointing at it.

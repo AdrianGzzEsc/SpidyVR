@@ -418,8 +418,8 @@ options bit 13 for off, XrData settings bit 128), and step GAME SCREEN 3D
 `vr_settings::screenDepths`, XrConfig and XrData `screenDepth`); XrConfig is
 version 23 (664 bytes: `screenDepth`; `upscale`, `monitorRate`; options bit 15
 for no eye anti-aliasing, bit 16 for the game's own monitor view, bit 17 for
-each eye's own shadow set) and XrData version 22 (816 bytes: `screenDepth`,
-`stereoSubmitted`; `interactSteps`).
+each eye's own shadow set) and XrData version 23 (824 bytes: `heals`, `zips`;
+`screenDepth`, `stereoSubmitted`; `interactSteps`).
 X resets a setting, Y the
 whole tab (to Spidy's defaults). Web grabbing, the web
 shooter, your body and punching are not in it or in the launcher's options
@@ -481,7 +481,15 @@ go, the walk meets a wall, or 2 s have passed; not in a fight, in the air or
 on a wall (`game_pad::InteractStep`, XrData `interactSteps`). The right thumbstick's
 click is the game's LB + RB together, its web pull where it shows the two (a
 door, a grate), under the same condition (`game_pad::PullPress`,
-`Walk::pull`): the grips shoot webs in VR and are no bumpers there. Until
+`Walk::pull`): the grips shoot webs in VR and are no bumpers there. That
+stick pushed straight down is the game's D-pad down, its heal (the
+controllers have no D-pad), in the air too; pushed straight up it is the
+game's LT + RT together, its zip to a point and into a vent, except while a
+web carries you. A push counts from the stick at rest, at 0.75 or more and
+no more than 0.45 aside, after 0.15 s; turning, a diagonal and a flick push
+nothing (`game_pad::StickPush`, `Walk::heal` and `Walk::zip`; XrData `heals`
+and `zips`). Until October 12 neither had a control, and the first mission
+stopped at its heal and its vent. Until
 October 11 B was the interact, Y the game menu and X switched the aim
 markers, which are a setting only now. Every other control stays with
 VR, which walks and jumps through the same virtual controller. A held from the

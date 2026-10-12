@@ -114,6 +114,8 @@ Spidy changes nothing in the game's folder.
 | Dodge (the game's B) | **B**, the way the **left stick** points; not while a web carries you |
 | Interact (the game's Y) | **Y**, within about a metre of the thing; hold **Y** and you step up to what you look at until the game takes it |
 | Pull a door or a grate (the game's LB + RB) | Click the **right stick**, or hold it; not while a web carries you |
+| Heal (the game's D-pad down) | Push the **right stick** straight down and hold it a moment |
+| Zip to a point, enter a vent (the game's LT + RT) | Push the **right stick** straight up and hold it; not while a web carries you |
 | Pause (VR settings: Settings > SPIDY VR) | **Menu** button |
 | Game menu (map, suits, skills) | **X** |
 | Switch between VR and a flat screen | Click **both sticks** |

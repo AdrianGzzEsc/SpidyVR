@@ -27,6 +27,7 @@
 #include "spidy/vr_settings.hpp"
 #include "spidy/vr_shortcut.hpp"
 #include "spidy/web_pull.hpp"
+#include "spidy/xr_layers.hpp"
 #include "spidy/xr_session.hpp"
 #include <algorithm>
 #include <atomic>
@@ -113,7 +114,7 @@ enum GateReason : uint32_t {
     gateTracking = 16,    // the headset's pose or timing was not usable
 };
 struct XrData {
-    uint32_t magic = 0x53585244, version = 22, bytes = sizeof(XrData), status{};
+    uint32_t magic = 0x53585244, version = 23, bytes = sizeof(XrData), status{};
     int64_t sequence{};
     uint64_t frames{}, tracked{}, submitted{}, dropped{}, leftHands{}, rightHands{}, serial{}, generation{};
     uint32_t nativeKeys{}, error{};
@@ -193,8 +194,11 @@ struct XrData {
     // screenSubmitted counts them too).
     uint32_t interactSteps{}, screenDepth{};
     uint64_t stereoSubmitted{};
+    // Version 23: pushes of the right stick that reached the game as its
+    // D-pad down (heal) and as its LT + RT (the zip to a point).
+    uint32_t heals{}, zips{};
 };
-static_assert(sizeof(XrData) == 816);
+static_assert(sizeof(XrData) == 824);
 // Slow motion (slow_motion.hpp, game_time.hpp): what the player did with it
 // and what the game's time did. status: 1 before VR starts, then 0 with the
 // game's time hooked, else why it is not (game_time::install) and slow
@@ -310,6 +314,56 @@ struct RuntimeSelection {
         SetEnvironmentVariableW(L"XR_RUNTIME_JSON", present ? previous.c_str() : nullptr);
     }
 };
+// OpenXR add-ons Spidy cannot run with (xr_layers.hpp), switched off in this
+// process while the loader reads them: as it creates the instance. Each by
+// the variable its own manifest names; one the player has set stays as it is.
+struct LayerSwitches {
+    std::vector<std::string> variables;
+    // The layers switched off, for the player.
+    std::string names;
+    explicit LayerSwitches(std::span<const xr_layers::Layer> layers = xr_layers::unsupported) {
+        for (const HKEY root : {HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER}) {
+            HKEY key{};
+            if (RegOpenKeyExW(root, L"SOFTWARE\\Khronos\\OpenXR\\1\\ApiLayers\\Implicit", 0, KEY_READ, &key) !=
+                ERROR_SUCCESS)
+                continue;
+            // Each value: a manifest's path, and 0 while its layer is on.
+            for (DWORD index = 0; index < 256; ++index) {
+                wchar_t path[1024];
+                DWORD chars = static_cast<DWORD>(std::size(path)), type{}, off{}, bytes = sizeof(off);
+                const auto code = RegEnumValueW(key, index, path, &chars, nullptr, &type,
+                                                reinterpret_cast<BYTE*>(&off), &bytes);
+                if (code == ERROR_NO_MORE_ITEMS)
+                    break;
+                if (code != ERROR_SUCCESS || type != REG_DWORD || off)
+                    continue;
+                const HANDLE file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                                nullptr, OPEN_EXISTING, 0, nullptr);
+                if (file == INVALID_HANDLE_VALUE)
+                    continue;
+                std::string text(65536, '\0');
+                DWORD size{};
+                const bool loaded =
+                    ReadFile(file, text.data(), static_cast<DWORD>(text.size()), &size, nullptr);
+                CloseHandle(file);
+                if (!loaded)
+                    continue;
+                text.resize(size);
+                const auto layer = xr_layers::switchOff(text, layers);
+                if (layer.variable.empty() || GetEnvironmentVariableA(layer.variable.c_str(), nullptr, 0) ||
+                    !SetEnvironmentVariableA(layer.variable.c_str(), "1"))
+                    continue;
+                variables.push_back(layer.variable);
+                names += (names.empty() ? "" : ", ") + std::string(layer.name);
+            }
+            RegCloseKey(key);
+        }
+    }
+    ~LayerSwitches() {
+        for (const auto& variable : variables)
+            SetEnvironmentVariableA(variable.c_str(), nullptr);
+    }
+};
 DWORD WINAPI run(void*) {
     bool nativeStarted = false, gpuStarted = false, raysStarted = false, swingStarted = false, websStarted = false,
          bodyStarted = false;
@@ -334,6 +388,12 @@ DWORD WINAPI run(void*) {
         XrRuntime runtime;
         {
             RuntimeSelection selected(config.runtime);
+            LayerSwitches layers;
+            if (!layers.names.empty()) {
+                const auto text = layers.names + " is switched off for the game: Spidy does not run with it. "
+                                                 "It stays on for your other games";
+                message(1, 0, text.c_str());
+            }
             runtime.initialize(device.Get(), queue, config.eyeSize, config.renderScale);
         }
         D3D12Renderer overlay;
@@ -395,8 +455,11 @@ DWORD WINAPI run(void*) {
         game_pad::PullPress pullPress;
         game_swing::AimData aimed{};
         uint64_t pullsBefore{};
-        bool interacting{}, dodging{};
-        uint32_t interacts{}, dodges{};
+        // The right thumbstick pushed down is the game's D-pad down (heal),
+        // pushed up its LT + RT (the zip to a point, a vent).
+        game_pad::StickPush stickPush;
+        bool interacting{}, dodging{}, healing{}, zipping{};
+        uint32_t interacts{}, dodges{}, heals{}, zips{};
         // The VR settings: the launch options, then the SPIDY VR tab in the
         // game's Settings during play.
         vr_settings::Values values;
@@ -1225,6 +1288,17 @@ DWORD WINAPI run(void*) {
                         walk.pull = pullPress.update(frame.seconds, playing, frame.hands[1].stickClick,
                                                      frame.hands[0].stickClick) ||
                                     (yanked && playing);
+                        // The right stick pushed down heals, in the air as on
+                        // the ground; pushed up it is the game's LT + RT, not
+                        // while a web carries the player. Left and right turn.
+                        const auto& turning = frame.hands[1];
+                        const auto push = stickPush.update(frame.seconds, steering && !calibrationInput,
+                                                           turning.valid ? turning.stickX : 0,
+                                                           turning.valid ? turning.stickY : 0);
+                        walk.heal = push == game_pad::StickPush::Way::down;
+                        walk.zip = playing && push == game_pad::StickPush::Way::up;
+                        if ((walk.heal && !healing) || (walk.zip && !zipping))
+                            runtime.haptic(1, .2f);
                         walk.jump = (keys & swingJumpKey) != 0;
                         const auto buttons = origins.filtered(frame, mapping);
                         game_pad::submit(game_pad::fromControllers(buttons, mapping, walk), 200);
@@ -1232,6 +1306,10 @@ DWORD WINAPI run(void*) {
                         interacting = walk.interact;
                         dodges += walk.dodge && !dodging;
                         dodging = walk.dodge;
+                        heals += walk.heal && !healing;
+                        healing = walk.heal;
+                        zips += walk.zip && !zipping;
+                        zipping = walk.zip;
                     }
                     {
                         std::lock_guard lock(telemetry);
@@ -1256,6 +1334,8 @@ DWORD WINAPI run(void*) {
                         d.playerCommits = game.matched;
                         d.interacts = interacts;
                         d.dodges = dodges;
+                        d.heals = heals;
+                        d.zips = zips;
                         d.aimMarkers = values.aimMarkers;
                         d.settings = (values.webGrab ? 1u : 0u) | (values.punch ? 2u : 0u) | (values.body ? 4u : 0u) |
                                      (values.airWebs ? 8u : 0u) | (values.webShooter ? 16u : 0u) |
@@ -1861,10 +1941,10 @@ DWORD WINAPI run(void*) {
                                   "sets its depth"
                             : drawn == Presentation::flat
                                 ? "Flat screen - click both thumbsticks for VR"
-                                : "VR active - B dodges, Y interacts (held: you step up to it), X opens "
-                                  "the game menu, the menu button "
-                                  "pauses, the left thumbstick's click slows time, the right one's is the "
-                                  "game's LB + RB (web pull); click both thumbsticks for flat screen");
+                                : "VR active - B dodges, Y interacts (hold: step up to it), X opens the "
+                                  "game menu, the menu button pauses, the left stick's click slows time; "
+                                  "right stick: click is the game's LB + RB, down heals, up is its LT + RT "
+                                  "(vents); click both sticks for flat screen");
                 }
             }
             {

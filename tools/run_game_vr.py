@@ -459,7 +459,9 @@ def settings_line(start, sample):
 PAD_IGNORED = ("WARNING: the game is not reading the VR controllers on its screen. Keep the game window in front "
                "on the desktop. If it is in front, close the game and start VR again from Spidy's launcher: a game "
                "Spidy starts reads controllers through XInput only, and one started otherwise can take SteamVR's "
-               'virtual gamepads instead.')
+               'virtual gamepads instead. If the buttons stay dead and the game shows keyboard keys in its prompts, '
+               'turn Steam Input off for the game: in Steam, right-click the game > Properties > Controller > '
+               'Disable Steam Input.')
 
 
 def pad_ignored(watch, sample, quiet=5):
@@ -486,10 +488,10 @@ CALIBRATION_HINTS = {0: None, 1: 'tracking', 2: 'stand_up', 3: 'arms_out', 4: 's
 
 def snapshot(game, address):
     for _ in range(8):
-        raw = game.read(address, 816)
-        if len(raw) != 816:
+        raw = game.read(address, 824)
+        if len(raw) != 824:
             return None
-        if struct.unpack_from('<3I', raw) != (0x53585244, 22, 816):
+        if struct.unpack_from('<3I', raw) != (0x53585244, 23, 824):
             raise RuntimeError('Game XR protocol mismatch')
         if struct.unpack_from('<Q', raw, 16)[0] & 1 or raw[16:24] != game.read(address+16, 8):
             continue
@@ -528,6 +530,8 @@ def snapshot(game, address):
         interacts, aim_markers = struct.unpack_from('<2I', raw, 648)
         # The walks a held Y began: the player stepping up to what the game's Y is for.
         result.update(interact_steps=struct.unpack_from('<I', raw, 800)[0])
+        # Pushes of the right stick the game got as its D-pad down (heal) and as its LT + RT (the zip to a point).
+        result.update(zip(('heals', 'zips'), struct.unpack_from('<2I', raw, 816)))
         result.update(interacts=interacts, aim_markers=bool(aim_markers),
                       markers=struct.unpack_from('<Q', raw, 656)[0])
         # The VR settings now (the SPIDY VR tab in the game's Settings changes them),

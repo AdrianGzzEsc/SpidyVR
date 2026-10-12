@@ -3,7 +3,67 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 11, eleventh build): fighting across the room.** You
+**Latest build (October 12, first build): heal and vents in VR; OpenXR
+Toolkit; Steam Input.** You asked: "check out the bugs section in discord,
+map out the bugs you think we have enough data to handle", then "fix the
+things you know how."
+
+- **Heal and LT + RT had no control.** In VR play Spidy gave the game A, B,
+  Y, Back, Start, LB + RB and the left stick, and nothing else: no D-pad
+  (heal is D-pad down) and no triggers (the grips and triggers are the
+  webs). The first mission asks for both: it stops until you heal, and its
+  vent is entered with LT + RT. Players: "game gets stuck when the game
+  forces you to heal, and you cant heal" (on 0.3.0), "How do I get past the
+  heal part", "cant use Vents", "Stuck in the elevator. no buttons open
+  vents", "How do you get in vents?".
+- **The right stick's down and up.** That stick turns you with its left and
+  right, and its click is the game's LB + RB; down and up did nothing. Now,
+  pushed straight down it is the game's D-pad down (heal), in the air too;
+  pushed straight up it is the game's LT + RT, not while a web carries you.
+  A push counts from the stick at rest, three quarters of the way or more
+  and no more than 45% aside, after 0.15 s, and holds until the stick is
+  back within half-way; the right controller ticks when the game gets it.
+  Turning, a turn rolled round to the top, a diagonal and a flick through
+  the line do neither (`game_pad::StickPush`).
+- **OpenXR Toolkit closed the game.** A player (Pimax Crystal Super): the
+  game closed at the Sony logo, five starts in a row. His game log ends with
+  an unhandled exception from outside the game's code 6 s after the start,
+  and he traced it to OpenXR Toolkit. OpenXR loads every installed add-on
+  into each program that starts it, and with Spidy that program is the game.
+  Each add-on's own file names a variable that switches it off in a program
+  that has it set. Spidy now reads that name and sets the variable in the
+  game while OpenXR starts there, for OpenXR Toolkit and nothing else
+  (`xr_layers.hpp`: a list of one), and the launcher's log says so. The
+  Toolkit stays on for other games.
+- **Steam Input.** A player's buttons did nothing in VR while webs and
+  walking worked, and the game showed keyboard keys in its prompts; turning
+  Steam Input off for the game ended it. Why Steam Input keeps Spidy's
+  controller from the game is not known: it was not reproduced. So this is
+  no fix: the warning for a game that does not read the VR controllers now
+  names Steam Input and where to turn it off, and PLAYERS.md has an entry.
+- **Reports** count both pushes: `heals` and `zips` (XrData version 23, 824
+  bytes).
+
+What ran: 264 core checks (2 new: the stick's pushes; OpenXR Toolkit's
+manifest as its repository has it, beside Virtual Desktop's and ReShade's as
+this PC has them), 111 Python checks, the launcher's and the graphics test.
+The switching-off ran on this PC outside the game: the code as the game
+module has it, given ReShade's add-on (installed here) in place of the
+Toolkit's (not installed), with Spidy's headset probe started under it and
+the OpenXR loader's log on. The loader wrote "Implicit layer
+C:\ProgramData\ReShade\ReShade64_XR.json is disabled" and loaded Virtual
+Desktop's add-on as before; the variable was gone afterwards.
+
+Nothing ran in the game or the headset: the game was not started. Unproven:
+that the game heals on the D-pad down it gets; that the vent takes LT + RT
+(the prompt is LT + RT as remembered, not looked at in the game), and what
+the game does with LT + RT when no point is in view; that a game with OpenXR
+Toolkit installed starts now. [VALIDATION.md](VALIDATION.md) has the checks.
+
+`spidy_stereo_probe.dll`, the launcher (two rows on its CONTROLS page),
+`run_game_vr.py`, README.md and PLAYERS.md changed. In no play folder.
+
+**Earlier build (October 11, eleventh build): fighting across the room.** You
 asked: "check how Batman: Arkham Shadow combat works and reimagine our current
 combat with it in mind build v1 for me to test", and while it was built: "i
 think our swinging and acrobatics could allow for airal combat. also punches

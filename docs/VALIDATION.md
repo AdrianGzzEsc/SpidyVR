@@ -1,6 +1,88 @@
-# Validation — 2026-10-11
+# Validation — 2026-10-12
 
-## Fighting across the room: web strikes, flow, blows that are felt — current build, tried in the headset
+## Heal and LT + RT on the right stick; OpenXR Toolkit switched off for the game — current build, not run in the game
+
+The user, October 12: "check out the bugs section in discord, map out the
+bugs you think we have enough data to handle", then "fix the things you know
+how." The 31 posts of #spidy-bugs were read with their logs, report zips,
+screenshots and clips; four had a known cause.
+
+**Heal and vents.** `game_pad::fromControllers` gave the game, in VR play,
+Start, Back, A, B, Y, LB + RB and the left stick: no D-pad and no triggers.
+The game heals on D-pad down and zips to a point on LT + RT. Players in
+#spidy-bugs and #spidy-help: "game gets stuck when the game forces you to
+heal, and you cant heal" (0.3.0), "How do I get past the heal part", "cant
+use Vents", "Stuck in the elevator. no buttons open vents" (Pico 4; "I'm on a
+quest and it's the same"), "How do you get in vents?".
+
+**What was built.** `game_pad::StickPush`: the right thumbstick pushed
+straight down is `Walk::heal` (the game's D-pad down, whenever the
+controllers play VR), pushed straight up `Walk::zip` (its LT and RT at 255
+together, only while no web carries the player, as the dodge and Y). A push:
+from rest (within 0.5), to 0.75 or more with no more than 0.45 aside, held
+0.15 s; it holds until the stick is back within 0.5 or goes over to the other
+side. A stick deflected aside first, or held in from the game screen, pushes
+nothing until it has been at rest. The right controller ticks (0.2) as either
+begins. `XrData` version 23 (824 bytes) counts both: a sample's `heals` and
+`zips`. The right stick's up and down had no use in VR play before
+(`game_tracking.cpp` reads its left and right for turning only).
+
+**OpenXR Toolkit.** A player (pepie87, Pimax Crystal Super, RTX 5090),
+October 9: "sony logo comes up and gone", "before i tried 5 times", "instead
+of pimax openxr runtime, I used steamvr and it works", "seems to be
+openxrtoolkit which the launcher doesnt like". His game log's last lines, 6 s
+after the start:
+
+```
+[Crash] Unhandled exception at address 0x000000003c1041ca (code: 0xe06d7363): "Unknown exception"
+```
+
+The address is outside the game's module. The OpenXR loader puts every
+implicit API layer into the process that creates an instance, which with
+Spidy is the game (`game_xr.cpp` creates it there). `LayerSwitches`
+(`game_xr.cpp`) reads the registry's `SOFTWARE\Khronos\OpenXR\1\ApiLayers\
+Implicit` (machine and user), and for each enabled manifest that
+`xr_layers::switchOff` finds on the list (`XR_APILAYER_MBUCCHIA_toolkit`
+alone) sets the manifest's own `disable_environment` variable in the game
+until the instance exists. A variable the player set already is left alone.
+
+**Checks.**
+- 264 core checks pass (2 new). The stick: the time a push begins; a push
+  eased a little; up and down; a flick; a turn and a turn rolled round the
+  rim; a diagonal; down swung over to up; a push slid into a turn; the game
+  screen and a stick held into play; bad readings and bad frame times. The
+  layers: OpenXR Toolkit's manifest as its repository has it today
+  (`DISABLE_XR_APILAYER_MBUCCHIA_toolkit`); Virtual Desktop's and ReShade's
+  as this PC has them stay on; a layer that only mentions the Toolkit; a
+  manifest without a variable, and one with a variable no process could set;
+  a key's text as a value; a cut-off file.
+- 111 Python checks pass (`xr_snapshot` reads `heals` and `zips`), the
+  launcher's checks and the graphics test.
+- `spidy_stereo_probe.dll` loaded outside the game exports `SpidyXrData`
+  version 23, 824 bytes.
+- The switch, on this PC outside the game: `LayerSwitches` as the source has
+  it, compiled into a harness and given ReShade's layer (installed here) for
+  the Toolkit's (not installed). It set `DISABLE_XR_APILAYER_reshade_1`;
+  `spidy_headset_probe.exe` started under it with `XR_LOADER_DEBUG=all`
+  logged "Implicit layer C:\ProgramData\ReShade\ReShade64_XR.json is
+  disabled" where the probe alone had tried to load it, and loaded Virtual
+  Desktop's layer both times; with the shipped list nothing on this PC was
+  switched off; afterwards the variable was gone.
+
+**Unproven.**
+- Nothing ran in the game or the headset: the game was not started.
+- That the game heals on the D-pad down it gets, in the forced heal of the
+  first mission and elsewhere.
+- That the vent of the first mission takes LT + RT: the prompt is LT + RT as
+  remembered, and was not looked at in the game. What the game does with
+  LT + RT while no point is in view (its aim camera would put the game
+  screen in the headset for as long as the stick is up).
+- That a game with OpenXR Toolkit installed starts now: no PC here has it.
+- Steam Input (a player's buttons dead in VR, keyboard keys in the game's
+  prompts, ended by turning Steam Input off for the game): not reproduced,
+  cause unknown, nothing changed but the warning's text and PLAYERS.md.
+
+## Fighting across the room: web strikes, flow, blows that are felt — preceding build, tried in the headset
 
 The user, October 11 evening: "check how Batman: Arkham Shadow combat works
 and reimagine our current combat with it in mind build v1 for me to test";

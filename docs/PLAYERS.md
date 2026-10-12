@@ -204,11 +204,23 @@ Moving
                          click the right stick, or hold it for as long as
                          the game wants the two held. Not while a web
                          carries you
+  Right stick down ..... heal: the game's D-pad down. Push the stick
+                         straight down and hold it a moment; the right
+                         controller ticks when the game gets it. In the air
+                         too
+  Right stick up ....... the game's LT + RT: its zip to a point. Where the
+                         game shows LT + RT (a perch, a vent to enter),
+                         look at it, push the stick straight up and hold
+                         it. Not while a web carries you
   Menu button .......... pause
   X .................... game menu (map, suits, skills)
   A, B and Y are the game's own A, B and Y: where the game shows one of
   them on screen, press that button. Your grips shoot webs, so they are
-  not the game's LB and RB in VR: the right stick's click is both.
+  not the game's LB and RB in VR: the right stick's click is both. The
+  controllers have no D-pad, and the triggers are webs too: the right
+  stick pushed down is the game's D-pad down, pushed up its LT + RT. A
+  push counts from the stick at rest, straight down or up: turning, a
+  diagonal and a quick flick do neither.
   Click both sticks .... switch between VR and a flat game screen
 
 Walls
@@ -351,6 +363,15 @@ IF SOMETHING IS WRONG
 - The game's menus ignore the VR controllers: keep the game window in front
   on the desktop, and start the game from the launcher with the game closed
   (the launcher turns off what lets SteamVR's virtual gamepads take over).
+- Buttons do nothing in VR (no menu, no doors, no web strike) while webs and
+  walking work, and the game's prompts show keyboard keys: Steam Input is
+  on for the game. In Steam, right-click the game > Properties > Controller
+  > Disable Steam Input, close the game, then press START VR.
+- The game closes at its first logo, every time, and you have OpenXR
+  Toolkit installed: version 0.3.0 and older do not run with it. Newer
+  versions switch it off for Spider-Man by themselves (the launcher's log
+  says so) and leave it on for your other games. On an older version, turn
+  it off in its companion app, or choose SteamVR under "VR runtime".
 - The picture breaks up: start the game from the launcher with the game
   closed. Attached to a game that is already running, Spidy cannot give it
   the larger render memory VR needs.
@@ -403,6 +424,10 @@ IF SOMETHING IS WRONG
 - The game asks for LB + RB (a door you cannot get through, a grate) and
   your webs do nothing to it: click the right stick. That is the game's
   LB + RB in VR; your grips shoot your own webs there.
+- The game asks you to heal, or to press LT + RT (a vent, a point to zip
+  to), and nothing on the controllers does it: push the right stick
+  straight down to heal, straight up for LT + RT, and hold it a moment.
+  Versions up to 0.3.0 had no control for either.
 - You fly at a thug you did not mean to strike: a web strike opens with a
   fist thrown out fast (2.6 m/s or more) toward an enemy within 10 m, about
   35 degrees to either side. Reaching for a web slowly, or pulling a hand
