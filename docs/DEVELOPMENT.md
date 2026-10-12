@@ -129,7 +129,12 @@ with the C++ tests, the Python protocol tests and `package.ps1`, checks that the
 launcher carries the new version, and only then commits the version ("Release
 Spidy 0.1.2", by github-actions), tags it `v0.1.2`, pushes both to `main` and
 publishes "Spidy 0.1.2" with the zip, its SHA-256 and the commits since the
-previous release. Only the repository's owner can release: a run anyone else
+previous release. A new release is then announced in #spidy-updates on Discord
+(`tools/announce_release.ps1`, through the webhook in the repository secret
+`DISCORD_SPIDY_RELEASES_WEBHOOK`): it pings the opt-in role "Spidy releases"
+and lists the same commits. A failed announcement does not fail the release,
+and a tag published again is not announced twice. Only the repository's owner
+can release: a run anyone else
 starts is skipped. Only what is on GitHub's `main` is released, so push first;
 afterwards `git pull` brings the version commit here. A failed build changes
 nothing. If `main` moved during the build, the push is refused: run it again.
