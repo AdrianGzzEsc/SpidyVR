@@ -11,9 +11,9 @@ has closed.
 Every VR session also turns off four game settings, whatever its window (SESSION):
 frame generation, vertical sync, ray-traced reflections, and the game's
 Windows.Gaming.Input, which under SteamVR takes the controllers away from Spidy's
-XInput controller. They are saved and restored with the window's. So are the game's
-depth of field and its sharpening, which a session turns off unless told to keep
-them (PICTURE).
+XInput controller. It puts the game's Aspect Ratio at Auto. They are saved and
+restored with the window's. So are the game's depth of field and its sharpening,
+which a session turns off unless told to keep them (PICTURE).
 """
 import argparse
 import ctypes
@@ -64,8 +64,16 @@ ASPECT = 16/9
 #   three more players ended the error by turning the setting off, and none of the 30 game logs kept
 #   here with it off has the error. With it off the eyes follow Screen Space Reflections. A game that
 #   runs with it on all the same keeps its own view rendering (ray_traced_view in run_game_vr.py).
+# - Aspect Ratio at Auto (ForcedAspectRatio 0), since October 13's third build. The value is the choice
+#   in the game's Display settings, counted from Auto, and the option reads and writes nothing else
+#   (Spider-Man.exe 1cc1e70 and 1cca6d0; AspectRatio beside it is a number of its own). On October 11
+#   two players' games ended as VR started, and each had VR once the option was back at Auto, which a
+#   third player had advised. One of the two named his choice, 16:9, and his report of that day has the
+#   graphics device gone by the 30th eye picture, in a 1920 x 1080 window. It was not run here with a
+#   fixed shape, so what the game does to an eye with one is not known.
 PICTURE = dict(depth_of_field='DOFQuality', sharpening='Sharpness')
-SESSION = ((KEY, dict(DLSSG=0, FrameGen=0, VSync=0, DOFQuality=0, Sharpness=1, RTReflections=0), False),
+SESSION = ((KEY, dict(DLSSG=0, FrameGen=0, VSync=0, DOFQuality=0, Sharpness=1, RTReflections=0,
+                      ForcedAspectRatio=0), False),
            (INPUT_KEY, dict(EnableWindowsGamingInput=0), True))
 
 

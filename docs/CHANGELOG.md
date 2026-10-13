@@ -3,7 +3,100 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 13, second build): the game window shows Spidy's
+**Latest build (October 13, third build): two starts that could not work,
+found in players' reports, and Linux under Proton, experimental.** You
+asked: "review discord bugs and find unresolved actionable ones that you
+have enough info to fix and fix them", then "release it and handle relevant
+topics" and "also review the pr for linux and add it if its ok befoire".
+The bug forum's 47 topics and the help forum's 44 were read with the report
+files players attached. Two had a cause the launcher can deal with.
+
+- **The game's Aspect Ratio is at Auto while you are in VR.** On October 11
+  two players' games ended as VR started, and each had VR once Aspect Ratio
+  in the game's display settings was back at Auto, which a third player had
+  advised. One of the two named his choice, 16:9, and his report of that day
+  has the graphics device gone by the 30th eye picture. A session now puts the option at Auto, as it does
+  with frame generation and vertical sync, and puts yours back when the game
+  closes (`ForcedAspectRatio` in `tools/vr_display.py`: the option's choice
+  counted from Auto, which is all the option reads and writes). The session
+  log says so when it changed yours.
+- **The R.E.A.L. VR mod in the game's folder is named, and the session
+  stops there.** A player's headset stayed black on SteamVR and on Virtual
+  Desktop in six sessions over three days. His reports had no picture of the
+  game in any frame and could not say why. The folder listing and the game's
+  module list he sent on October 13 could: the other VR mod's `dxgi.dll`
+  sits beside `Spider-Man.exe`, the game loads it before Windows' own, and
+  it takes the game's picture. Spidy now looks at the game's folder as the
+  game starts. With R.E.A.L. VR there it says which files to move out, and
+  that Steam's file check leaves them. Any other file there that stands in
+  for one of Windows' libraries (`dxgi.dll`, `version.dll`, `dinput8.dll`
+  and nine more: ReShade, an upscaler swap, a trainer's loader) gets a
+  warning by name and the session goes on, since none of those was seen to
+  break VR (`other_mods` in `tools/run_game_vr.py`; the files are in a
+  failed start's report as `other_mods`).
+
+- **Linux (Steam Proton), experimental: Sebi's pull request 7
+  (sjrl2000).** Spidy runs inside the game's Proton session, started by
+  `tools/spidy-linux.sh` in place of the launcher. `docs/LINUX.md`, in the
+  zip as `LINUX.md`, has the setup and the limits. Two changes in the
+  modules made it possible. The search for the game's graphics queue falls
+  back to a swapchain on a hidden window where the system has no
+  composition swapchains (`src/render_probe.cpp`). And the lock around the
+  eyes' recorded draws may be taken again by the thread that holds it:
+  under vkd3d-proton Spidy's own calls come back through its hooks
+  (`src/native_eye_gpu.cpp`). On Windows Spidy calls the original functions
+  for its own lists, nothing comes back, and the lock is as it was. He
+  played about 20 minutes on a Quest 3 over Steam Link with 0.3.2 and the
+  lock patched by hand.
+- **What the review added to it.** The package copied a fixed list of
+  tools, so the zip had no starter, and a Windows checkout gave the script
+  Windows' line endings, with which bash runs nothing. The package now
+  ships it with Unix line endings (`tools/package.ps1`, `.gitattributes`)
+  and `LINUX.md` beside it. The notes say `bash tools/spidy-linux.sh` (a zip
+  made on Windows keeps no run permission), and that a game Spidy did not
+  start keeps its own settings: frame generation, vertical sync,
+  Ray-Traced Reflections and Aspect Ratio are set by hand there.
+
+**Checked:** 286 core tests, the launcher's, the graphics test with
+Direct3D's debug layer, and 116 Python checks (new: Aspect Ratio to Auto and
+back, and what the session says; a clean game folder, R.E.A.L. VR's files,
+another tool's, and the session ending before anything of Spidy's is in the
+game). The new folder check finds nothing in the game's folder on this PC.
+The pull request had not been built with MSVC: it builds here (14.43) with
+no new warning. The rebuilt render probe starts, stops and starts again in
+a stand-in process, and so does a scratch copy whose composition swapchain
+is made to fail, which is the new fallback on Windows' own DXGI. The
+package was made and opened: the starter is in it without a carriage
+return, and `LINUX.md`. No protocol changed.
+
+**Not run in the game, and not under Proton.** No game was started on this
+PC. What a fixed Aspect Ratio does to an eye was not seen here: the fix
+rests on those players' accounts and the one report. The player with
+R.E.A.L. VR has not yet said that VR shows a picture without it. The lock
+change is in the module every Windows session loads; that it changes
+nothing there is a reading of the code, not a session.
+
+**Read and left open, with what each needs:**
+- *The zip to a point (right stick up) does nothing in the air after a
+  swing, or standing on a wall* (three topics). The cause is in the code:
+  the stick's push reaches the game only while the swing does not have the
+  player (`playing` in `src/game_xr.cpp`), and the swing has him from the
+  first web until he lands, and on its walls. Sending it there means handing
+  flight to the game in mid-air, which dropped players at the game's fall
+  speed until October 7's fifth build. It needs runs in the game.
+- *A crash with "Stack overflow" seconds after the game starts* (two
+  players, 0.2.14 and 0.3.5). Neither report says where; the game's `.mdmp`
+  would.
+- *The view sits too high in a vent* (a save and a clip are in the topic),
+  *the wall walk falls off a ledge*, *a broken window in the Fisk tower fire
+  is a wall*, *Fisk takes no Y*, *the web jumps to its bend*: each needs the
+  game run at that spot.
+- *"Monitor frame rate" 15 to 45 slower than 60*: one player's numbers, his
+  monitor and its sync still unknown.
+- *PS VR2 buttons*: no report yet, and Spidy has no layout of its own for
+  those controllers.
+
+**Earlier build (October 13, second build): the game window shows Spidy's
 combat marks.** You asked: "why are the combat indicators and custom ui not
 visible on the mirror on screen? shouldnt it litterally show on e of the
 eyes?", and of a fix: "showing the battle ui is most important, i also don't
