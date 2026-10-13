@@ -595,6 +595,23 @@ not move. At 0 the game skips Windows.Gaming.Input (`1d14bf0` reads the
 setting, `1d14c89` jumps past its setup). A session whose game screen ignores
 held buttons for 5 s says so (`pad_ignored`).
 
+Since October 13 such a game also runs without ray-traced reflections
+(`Graphics\RTReflections` 0, where the game saved it). The eyes cannot have
+them, and the game's own view, the only one that did, rests in VR play
+(`restGameView`). With them on, the first frame that view drew again hung the
+graphics device: the game ended with its display driver error
+(`DXGI_ERROR_DEVICE_HUNG`) as a menu, the map or a cutscene opened. In a
+report that is a session whose last samples have `presentation` `immersive`
+with `gate` `no_camera_commit`, the frame's render memory up by about half
+(the view has a job again) and no frame after it; the game log has
+`RT Reflections: On` and `Device removed detected`. Why the game's ray-traced
+path does that after a rest was not looked into. A game that runs with the
+setting on all the same (one the launcher did not start, or whose settings
+Windows kept from it) keeps its own view rendering, as with
+`--game-monitor-view` (`ray_traced_view` in `tools/run_game_vr.py`; the
+report's `eyes.ray_traced`). Turning the setting on in the game during a
+session is not covered.
+
 Each session writes its console to `reports\game-vr-<time>-console.log`, and a
 session that ends before VR starts writes `game-vr-<time>.json` with the
 `stage` it reached, the `error`, `xr_runtime`, `queue_search` (why each look
@@ -750,13 +767,14 @@ Spidy does not change in-game graphics options at runtime. One persistent change
 was made on October 4 for a performance comparison: the game's `VSync` registry
 value went from 1 to 0 (backup in `reports/vsync-before-performance-test.json`).
 When the VR launcher starts the game, it changes only the window settings
-(windowed, size, position), frame generation, vertical sync and
-Windows.Gaming.Input for that session and writes them back after the game
-closes; see [Start Spider-Man in VR](#start-spider-man-in-vr).
+(windowed, size, position), frame generation, vertical sync, ray-traced
+reflections, depth of field, sharpening and Windows.Gaming.Input for that
+session and writes them back after the game closes; see
+[Start Spider-Man in VR](#start-spider-man-in-vr).
 
 The two eyes are extra native scene views. They inherit the game's own quality
-settings, including textures, shadows, level of detail, crowds, ray-traced
-reflections, ambient occlusion, and motion blur strength; not its
+settings, including textures, shadows, level of detail, crowds, ambient
+occlusion, and motion blur strength; not its ray-traced reflections, nor its
 anti-aliasing and upscaling, which Spidy sets for them. For each eye, Spidy
 sets only:
 
@@ -1107,7 +1125,7 @@ still requires a running game or headset.
 | `tools/inspect_game.py`, `tools/discover_render_types.py` | Offline game research |
 | `src/game_observer.cpp`, `tools/observe_game.py` | Opt-in native camera callback diagnostic |
 | `tools/game_driver.mjs` | Observed game launch, screenshots, and input workflow |
-| `tools/vr_display.py` | Small desktop window, no frame generation, no vertical sync and no Windows.Gaming.Input for VR launches; restores the game's settings |
+| `tools/vr_display.py` | Small desktop window, no frame generation, no vertical sync, no ray-traced reflections and no Windows.Gaming.Input for VR launches; restores the game's settings |
 | `src/stereo_probe.cpp`, `src/native_eye_gpu.cpp`, `include/spidy/eye_resolution.hpp` | The eyes' scene views: their buffers, lenses, anti-aliasing and upscaling, exposure; the game's own view at the head and its rest; the staged eye pairs and the monitor's left eye |
 | `tools/probe_vr_load.py`, `tools/probe_render_commands.py`, `tools/probe_exposure.py` | The eyes' cost and picture in the game without a headset: frame rate, GPU time by view, render commands by view, and both eyes' brightness |
 | `tools/xr_runtime.py` | The OpenXR runtimes, and the one a headset is connected to (`--detect`) |

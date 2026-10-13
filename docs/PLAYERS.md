@@ -70,12 +70,16 @@ VR ended by itself, close the game first, then press START VR.
 
 For VR the launcher starts the game with a small desktop window, without
 frame generation or vertical sync, and with the game's Windows.Gaming.Input
-off (under SteamVR it would take the controllers away from Spidy). It also
-turns the game's Depth of Field off and its Sharpness to the lowest: in the
-headset the game blurs away from where its own camera focuses, not from
-where you look, and its sharpening rings on edges. "Game's depth of field"
-and "Game's sharpening" in the launcher's options keep your own. Your
-settings come back when the game closes.
+off (under SteamVR it would take the controllers away from Spidy). It turns
+Ray-Traced Reflections off too: the headset cannot show them, and with them
+on the game ended with its display driver error (DXGI_ERROR_DEVICE_HUNG)
+when a menu, the map or a cutscene opened. Leave them off in the game's
+settings while you play in VR. The launcher also turns the game's Depth of
+Field off and its Sharpness to the lowest: in the headset the game blurs
+away from where its own camera focuses, not from where you look, and its
+sharpening rings on edges. "Game's depth of field" and "Game's sharpening"
+in the launcher's options keep your own. Your settings come back when the
+game closes.
 
 While you swing in VR, the game window on the desktop shows your left eye,
 30 pictures a second: every picture sent to the monitor costs the graphics
@@ -95,8 +99,8 @@ Wet streets, water and glass mirror their surroundings in the headset when
 Screen Space Reflections is on in the game's own graphics settings (Settings >
 Display and Graphics > Graphics), as on the monitor. Turned off there, they
 are off in the headset too; turned on there while you play, they appear in
-the headset the next time you start VR. With Ray-Traced Reflections on in
-the game, the headset shows neither kind.
+the headset the next time you start VR. Ray-Traced Reflections never reach
+the headset: the launcher turns them off for the session, as said above.
 
 
 CONTROLS

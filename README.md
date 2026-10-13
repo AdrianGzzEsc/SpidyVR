@@ -89,7 +89,7 @@ windows. If the headset shows a still picture, click the game window once.
 - Finds the OpenXR runtime your headset is connected to (or the one you choose) and checks the headset.
 - Checks the Visual C++ runtime and Spidy's own files.
 - Starts the game with the larger render memory VR needs, in a small window that
-  saves GPU time, without frame generation or vertical sync, and puts your settings back afterwards.
+  saves GPU time, without frame generation, vertical sync or ray-traced reflections, and puts your settings back afterwards.
 - Gives each eye the game's own anti-aliasing and upscaling (*Upscaling* in its options; the game's DLSS setting does not reach the headset), and shows your left eye in the game window while you are in VR.
 - Remembers your options, and saves a report of every session in `reports\`.
 - Offers each new Spidy release when it starts, and updates itself in place with one click.

@@ -15,7 +15,8 @@ from run_game_vr import (snapshot as xr_snapshot, accepted as accepted_xr, timin
                          SETTINGS_LINE,
                          scaled_eye_size, rendering_line, eye_render_size, eye_reflections, XR_STAGES,
                          command_text, network_links, link_warning, stream_stalls,
-                         slow_motion_snapshot, hud_snapshot, GAME_HOOKS, controllers_line)
+                         slow_motion_snapshot, hud_snapshot, GAME_HOOKS, controllers_line,
+                         ray_traced_view, RAY_TRACING_OFF)
 from probe_collision import snapshot as collision_snapshot
 from probe_movement import snapshot as movement_snapshot
 from probe_native_motion import snapshot as motion_snapshot
@@ -499,6 +500,16 @@ class ProtocolTests(unittest.TestCase):
         self.assertIn("Wi-Fi off", link_warning(dict(wifi='Home 5G', cable=True), 'Virtual Desktop'))
         self.assertIsNone(link_warning(dict(wifi=None, cable=True), 'Virtual Desktop'))
         self.assertIsNone(link_warning(dict(wifi='Home 5G', cable=False), 'Oculus'))
+        # A Steam Frame's own network, which the PC joins for the headset's picture, is no Wi-Fi to turn off
+        # (a Frame player's PC on October 13, on a cable too). A home Wi-Fi beside it still counts.
+        frame = '    Name                   : Wi-Fi 2\n    State                  : connected\n' \
+                '    SSID                   : frame_CBC1602B\n    BSSID                  : 02:00:00:00:00:01\n'
+        self.assertEqual(network_links(frame, cable), dict(wifi=None, cable=True, headset_link='frame_CBC1602B'))
+        self.assertIsNone(link_warning(network_links(frame, cable), 'SteamVR'))
+        home = '    Name                   : Wi-Fi\n'+wlan
+        self.assertEqual(network_links(frame+'\n'+home, no_cable),
+                         dict(wifi='Home 5G', cable=False, headset_link='frame_CBC1602B'))
+        self.assertIn('by cable', link_warning(network_links(home+'\n'+frame, no_cable), 'SteamVR'))
         # A Windows in another language: netsh's German word for encryption with the console's 0x81 for its
         # u-umlaut, which is a letter neither in UTF-8 (Python's under the launcher) nor in Windows' own code
         # page here. Read as either, the command left no output and 0.2.13 started no session on such a PC.
@@ -522,6 +533,14 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(eye_reflections(1, ray_traced=1)[0], False)
         self.assertIn('Ray-Traced', eye_reflections(1, ray_traced=1)[1])
         self.assertIn('--no-eye-reflections', eye_reflections(1, refused=True)[1])
+        # A game that runs with Ray-Traced Reflections on keeps its own view rendering: resting, that view
+        # hung the graphics device on the first frame it drew again. A session turns the setting off itself.
+        self.assertEqual(ray_traced_view(0), (False, None))
+        for value in (1, 2):
+            keeps, line = ray_traced_view(value)
+            self.assertTrue(keeps)
+            self.assertIn('Ray-Traced Reflections is on', line)
+        self.assertIn('Your setting returns', RAY_TRACING_OFF)
         # A sample's xr_ms follows the worker's stages, without its display period.
         self.assertEqual(XR_STAGES[:2]+XR_STAGES[-1:], ('frame', 'wait_frame', 'end_frame'))
 
