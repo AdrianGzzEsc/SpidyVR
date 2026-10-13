@@ -179,6 +179,28 @@ class DesktopViewTests(unittest.TestCase):
         self.assertTrue(display.restore(fresh,self.backup))
         self.assertEqual(fresh.values,USER)
 
+    def test_every_session_puts_the_aspect_ratio_at_auto(self):
+        # October 11: two players' games ended as VR started with a fixed shape chosen in the game's
+        # display settings (ForcedAspectRatio counts the choices from Auto). Auto for the session, back
+        # after it, and the session can say what it changed.
+        graphics={**USER,'ForcedAspectRatio':1,'AspectRatio':0}
+        registry=FakeRegistry(graphics)
+        display.prepare_launch(registry=registry,backup=self.backup,screen=(1920,1080))
+        self.assertEqual((registry.values['ForcedAspectRatio'],registry.values['AspectRatio']),(0,0))
+        self.assertEqual(display.session_changes(self.backup),dict(ForcedAspectRatio=1,EnableWindowsGamingInput=None))
+        self.assertTrue(display.restore(registry,self.backup))
+        self.assertEqual(registry.values,graphics)
+        # At Auto already, or never saved by the game: nothing to say, and nothing made.
+        auto=FakeRegistry({**USER,'ForcedAspectRatio':0})
+        display.prepare_launch(registry=auto,backup=self.backup,screen=(1920,1080))
+        self.assertFalse(display.session_changes(self.backup).get('ForcedAspectRatio'))
+        self.assertTrue(display.restore(auto,self.backup))
+        fresh=FakeRegistry(USER)
+        display.prepare_launch(registry=fresh,backup=self.backup,screen=(1920,1080))
+        self.assertNotIn('ForcedAspectRatio',fresh.values)
+        self.assertTrue(display.restore(fresh,self.backup))
+        self.assertEqual(fresh.values,USER)
+
     def test_every_session_turns_off_vertical_sync(self):
         # The October 10 session started with the game's VSync on at 120 Hz: frames of 36-45 ms, whole
         # numbers of the monitor's 8.3 ms. It comes back afterwards; a value the game never saved stays unsaved.
