@@ -4,8 +4,10 @@ Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
 **Latest build (October 13, third build): two starts that could not work,
-found in players' reports.** You asked: "review discord bugs and find
-unresolved actionable ones that you have enough info to fix and fix them".
+found in players' reports, and Linux under Proton, experimental.** You
+asked: "review discord bugs and find unresolved actionable ones that you
+have enough info to fix and fix them", then "release it and handle relevant
+topics" and "also review the pr for linux and add it if its ok befoire".
 The bug forum's 47 topics and the help forum's 44 were read with the report
 files players attached. Two had a cause the launcher can deal with.
 
@@ -33,17 +35,46 @@ files players attached. Two had a cause the launcher can deal with.
   break VR (`other_mods` in `tools/run_game_vr.py`; the files are in a
   failed start's report as `other_mods`).
 
-**Checked:** 116 Python checks (new: Aspect Ratio to Auto and back, and what
-the session says; a clean game folder, R.E.A.L. VR's files, another tool's,
-and the session ending before anything of Spidy's is in the game). The new
-folder check finds nothing in the game's folder on this PC. No module and
-no protocol changed: the launcher and the game modules are as in the second
-build.
+- **Linux (Steam Proton), experimental: Sebi's pull request 7
+  (sjrl2000).** Spidy runs inside the game's Proton session, started by
+  `tools/spidy-linux.sh` in place of the launcher. `docs/LINUX.md`, in the
+  zip as `LINUX.md`, has the setup and the limits. Two changes in the
+  modules made it possible. The search for the game's graphics queue falls
+  back to a swapchain on a hidden window where the system has no
+  composition swapchains (`src/render_probe.cpp`). And the lock around the
+  eyes' recorded draws may be taken again by the thread that holds it:
+  under vkd3d-proton Spidy's own calls come back through its hooks
+  (`src/native_eye_gpu.cpp`). On Windows Spidy calls the original functions
+  for its own lists, nothing comes back, and the lock is as it was. He
+  played about 20 minutes on a Quest 3 over Steam Link with 0.3.2 and the
+  lock patched by hand.
+- **What the review added to it.** The package copied a fixed list of
+  tools, so the zip had no starter, and a Windows checkout gave the script
+  Windows' line endings, with which bash runs nothing. The package now
+  ships it with Unix line endings (`tools/package.ps1`, `.gitattributes`)
+  and `LINUX.md` beside it. The notes say `bash tools/spidy-linux.sh` (a zip
+  made on Windows keeps no run permission), and that a game Spidy did not
+  start keeps its own settings: frame generation, vertical sync,
+  Ray-Traced Reflections and Aspect Ratio are set by hand there.
 
-**Not run in the game.** No game was started on this PC. What a fixed
-Aspect Ratio does to an eye was not seen here: the fix rests on those
-players' accounts and the one report. The player with R.E.A.L. VR has not
-yet said that VR shows a picture without it.
+**Checked:** 286 core tests, the launcher's, the graphics test with
+Direct3D's debug layer, and 116 Python checks (new: Aspect Ratio to Auto and
+back, and what the session says; a clean game folder, R.E.A.L. VR's files,
+another tool's, and the session ending before anything of Spidy's is in the
+game). The new folder check finds nothing in the game's folder on this PC.
+The pull request had not been built with MSVC: it builds here (14.43) with
+no new warning. The rebuilt render probe starts, stops and starts again in
+a stand-in process, and so does a scratch copy whose composition swapchain
+is made to fail, which is the new fallback on Windows' own DXGI. The
+package was made and opened: the starter is in it without a carriage
+return, and `LINUX.md`. No protocol changed.
+
+**Not run in the game, and not under Proton.** No game was started on this
+PC. What a fixed Aspect Ratio does to an eye was not seen here: the fix
+rests on those players' accounts and the one report. The player with
+R.E.A.L. VR has not yet said that VR shows a picture without it. The lock
+change is in the module every Windows session loads; that it changes
+nothing there is a reading of the code, not a session.
 
 **Read and left open, with what each needs:**
 - *The zip to a point (right stick up) does nothing in the air after a

@@ -140,6 +140,8 @@ find the real download.
   [Virtual Desktop](https://www.vrdesktop.net/) and with SteamVR (Steam Link);
   other SteamVR headsets and Quest Link should work.
 - **About 19 GB of memory Windows can give programs** (RAM plus page file).
+- **Windows.** On Linux, Spidy runs inside the game's Steam Proton session: experimental, with its
+  own steps in [docs/LINUX.md](docs/LINUX.md) (contributed by [sjrl2000](https://github.com/sjrl2000)).
 
 ## Install and play
 

@@ -15,6 +15,8 @@ WHAT YOU NEED
   (Steam Link). Other SteamVR headsets and Meta Quest Link should work too.
   The launcher finds the runtime your headset is connected to.
 - About 19 GB of memory Windows can give programs (RAM plus page file).
+- Windows. On Linux, Spidy runs inside the game's Steam Proton session: that is
+  experimental and has its own steps, in LINUX.md in this folder.
 
 
 INSTALL
