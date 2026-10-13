@@ -3,7 +3,65 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 13): no display driver error when a menu opens,
+**Latest build (October 13, second build): the game window shows Spidy's
+combat marks.** You asked: "why are the combat indicators and custom ui not
+visible on the mirror on screen? shouldnt it litterally show on e of the
+eyes?", and of a fix: "showing the battle ui is most important, i also don't
+want to hit performance too much".
+
+Why they were missing. The window did show your left eye, but as the game
+rendered it. Spidy draws its own things onto the headset's pictures after
+that: the target ring, a call's arrow, the bursts, the count and the
+knockout lettering, the aim markers, the focus meter on the wrist, slow
+motion's colour, the calibration panel, and the gloves and webs where the
+game draws none. The window's picture was taken a step before them. The
+game's own HUD is on a panel the game renders into the eye, so it was in
+the window already.
+
+What changed:
+
+- **The window shows the eye the headset showed.** Each time the window
+  has taken a picture, the headset's loop keeps a copy of its next finished
+  left eye, and that copy is the window's next picture (`keepShownEye` in
+  `src/native_eye_gpu.cpp`).
+- **One copy for each picture the window gets, and nothing else.** At the
+  default "Monitor frame rate" that is 30 a second; the headset's frames in
+  between are not copied, and in menus, cutscenes and the flat screen none
+  are. A copy moves one eye's pixels once on the graphics card (18 MB for a
+  2064 x 2208 eye) and one more image of that size stays in video memory.
+  The window's own draw is the same as before, from another image.
+- **With no fresh copy the window shows the game's image of the eye**, as
+  until now: for the first picture after a menu, and when the headset has
+  taken no frame for half a second.
+- **The window is a little later than it was**: by up to one of its own
+  pictures, a thirtieth of a second at 30.
+
+**Checked:** 286 core tests (new: how long a copy stays on the window). The
+graphics test, with Direct3D's debug layer, at 1536 x 1536 and at a
+headset's 2064 x 2208 (new: a copy taken right behind an overlay that is
+still being drawn, from both kinds of headset image, has the overlay's
+drawings exactly and leaves the headset's image as it was). 114 Python
+checks. No protocol changed: `SpidyPresentCount(3)` is new, for a probe.
+
+**Not run in the game, and the cost is not measured.** No game was started
+on this PC. That the marks are in the window is a reading of the code and
+the graphics test, not a look at the window. The cost is expected to be
+small; there is no number for it yet.
+
+**Not changed:** which part of the eye the window shows (its middle, cut to
+the window's shape: about half its height in a 16:9 window), and a window
+whose picture is in float (HDR) values, which gets no eye at all.
+
+**For recording, today:** "Monitor frame rate" 60, a 1920 x 1080 window
+(the cut from the eye has about that many pixels, a larger window only
+stretches it and costs the headset frames), and HDR off in the game if the
+window stays on an old picture.
+
+**Proposed, not built:** the cut aimed where you look (it is taken about the
+image's middle, and a headset's eye sees further outward and downward than
+inward and upward), and a steadied, level camera for the window.
+
+**Earlier build (October 13): no display driver error when a menu opens,
 and a Steam Frame player's word on 0.3.3.** You sent the Steam Frame topic of
 #spidy-bugs, where pokenate28 had answered 0.3.3's call for testers with two
 session reports.

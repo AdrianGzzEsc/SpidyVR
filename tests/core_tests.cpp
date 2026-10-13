@@ -3164,6 +3164,19 @@ int main() {
         // After a pause (a menu, the game screen) the next present goes out at once.
         check(monitorPresentDue(10'000'000, due, 66000, 30) && due == 10'000'000 + 2200,"at once after a pause");
     });
+    test("the monitor's left eye is the one the headset showed while a copy of it is fresh", [] {
+        // Half a second; two and a half pictures of a window slower than 5 a second.
+        check(shownEyeHoldMs(0) == 500 && shownEyeHoldMs(240) == 500 && shownEyeHoldMs(30) == 500 &&
+              shownEyeHoldMs(5) == 500 && shownEyeHoldMs(4) == 625 && shownEyeHoldMs(1) == 2500,
+              "how long a copy stays");
+        check(!shownEyeFresh(0, 1000, 30),"no copy yet: the game's own image");
+        check(shownEyeFresh(1000, 1000, 30) && shownEyeFresh(1000, 1500, 30) &&
+              !shownEyeFresh(1000, 1501, 30),"half a second without a newer copy");
+        // The slowest window the launcher offers shows each copy 200 ms after the last.
+        check(shownEyeFresh(1000, 1000 + 2 * 1000 / 5, 5),"a missed copy at 5 a second does not end it");
+        check(shownEyeFresh(1000, 3500, 1) && !shownEyeFresh(1000, 3501, 1),"one picture a second");
+        check(!shownEyeFresh(2000, 1000, 30),"a clock that went back");
+    });
     test("A held on the ground charges a leap; a tap is the game's jump, made as A is let go", [] {
         using game_pad::ChargeJump;
         const float dt=1.f/90;

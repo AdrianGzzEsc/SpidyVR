@@ -2109,6 +2109,9 @@ DWORD WINAPI run(void*) {
                         overlayMs = std::chrono::duration<double, std::milli>(
                                         std::chrono::steady_clock::now() - overlayStart)
                                         .count();
+                        // The game's window mirrors the left eye as it is now, the
+                        // drawings above on it; copied only when the window took the last.
+                        native_gpu::keepShownEye(targets[0].texture);
                         if (webGap >= 0 && imageGeneration != gapGeneration) {
                             native_eyes::reportWebGap(webGap);
                             gapGeneration = imageGeneration;

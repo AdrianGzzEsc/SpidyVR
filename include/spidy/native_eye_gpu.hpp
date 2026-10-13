@@ -64,6 +64,15 @@ void mirror(bool wanted);
 void monitorRate(uint32_t rate);
 uint32_t heldPresents();
 uint32_t mirrored();
+// The left image the headset is about to show: the one copyLatest filled this
+// frame, the overlay's drawings on it, in RENDER_TARGET state. The window's
+// mirror shows a copy of it while one is fresh (monitor_rate.hpp), so Spidy's
+// own marks are on the monitor too. A copy is made only once the window has
+// shown the last one: one eye-sized copy on the game's queue for each picture
+// the window gets, none while it mirrors nothing. mirroredShown() counts the
+// presents that drew such a copy (diagnostic).
+void keepShownEye(ID3D12Resource* left);
+uint32_t mirroredShown();
 // The newest copied frame, if one was copied within maxAgeMs.
 bool latestScreen(Screen& out, uint64_t maxAgeMs);
 // How the copy is read: the encoded format of the back buffer's family, or
