@@ -1,6 +1,43 @@
 # Validation — 2026-10-12
 
-## One enemy at a time, called strikes, KO — current build, not tried in the headset
+## Steam Frame controllers: a layout of their own — current build, not tried on a Steam Frame
+
+The user: "check if people with steam frame reported bugs on discord and fix
+them". Read from Discord on October 12 (the bug, help and idea forums, the
+chat back to October 7, #general and the feedback channel). One report is
+open: chrisdrenegade, #spidy-bugs, on 0.3.0, "X is registering as dodge on
+Steam Frame Controllers. Multiple buttons are mapped to dodge on steam frame
+controller for some reason."
+
+**Where it comes from** (SteamVR 1789498647 on this PC, read, not run):
+
+| | |
+| --- | --- |
+| Layouts Spidy suggested until now | Touch and Index (`xr_session.cpp`) |
+| SteamVR's translation of the Touch layout for the Frame (`drivers\frame_controller\resources\input\frame_controller_remapping.json`, `from_controller_type` `oculus_touch`, priority 95) | right B to the Frame's right B, X and Y; left Y to D-pad left, right and up; left X to D-pad down; left menu to View; each trigger to the trigger and the bumper |
+| Valve, "Steam Frame Input" | "The top button of the Oculus Touch controllers (B / Y) will map to all three top buttons of the Steam Frame Controllers (Dpad Left, Dpad Up, Dpad Right / X, Y, B)"; "SteamVR will always use a Frame Controller binding by default" |
+| The Frame's OpenXR profile and extension | `/interaction_profiles/valve/frame_controller_valve`, `XR_VALVE_frame_controller_interaction` (Valve's page; both strings in `vrclient_x64.dll`, the profile in `vrserver.exe` too) |
+| Another controller's translation that reads the Frame's layout | none: `frame_controller` is no `from_controller_type` in any remapping file under SteamVR's `drivers` and `resources` |
+
+**Checked without a headset:**
+
+| | |
+| --- | --- |
+| The Frame layout's 24 paths, its profile and its extension in `vrclient_x64.dll` | all there |
+| Each path against the driver's `frame_controller_profile.json` | a control of the profile, on the hand the layout names |
+| `spidy_xr_lab --probe` on Quest Link's runtime (Oculus) | "Controller layout Touch: taken", "Index: taken"; the Frame's not offered (no extension) |
+| The same on Virtual Desktop's runtime (VirtualDesktopXR) | the same |
+| Core tests | 285 pass. New: the Touch and Index layouts are the bindings of 0.3.2 in their order; every Frame button is bound once, to a path of Valve's list, on its hand; the View button and the D-pad are the game's Back and D-pad in play and on the game screen |
+| Python checks | 113 pass. New: `controllers` and `controller_layouts` of XrData 26, and the session log's line |
+
+**Not checked:** anything under SteamVR (its runtime answers only with a
+headset connected, and starting it was not asked for), and anything on a
+Steam Frame. Whether SteamVR lists the extension without a Frame connected
+is not known either; where it does not, nothing changes for that session.
+The hands' pose on the Frame ("a bit janky", October 8, on 0.2.2) is
+untouched: no report from a Frame holds its poses.
+
+## One enemy at a time, called strikes, KO — preceding build, not tried in the headset
 
 The user, after a session with the build below (15:42 to 15:56,
 `C:\Spidy-0.2.12\reports\game-vr-20261012-154237.json`; he plays from

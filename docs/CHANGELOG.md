@@ -3,7 +3,81 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 12, seventh build): one enemy at a time, called
+**Latest build (October 12, eighth build): Steam Frame controllers get
+their own buttons.** You asked: "check if people with steam frame reported
+bugs on discord and fix them".
+
+What Steam Frame players have reported:
+
+- **Open, fixed here.** chrisdrenegade in #spidy-bugs on October 12, on
+  0.3.0: "X is registering as dodge on Steam Frame Controllers. Multiple
+  buttons are mapped to dodge on steam frame controller for some reason."
+- **Old, left alone.** chrisdrenegade on October 8: the hands are "a bit
+  janky with how they are positioned. At least for me on the Steam Frame".
+  pokenate28 on October 7: web balls go "down and to the right" of the
+  hand. Both are from 0.2.2 (October 7 and 8). The hands were redone in
+  0.2.3, and markers now show where each hand's web goes. Neither player
+  has said so since, and no report from a Frame holds its hands' poses,
+  so there is nothing to measure a change against.
+- **Already fixed.** pokenate28's start that stayed flat on October 7. He
+  and pmapro have played on the Frame since.
+
+The cause of the open one. Spidy told the VR runtime what its controls are
+on Touch and on Index controllers, and on nothing else. For any other
+controller SteamVR translates one of those. Its file for the Frame
+(`drivers\frame_controller\resources\input\frame_controller_remapping.json`
+in SteamVR's folder) turns Touch B into the Frame's B, X **and** Y, Touch Y
+into three ways of its D-pad, Touch X into the fourth, the Touch menu
+button into View, and each trigger into the trigger and the bumper.
+Valve's "Steam Frame Input" page says the same in words. So B, X and Y all
+dodged, as reported, and the D-pad interacted.
+
+What changed:
+
+- **The Steam Frame has a layout of its own** (`controller_layout.hpp`),
+  given to the runtime where it has Valve's extension for that controller
+  (`XR_VALVE_frame_controller_interaction`):
+  - right controller: **A** jumps, **B** dodges, **X** opens the game
+    menu, **Y** interacts, **Menu** pauses. Each is what the button of
+    that name is on a Quest.
+  - left controller: **View** is the game's View button (the game menu,
+    as X), and the **D-pad** is the game's own D-pad, in play and in
+    menus: down heals.
+  - triggers, grips and sticks are as on every controller. The bumpers do
+    nothing now; SteamVR had made them second triggers.
+- **No other controller and no other runtime gets anything new.** The
+  Touch and Index layouts are the same bindings in the same order, and a
+  test holds them to that list. The Frame's five extra actions exist only
+  where the runtime offers its extension, so Virtual Desktop and Quest
+  Link get the actions they got before. No other controller's translation
+  in SteamVR reads the Frame's layout (its remapping files, searched), so
+  a Quest, Index, Pico or PS VR2 under SteamVR keeps its buttons.
+- **If the runtime refuses the layout**, VR starts all the same and the
+  Frame plays SteamVR's translation, as until now.
+- **The session log says which layout is in use**, once the runtime has
+  said: "Controllers: Steam Frame, with their own layout ...", or "the
+  Touch layout", "the Index layout". Every sample of the report has it as
+  `controllers` (left, right) and `controller_layouts` (the ones the
+  runtime took). A Frame whose log says "the Touch layout" still plays the
+  translation: a binding the player chose in SteamVR earlier, or a SteamVR
+  without the extension. XrData is version 26, 856 bytes.
+- `tools\launch-lab.ps1 -Probe` lists the layouts a runtime takes, without
+  a headset.
+
+**Checked:** 285 core tests (new: the three layouts; the View button and
+the D-pad on the game's controller), the launcher's, 113 Python checks. On
+this PC's runtimes without a headset, Quest Link and Virtual Desktop take
+the Touch and Index layouts and are not offered the Frame's. All 24 paths
+of the Frame's layout, its profile and its extension are in SteamVR's
+OpenXR runtime here (build 1789498647), and each is a control of the
+driver's own profile on the hand the layout names.
+
+**Not tried on a Steam Frame, nor under SteamVR at all.** There is no
+Frame here, and SteamVR answers the probe only with a headset connected.
+It needs a Frame player's word and their session log. This build is in
+`build\windows-ninja` only: not released, not in a play folder.
+
+**Earlier build (October 12, seventh build): one enemy at a time, called
 blows that register, and KO!** You said, after the 15:42 session with the
 sixth build: "i had a looot of accidetal targeting and chaining of enemies
 where i just wanted to finish one. also its not clear how directional strikes

@@ -15,7 +15,7 @@ from run_game_vr import (snapshot as xr_snapshot, accepted as accepted_xr, timin
                          SETTINGS_LINE,
                          scaled_eye_size, rendering_line, eye_render_size, eye_reflections, XR_STAGES,
                          command_text, network_links, link_warning, stream_stalls,
-                         slow_motion_snapshot, hud_snapshot, GAME_HOOKS)
+                         slow_motion_snapshot, hud_snapshot, GAME_HOOKS, controllers_line)
 from probe_collision import snapshot as collision_snapshot
 from probe_movement import snapshot as movement_snapshot
 from probe_native_motion import snapshot as motion_snapshot
@@ -752,7 +752,7 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual((result['captured'],result['reused'],result['captured_serial']),(101,202,303))
 
     def test_all_readers_reject_incompatible_dlls(self):
-        for reader, magic, size in ((gpu_snapshot, 0x53475044, 208), (xr_snapshot, 0x53585244, 840),
+        for reader, magic, size in ((gpu_snapshot, 0x53475044, 208), (xr_snapshot, 0x53585244, 856),
                                      (collision_snapshot, 0x53435044, 2160),
                                      (movement_snapshot, 0x534d5044, 57408),
                                      (motion_snapshot, 0x534d5644, 176), (ray_snapshot, 0x53525944, 784),
@@ -864,13 +864,13 @@ class ProtocolTests(unittest.TestCase):
             game.candidate.assert_not_called()
 
     def test_xr_never_publishes_partly_updated_pose(self):
-        raw = bytearray(840)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 25, 840, 3, 4)
+        raw = bytearray(856)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 26, 856, 3, 4)
         self.assertIsNone(xr_snapshot(Reader(*([raw, struct.pack('<Q', 6)]*8)), 0))
 
     def test_xr_decodes_both_hands_and_status_message(self):
-        raw = bytearray(840)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 25, 840, 3, 4)
+        raw = bytearray(856)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 26, 856, 3, 4)
         struct.pack_into('<16f', raw, 160, *range(16))
         struct.pack_into('<16f', raw, 224, *range(16, 32))
         raw[288:295] = b'Tracked'
@@ -894,8 +894,8 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual((result['gate'], result['camera_mover']), ([], None))
 
     def test_xr_says_why_gameplay_was_unavailable_and_which_camera_ran(self):
-        raw = bytearray(840)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 25, 840, 3, 4)
+        raw = bytearray(856)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 26, 856, 3, 4)
         # A played scene whose camera the gate does not accept, the third player of the session,
         # and the menu button held on the virtual controller the game has read 900 times.
         struct.pack_into('<2I2Q2IQ', raw, 592, 8, 0x3872860, 3, 0x2aefe723280, 0x10, 1, 900)
@@ -913,8 +913,8 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual((result['gate'], result['camera_mover']), (['no_player', 'no_camera_commit'], '0x3999999'))
 
     def test_xr_counts_interacts_dodges_and_aim_markers(self):
-        raw = bytearray(840)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 25, 840, 3, 4)
+        raw = bytearray(856)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 26, 856, 3, 4)
         result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
         self.assertEqual((result['interacts'], result['aim_markers'], result['markers']), (0, False, 0))
         self.assertEqual(result['dodges'], 0)
@@ -942,8 +942,8 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual((result['look_error'], result['look_turns']), (-37.5, 9))
 
     def test_xr_reports_the_vr_settings_and_the_settings_tab(self):
-        raw = bytearray(840)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 25, 840, 3, 4)
+        raw = bytearray(856)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 26, 856, 3, 4)
         # Markers on; web grab, webs in open air, the web shooter and body on, punching off; 48 m/s, half again
         # real gravity, 45 degree snap turns, smooth turning at 120 degrees a second, half vibration, the large
         # screen; two changes in the SPIDY VR tab, which the game built 7 times.
@@ -1001,9 +1001,40 @@ class ProtocolTests(unittest.TestCase):
         result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
         self.assertEqual((result['scans'], result['charge_jumps']), (3, 2))
 
+    def test_xr_reports_the_layout_the_runtime_uses_for_the_controllers(self):
+        raw = bytearray(856)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 26, 856, 3, 4)
+        result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
+        # Before the runtime says: nothing, and nothing in the session log.
+        self.assertEqual((result['controllers'], result['controller_layouts']), ([None, None], []))
+        self.assertIsNone(controllers_line(result['controllers']))
+        # A Quest under SteamVR: Touch in both hands; the runtime took all three layouts.
+        struct.pack_into('<3I', raw, 840, 1, 1, 2 | 4 | 8)
+        result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
+        self.assertEqual(result['controllers'], ['touch', 'touch'])
+        self.assertEqual(result['controller_layouts'], ['touch', 'index', 'steam_frame'])
+        self.assertEqual(controllers_line(result['controllers']), 'Controllers: the Touch layout.')
+        # A Steam Frame with its own layout, the right controller found first.
+        struct.pack_into('<3I', raw, 840, 0, 3, 2 | 4 | 8)
+        result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
+        self.assertEqual(result['controllers'], [None, 'steam_frame'])
+        line = controllers_line(result['controllers'])
+        self.assertTrue(line.startswith('Controllers: Steam Frame, with their own layout'))
+        self.assertEqual(line, controllers_line(['steam_frame', 'steam_frame']))
+        # Index controllers; a runtime that knows neither Index nor the Frame took Touch alone.
+        struct.pack_into('<3I', raw, 840, 2, 2, 2)
+        result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
+        self.assertEqual((result['controllers'], result['controller_layouts']), (['index', 'index'], ['touch']))
+        self.assertEqual(controllers_line(result['controllers']), 'Controllers: the Index layout.')
+        # A layout of the runtime's own (none of Spidy's): the log says where to look.
+        struct.pack_into('<3I', raw, 840, 4, 4, 2 | 4)
+        result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
+        self.assertEqual(result['controllers'], ['runtime', 'runtime'])
+        self.assertIn('a layout of its own', controllers_line(result['controllers']))
+
     def test_xr_reports_walls_the_game_held_the_player_on(self):
-        raw = bytearray(840)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 25, 840, 3, 4)
+        raw = bytearray(856)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 26, 856, 3, 4)
         result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
         self.assertEqual(result['surface'], dict(entries=0, frames=0, hero_up=[0, 0, 0], stand_off_m=0,
                                                  head_height_m=0, head_clearance_m=0, view_tilt_deg=0))
@@ -1019,8 +1050,8 @@ class ProtocolTests(unittest.TestCase):
                                                  head_height_m=-.02, head_clearance_m=.46, view_tilt_deg=0))
 
     def test_xr_reports_the_t_pose_calibration(self):
-        raw = bytearray(840)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 25, 840, 3, 4)
+        raw = bytearray(856)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 26, 856, 3, 4)
         result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
         self.assertEqual(result['calibration'], dict(phase='none', hint=None, progress=0, done=0, skipped=0,
                                                      reach_m=[0, 0]))

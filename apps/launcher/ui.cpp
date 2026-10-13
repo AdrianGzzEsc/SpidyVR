@@ -1398,6 +1398,12 @@ void App::controls(ImVec2 origin, ImVec2 size) {
           {"A  /  B", "Select  /  Back"},
           {"Grips", "Switch menu tabs"},
           {"Menu button", "Start"}}},
+        {"STEAM FRAME CONTROLLERS",
+         {{"A, B, X, Y", "All four are on the right controller, each the button of that name above: jump, dodge, "
+                         "game menu, interact"},
+          {"Menu  /  View", "Pause  /  Game menu, as X"},
+          {"D-pad", "The game's own D-pad: down heals. The right stick's down and up work as above"},
+          {"Bumpers", "Not used: the triggers and grips are your webs"}}},
     };
     const float gap = S(16);
     float columnY[2] = {origin.y, origin.y};

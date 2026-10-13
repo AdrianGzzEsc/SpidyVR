@@ -1,4 +1,5 @@
 #pragma once
+#include "controller_layout.hpp"
 #include "d3d12_renderer.hpp"
 #include "tracking.hpp"
 #include "xr_timing.hpp"
@@ -55,6 +56,15 @@ class XrRuntime {
     std::array<unsigned, 2> recommendedDimensions() const {
         return {eyes_[0].recommendedWidth, eyes_[0].recommendedHeight};
     }
+    // The layout the runtime uses for each hand's controller now (left,
+    // right): one of Spidy's (controller_layout.hpp) or one of its own. And
+    // the layouts it took Spidy's controls for, a bit each (1 << ControllerKind).
+    std::array<ControllerKind, 2> controllers() const {
+        return controllers_;
+    }
+    uint32_t layoutsTaken() const {
+        return layouts_;
+    }
     // width: the screen's width in metres. stereo: the screen shows the left
     // eye's image to the left eye and the right one's to the right; without
     // it both eyes see the left one's.
@@ -75,6 +85,11 @@ class XrRuntime {
     void initialize(const std::function<Graphics(const XrGraphicsRequirementsD3D12KHR&)>& graphics,
                     bool probeOnly, bool copyDestination, unsigned eyeSize = 0, unsigned renderScale = 100);
     void actions();
+    void createActions();
+    bool offered(const ControllerLayout& layout) const;
+    void suggest(const ControllerLayout& layout);
+    XrAction actionFor(ControllerInput input) const;
+    void readControllers();
     XrPath path(const char* value);
     XrAction action(const char* name, const char* label, XrActionType type, bool perHand = true);
     void poll();
@@ -89,6 +104,16 @@ class XrRuntime {
     XrAction aim_{}, grip_{}, trigger_{}, squeeze_{}, stick_{}, stickClick_{}, jump_{}, reset_{}, haptic_{};
     // The other face buttons and the menu button, for the game's menus.
     XrAction buttonB_{}, buttonX_{}, menu_{};
+    // The Steam Frame's own: its View button and its D-pad (up, down, left,
+    // right). None where the runtime does not know that controller.
+    XrAction view_{};
+    std::array<XrAction, 4> dpad_{};
+    // The extensions this instance has on, the profiles of the layouts the
+    // runtime took, and what controllers() and layoutsTaken() give.
+    std::vector<const char*> extensions_;
+    std::vector<std::pair<XrPath, ControllerKind>> profiles_;
+    std::array<ControllerKind, 2> controllers_{};
+    uint32_t layouts_{}, inputs_{};
     std::array<XrPath, 2> handPaths_{};
     std::array<XrSpace, 2> aimSpaces_{}, gripSpaces_{};
     struct Eye {

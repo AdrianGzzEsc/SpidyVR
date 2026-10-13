@@ -306,6 +306,20 @@ Moving
                          the game on a screen in the headset, VR goes back.
                          (Clicking both sticks no longer switches.)
 
+Steam Frame controllers (they have a gamepad's buttons, split between the
+hands; everything above is the same, with these buttons)
+  A, B, X, Y ........... all four are on the right controller, and each is
+                         the button of that name above: A jumps, B dodges,
+                         X opens the game menu, Y interacts
+  Menu ................. pause (right controller)
+  View ................. the game menu, as X (left controller)
+  D-pad ................ the game's own D-pad: down heals. The right stick
+                         pushed down and up still does what it does above
+  Bumpers .............. nothing: the triggers and grips are your webs
+  The session log says "Controllers: Steam Frame, with their own layout"
+  when these are in use. Versions up to 0.3.2 had no layout for them:
+  SteamVR translated the Quest one, and B, X and Y all dodged.
+
 Walls
   Walk at one .......... push the left stick straight at a wall beside you
                          and you hop onto it and walk on up it. Falling
@@ -458,6 +472,13 @@ IF SOMETHING IS WRONG
   walking work, and the game's prompts show keyboard keys: Steam Input is
   on for the game. In Steam, right-click the game > Properties > Controller
   > Disable Steam Input, close the game, then press START VR.
+- Steam Frame controllers: B, X and Y all dodge, or the D-pad interacts.
+  Versions up to 0.3.2 gave SteamVR no layout for them. Newer ones do, and
+  the session log says "Controllers: Steam Frame, with their own layout".
+  If it says "the Touch layout" with Frame controllers in your hands, a
+  binding chosen in SteamVR earlier is in the way: in SteamVR open
+  Settings > Controllers > Manage Controller Bindings, pick the game and
+  choose the default binding. If that changes nothing, update SteamVR.
 - The game closes at its first logo, every time, and you have OpenXR
   Toolkit installed: version 0.3.0 and older do not run with it. Newer
   versions switch it off for Spider-Man by themselves (the launcher's log

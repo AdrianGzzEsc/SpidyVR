@@ -65,23 +65,41 @@ void XrRuntime::initialize(
     std::vector<XrExtensionProperties> extensions(count, {XR_TYPE_EXTENSION_PROPERTIES});
     xr(xrEnumerateInstanceExtensionProperties(nullptr, count, &count, extensions.data()),
        "Read XR extensions");
-    if (std::none_of(extensions.begin(), extensions.end(), [](auto e) {
-            return std::strcmp(e.extensionName, XR_KHR_D3D12_ENABLE_EXTENSION_NAME) == 0;
-        }))
+    const auto has = [&](const char* name) {
+        return std::any_of(extensions.begin(), extensions.end(), [&](const XrExtensionProperties& e) {
+            return std::strcmp(e.extensionName, name) == 0;
+        });
+    };
+    if (!has(XR_KHR_D3D12_ENABLE_EXTENSION_NAME))
         throw std::runtime_error("Runtime does not support OpenXR D3D12");
-    const char* enabled[] = {XR_KHR_D3D12_ENABLE_EXTENSION_NAME};
+    // A controller that comes with an extension of its own (the Steam
+    // Frame's) gets its layout where the runtime has that extension.
+    extensions_ = {XR_KHR_D3D12_ENABLE_EXTENSION_NAME};
+    for (const auto& layout : controllerLayouts())
+        if (layout.extension && has(layout.extension))
+            extensions_.push_back(layout.extension);
     XrInstanceCreateInfo ci{XR_TYPE_INSTANCE_CREATE_INFO};
     strcpy_s(ci.applicationInfo.applicationName, "Spidy");
     strcpy_s(ci.applicationInfo.engineName, "Spidy");
     ci.applicationInfo.apiVersion = XR_MAKE_VERSION(1, 0, 0);
-    ci.enabledExtensionCount = 1;
-    ci.enabledExtensionNames = enabled;
-    xr(xrCreateInstance(&ci, &instance_), "Create XR instance");
+    ci.enabledExtensionCount = static_cast<uint32_t>(extensions_.size());
+    ci.enabledExtensionNames = extensions_.data();
+    XrResult created = xrCreateInstance(&ci, &instance_);
+    if (XR_FAILED(created) && extensions_.size() > 1) {
+        // Not at the price of VR: without them the runtime translates
+        // another controller's layout, as before.
+        extensions_.resize(1);
+        ci.enabledExtensionCount = 1;
+        created = xrCreateInstance(&ci, &instance_);
+    }
+    xr(created, "Create XR instance");
     XrInstanceProperties properties{XR_TYPE_INSTANCE_PROPERTIES};
     xr(xrGetInstanceProperties(instance_, &properties), "XR runtime properties");
     std::cout << "Runtime: " << properties.runtimeName << '\n';
     if (probeOnly) {
         std::cout << "D3D12 extension available. Probe did not start a headset session.\n";
+        // Which controller layouts this runtime takes needs no headset.
+        createActions();
         return;
     }
     XrSystemGetInfo si{XR_TYPE_SYSTEM_GET_INFO};
@@ -237,7 +255,109 @@ XrAction XrRuntime::action(const char* name, const char* label, XrActionType typ
     xr(xrCreateAction(actionSet_, &info, &out), name);
     return out;
 }
+XrAction XrRuntime::actionFor(ControllerInput input) const {
+    switch (input) {
+    case ControllerInput::aim:
+        return aim_;
+    case ControllerInput::grip:
+        return grip_;
+    case ControllerInput::trigger:
+        return trigger_;
+    case ControllerInput::squeeze:
+        return squeeze_;
+    case ControllerInput::stick:
+        return stick_;
+    case ControllerInput::stickClick:
+        return stickClick_;
+    case ControllerInput::haptic:
+        return haptic_;
+    case ControllerInput::a:
+        return jump_;
+    case ControllerInput::b:
+        return buttonB_;
+    case ControllerInput::x:
+        return buttonX_;
+    case ControllerInput::y:
+        return reset_;
+    case ControllerInput::menu:
+        return menu_;
+    case ControllerInput::view:
+        return view_;
+    case ControllerInput::dpadUp:
+        return dpad_[0];
+    case ControllerInput::dpadDown:
+        return dpad_[1];
+    case ControllerInput::dpadLeft:
+        return dpad_[2];
+    case ControllerInput::dpadRight:
+        return dpad_[3];
+    }
+    return XR_NULL_HANDLE;
+}
+bool XrRuntime::offered(const ControllerLayout& layout) const {
+    return !layout.extension ||
+           std::any_of(extensions_.begin(), extensions_.end(),
+                       [&](const char* name) { return std::strcmp(name, layout.extension) == 0; });
+}
+// Spidy's controls for one kind of controller. A layout that came with an
+// extension is an extra: refused, the runtime goes on translating another
+// layout for that controller, and VR starts all the same.
+void XrRuntime::suggest(const ControllerLayout& layout) {
+    XrResult result = XR_ERROR_PATH_UNSUPPORTED;
+    XrPath profile = XR_NULL_PATH;
+    try {
+        std::vector<XrActionSuggestedBinding> bindings;
+        for (const auto& binding : layout.bindings)
+            bindings.push_back({actionFor(binding.input), path(binding.path)});
+        profile = path(layout.profile);
+        XrInteractionProfileSuggestedBinding suggested{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
+        suggested.interactionProfile = profile;
+        suggested.countSuggestedBindings = static_cast<uint32_t>(bindings.size());
+        suggested.suggestedBindings = bindings.data();
+        result = xrSuggestInteractionProfileBindings(instance_, &suggested);
+    } catch (const std::runtime_error&) {
+        if (!layout.extension)
+            throw;
+    }
+    if (result != XR_ERROR_PATH_UNSUPPORTED && !layout.extension)
+        xr(result, "Suggest controller bindings");
+    if (XR_SUCCEEDED(result)) {
+        profiles_.push_back({profile, layout.kind});
+        layouts_ |= 1u << static_cast<uint32_t>(layout.kind);
+    }
+    std::cout << "Controller layout " << controllerName(layout.kind)
+              << (XR_SUCCEEDED(result) ? ": taken\n" : ": not taken by this runtime\n");
+}
+void XrRuntime::readControllers() {
+    for (size_t i = 0; i < 2; ++i) {
+        XrInteractionProfileState state{XR_TYPE_INTERACTION_PROFILE_STATE};
+        if (XR_FAILED(xrGetCurrentInteractionProfile(session_, handPaths_[i], &state)))
+            continue;
+        controllers_[i] =
+            state.interactionProfile == XR_NULL_PATH ? ControllerKind::none : ControllerKind::other;
+        for (const auto& [profile, kind] : profiles_)
+            if (profile == state.interactionProfile)
+                controllers_[i] = kind;
+    }
+}
 void XrRuntime::actions() {
+    createActions();
+    for (int i = 0; i < 2; ++i) {
+        XrActionSpaceCreateInfo info{XR_TYPE_ACTION_SPACE_CREATE_INFO};
+        info.subactionPath = handPaths_[i];
+        info.poseInActionSpace = identity();
+        info.action = aim_;
+        xr(xrCreateActionSpace(session_, &info, &aimSpaces_[i]), "Create aim space");
+        info.action = grip_;
+        xr(xrCreateActionSpace(session_, &info, &gripSpaces_[i]), "Create grip space");
+    }
+    XrSessionActionSetsAttachInfo attach{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
+    attach.countActionSets = 1;
+    attach.actionSets = &actionSet_;
+    xr(xrAttachSessionActionSets(session_, &attach), "Attach actions");
+}
+// The actions and the layouts that bind them: the instance's, no session needed.
+void XrRuntime::createActions() {
     handPaths_ = {path("/user/hand/left"), path("/user/hand/right")};
     XrActionSetCreateInfo set{XR_TYPE_ACTION_SET_CREATE_INFO};
     strcpy_s(set.actionSetName, "swinging");
@@ -255,52 +375,22 @@ void XrRuntime::actions() {
     buttonX_ = action("button_x", "X (menus)", XR_ACTION_TYPE_BOOLEAN_INPUT, false);
     menu_ = action("menu", "Pause menu", XR_ACTION_TYPE_BOOLEAN_INPUT, false);
     haptic_ = action("haptic", "Web feedback", XR_ACTION_TYPE_VIBRATION_OUTPUT);
-    for (bool index : {false, true}) {
-        std::vector<XrActionSuggestedBinding> bindings;
-        for (const char* hand : {"left", "right"}) {
-            const std::string prefix = std::string("/user/hand/") + hand;
-            auto bind = [&](XrAction a, const char* suffix) {
-                bindings.push_back({a, path((prefix + suffix).c_str())});
-            };
-            bind(aim_, "/input/aim/pose");
-            bind(grip_, "/input/grip/pose");
-            bind(trigger_, "/input/trigger/value");
-            bind(squeeze_, index ? "/input/squeeze/force" : "/input/squeeze/value");
-            bind(stick_, "/input/thumbstick");
-            bind(stickClick_, "/input/thumbstick/click");
-            bind(haptic_, "/output/haptic");
-        }
-        bindings.push_back({jump_, path("/user/hand/right/input/a/click")});
-        bindings.push_back(
-            {reset_, path(index ? "/user/hand/left/input/b/click" : "/user/hand/left/input/y/click")});
-        bindings.push_back({buttonB_, path("/user/hand/right/input/b/click")});
-        bindings.push_back(
-            {buttonX_, path(index ? "/user/hand/left/input/a/click" : "/user/hand/left/input/x/click")});
-        // Index controllers have no menu button; their system button is the runtime's.
-        if (!index)
-            bindings.push_back({menu_, path("/user/hand/left/input/menu/click")});
-        XrInteractionProfileSuggestedBinding suggest{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
-        suggest.interactionProfile = path(index ? "/interaction_profiles/valve/index_controller"
-                                                : "/interaction_profiles/oculus/touch_controller");
-        suggest.countSuggestedBindings = static_cast<uint32_t>(bindings.size());
-        suggest.suggestedBindings = bindings.data();
-        const XrResult result = xrSuggestInteractionProfileBindings(instance_, &suggest);
-        if (result != XR_ERROR_PATH_UNSUPPORTED)
-            xr(result, "Suggest controller bindings");
+    // The Steam Frame's own buttons only where its layout is offered: every
+    // other runtime gets the actions it got before.
+    const auto layouts = controllerLayouts();
+    if (std::any_of(layouts.begin(), layouts.end(), [&](const ControllerLayout& layout) {
+            return offered(layout) && std::any_of(layout.bindings.begin(), layout.bindings.end(),
+                                                  [](const ControllerBinding& b) { return frameOnly(b.input); });
+        })) {
+        view_ = action("view", "Game menu (View)", XR_ACTION_TYPE_BOOLEAN_INPUT, false);
+        dpad_[0] = action("dpad_up", "D-pad up", XR_ACTION_TYPE_BOOLEAN_INPUT, false);
+        dpad_[1] = action("dpad_down", "D-pad down (heal)", XR_ACTION_TYPE_BOOLEAN_INPUT, false);
+        dpad_[2] = action("dpad_left", "D-pad left", XR_ACTION_TYPE_BOOLEAN_INPUT, false);
+        dpad_[3] = action("dpad_right", "D-pad right", XR_ACTION_TYPE_BOOLEAN_INPUT, false);
     }
-    for (int i = 0; i < 2; ++i) {
-        XrActionSpaceCreateInfo info{XR_TYPE_ACTION_SPACE_CREATE_INFO};
-        info.subactionPath = handPaths_[i];
-        info.poseInActionSpace = identity();
-        info.action = aim_;
-        xr(xrCreateActionSpace(session_, &info, &aimSpaces_[i]), "Create aim space");
-        info.action = grip_;
-        xr(xrCreateActionSpace(session_, &info, &gripSpaces_[i]), "Create grip space");
-    }
-    XrSessionActionSetsAttachInfo attach{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
-    attach.countActionSets = 1;
-    attach.actionSets = &actionSet_;
-    xr(xrAttachSessionActionSets(session_, &attach), "Attach actions");
+    for (const auto& layout : layouts)
+        if (offered(layout))
+            suggest(layout);
 }
 void XrRuntime::poll() {
     XrEventDataBuffer event{XR_TYPE_EVENT_DATA_BUFFER};
@@ -324,6 +414,8 @@ void XrRuntime::poll() {
         }
         if (event.type == XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING)
             exit_ = true;
+        if (event.type == XR_TYPE_EVENT_DATA_INTERACTION_PROFILE_CHANGED)
+            readControllers();
         if (event.type == XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING) {
             const auto& change = *reinterpret_cast<XrEventDataReferenceSpaceChangePending*>(&event);
             if (change.referenceSpaceType == referenceType_)
@@ -368,6 +460,10 @@ XrFrame XrRuntime::input(XrTime time) {
         return frame;
     }
     xr(result, "Sync input");
+    // The runtime says when the controllers change; asked every few seconds
+    // too, a change it did not announce still reaches the session's report.
+    if (!(inputs_++ & 255))
+        readControllers();
     for (int i = 0; i < 2; ++i) {
         auto& hand = frame.hands[i];
         XrActionStateGetInfo get{XR_TYPE_ACTION_STATE_GET_INFO};
@@ -410,6 +506,20 @@ XrFrame XrRuntime::input(XrTime time) {
     frame.buttons = (frame.jump ? buttonA : 0u) | (boolean(buttonB_) ? buttonB : 0u) |
                     (boolean(buttonX_) ? buttonX : 0u) | (frame.reset ? buttonY : 0u) |
                     (boolean(menu_) ? buttonMenu : 0u);
+    if (view_) {
+        // Extras: a button the runtime will not read is not held, and the
+        // frame is as good without it.
+        auto extra = [&](XrAction action) {
+            XrActionStateGetInfo get{XR_TYPE_ACTION_STATE_GET_INFO};
+            get.action = action;
+            XrActionStateBoolean b{XR_TYPE_ACTION_STATE_BOOLEAN};
+            return XR_SUCCEEDED(xrGetActionStateBoolean(session_, &get, &b)) && b.isActive && b.currentState;
+        };
+        static constexpr uint32_t ways[] = {buttonDpadUp, buttonDpadDown, buttonDpadLeft, buttonDpadRight};
+        frame.buttons |= extra(view_) ? buttonView : 0u;
+        for (size_t i = 0; i < dpad_.size(); ++i)
+            frame.buttons |= extra(dpad_[i]) ? ways[i] : 0u;
+    }
     return frame;
 }
 void XrRuntime::haptic(int hand, float strength, float seconds) {

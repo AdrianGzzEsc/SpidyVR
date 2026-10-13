@@ -19,7 +19,20 @@ struct TrackedEye {
 };
 // Face and menu buttons of the VR controllers (XrFrame::buttons). On Touch
 // controllers A and B are on the right, X, Y and the menu button on the left.
-enum ControllerButton : uint32_t { buttonA = 1, buttonB = 2, buttonX = 4, buttonY = 8, buttonMenu = 16 };
+// The Steam Frame's have all five on the right, and on the left a View button
+// and a D-pad, which no other controller has (controller_layout.hpp).
+enum ControllerButton : uint32_t {
+    buttonA = 1,
+    buttonB = 2,
+    buttonX = 4,
+    buttonY = 8,
+    buttonMenu = 16,
+    buttonView = 32,
+    buttonDpadUp = 64,
+    buttonDpadDown = 128,
+    buttonDpadLeft = 256,
+    buttonDpadRight = 512,
+};
 struct XrFrame {
     Pose head{};
     std::array<TrackedHand, 2> hands{};

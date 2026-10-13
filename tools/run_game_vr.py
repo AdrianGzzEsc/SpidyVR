@@ -481,6 +481,26 @@ def pad_ignored(watch, sample, quiet=5):
     return False
 
 
+# The layout the VR runtime uses for a hand's controller (controller_layout.hpp ControllerKind).
+CONTROLLER_KINDS = {0: None, 1: 'touch', 2: 'index', 3: 'steam_frame', 4: 'runtime'}
+
+
+def controllers_line(controllers):
+    """What the session log says about the layout the VR runtime uses for the controllers in the
+    player's hands (left, right), or None while it has not said."""
+    kinds = {kind for kind in controllers if kind}
+    if not kinds:
+        return None
+    if kinds == {'steam_frame'}:
+        return ("Controllers: Steam Frame, with their own layout: A, B, X and Y on the right are Spidy's A, B, X "
+                "and Y, Menu pauses, View opens the game menu and the D-pad is the game's (down heals).")
+    if 'runtime' in kinds:
+        return ("Controllers: the VR runtime uses a layout of its own for them, so Spidy's buttons may sit "
+                'elsewhere. Its controller settings show where.')
+    names = {'touch': 'Touch', 'index': 'Index', 'steam_frame': 'Steam Frame'}
+    return f"Controllers: the {' and '.join(sorted(names[kind] for kind in kinds))} layout."
+
+
 # The T-pose calibration's phases and what its panel asks for (body_calibration.hpp Phase, Hint).
 CALIBRATION_PHASES = {0: 'none', 1: 'waiting', 2: 'holding', 3: 'done'}
 CALIBRATION_HINTS = {0: None, 1: 'tracking', 2: 'stand_up', 3: 'arms_out', 4: 'straight', 5: 'look_ahead',
@@ -489,10 +509,10 @@ CALIBRATION_HINTS = {0: None, 1: 'tracking', 2: 'stand_up', 3: 'arms_out', 4: 's
 
 def snapshot(game, address):
     for _ in range(8):
-        raw = game.read(address, 840)
-        if len(raw) != 840:
+        raw = game.read(address, 856)
+        if len(raw) != 856:
             return None
-        if struct.unpack_from('<3I', raw) != (0x53585244, 25, 840):
+        if struct.unpack_from('<3I', raw) != (0x53585244, 26, 856):
             raise RuntimeError('Game XR protocol mismatch')
         if struct.unpack_from('<Q', raw, 16)[0] & 1 or raw[16:24] != game.read(address+16, 8):
             continue
@@ -541,6 +561,12 @@ def snapshot(game, address):
         # The scans a trigger pulled at the temple began (the game's R3), and the Charge Jumps a held A
         # began (its RT + A).
         result.update(zip(('scans', 'charge_jumps'), struct.unpack_from('<2I', raw, 832)))
+        # The layout the VR runtime uses for each hand's controller (left, right; None until it says), and
+        # the layouts it took Spidy's controls for. A Steam Frame on 'touch' plays SteamVR's translation.
+        left, right, layouts = struct.unpack_from('<3I', raw, 840)
+        result.update(controllers=[CONTROLLER_KINDS.get(kind, kind) for kind in (left, right)],
+                      controller_layouts=[name for kind, name in CONTROLLER_KINDS.items()
+                                          if name and layouts & 1 << kind])
         result.update(interacts=interacts, aim_markers=bool(aim_markers),
                       markers=struct.unpack_from('<Q', raw, 656)[0])
         # The VR settings now (the SPIDY VR tab in the game's Settings changes them),
@@ -1410,6 +1436,7 @@ def session(a, startup):
         lowest_commit = start_commit = free_commit_mb()
         printed_ring = False
         previous = None
+        printed_controllers = None
         printed_dimensions=False
         renewed=0
         stop_requested=False
@@ -1613,6 +1640,11 @@ def session(a, startup):
                                                   **{k: shot[k] for k in EYE_SHOT_FIELDS}))
                             while len(eye_shots) > EYE_SHOTS:
                                 remove_eye_files(eye_folder, eye_shots.popleft()['files'])
+                    # Which layout the runtime uses for the controllers, once it says and when it changes.
+                    layout = controllers_line(sample['controllers'])
+                    if layout and layout != printed_controllers:
+                        print(layout, flush=True)
+                        printed_controllers = layout
                     state = (sample['status'], sample['message'])
                     if state != previous:
                         print(sample['message'], flush=True)

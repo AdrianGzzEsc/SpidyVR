@@ -108,7 +108,8 @@ they can write and start `Spidy Launcher.exe`. The version comes from
 `project(Spidy VERSION ...)` in `CMakeLists.txt`. The supported game build is
 one Steam build: a game update needs new addresses in Spidy before the
 launcher accepts it. Other runtimes than Virtual Desktop and other controllers
-than Quest Touch (Index bindings are also suggested) are untested.
+than Quest Touch are untested: Index and Steam Frame layouts are suggested
+too (`controller_layout.hpp`), neither tried on the controller.
 
 ### Publish a release
 
@@ -529,6 +530,27 @@ gamepad keeps working. The keyboard does not: once the virtual controller has
 pressed a button, the game ignores the keyboard for the player. The screen has the size of the
 game's desktop window, small when the launcher starts the game;
 `-FullDesktopView` makes it sharper.
+
+Which button is which comes from the layouts Spidy suggests to the runtime
+(`controller_layout.hpp`, `XrRuntime::suggest`): Touch, Index and the Steam
+Frame. A runtime that gets no layout for the controller in the player's hand
+translates one of another's, and SteamVR's translation of the Touch layout
+for the Frame makes its B, X and Y all Touch B (its
+`frame_controller_remapping.json`): until October 12's eighth build a Frame
+player's X and Y dodged. The Frame's layout needs Valve's extension
+(`XR_VALVE_frame_controller_interaction`), so it is offered only where the
+runtime lists that; its View button and D-pad are actions of their own, made
+only there, and reach the game as its Back and its D-pad in play and on the
+screen alike (`buttonView`, `buttonDpad...` in `XrFrame::buttons`). Its
+bumpers are left unbound: Valve's page names them `/input/bumper`, Godot's
+layout `/input/shoulder`, and one path the runtime does not know loses the
+whole layout. A refused layout costs nothing else: VR starts and the runtime
+translates as before. XrData version 26 (856 bytes) has `controllers`, the
+layout the runtime uses for each hand now (`ControllerKind`: Touch, Index,
+Steam Frame, or one of the runtime's own), and `controllerLayouts`, the ones
+it took; the session log prints the first once the runtime says. A Frame on
+`touch` with `steam_frame` among the layouts taken is a binding the player
+chose in SteamVR; without it there, a SteamVR that lacks the extension.
 
 VIEW in the SPIDY VR tab (FLAT SCREEN, or VR) switches between immersive VR
 and a flat screen inside the headset; until October 12 a click of both
@@ -968,7 +990,9 @@ Connect Quest 3 to Virtual Desktop on this PC, then double-click
 .\tools\launch-lab.ps1
 ```
 
-Use `-Probe` to check the runtime without starting a headset session. The default
+Use `-Probe` to check the runtime without starting a headset session; it
+lists the controller layouts the runtime takes ("Controller layout Touch:
+taken"). The default
 launcher uses VDXR for its own process. `-SystemRuntime` uses the registered
 OpenXR runtime instead. Neither option changes the system registration.
 

@@ -47,7 +47,9 @@ enum class Mapping {
     // game's camera to where the player looks (CameraLook, CameraPitch). A
     // held on the ground charges the swing's own leap (ChargeJump), and a
     // trigger pulled with its hand at the temple is the game's R3, its scan
-    // (TemplePress).
+    // (TemplePress). The Steam Frame's View button and D-pad, which the
+    // other controllers lack, are the game's own Back and D-pad here as on
+    // the game screen: its D-pad down heals as the stick's push does.
     gameplay,
     // The game screen: every control as on an Xbox controller. A, B, X and Y
     // sit where Xbox has them; grips are the bumpers.
@@ -72,7 +74,7 @@ enum class Mapping {
 // October 11 nothing did, and a door of the first mission that asks for
 // LB + RB could not be opened in VR. heal: the game's D-pad down, held: its
 // heal. zip: the game's LT and RT together, held: its zip to a point, where
-// it shows the two (a perch, a vent to enter). The VR controllers have no
+// it shows the two (a perch, a vent to enter). Touch controllers have no
 // D-pad, and their triggers and grips are the webs in VR play, so the right
 // thumbstick pushed down and up gives them (StickPush): until October 12
 // nothing did, and the first mission stopped at the heal it asks for and at
@@ -575,6 +577,16 @@ inline State fromControllers(const XrFrame& frame, Mapping mapping, const Walk& 
     };
     if (frame.buttons & buttonMenu)
         s.buttons |= start;
+    // The Steam Frame's View button and D-pad are the game's own wherever
+    // they are pressed; no other controller sets them.
+    const std::pair<ControllerButton, Button> own[] = {{buttonView, back},
+                                                       {buttonDpadUp, dpadUp},
+                                                       {buttonDpadDown, dpadDown},
+                                                       {buttonDpadLeft, dpadLeft},
+                                                       {buttonDpadRight, dpadRight}};
+    for (const auto& [held, button] : own)
+        if (frame.buttons & held)
+            s.buttons |= button;
     if (mapping == Mapping::gameplay) {
         if (frame.buttons & buttonX)
             s.buttons |= back;

@@ -116,7 +116,7 @@ enum GateReason : uint32_t {
     gateTracking = 16,    // the headset's pose or timing was not usable
 };
 struct XrData {
-    uint32_t magic = 0x53585244, version = 25, bytes = sizeof(XrData), status{};
+    uint32_t magic = 0x53585244, version = 26, bytes = sizeof(XrData), status{};
     int64_t sequence{};
     uint64_t frames{}, tracked{}, submitted{}, dropped{}, leftHands{}, rightHands{}, serial{}, generation{};
     uint32_t nativeKeys{}, error{};
@@ -210,8 +210,15 @@ struct XrData {
     // R3: game_pad::TemplePress), and the Charge Jumps a held A began (its
     // RT + A: game_pad::ChargeJump).
     uint32_t scans{}, chargeJumps{};
+    // Version 26: the layout the runtime uses for each hand's controller now
+    // (ControllerKind, controller_layout.hpp; left, right: 0 none yet,
+    // 1 Touch, 2 Index, 3 Steam Frame, 4 one of the runtime's own), the
+    // layouts the runtime took Spidy's controls for (bit 1 << ControllerKind)
+    // and a spare word. A Steam Frame whose hands say Touch plays SteamVR's
+    // translation of that layout: its B, X and Y are all B.
+    uint32_t controllers[2]{}, controllerLayouts{}, controllerSpare{};
 };
-static_assert(sizeof(XrData) == 840);
+static_assert(sizeof(XrData) == 856);
 // Slow motion (slow_motion.hpp, game_time.hpp): what the player did with it
 // and what the game's time did. status: 1 before VR starts, then 0 with the
 // game's time hooked, else why it is not (game_time::install) and slow
@@ -1556,6 +1563,10 @@ DWORD WINAPI run(void*) {
                                      (values.standOnWalls ? 128u : 0u) | (values.physicalWebs ? 256u : 0u);
                         d.scans = templePress.scans();
                         d.chargeJumps = chargeJump.charges();
+                        const auto controllers = runtime.controllers();
+                        d.controllers[0] = static_cast<uint32_t>(controllers[0]);
+                        d.controllers[1] = static_cast<uint32_t>(controllers[1]);
+                        d.controllerLayouts = runtime.layoutsTaken();
                         d.snapTurn = static_cast<uint32_t>(values.snapTurn);
                         d.smoothTurn = static_cast<uint32_t>(values.smoothTurn);
                         d.haptics = static_cast<uint32_t>(values.haptics);

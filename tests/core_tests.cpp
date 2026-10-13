@@ -9,6 +9,7 @@
 #include "spidy/native_rays.hpp"
 #include "spidy/native_render_memory.hpp"
 #include "spidy/game_pad.hpp"
+#include "spidy/controller_layout.hpp"
 #include "spidy/game_swing.hpp"
 #include "spidy/native_movement.hpp"
 #include "spidy/presentation_gate.hpp"
@@ -3894,6 +3895,124 @@ int main() {
         broken.hands[0].stickX=std::numeric_limits<float>::quiet_NaN();
         broken.hands[1].trigger=std::numeric_limits<float>::infinity();
         check(fromControllers(broken,Mapping::menus)==game_pad::State{},"bad readings stay at rest");
+    });
+    test("the Steam Frame's View button and D-pad are the game's own, in play and on the game screen", [] {
+        using namespace game_pad;
+        XrFrame f;
+        f.buttons=buttonView|buttonDpadDown;
+        // In VR play: the game menu and the heal, with nothing else of the controllers.
+        check(fromControllers(f,Mapping::gameplay)==game_pad::State{static_cast<uint16_t>(back|dpadDown)},
+              "View and D-pad down are not the game's Back and D-pad down in play");
+        check(fromControllers(f,Mapping::menus).buttons==(back|dpadDown),"View and D-pad down on the game screen");
+        check(fromControllers(f,Mapping::none)==game_pad::State{},"they reached the game without the headset");
+        f.buttons=buttonDpadUp|buttonDpadLeft|buttonDpadRight;
+        check(fromControllers(f,Mapping::gameplay).buttons==(dpadUp|dpadLeft|dpadRight),"the D-pad in play");
+        check(fromControllers(f,Mapping::menus).buttons==(dpadUp|dpadLeft|dpadRight),"the D-pad on the game screen");
+        // The D-pad's heal and the right stick's are one button of the game's.
+        f.buttons=buttonDpadDown;
+        check(fromControllers(f,Mapping::gameplay,{0,0,false,false,false,false,true}).buttons==dpadDown,"two heals");
+        // Held from play into the menu it opened, View is still the game's Back: no second press.
+        PressOrigins o;
+        f.buttons=buttonView|buttonX|buttonY;
+        o.update(f.buttons,true);
+        check(fromControllers(o.filtered(f,Mapping::gameplay),Mapping::gameplay).buttons==back,"View and X in play");
+        o.update(f.buttons,false);
+        check(fromControllers(o.filtered(f,Mapping::menus),Mapping::menus).buttons==back,"View let go by the switch");
+        // The Frame's X and Y are Spidy's X and Y: the game menu and the interact, as Touch's.
+        XrFrame face;face.buttons=buttonX;
+        check(fromControllers(face,Mapping::gameplay).buttons==back,"X is not the game menu");
+        check(fromControllers(face,Mapping::menus).buttons==x,"X on the game screen is not the game's X");
+    });
+    test("controller layouts: Touch and Index as they were, the Steam Frame's buttons each their own", [] {
+        using Paths=std::vector<std::pair<ControllerInput,std::string>>;
+        const auto of=[](ControllerKind kind) {
+            for (const auto& layout : controllerLayouts())
+                if (layout.kind==kind)
+                    return layout;
+            throw std::runtime_error("no such layout");
+        };
+        const auto paths=[](const ControllerLayout& layout) {
+            Paths out;
+            for (const auto& b : layout.bindings)
+                out.push_back({b.input,b.path});
+            return out;
+        };
+        // What every hand gives, whatever the controller; `squeeze` is the grip's own path.
+        const auto hands=[](const char* squeeze) {
+            Paths out;
+            for (const std::string hand : {"/user/hand/left","/user/hand/right"}) {
+                out.push_back({ControllerInput::aim,hand+"/input/aim/pose"});
+                out.push_back({ControllerInput::grip,hand+"/input/grip/pose"});
+                out.push_back({ControllerInput::trigger,hand+"/input/trigger/value"});
+                out.push_back({ControllerInput::squeeze,hand+squeeze});
+                out.push_back({ControllerInput::stick,hand+"/input/thumbstick"});
+                out.push_back({ControllerInput::stickClick,hand+"/input/thumbstick/click"});
+                out.push_back({ControllerInput::haptic,hand+"/output/haptic"});
+            }
+            return out;
+        };
+        using enum ControllerInput;
+        // The bindings every release until 0.3.2 suggested, in their order.
+        auto touch=hands("/input/squeeze/value");
+        for (const auto& button : Paths{{a,"/user/hand/right/input/a/click"},{y,"/user/hand/left/input/y/click"},
+                                        {b,"/user/hand/right/input/b/click"},{x,"/user/hand/left/input/x/click"},
+                                        {menu,"/user/hand/left/input/menu/click"}})
+            touch.push_back(button);
+        check(paths(of(ControllerKind::touch))==touch,"the Touch layout changed");
+        check(std::string(of(ControllerKind::touch).profile)=="/interaction_profiles/oculus/touch_controller" &&
+              !of(ControllerKind::touch).extension,"the Touch profile changed");
+        auto index=hands("/input/squeeze/force");
+        for (const auto& button : Paths{{a,"/user/hand/right/input/a/click"},{y,"/user/hand/left/input/b/click"},
+                                        {b,"/user/hand/right/input/b/click"},{x,"/user/hand/left/input/a/click"}})
+            index.push_back(button);
+        check(paths(of(ControllerKind::index))==index,"the Index layout changed");
+        check(std::string(of(ControllerKind::index).profile)=="/interaction_profiles/valve/index_controller" &&
+              !of(ControllerKind::index).extension,"the Index profile changed");
+        // The Steam Frame: Valve's profile and extension, and only paths Valve's "Steam Frame Input" page lists.
+        const auto frame=of(ControllerKind::frame);
+        check(std::string(frame.profile)=="/interaction_profiles/valve/frame_controller_valve" &&
+              std::string(frame.extension)=="XR_VALVE_frame_controller_interaction","the Steam Frame's profile");
+        std::vector<std::string> valve;
+        for (const std::string hand : {"/user/hand/left","/user/hand/right"})
+            for (const char* path : {"/input/system/click","/input/bumper/click","/input/squeeze/click","/input/squeeze/value",
+                                     "/input/trigger/click","/input/trigger/value","/input/thumbstick/click",
+                                     "/input/thumbstick/x","/input/thumbstick/y","/input/thumbstick","/input/grip/pose",
+                                     "/input/aim/pose","/output/haptic"})
+                valve.push_back(hand+path);
+        for (const char* path : {"/input/a/click","/input/b/click","/input/x/click","/input/y/click","/input/menu/click"})
+            valve.push_back(std::string("/user/hand/right")+path);
+        for (const char* path : {"/input/dpad_up/click","/input/dpad_left/click","/input/dpad_down/click",
+                                 "/input/dpad_right/click","/input/view/click"})
+            valve.push_back(std::string("/user/hand/left")+path);
+        const auto framePaths=paths(frame);
+        for (const auto& binding : framePaths)
+            check(std::find(valve.begin(),valve.end(),binding.second)!=valve.end(),"a path the Steam Frame does not have");
+        // Each hand gives what every controller's does.
+        const auto both=hands("/input/squeeze/value");
+        check(Paths(framePaths.begin(),framePaths.begin()+static_cast<ptrdiff_t>(both.size()))==both,"the Frame's hands");
+        // The report: B, X and Y were one button. Every button is bound once, to a path of its own, on the
+        // hand that has it.
+        const std::pair<ControllerInput,const char*> buttons[]={
+            {a,"/user/hand/right/input/a/click"},{b,"/user/hand/right/input/b/click"},
+            {x,"/user/hand/right/input/x/click"},{y,"/user/hand/right/input/y/click"},
+            {menu,"/user/hand/right/input/menu/click"},{view,"/user/hand/left/input/view/click"},
+            {dpadUp,"/user/hand/left/input/dpad_up/click"},{dpadDown,"/user/hand/left/input/dpad_down/click"},
+            {dpadLeft,"/user/hand/left/input/dpad_left/click"},{dpadRight,"/user/hand/left/input/dpad_right/click"}};
+        check(framePaths.size()==both.size()+std::size(buttons),"the Frame's buttons");
+        for (const auto& [input,path] : buttons)
+            check(std::count(framePaths.begin(),framePaths.end(),std::pair<ControllerInput,std::string>{input,path})==1,
+                  "a Steam Frame button is not its own");
+        // No layout binds a control of the controllers twice, and only the Frame's has the Frame's own.
+        for (const auto& layout : controllerLayouts()) {
+            const auto all=paths(layout);
+            for (const auto& [input,path] : all) {
+                check(std::count_if(all.begin(),all.end(),[&](const auto& other) { return other.second==path; })==1,
+                      "a control is bound twice");
+                check(!frameOnly(input) || layout.kind==ControllerKind::frame,"another controller got the Frame's own");
+            }
+        }
+        check(frameOnly(view) && frameOnly(dpadRight) && !frameOnly(menu) && !frameOnly(aim),"which controls are the Frame's own");
+        check(std::string(controllerName(ControllerKind::frame))=="Steam Frame","the Frame's name");
     });
     test("B, X and Y stay what they were pressed as between the game screen and VR", [] {
         using namespace game_pad;
