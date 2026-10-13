@@ -8,11 +8,12 @@ fifth of the pixels of two 3072 x 3264 eyes). The game reads these values once a
 startup. The previous values are saved in reports/ and written back once the game
 has closed.
 
-Every VR session also turns off three game settings, whatever its window (SESSION):
-frame generation, vertical sync, and the game's Windows.Gaming.Input, which under
-SteamVR takes the controllers away from Spidy's XInput controller. They are saved
-and restored with the window's. So are the game's depth of field and its sharpening,
-which a session turns off unless told to keep them (PICTURE).
+Every VR session also turns off four game settings, whatever its window (SESSION):
+frame generation, vertical sync, ray-traced reflections, and the game's
+Windows.Gaming.Input, which under SteamVR takes the controllers away from Spidy's
+XInput controller. They are saved and restored with the window's. So are the game's
+depth of field and its sharpening, which a session turns off unless told to keep
+them (PICTURE).
 """
 import argparse
 import ctypes
@@ -54,8 +55,17 @@ ASPECT = 16/9
 #   headset is not where you look (the 3D game screen's cutscenes most of all), and its sharpening pass
 #   rings and shimmers on edges at the eyes' resolution. `keep` in prepare_session leaves either as the
 #   player has it (the launcher's "Game's depth of field" and "Game's sharpening").
+# - Ray-traced reflections off (RTReflections 0), since October 13. The eyes cannot have them (the game
+#   takes another way through its reflection pass, for which an eye's buffers have no targets), and the
+#   game's own view, the only one that had them, rests in VR play (restGameView in src/stereo_probe.cpp).
+#   With them on, the first frame that view drew again hung the graphics device: a menu, the map or a
+#   cutscene ended the game with its display driver error (DXGI_ERROR_DEVICE_HUNG). In two players'
+#   reports (October 11-13, an RTX 4070 Ti and an RTX 5080) every session ended on its first such frame,
+#   three more players ended the error by turning the setting off, and none of the 30 game logs kept
+#   here with it off has the error. With it off the eyes follow Screen Space Reflections. A game that
+#   runs with it on all the same keeps its own view rendering (ray_traced_view in run_game_vr.py).
 PICTURE = dict(depth_of_field='DOFQuality', sharpening='Sharpness')
-SESSION = ((KEY, dict(DLSSG=0, FrameGen=0, VSync=0, DOFQuality=0, Sharpness=1), False),
+SESSION = ((KEY, dict(DLSSG=0, FrameGen=0, VSync=0, DOFQuality=0, Sharpness=1, RTReflections=0), False),
            (INPUT_KEY, dict(EnableWindowsGamingInput=0), True))
 
 
@@ -112,6 +122,15 @@ def small_window(screen_width, screen_height, height=HEIGHT, aspect=ASPECT):
 
 def pending(backup=BACKUP):
     return backup.exists()
+
+
+def session_changes(backup=BACKUP):
+    """The player's own values of the settings a session replaced (SESSION), by name, from the backup a
+    launch left; empty without one. None: a value the session made."""
+    if not backup.exists():
+        return {}
+    session = json.loads(backup.read_text()).get('session', [])
+    return {name: value for entry in session for name, value in entry['values'].items()}
 
 
 def _saved(values, names, created=False):

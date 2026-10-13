@@ -205,6 +205,28 @@ def eye_reflections(setting, refused=False, ray_traced=0):
                   'Reflections setting, as it is when VR starts).')
 
 
+# The console's line where a session turned the player's Ray-Traced Reflections off (vr_display.SESSION
+# has why).
+RAY_TRACING_OFF = ('Ray-Traced Reflections: off for VR. The eyes cannot have them, and with them on the game '
+                   'ended with its display driver error (DXGI_ERROR_DEVICE_HUNG) as a menu, the map or a '
+                   'cutscene opened. Your setting returns when the game closes.')
+
+
+def ray_traced_view(ray_traced):
+    """Whether the game's own view keeps rendering in VR play, and the console's line (None: nothing to say).
+
+    `ray_traced` is the saved RTReflections of the game that runs. A session turns it off in a game it
+    starts (vr_display.SESSION), so it is on only in a game Spidy did not start, or one whose settings
+    Windows kept from Spidy. There the view must not rest: the first frame it drew again hung the graphics
+    device. It renders as with --game-monitor-view, about a fifth fewer frames."""
+    if not ray_traced:
+        return False, None
+    return True, ('Ray-Traced Reflections is on in this game, so its own view keeps rendering beside the eyes '
+                  '(about a fifth fewer frames): with that view resting, the game ended with its display '
+                  'driver error as a menu opened. In a game Spidy starts itself the setting is off for VR: '
+                  'close the game and press START VR.')
+
+
 def command_text(command, timeout=10):
     """What a Windows command printed, '' where it could not run. Its text is in the console's code page,
     not Python's (UTF-8 under the launcher): read as Python's, one letter outside ASCII in it (a Windows
@@ -218,23 +240,41 @@ def command_text(command, timeout=10):
     return (printed or b'').decode('oem', 'replace')
 
 
+# A Steam Frame's own link. The headset makes a 6 GHz network of its own and the PC joins it through the
+# adapter from the headset's box: it carries the headset's picture and is not the PC's way to the router.
+# A Frame player's PC on October 13 was on "frame_CBC1602B" beside its network cable, and the session told
+# them to turn the PC's Wi-Fi off. The name's form is from that one report.
+HEADSET_LINK = re.compile(r'frame_[0-9A-Fa-f]{6,}$')
+
+
 def network_links(wlan=None, addresses=None):
     """How this PC is on the network: the Wi-Fi network it is connected to (None without one) and whether
-    a cable carries an address too. `wlan` and `addresses` are `netsh wlan show interfaces` and `ipconfig`
+    a cable carries an address too. A headset's own network the PC is on (HEADSET_LINK) is no such Wi-Fi:
+    it is named as `headset_link`. `wlan` and `addresses` are `netsh wlan show interfaces` and `ipconfig`
     output (run here when not given). Both are read by their English words: a Windows in another language
     shows neither."""
     wlan = command_text(['netsh', 'wlan', 'show', 'interfaces']) if wlan is None else wlan
     addresses = command_text(['ipconfig']) if addresses is None else addresses
-    wifi = None
-    if re.search(r'^\s*State\s*:\s*connected\s*$', wlan, re.M):
-        name = re.search(r'^\s*SSID\s*:\s*(.*?)\s*$', wlan, re.M)
-        wifi = name.group(1) if name and name.group(1) else 'Wi-Fi'
+    wifi = headset = None
+    # One block for each Wi-Fi adapter, from its Name line on.
+    for block in re.split(r'^(?=[ \t]*Name[ \t]*:)', wlan, flags=re.M):
+        if not re.search(r'^\s*State\s*:\s*connected\s*$', block, re.M):
+            continue
+        name = re.search(r'^\s*SSID\s*:\s*(.*?)\s*$', block, re.M)
+        name = name.group(1) if name and name.group(1) else 'Wi-Fi'
+        if HEADSET_LINK.match(name):
+            headset = headset or name
+        else:
+            wifi = wifi or name
     cable = False
     for block in re.split(r'^(?=\S)', addresses, flags=re.M):
         if block.startswith('Ethernet adapter') and 'Bluetooth' not in block.splitlines()[0] and \
                 re.search(r'IPv4 Address', block):
             cable = True
-    return dict(wifi=wifi, cable=cable)
+    links = dict(wifi=wifi, cable=cable)
+    if headset:
+        links['headset_link'] = headset
+    return links
 
 
 def link_warning(links, runtime_name):
@@ -1306,6 +1346,8 @@ def session(a, startup):
         print('Game settings for VR: frame generation off, vertical sync off (the game would wait for the '
               "monitor), controllers through XInput only (SteamVR's virtual gamepads would take the menus from "
               'the VR controllers); they return when the game closes.', flush=True)
+        if vr_display.session_changes().get('RTReflections'):
+            print(RAY_TRACING_OFF, flush=True)
         kept = picture_kept(a)
         off = [text for name, text in (('depth_of_field', 'depth of field off'),
                                        ('sharpening', 'sharpening at its lowest')) if name not in kept]
@@ -1383,6 +1425,7 @@ def session(a, startup):
         saved = vr_display.Registry().read(('ScreenSpaceReflections', 'RTReflections'))
         reflections, reflections_line = eye_reflections(saved.get('ScreenSpaceReflections'), a.no_eye_reflections,
                                                         saved.get('RTReflections', 0))
+        game_view, game_view_line = ray_traced_view(saved.get('RTReflections', 0))
         config = struct.pack('<4I7Q2IfI', 0x53585243, 23, 664, game.pid, game.base, queue,
                              bridge_module, ray_module, motion_module, 0, 0,
                              int(a.seconds*1000), a.size, a.swing_speed,
@@ -1394,7 +1437,7 @@ def session(a, startup):
                              (1024 if a.no_calibration_prompt else 0) | (2048 if a.flips else 0) |
                              (4096 if a.trigger_webs else 0) | (8192 if a.no_stand_on_walls else 0) |
                              (16384 if a.no_wall_run else 0) | (0x8000 if a.no_eye_antialiasing else 0) |
-                             (0x10000 if a.game_monitor_view else 0) |
+                             (0x10000 if a.game_monitor_view or game_view else 0) |
                              (0x20000 if a.own_shadows else 0) | (0 if reflections else 0x40000) |
                              (0x80000 if a.no_physical_webs else 0)) + \
             runtime_path(manifest) + struct.pack('<14I', a.snap_turn, a.haptics, a.screen_size, a.smooth_turn,
@@ -1450,9 +1493,9 @@ def session(a, startup):
         # monitor gets the left eye otherwise, and whether both eyes use one set of sun shadow maps.
         eye_options = dict(upscale=100 if a.no_eye_antialiasing else a.upscale,
                            antialiased=not a.no_eye_antialiasing,
-                           game_monitor_view=bool(a.game_monitor_view or a.stock_monitor_view),
+                           game_monitor_view=bool(a.game_monitor_view or a.stock_monitor_view or game_view),
                            monitor_rate=a.monitor_rate, shared_shadows=not a.own_shadows,
-                           reflections=reflections, render_size=None)
+                           reflections=reflections, ray_traced=game_view, render_size=None)
 
         def hand_over_settings(sample):
             """Tell the launcher what the VR settings were left at, for the next session."""
@@ -1605,6 +1648,8 @@ def session(a, startup):
                                              runtime['recommended_eye'], a.upscale, not a.no_eye_antialiasing),
                               flush=True)
                         print(reflections_line, flush=True)
+                        if game_view_line:
+                            print(game_view_line, flush=True)
                         printed_dimensions=True
                     aim = ray_snapshot(game, rays['SpidyRayData'])
                     if aim and aim['serial'] and (not ray_samples or aim['serial'] != ray_samples[-1]['serial']):

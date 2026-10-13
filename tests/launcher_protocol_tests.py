@@ -154,6 +154,31 @@ class DesktopViewTests(unittest.TestCase):
         self.assertTrue(display.restore(old,self.backup))
         self.assertEqual(old.values,{**graphics,'VSync':1})
 
+    def test_every_session_turns_off_ray_traced_reflections(self):
+        # October 13: with them on, the game's own view, which rests in VR play, hung the graphics device on the
+        # first frame it drew again (a menu, the map, a cutscene). Off for the session, back after it, and the
+        # session can say what it changed.
+        graphics={**USER,'RTReflections':1,'VSync':1}
+        registry=FakeRegistry(graphics)
+        self.assertEqual(display.session_changes(self.backup),{})
+        display.prepare_launch(registry=registry,backup=self.backup,screen=(1920,1080))
+        self.assertEqual(registry.values['RTReflections'],0)
+        self.assertEqual(display.session_changes(self.backup),dict(RTReflections=1,VSync=1,EnableWindowsGamingInput=None))
+        self.assertTrue(display.restore(registry,self.backup))
+        self.assertEqual(registry.values,graphics)
+        self.assertEqual(display.session_changes(self.backup),{})
+        # Off already, or never saved by the game: nothing to say, and nothing made.
+        off=FakeRegistry({**USER,'RTReflections':0})
+        display.prepare_launch(registry=off,backup=self.backup,screen=(1920,1080))
+        self.assertFalse(display.session_changes(self.backup).get('RTReflections'))
+        self.assertTrue(display.restore(off,self.backup))
+        fresh=FakeRegistry(USER)
+        display.prepare_launch(registry=fresh,backup=self.backup,screen=(1920,1080))
+        self.assertNotIn('RTReflections',fresh.values)
+        self.assertNotIn('RTReflections',display.session_changes(self.backup))
+        self.assertTrue(display.restore(fresh,self.backup))
+        self.assertEqual(fresh.values,USER)
+
     def test_every_session_turns_off_vertical_sync(self):
         # The October 10 session started with the game's VSync on at 120 Hz: frames of 36-45 ms, whole
         # numbers of the monitor's 8.3 ms. It comes back afterwards; a value the game never saved stays unsaved.

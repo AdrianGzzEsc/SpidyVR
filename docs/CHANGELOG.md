@@ -3,7 +3,100 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 12, eighth build): Steam Frame controllers get
+**Latest build (October 13): no display driver error when a menu opens,
+and a Steam Frame player's word on 0.3.3.** You sent the Steam Frame topic of
+#spidy-bugs, where pokenate28 had answered 0.3.3's call for testers with two
+session reports.
+
+What pokenate28 reported (Steam Frame, SteamVR, RTX 5080, 0.3.3):
+
+- **The Frame's own layout works.** The log has "Controllers: Steam Frame,
+  with their own layout", and "controls work and all the button mapping
+  seems good so far". Dodge and heal are untried: no fight was reached.
+  "hands are normal position".
+- **The game ended every time it left VR play**: four times at a police
+  beacon, then on X (the game menu) and on Menu (pause), with the game's box
+  "A problem has occurred with your display driver ... (0x887A0006:
+  DXGI_ERROR_DEVICE_HUNG)".
+- **Fists.** "the hands stay fists after web swinging until i jump then they
+  open but when i land they close again."
+
+What the reports show about the error:
+
+- Both sessions end the same way. VR play runs (81 s and 31 s). Then the
+  game's camera stops: a menu or a cutscene begins. The game draws a few
+  more frames, the last of them with 35.4 MB of render memory where play's
+  took 21.5 (the game's own view has a job again), and nothing comes after
+  it: no frame, no read of the controller. The headset's loop waited 5.1 s
+  for the graphics card, and then the game's log has "Device removed
+  detected (0x887A0006: DXGI_ERROR_DEVICE_HUNG)".
+- The game had **Ray-Traced Reflections on** (Very High).
+- domalden's two sessions in the topic that collects this error (RTX 4070
+  Ti, Quest 3, Virtual Desktop) end in the same state: VR play, the camera
+  stopped, the graphics device gone. Ray-Traced Reflections was on in both.
+- Of the 30 game logs kept on this PC, all with it off, none has the error.
+- Players had found it themselves. fad_zi on October 11: "CRASH WHEN OPENING
+  MAP", then "disabling RT fixed it". _thebloodson_ on October 13: "It does
+  this for me every time I try to open a menu", then "I turned ray tracing
+  off"; bzmlo there: "it was ray tracing the reason".
+
+The cause, as far as it is known. Since October 10's eighth build (0.2.12)
+the game's own view rests while you play in VR: its picture only went to
+the monitor. It draws again when a menu, the map or a cutscene opens. With
+ray-traced reflections on, the first frame it draws again hangs the
+graphics device. Why the game's ray-traced path does that after a rest was
+not looked into: nothing here ran the game.
+
+What changed:
+
+- **A VR session turns Ray-Traced Reflections off**, as it does frame
+  generation and vertical sync, and puts your setting back when the game
+  closes (`RTReflections` in `vr_display.SESSION`). Nothing is lost in the
+  headset: the eyes never had them. A player who had them on is told so in
+  the session log, and now gets the screen-space kind in the eyes where
+  Screen Space Reflections is on.
+- **A game that runs with them on all the same** (one the launcher did not
+  start, or whose settings Windows kept from it) **keeps its own view
+  rendering**, as before 0.2.12, at about a fifth fewer frames. The log says
+  so, and the report has it as `eyes.ray_traced`.
+- **A Steam Frame's own wireless link is no Wi-Fi to warn about.** The same
+  log said "this PC is on Wi-Fi (frame_CBC1602B) as well as on a network
+  cable ... Turn this PC's Wi-Fi off". That network is the headset's own:
+  the Frame makes a 6 GHz network and the PC joins it through the adapter
+  from the headset's box, so turning it off would cut the headset off. Such
+  a network is now left out of the warning and named in the report
+  (`network.headset_link`); a home Wi-Fi beside it still warns. The form of
+  the name is from this one report.
+
+**Checked:** 114 Python checks (new: the setting off and back, and what a
+session says it changed; a game with it on keeps its view; the Frame's
+network beside a cable and beside a home Wi-Fi). Only `tools\vr_display.py`
+and `tools\run_game_vr.py` changed: no module, no protocol.
+
+**Not run in the game.** No game was started on this PC. That the error
+ends is three players' word (they ended it by turning the setting off) and
+a reading of the reports, not a measurement of this build. A player with
+the setting on can check today, on 0.3.3, by turning it off in the game's
+graphics settings.
+
+**Not covered:** Ray-Traced Reflections turned on in the game's settings
+during a session. The view then rests again, and the next menu would end
+the game.
+
+**Open from the same reports:**
+
+- **The fists.** Spidy closes a hand by its grip and otherwise leaves the
+  fingers to the game's animation (`body_ik.cpp`: no fist, no change). So
+  the game's own hands show whenever the grip is open: closed on the ground
+  after a swing and open in the air, going by the description. By the code,
+  nothing in that is the Frame's. A hand Spidy opens itself would end it.
+  That has to be seen in the game, so it is not in this build.
+- **The frame rate in those sessions.** SteamVR asks 3740 x 3740 pixels per
+  eye for the Frame, and Upscaling was off: 28 million pixels a frame, 22.6
+  new pictures a second on an RTX 5080, with 12.5 of 13.6 GB of video
+  memory in use. The default (Quality, 67%) renders under half of that.
+
+**Earlier build (October 12, eighth build): Steam Frame controllers get
 their own buttons.** You asked: "check if people with steam frame reported
 bugs on discord and fix them".
 
