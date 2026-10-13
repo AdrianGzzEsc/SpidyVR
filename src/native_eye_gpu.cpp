@@ -88,7 +88,7 @@ struct CopyCommands {
     ComPtr<ID3D12GraphicsCommandList> list;
     uint64_t fence{};
 };
-std::array<CopyCommands, 3> captureCommands, presentCommands, screenCommands, mirrorCommands;
+std::array<CopyCommands, 3> captureCommands, presentCommands, screenCommands, mirrorCommands, shownCommands;
 std::array<ComPtr<ID3D12Resource>, 2> stagedEyes;
 EyePairState::Stamp capturedStamp;
 uint64_t capturedPairs{}, reusedPairs{}, capturedMs{};
@@ -118,6 +118,14 @@ std::atomic<uint32_t> mirrorCalls{};
 // the next one is due, and how many were held back.
 std::atomic<uint32_t> mirrorRate{}, presentsHeld{};
 std::atomic<int64_t> mirrorDue{};
+// The left eye as the headset showed it, the overlay's drawings on it
+// (keepShownEye; COPY_SOURCE between uses, submission lock), and when it was
+// copied. shownWanted: the window has drawn since, so the next one is copied.
+ComPtr<ID3D12Resource> shownEye;
+uint64_t shownMs{};
+bool shownFailed{};
+std::atomic<bool> shownWanted{true};
+std::atomic<uint32_t> shownMirrors{};
 struct MirrorPipeline {
     ComPtr<ID3D12RootSignature> root;
     ComPtr<ID3D12PipelineState> state;
@@ -696,7 +704,9 @@ float4 ps(float4 position : SV_POSITION) : SV_TARGET {
 // module's views option 32), nothing else draws there, and the window would
 // show whichever old frames its buffers still hold. The eye fills the window's
 // width or height and is cut to its shape about the middle; it is not
-// stretched. A float (HDR) back buffer is left alone.
+// stretched. A float (HDR) back buffer is left alone. The eye is the one the
+// headset showed, Spidy's drawings on it, while a copy of that is fresh
+// (keepShownEye), and the game's own image of it otherwise.
 void mirrorEye(IDXGISwapChain* swapchain) {
     ComPtr<IDXGISwapChain3> chain;
     ComPtr<ID3D12Resource> buffer;
@@ -723,7 +733,8 @@ void mirrorEye(IDXGISwapChain* swapchain) {
     auto* slot = readyCommands(mirrorCommands);
     if (!slot)
         return; // earlier draws still in flight: this present keeps what the buffer holds
-    auto* eye = stagedEyes[0].Get();
+    const bool shown = shownEye && shownEyeFresh(shownMs, now, mirrorRate.load());
+    auto* eye = shown ? shownEye.Get() : stagedEyes[0].Get();
     D3D12_SHADER_RESOURCE_VIEW_DESC sv{};
     sv.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
     sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
@@ -765,8 +776,11 @@ void mirrorEye(IDXGISwapChain* swapchain) {
     for (auto& barrier : b)
         std::swap(barrier.Transition.StateBefore, barrier.Transition.StateAfter);
     originalBarrier(list, 2, b);
-    if (submitCommands(*slot))
+    if (submitCommands(*slot)) {
         ++mirrorCalls;
+        shownMirrors += shown;
+    }
+    shownWanted = true;
 }
 void captureScreen(IDXGISwapChain* swapchain) {
     ++screenPresents;
@@ -912,6 +926,9 @@ uint32_t heldPresents() {
 }
 uint32_t mirrored() {
     return mirrorCalls.load();
+}
+uint32_t mirroredShown() {
+    return shownMirrors.load();
 }
 void wantScreen(bool wanted) {
     screenWanted = wanted;
@@ -1099,6 +1116,38 @@ bool copyLatest(ID3D12Resource* left, ID3D12Resource* right, uint64_t& serial, u
     publish();
     return true;
 }
+void keepShownEye(ID3D12Resource* left) {
+    if (!left || !mirrorWanted || screenWanted || !shownWanted)
+        return;
+    std::lock_guard submitLock(submission);
+    std::lock_guard recordLock(recording);
+    if (!enabled || !staged || fault || shownFailed || !stagedEyes[0] || GetTickCount64() >= deadline)
+        return;
+    const auto desc = left->GetDesc();
+    if (!rgba8CopyTarget(desc) || desc.Width != width || desc.Height != height)
+        return;
+    if (!shownEye) {
+        const auto own = stagedEyes[0]->GetDesc();
+        D3D12_HEAP_PROPERTIES heap{};
+        heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+        // Without it the window goes on with the game's own image of the eye.
+        if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &own,
+                                                   D3D12_RESOURCE_STATE_COPY_SOURCE, nullptr,
+                                                   IID_PPV_ARGS(&shownEye)))) {
+            shownFailed = true; // not tried again every frame
+            return;
+        }
+    }
+    auto* slot = readyCommands(shownCommands);
+    if (!slot)
+        return; // earlier copies still in flight: the next frame's image instead
+    copyEyeTexture(slot->list.Get(), left, D3D12_RESOURCE_STATE_RENDER_TARGET, shownEye.Get(),
+                   originalBarrier, D3D12_RESOURCE_STATE_COPY_SOURCE);
+    if (!submitCommands(*slot))
+        return;
+    shownMs = GetTickCount64();
+    shownWanted = false;
+}
 bool waitCopy(uint64_t serial, uint32_t timeoutMs) {
     std::unique_lock lock(submission);
     copyReady.wait_for(lock, std::chrono::milliseconds(std::min(timeoutMs, 500u)),
@@ -1270,10 +1319,19 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyGpuStop(void*) {
 }
 // Diagnostic: how many times the game presented since the GPU bridge started
 // (Present and Present1 each count); with 1 how many presents got the left
-// eye on the game's window, with 2 how many were held back from the window.
+// eye on the game's window, and with 3 how many of them got it as the headset
+// showed it; with 2 how many presents were held back from the window.
 extern "C" __declspec(dllexport) DWORD WINAPI SpidyPresentCount(void* which) {
-    return which == reinterpret_cast<void*>(2)   ? native_gpu::heldPresents()
-           : which ? native_gpu::mirrored() : native_gpu::presents();
+    switch (reinterpret_cast<uintptr_t>(which)) {
+    case 0:
+        return native_gpu::presents();
+    case 2:
+        return native_gpu::heldPresents();
+    case 3:
+        return native_gpu::mirroredShown();
+    default:
+        return native_gpu::mirrored();
+    }
 }
 // While the window shows the left eye, at most this many of the game's
 // presents a second reach it (1-240; 0: every one). Takes effect at once.

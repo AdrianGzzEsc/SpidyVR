@@ -81,10 +81,12 @@ sharpening rings on edges. "Game's depth of field" and "Game's sharpening"
 in the launcher's options keep your own. Your settings come back when the
 game closes.
 
-While you swing in VR, the game window on the desktop shows your left eye,
-30 pictures a second: every picture sent to the monitor costs the graphics
-card time the headset could have. "Monitor frame rate" in the launcher's
-options chooses Every frame, 60, 30, 15 or 5 a second. On menus, cutscenes
+While you swing in VR, the game window on the desktop shows your left eye
+as the headset shows it, with Spidy's own marks on it (the combat marks, the
+aim markers, the focus meter), 30 pictures a second: every picture sent to
+the monitor costs the graphics card time the headset could have. "Monitor
+frame rate" in the launcher's options chooses Every frame, 60, 30, 15 or 5 a
+second; 60 makes a smoother recording of the window. On menus, cutscenes
 and the flat screen the window shows the game as usual.
 
 The picture in each eye is anti-aliased and upscaled by the game itself:

@@ -846,6 +846,22 @@ cut to the window's shape about its middle (`mirrorEye` in
 The view renders again the moment a game screen is wanted, in flat mode, and
 when the session stops; `-GameMonitorView` keeps it rendering throughout.
 
+Since October 13 that left eye is the one the headset showed. The XR worker
+draws Spidy's own things (gloves and webs, the aim markers, the combat marks,
+the focus meter, slow motion's colour, the calibration panel) onto the
+headset's images, after the game's eye was copied into them, so the game's
+own image of the eye has none of them, and until then the window had none
+either. After that pass the worker hands the left image to
+`native_gpu::keepShownEye`, which copies it to a texture of the bridge's own
+on the game's queue, and only when the window has drawn since the last copy:
+one eye-sized copy for each picture the window gets, none for the headset
+frames in between. `mirrorEye` draws that copy while it is fresh
+(`shownEyeFresh` in `include/spidy/monitor_rate.hpp`: half a second) and the
+game's image of the eye otherwise, which is the first picture after a menu
+and the window of a headset that takes no frames. The window's picture is
+later than it was by up to one of its own pictures. `SpidyPresentCount(3)`
+counts the presents that drew a copy, `(1)` every mirrored one.
+
 The game presents its window once a frame whether or not it rendered a view
 for it, and a present is not free: on a laptop whose screen hangs on the
 other graphics adapter, each one of a 3840 x 2400 window took 8 ms of a 23 ms
