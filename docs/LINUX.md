@@ -5,6 +5,8 @@ Spidy is built for Windows. On Linux it runs inside the game's Proton session, s
 Proton Experimental, SteamVR on Linux with a Quest 3 over Steam Link, CachyOS, RX 6800.
 Contributed by Sebi (sjrl2000). In the release zip since 0.3.6; that build has not run under Proton
 yet (the tested session used 0.3.2 with the lock change below patched in by hand).
+WiVRn: tested once with 0.3.6, WiVRn 26.9 (Flatpak) with a Quest 3, Proton Experimental. Steam Link
+stayed the more reliable of the two.
 
 ## Setup
 
@@ -14,14 +16,41 @@ yet (the tested session used 0.3.2 with the lock change below patched in by hand
        STEAM_COMPAT_LAUNCHER_SERVICE=proton %command%
 
    It lets programs run inside the game's Proton session; the game itself is unchanged.
+3. WiVRn only: let the game's container load WiVRn too. The launch options become
+
+       PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 STEAM_COMPAT_LAUNCHER_SERVICE=proton %command%
+
+   With the Flatpak build, also add
+   `PRESSURE_VESSEL_FILESYSTEMS_RW=/var/lib/flatpak/app/io.github.wivrn.wivrn` (WiVRn's dashboard
+   may already have set the first two for the game). Without them the container does not see WiVRn.
 
 ## Play
 
-1. Start SteamVR and connect the headset (SteamVR home showing).
+1. Start SteamVR and connect the headset (SteamVR home showing), or start WiVRn and connect the
+   headset in the WiVRn app. Do this before the game: Proton sets up its OpenXR bridge only when the
+   game starts.
 2. Start the game from Steam and wait at the main menu.
 3. Run `bash tools/spidy-linux.sh` from the Spidy folder (a zip made on Windows keeps no run
    permission for the script).
 4. Click the game window once, load your save with mouse or keyboard, and VR takes over in gameplay.
+
+## When it does not work
+
+- `No headset found (wineopenxr64: OpenXR instance unavailable: -51)`: Proton found no VR runtime
+  when the game started. Quit the game, make sure SteamVR or WiVRn has the headset, start the game
+  again, then the script. With WiVRn, check that `~/.config/openxr/1/active_runtime.json` names
+  WiVRn and that `~/.config/openvr/openvrpaths.vrpath` lists WiVRn's xrizer (WiVRn writes both
+  while it runs; after a WiVRn update a stale xrizer path is fixed by restarting WiVRn).
+- To see what Proton found, add `PROTON_LOG=1` to the launch options and start the game: in
+  `~/steam-1817070.log`, a working setup shows xrizer and the headset (for WiVRn, `WiVRn HMD`) next to
+  `wineopenxr test instance`. Remove `PROTON_LOG=1` afterwards: it slows the game.
+- The script warns when WiVRn is the active runtime but the game was started without
+  `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1`.
+- WiVRn: stepping outside the Quest's boundary stops the game until you are back inside. The headset
+  shows passthrough and the session loses focus, and Spidy reads no input without focus. Make the
+  boundary larger, use a stationary boundary, or (developer mode, over USB)
+  `adb shell setprop debug.oculus.guardian_pause 0` until the headset restarts; that also drops the
+  boundary's warning, so clear the room.
 
 ## Why not Spidy Launcher.exe
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Start Spidy VR inside a running Spider-Man Remastered Proton session.
 # Needs: Steam launch option  STEAM_COMPAT_LAUNCHER_SERVICE=proton %command%
-# Order: start SteamVR, connect the headset, start the game from Steam, wait at the main menu, run this.
+#   (WiVRn: PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 STEAM_COMPAT_LAUNCHER_SERVICE=proton %command%)
+# Order: start SteamVR or WiVRn, connect the headset, start the game from Steam, wait at the main menu, run this.
 set -euo pipefail
 
 # Default: the Spidy folder this script is in (tools/ sits next to python/ and build/).
@@ -25,7 +26,18 @@ fi
 [[ -x "$CLIENT" ]] || { echo "steam-runtime-launch-client not found (set SPIDY_LAUNCH_CLIENT)." >&2; exit 1; }
 [[ -f "$SPIDY_DIR/tools/run_game_vr.py" ]] || { echo "Spidy not found in $SPIDY_DIR (set SPIDY_DIR)." >&2; exit 1; }
 
-pgrep -x vrserver >/dev/null || echo "Warning: SteamVR does not seem to be running. Start it and connect the headset first." >&2
+# Proton's OpenXR bridge uses the runtime the host's active_runtime.json names.
+ACTIVE="${XDG_CONFIG_HOME:-$HOME/.config}/openxr/1/active_runtime.json"
+if grep -qi wivrn "$ACTIVE" 2>/dev/null; then
+    pgrep -x wivrn-server >/dev/null || echo "Warning: WiVRn does not seem to be running. Start it and connect the headset first." >&2
+    # pressure-vessel hides the host's runtime from the game unless asked to import it.
+    game=$(pgrep -f 'Spider-Man\.exe' | head -n1 || true)
+    if [[ -n "$game" ]] && ! tr '\0' '\n' < "/proc/$game/environ" 2>/dev/null | grep -q '^PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1$'; then
+        echo "Warning: the game was not started with PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 in its launch options; it may not find WiVRn." >&2
+    fi
+else
+    pgrep -x vrserver >/dev/null || echo "Warning: SteamVR does not seem to be running. Start it and connect the headset first." >&2
+fi
 
 if ! "$CLIENT" --list 2>/dev/null | grep -qx -- "--bus-name=$BUS"; then
     cat >&2 <<MSG
