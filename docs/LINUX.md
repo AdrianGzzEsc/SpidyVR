@@ -41,8 +41,9 @@ stayed the more reliable of the two.
 1. Start SteamVR and connect the headset (SteamVR home showing), or start WiVRn and connect the
    headset in the WiVRn app. Do this before the game: Proton sets up its OpenXR bridge only when the
    game starts.
-   A USB cable instead of Wi-Fi worked with both runtimes too: turn on Developer Mode for the Quest
-   (in the Meta Horizon phone app), then allow USB debugging in the headset when you plug it in.
+   A USB cable instead of Wi-Fi worked with both runtimes too (Steam Link's wired mode, and the wired
+   setting in WiVRn's Linux app): turn on Developer Mode for the Quest (in the Meta Horizon phone
+   app), then allow USB debugging in the headset when you plug it in.
 2. Start the game from Steam and wait at the main menu.
 3. From the Spidy folder run `bash tools/spidy-steamvr.sh` or `bash tools/spidy-wivrn.sh` (a zip
    made on Windows keeps no run permission for the scripts). Each checks its runtime first;
