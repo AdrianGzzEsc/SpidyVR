@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Start Spidy VR inside a running Spider-Man Remastered Proton session.
 # Needs: Steam launch option  STEAM_COMPAT_LAUNCHER_SERVICE=proton %command%
-#   (WiVRn: PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 STEAM_COMPAT_LAUNCHER_SERVICE=proton %command%)
+#   (WiVRn: put PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 in front, and for its Flatpak also
+#    PRESSURE_VESSEL_FILESYSTEMS_RW=/var/lib/flatpak/app/io.github.wivrn.wivrn; see docs/LINUX.md)
 # Order: start SteamVR or WiVRn, connect the headset, start the game from Steam, wait at the main menu, run this.
 set -euo pipefail
 

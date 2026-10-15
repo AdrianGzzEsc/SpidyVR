@@ -16,13 +16,13 @@ stayed the more reliable of the two.
        STEAM_COMPAT_LAUNCHER_SERVICE=proton %command%
 
    It lets programs run inside the game's Proton session; the game itself is unchanged.
-3. WiVRn only: let the game's container load WiVRn too. The launch options become
+3. WiVRn only: let the game's container load WiVRn too. With WiVRn's Flatpak build (as WiVRn
+   recommends, tested), the launch options become
 
-       PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 STEAM_COMPAT_LAUNCHER_SERVICE=proton %command%
+       PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 PRESSURE_VESSEL_FILESYSTEMS_RW=/var/lib/flatpak/app/io.github.wivrn.wivrn STEAM_COMPAT_LAUNCHER_SERVICE=proton %command%
 
-   With the Flatpak build, also add
-   `PRESSURE_VESSEL_FILESYSTEMS_RW=/var/lib/flatpak/app/io.github.wivrn.wivrn` (WiVRn's dashboard
-   may already have set the first two for the game). Without them the container does not see WiVRn.
+   A WiVRn installed from your distribution's packages does not need `PRESSURE_VESSEL_FILESYSTEMS_RW`.
+   Without these the container does not see WiVRn.
 
 ## Play
 
