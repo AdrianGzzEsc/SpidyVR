@@ -21,7 +21,11 @@ stayed the more reliable of the two.
 
        PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 PRESSURE_VESSEL_FILESYSTEMS_RW=/var/lib/flatpak/app/io.github.wivrn.wivrn STEAM_COMPAT_LAUNCHER_SERVICE=proton %command%
 
-   A WiVRn installed from your distribution's packages does not need `PRESSURE_VESSEL_FILESYSTEMS_RW`.
+   That path is for a system-wide Flatpak install. For a `--user` install use
+   `PRESSURE_VESSEL_FILESYSTEMS_RW=/home/<you>/.local/share/flatpak/app/io.github.wivrn.wivrn`
+   with your full home path. `flatpak info io.github.wivrn.wivrn`
+   shows which one you have under Installation. A WiVRn installed from your distribution's packages
+   does not need `PRESSURE_VESSEL_FILESYSTEMS_RW`.
    Without these the container does not see WiVRn. With SteamVR the short options above are the
    tested ones.
 4. SteamVR over Steam Link: SteamVR's beta branch (Steam > SteamVR > Properties > Betas) has worked
@@ -56,9 +60,10 @@ stayed the more reliable of the two.
 - The scripts warn when the game was started before SteamVR or WiVRn (the usual cause of -51), and
   when WiVRn is used but the game was started without `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1`.
 - Back to SteamVR after WiVRn: WiVRn deletes `~/.config/openxr/1/active_runtime.json` when it exits,
-  and SteamVR does not recreate it, so the game finds no runtime. `spidy-steamvr.sh` points it at
-  SteamVR again and asks you to restart the game; SteamVR Settings > OpenXR > "Set SteamVR as
-  OpenXR Runtime" does the same.
+  and SteamVR does not recreate it, so the game finds no runtime. When the file is missing or still
+  names WiVRn, `spidy-steamvr.sh` points it at SteamVR's `steamxr_linux64.json` (in whichever Steam
+  library has SteamVR) and asks you to restart the game; another runtime, such as Monado, is left
+  alone with a warning. SteamVR Settings > OpenXR > "Set SteamVR as OpenXR Runtime" does the same.
 - WiVRn: stepping outside the Quest's boundary stops the game until you are back inside. The headset
   shows passthrough and the session loses focus, and Spidy reads no input without focus. Make the
   boundary larger, use a stationary boundary, or (developer mode, over USB)

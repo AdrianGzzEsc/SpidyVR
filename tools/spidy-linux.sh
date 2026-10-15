@@ -2,7 +2,8 @@
 # Start Spidy VR inside a running Spider-Man Remastered Proton session.
 # Needs: Steam launch option  STEAM_COMPAT_LAUNCHER_SERVICE=proton %command%
 #   (WiVRn: put PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 in front, and for its Flatpak also
-#    PRESSURE_VESSEL_FILESYSTEMS_RW=/var/lib/flatpak/app/io.github.wivrn.wivrn; see docs/LINUX.md)
+#    PRESSURE_VESSEL_FILESYSTEMS_RW=/var/lib/flatpak/app/io.github.wivrn.wivrn, or for a --user
+#    install ~/.local/share/flatpak/app/io.github.wivrn.wivrn written out in full; see docs/LINUX.md)
 # Order: start SteamVR or WiVRn, connect the headset, start the game from Steam, wait at the main menu, run this.
 set -euo pipefail
 
@@ -10,13 +11,15 @@ set -euo pipefail
 SPIDY_DIR="${SPIDY_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 BUS=com.steampowered.App1817070
 
+# Steam libraries: the default one and those in libraryfolders.vdf.
+libraries=("$HOME/.local/share/Steam/steamapps")
+vdf="$HOME/.local/share/Steam/steamapps/libraryfolders.vdf"
+[[ -f "$vdf" ]] && while IFS= read -r path; do libraries+=("$path/steamapps"); done \
+    < <(sed -n 's/^\s*"path"\s*"\(.*\)"/\1/p' "$vdf")
+
 # steam-runtime-launch-client from any Steam library's Linux runtime.
 CLIENT="${SPIDY_LAUNCH_CLIENT:-}"
 if [[ -z "$CLIENT" ]]; then
-    libraries=("$HOME/.local/share/Steam/steamapps")
-    vdf="$HOME/.local/share/Steam/steamapps/libraryfolders.vdf"
-    [[ -f "$vdf" ]] && while IFS= read -r path; do libraries+=("$path/steamapps"); done \
-        < <(sed -n 's/^\s*"path"\s*"\(.*\)"/\1/p' "$vdf")
     for lib in "${libraries[@]}"; do
         for runtime in SteamLinuxRuntime_4 SteamLinuxRuntime_sniper SteamLinuxRuntime_soldier; do
             candidate="$lib/common/$runtime/pressure-vessel/bin/steam-runtime-launch-client"
@@ -31,7 +34,10 @@ fi
 # only when the game starts: the runtime has to be running and selected before the game starts.
 # SPIDY_RUNTIME=steamvr|wivrn (set by spidy-steamvr.sh / spidy-wivrn.sh); default: the active one.
 ACTIVE="${XDG_CONFIG_HOME:-$HOME/.config}/openxr/1/active_runtime.json"
-STEAMVR_JSON="$HOME/.local/share/Steam/steamapps/common/SteamVR/steamxr_linux64.json"
+STEAMVR_JSON=""
+for lib in "${libraries[@]}"; do
+    if [[ -f "$lib/common/SteamVR/steamxr_linux64.json" ]]; then STEAMVR_JSON="$lib/common/SteamVR/steamxr_linux64.json"; break; fi
+done
 RUNTIME="${SPIDY_RUNTIME:-}"
 if [[ -z "$RUNTIME" ]]; then
     if grep -qi wivrn "$ACTIVE" 2>/dev/null; then RUNTIME=wivrn; else RUNTIME=steamvr; fi
@@ -55,12 +61,19 @@ steamvr)
         echo "WiVRn is running and owns the OpenXR runtime. Close WiVRn, then start SteamVR and the game." >&2
         exit 1
     fi
-    if [[ "$(readlink -f "$ACTIVE" 2>/dev/null)" != "$(readlink -f "$STEAMVR_JSON")" ]]; then
-        # WiVRn deletes this file when it exits, and SteamVR does not recreate it.
+    # WiVRn deletes active_runtime.json when it exits, and SteamVR does not recreate it.
+    # Point it at SteamVR only when it is missing or still names WiVRn; leave other runtimes alone.
+    if [[ ! -e "$ACTIVE" ]] || grep -qi wivrn "$ACTIVE" 2>/dev/null; then
+        if [[ -z "$STEAMVR_JSON" ]]; then
+            echo "No OpenXR runtime is selected and SteamVR's steamxr_linux64.json was not found. In SteamVR Settings > OpenXR, click \"Set SteamVR as OpenXR Runtime\", then start the game again." >&2
+            exit 1
+        fi
         mkdir -p "$(dirname "$ACTIVE")"
         ln -sfn "$STEAMVR_JSON" "$ACTIVE"
-        echo "SteamVR is now the OpenXR runtime. Close the game, start it again from Steam, then run this again." >&2
+        echo "SteamVR is now the OpenXR runtime ($ACTIVE -> $STEAMVR_JSON). Close the game, start it again from Steam, then run this again." >&2
         exit 1
+    elif ! grep -q '"VALVE_runtime_is_steamvr"' "$ACTIVE" 2>/dev/null; then
+        echo "Warning: the active OpenXR runtime ($ACTIVE) is neither SteamVR nor WiVRn; left as it is. To use SteamVR, select it in SteamVR Settings > OpenXR." >&2
     fi
     server=$(pgrep -ox vrserver || true)
     [[ -n "$server" ]] || echo "Warning: SteamVR does not seem to be running. Start it and connect the headset first." >&2
@@ -74,7 +87,12 @@ wivrn)
     fi
     grep -qi wivrn "$ACTIVE" 2>/dev/null || echo "Warning: WiVRn is running but is not the active OpenXR runtime ($ACTIVE)." >&2
     # pressure-vessel hides the host's runtime from the game unless asked to import it.
-    if [[ -n "$game" ]] && ! tr '\0' '\n' < "/proc/$game/environ" 2>/dev/null | grep -q '^PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1$'; then
+    # Any process matching the exe (Steam's reaper, Proton, the game) may carry the launch options.
+    imported=0
+    for pid in $(pgrep -f 'Spider-Man\.exe' || true); do
+        if grep -qz '^PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1$' "/proc/$pid/environ" 2>/dev/null; then imported=1; break; fi
+    done
+    if [[ -n "$game" ]] && (( ! imported )); then
         echo "Warning: the game was not started with PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 in its launch options; it may not find WiVRn." >&2
     fi
     check_start_order "$server" WiVRn
