@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/spidy-icon.png" alt="Spidy" width="128">
+  <a href="https://github.com/IlyaMez/SpidyVR/releases/latest"><img src="docs/images/readme/hero.jpg" alt="Spider-Man in full VR. Spidy is a free PC VR mod for Marvel's Spider-Man Remastered, recorded in the headset on Quest 3." width="100%"></a>
 </p>
 
 <h1 align="center">Spidy</h1>
@@ -10,12 +10,24 @@
 </p>
 
 <p align="center">
-  <a href="https://ko-fi.com/ilyamezerowsky"><img src="https://img.shields.io/badge/Support_Spidy-Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Support Spidy on Ko-fi"></a>
-  <a href="https://discord.gg/x27ZXDpdNt"><img src="https://img.shields.io/badge/Join_us-Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join the Discord"></a>
+  <a href="https://github.com/IlyaMez/SpidyVR/releases/latest"><img src="docs/images/readme/btn-download.png" alt="Download Spidy: free, the latest release" width="232"></a>
+  <a href="https://discord.gg/x27ZXDpdNt"><img src="docs/images/readme/btn-discord.png" alt="Join the Discord: news, help, clips" width="238"></a>
+  <a href="https://ko-fi.com/ilyamezerowsky"><img src="docs/images/readme/btn-kofi.png" alt="Support on Ko-fi: keeps the updates coming" width="242"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/IlyaMez/Spidy/releases/latest"><b>Download the latest release</b></a>
+  <a href="https://github.com/IlyaMez/SpidyVR/releases/latest"><img src="https://img.shields.io/github/v/release/IlyaMez/SpidyVR?label=latest&color=e3262f&style=flat-square&labelColor=0b0a14" alt="Latest release"></a>
+  <a href="https://github.com/IlyaMez/SpidyVR/releases"><img src="https://img.shields.io/github/downloads/IlyaMez/SpidyVR/total?label=downloads&color=ffe14d&style=flat-square&labelColor=0b0a14" alt="Downloads"></a>
+  <a href="https://github.com/IlyaMez/SpidyVR/stargazers"><img src="https://img.shields.io/github/stars/IlyaMez/SpidyVR?label=stars&color=12d6ff&style=flat-square&labelColor=0b0a14" alt="Stars"></a>
+  <a href="https://discord.gg/x27ZXDpdNt"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdiscord.com%2Fapi%2Fv10%2Finvites%2Fx27ZXDpdNt%3Fwith_counts%3Dtrue&query=%24.approximate_member_count&label=discord&suffix=%20members&color=3b1fb3&style=flat-square&labelColor=0b0a14" alt="Discord members"></a>
+</p>
+
+<p align="center">
+  <a href="#install-and-play">Install</a>
+  ·
+  <a href="#controls">Controls</a>
+  ·
+  <a href="#troubleshooting">Troubleshooting</a>
   ·
   <a href="docs/PLAYERS.md">Players' guide</a>
   ·
@@ -24,13 +36,13 @@
 
 Spidy is a free fan mod by **Ilya Mezerowsky** that puts Marvel's Spider-Man
 Remastered in VR: native stereo at your headset's resolution, 6DoF head and
-hands, and web swinging you control with your arms. Spidy is free; if you
-enjoy it, a tip on [Ko-fi](https://ko-fi.com/ilyamezerowsky) keeps the updates
-coming. Questions, bugs, clips: come say hi on
-[Discord](https://discord.gg/x27ZXDpdNt).
+hands, and web swinging you control with your arms. One zip, one launcher,
+one **START VR** button.
 
 <p align="center">
-  <img src="docs/images/launcher.png" alt="Spidy Launcher: checks for the game, VR runtime, headset and memory, VR options, and START VR" width="820">
+  <a href="https://www.youtube.com/watch?v=krQd75OXMik"><img src="docs/images/readme/reel.webp" alt="Gameplay recorded in the headset: a swing over a park steered by the arms, a web fired down an avenue, and a fight where arrows call the next blow" width="100%"></a>
+  <br>
+  <sub>Recorded in the headset on Quest 3: this is how it plays. <a href="https://www.youtube.com/watch?v=krQd75OXMik"><b>Watch the trailer on YouTube</b></a></sub>
 </p>
 
 > **Early and in development.** Played on Quest 3 through Virtual Desktop.
@@ -38,27 +50,87 @@ coming. Questions, bugs, clips: come say hi on
 
 ## Features
 
-- 🕸️ **Physical web swinging.** Squeeze a grip to fire that hand's web where you
+- **Physical web swinging.** Squeeze a grip to fire that hand's web where you
   point, swing on it, reel in with the trigger, pull sharply to zip (or swap the
   two: the trigger webs, the grip reels). Webs hold on buildings, the ground, or
   open air.
-- 🎯 **Web shooter.** The trigger of a hand without a web fires the game's own
-  web ball from your wrist, with aim assist on thugs. Three quick hits web a
-  thug up.
-- 🪢 **Grab and throw.** Web a prop or a thug, reel or yank it in, swing it on
-  the web and let go to throw it. Heavy things feel heavy. Pulled thugs fly
+- **Web shooter.** The trigger of a hand without a web fires the game's own
+  web ball from your wrist, with aim assist on enemies. Three quick hits web an
+  enemy up.
+- **Grab and throw.** Web a prop or an enemy, reel or yank it in, swing it on
+  the web and let go to throw it. Heavy things feel heavy. Pulled enemies fly
   flailing, and get hurt when they slam into walls, the ground or each other.
-- 🦸 **You are Spider-Man.** Look down and see his body; his arms and hands
+- **Real punches.** A fast fist into an enemy lands the game's own melee hit,
+  harder the faster you swing.
+- **Fights you read at a glance.** A ring marks the enemy your next punch goes
+  to, and an arrow calls the blow: a hook, an uppercut or a blow down. A yellow
+  arrow calls the finisher. Bursts, counts and **KO!** land where your blows do.
+- **Walls are floors.** Walk at a wall, or fly or jump into it, and you stay on
+  it: run along it, walk up it, jump off. Your view turns so the wall is your
+  floor.
+- **You are Spider-Man.** Look down and see his body; his arms and hands
   follow your controllers. A quick T-pose the first time sizes him to your
   height and arm length.
-- 👊 **Real punches.** A fast fist into a thug lands the game's own melee hit,
-  harder the faster you swing.
-- ⚙️ **VR settings in the game's menu.** A SPIDY VR tab in the game's own
+- **VR settings in the game's menu.** A SPIDY VR tab in the game's own
   Settings for aim markers, snap or smooth turning, vibration, swing speed,
   how heavy you swing, screen size, the HUD and more. Changes apply at once.
-- 🖥️ **Menus and cutscenes on a screen.** Cutscenes in 3D: the game draws
+- **Menus and cutscenes on a screen.** Cutscenes in 3D: the game draws
   them once for each eye. The Touch controllers work as an Xbox controller
   there; VR resumes when play does.
+- **One launcher.** It checks the game, the headset and your PC, fixes what it
+  can, starts VR with one button, and updates Spidy with one click.
+
+## Join the community
+
+<p align="center">
+  <a href="https://discord.gg/x27ZXDpdNt"><img src="docs/images/readme/card-discord.png" alt="Join the Discord: release news, help and clips. Come say hi." width="49%"></a>
+  <a href="https://ko-fi.com/ilyamezerowsky"><img src="docs/images/readme/card-kofi.png" alt="Support on Ko-fi: your tip pays for updates, and the next full VR conversion." width="49%"></a>
+</p>
+
+### On Discord: where the players are
+
+- **Release news first.** Every release is announced in `#spidy-updates`,
+  with a ping if you ask for one.
+- **Help and fixes.** Setup questions go to `#spidy-help`, bugs to
+  `#spidy-bugs`, and you can see what is already known and fixed.
+- **A say in what comes next.** Post and vote in `#spidy-ideas`: standing on
+  walls, the dodge button and the flip speed setting were all asked for there.
+- **Clips.** Show a swing in `#spidy-clips`, share your videos in
+  `#spidy-socials`.
+
+**[Join the Discord](https://discord.gg/x27ZXDpdNt)**
+
+### On Ko-fi: what keeps it going
+
+- **Spidy is free.** Every release, the whole mod, here on GitHub.
+- **Tips pay for updates.** Spidy is built with a lot of AI help, and those
+  tokens are the bill.
+- **And for the next conversion.** More games in full VR, made to the same
+  standard: native stereo, tracked hands, and the game's own systems in your
+  hands.
+
+**[Support Spidy on Ko-fi](https://ko-fi.com/ilyamezerowsky)**
+
+## Watch and follow
+
+<table>
+<tr>
+<td width="33%" align="center" valign="top"><a href="https://www.youtube.com/watch?v=krQd75OXMik"><img src="https://i.ytimg.com/vi/krQd75OXMik/maxresdefault.jpg" alt="The trailer: Spider-Man Remastered in full VR"></a><br><b>The trailer</b><br><sub>Swinging with your own arms</sub></td>
+<td width="33%" align="center" valign="top"><a href="https://www.youtube.com/watch?v=cnF_Ief2cYA"><img src="https://i.ytimg.com/vi/cnF_Ief2cYA/maxresdefault.jpg" alt="Reworked combat: called blows, finishers, fights in the air"></a><br><b>Combat, reworked</b><br><sub>Called blows, finishers, fights in the air</sub></td>
+<td width="33%" align="center" valign="top"><a href="https://www.youtube.com/watch?v=aq-DvGblB3Q"><img src="https://i.ytimg.com/vi/aq-DvGblB3Q/maxresdefault.jpg" alt="How to set up Spidy in five steps"></a><br><b>Set up in five steps</b><br><sub>From the zip to your first swing</sub></td>
+</tr>
+</table>
+
+<p align="center">
+  <a href="https://www.youtube.com/@lianmez"><img src="docs/images/readme/social-youtube.png" alt="YouTube: @lianmez" width="172"></a>
+  <a href="https://x.com/lianmez"><img src="docs/images/readme/social-x.png" alt="X: @lianmez" width="121"></a>
+  <a href="https://discord.gg/x27ZXDpdNt"><img src="docs/images/readme/social-discord.png" alt="Player clips on Discord: #spidy-clips" width="172"></a>
+</p>
+
+Gameplay, release videos and guides go up on [YouTube](https://www.youtube.com/@lianmez) and
+[X](https://x.com/lianmez). Made a video about Spidy? Post it in `#spidy-socials` on
+[Discord](https://discord.gg/x27ZXDpdNt), and put this page's link in its description so players
+find the real download.
 
 ## What you need
 
@@ -68,10 +140,14 @@ coming. Questions, bugs, clips: come say hi on
   [Virtual Desktop](https://www.vrdesktop.net/) and with SteamVR (Steam Link);
   other SteamVR headsets and Quest Link should work.
 - **About 19 GB of memory Windows can give programs** (RAM plus page file).
+- **Windows.** On Linux, Spidy runs inside the game's Steam Proton session: experimental, with its
+  own steps in [docs/LINUX.md](docs/LINUX.md) (contributed by [sjrl2000](https://github.com/sjrl2000)).
 
 ## Install and play
 
-1. Download the zip from [Releases](https://github.com/IlyaMez/Spidy/releases/latest)
+Prefer to watch? [Set up Spidy in five steps](https://www.youtube.com/watch?v=aq-DvGblB3Q) on YouTube.
+
+1. Download the zip from [Releases](https://github.com/IlyaMez/SpidyVR/releases/latest)
    and extract it to a folder you can write to, such as `Documents\Spidy`.
 2. Start **Spidy Launcher.exe**. If Windows says it protected your PC, choose
    *More info*, then *Run anyway*.
@@ -83,7 +159,12 @@ coming. Questions, bugs, clips: come say hi on
 Keep the game window in front on the desktop: the game pauses behind other
 windows. If the headset shows a still picture, click the game window once.
 
-### What the launcher does
+<p align="center">
+  <img src="docs/images/launcher.png" alt="Spidy Launcher: checks for the game, VR runtime, headset and memory, VR options, and START VR" width="820">
+</p>
+
+<details>
+<summary><b>What the launcher does</b></summary>
 
 - Finds the game in your Steam libraries and checks it is the supported build.
 - Finds the OpenXR runtime your headset is connected to (or the one you choose) and checks the headset.
@@ -93,6 +174,8 @@ windows. If the headset shows a still picture, click the game window once.
 - Gives each eye the game's own anti-aliasing and upscaling (*Upscaling* in its options; the game's DLSS setting does not reach the headset), and shows your left eye in the game window while you are in VR.
 - Remembers your options, and saves a report of every session in `reports\`.
 - Offers each new Spidy release when it starts, and updates itself in place with one click.
+
+</details>
 
 Spidy changes nothing in the game's folder.
 
@@ -183,14 +266,30 @@ Fixes and features are welcome as pull requests, one feature each.
 [CONTRIBUTING.md](CONTRIBUTING.md) says how, and what applies when you run or
 share your own build.
 
-## Support
+## Support Spidy
 
-Spidy is free, and built with a lot of AI help whose tokens aren't. If you
-enjoy it, [support it on Ko-fi](https://ko-fi.com/ilyamezerowsky) and
-[join the Discord](https://discord.gg/x27ZXDpdNt).
+Spidy is free, and built with a lot of AI help whose tokens aren't. Two things
+keep it moving:
+
+- **[A tip on Ko-fi](https://ko-fi.com/ilyamezerowsky)** pays for Spidy's updates, and for more full VR
+  conversions of this quality.
+- **[The Discord](https://discord.gg/x27ZXDpdNt)** is where releases are announced, problems get
+  solved, and your clips and ideas shape what comes next.
+
+<p align="center">
+  <a href="https://ko-fi.com/ilyamezerowsky"><img src="docs/images/readme/btn-kofi.png" alt="Support on Ko-fi: keeps the updates coming" width="242"></a>
+  <a href="https://discord.gg/x27ZXDpdNt"><img src="docs/images/readme/btn-discord.png" alt="Join the Discord: news, help, clips" width="238"></a>
+</p>
+
+No tip to spare? A star on this page, or a clip of your best swing, helps
+other players find Spidy.
 
 Please share the original release zip with its credit intact, so players get
 working files and know where updates come from.
+
+<p align="center">
+  <a href="https://github.com/IlyaMez/SpidyVR/releases/latest"><img src="docs/images/readme/footer.jpg" alt="Spidy: free VR mod for Marvel's Spider-Man Remastered. PC, Steam version, OpenXR headsets. Early public alpha." width="100%"></a>
+</p>
 
 Spidy is Copyright (C) 2026 Ilya Mezerowsky, and free software under the
 [GNU General Public License, version 3](LICENSE).

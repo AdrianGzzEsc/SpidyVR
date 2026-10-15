@@ -18,7 +18,8 @@ from run_game_vr import (snapshot as xr_snapshot, accepted as accepted_xr, timin
                          scaled_eye_size, rendering_line, eye_render_size, eye_reflections, XR_STAGES,
                          command_text, network_links, link_warning, stream_stalls,
                          slow_motion_snapshot, hud_snapshot, GAME_HOOKS, controllers_line,
-                         ray_traced_view, RAY_TRACING_OFF,
+                         ray_traced_view, RAY_TRACING_OFF, ASPECT_RATIO_AUTO, other_mods, real_vr_refusal,
+                         other_mods_warning,
                          demand_name, reachable_in_play, prompts_line, prompt_snapshot,
                          controller_buttons)
 from probe_collision import snapshot as collision_snapshot
@@ -778,6 +779,62 @@ class ProtocolTests(unittest.TestCase):
             had.assert_called_once_with(7)
             preflight.assert_not_called()
             self.assertEqual(startup.stage, 'checking the running game')
+
+    def test_another_vr_mod_in_the_games_folder_ends_the_session_and_other_tools_are_named(self):
+        import argparse
+        import run_game_vr
+        from run_game_vr import Startup
+        # The game's own folder, as Steam installs it: nothing of it stands in for a Windows library.
+        own = ('Spider-Man.exe', 'steam_api64.dll', 'd3dcompiler_47.dll', 'XAudio2_7.dll', 'amd_ags_x64.dll',
+               'sl.interposer.dll', 'nvngx_dlss.dll', 'bink2w64.dll', 'cache.pso')
+        with tempfile.TemporaryDirectory() as folder:
+            game = pathlib.Path(folder)/"Marvel's Spider-Man Remastered"
+            (game/'D3D12').mkdir(parents=True)
+            for name in own:
+                (game/name).write_bytes(b'')
+            self.assertEqual(other_mods(game), ([], []))
+            self.assertEqual(other_mods(game/'missing'), ([], []))
+            # The mod's settings without its library load nothing.
+            (game/'RealVR.ini').write_bytes(b'')
+            self.assertEqual(other_mods(game), ([], []))
+            # A player's folder of October 13: R.E.A.L. VR, whose dxgi.dll the game loaded before Windows'.
+            for name in ('DXGI.dll', 'RealVR64.log', 'RealConfig.bat', 'openvr_api.dll'):
+                (game/name).write_bytes(b'')
+            (game/'RealRepo').mkdir()
+            real, others = other_mods(game)
+            self.assertEqual((real, others), (['DXGI.dll', 'RealVR.ini', 'RealVR64.log', 'RealConfig.bat', 'RealRepo'],
+                                              []))
+            refusal = real_vr_refusal(game, real)
+            for said in ('R.E.A.L. VR', 'DXGI.dll, RealVR.ini', 'the headset stays black', str(game),
+                         'press START VR'):
+                self.assertIn(said, refusal)
+            # The session ends there, before anything of Spidy's is in the game, and its report names the files.
+            startup = Startup(pathlib.Path(folder)/'game-vr-4.json')
+            running = Mock(pid=11, path=game/'Spider-Man.exe')
+            with patch.object(run_game_vr, 'game_running', return_value=False), \
+                 patch.object(run_game_vr, 'preflight', return_value=('runtime.json', dict(name='SteamVR'))), \
+                 patch.object(run_game_vr, 'network_links', return_value={}), \
+                 patch.object(run_game_vr, 'link_warning', return_value=None), \
+                 patch.object(run_game_vr, 'wait_for_game', return_value=running), \
+                 patch.object(run_game_vr, 'wait_for_renderer') as renderer:
+                with self.assertRaisesRegex(RuntimeError, 'R.E.A.L. VR mod is in the game'):
+                    run_game_vr.session(argparse.Namespace(stop_event=None, xr_runtime='auto', auto_launch=True),
+                                        startup)
+            renderer.assert_not_called()
+            self.assertEqual((startup.stage, startup.fields['other_mods']), ("checking the game's folder", real))
+            # Any other stand-in for a Windows library is named and the session goes on.
+            for name in ('DXGI.dll', 'RealVR.ini', 'RealVR64.log', 'RealConfig.bat'):
+                (game/name).unlink()
+            (game/'RealRepo').rmdir()
+            (game/'version.dll').write_bytes(b'')
+            self.assertEqual(other_mods(game), ([], ['version.dll']))
+            (game/'dinput8.dll').write_bytes(b'')
+            self.assertEqual(other_mods(game), ([], ['dinput8.dll', 'version.dll']))
+            warning = other_mods_warning(game, ['dinput8.dll', 'version.dll'])
+            self.assertTrue(warning.startswith('WARNING: another mod or tool'))
+            self.assertIn('move them out of', warning)
+            self.assertIn('move it out of', other_mods_warning(game, ['version.dll']))
+        self.assertIn('Your setting returns', ASPECT_RATIO_AUTO)
 
     def test_the_console_goes_to_a_log_beside_the_report(self):
         import io

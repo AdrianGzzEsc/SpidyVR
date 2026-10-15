@@ -30,4 +30,17 @@ constexpr bool monitorPresentDue(int64_t now, int64_t& due, int64_t frequency, u
     return true;
 }
 
+// The eye the window mirrors is the one the headset showed, with Spidy's own
+// drawings on it (native_gpu::keepShownEye): a copy made for each picture the
+// window takes. A copy stays on the window this long (ms) with no newer one:
+// half a second, or two and a half pictures of a slower window. After that
+// the window shows the game's own image of the eye, which goes on while the
+// headset takes no frames.
+constexpr uint64_t shownEyeHoldMs(uint32_t rate) {
+    return rate && rate < 5 ? 2500 / rate : 500;
+}
+constexpr bool shownEyeFresh(uint64_t copiedMs, uint64_t nowMs, uint32_t rate) {
+    return copiedMs && nowMs >= copiedMs && nowMs - copiedMs <= shownEyeHoldMs(rate);
+}
+
 } // namespace spidy

@@ -267,6 +267,55 @@ int main(int argc, char** argv) {
         }
         std::cout << "PASS nonblocking eye snapshots after asynchronous overlays: exact pixels.\n";
         {
+            // The window's mirror: the image the headset is about to show goes to a
+            // texture of the bridge's own right behind an asynchronous overlay, as
+            // native_gpu::keepShownEye copies it, from a typed and a typeless image.
+            // The copy rests as a copy source and is read as a shader resource; it
+            // has the overlay's drawings exactly, and the headset's image stays.
+            auto shownDesc = targets[0]->GetDesc();
+            shownDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+            ComPtr<ID3D12Resource> shown;
+            require(renderer.device()->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &shownDesc,
+                                                               D3D12_RESOURCE_STATE_COPY_SOURCE, nullptr,
+                                                               IID_PPV_ARGS(&shown)));
+            auto barriers = [](ID3D12GraphicsCommandList* commands, UINT n, const D3D12_RESOURCE_BARRIER* b) {
+                commands->ResourceBarrier(n, b);
+            };
+            for (unsigned eye = 0; eye < 2; ++eye) {
+                const auto windowDesc = copied[eye]->GetDesc();
+                ComPtr<ID3D12Resource> window;
+                require(renderer.device()->CreateCommittedResource(
+                    &heap, D3D12_HEAP_FLAG_NONE, &windowDesc, D3D12_RESOURCE_STATE_RENDER_TARGET, nullptr,
+                    IID_PPV_ARGS(&window)));
+                renderer.waitIdle();
+                require(allocator->Reset());
+                require(list->Reset(allocator.Get(), nullptr));
+                overlay.renderViews(pairedViews, hands, true, false);
+                copyEyeTexture(list.Get(), copied[eye].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, shown.Get(),
+                               barriers, D3D12_RESOURCE_STATE_COPY_SOURCE);
+                D3D12_RESOURCE_BARRIER read{};
+                read.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+                read.Transition = {shown.Get(), D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                                   D3D12_RESOURCE_STATE_COPY_SOURCE,
+                                   D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE};
+                list->ResourceBarrier(1, &read);
+                std::swap(read.Transition.StateBefore, read.Transition.StateAfter);
+                list->ResourceBarrier(1, &read);
+                copyEyeTexture(list.Get(), shown.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, window.Get(),
+                               barriers);
+                require(list->Close());
+                ID3D12CommandList* commands = list.Get();
+                renderer.queue()->ExecuteCommandLists(1, &commands);
+                renderer.waitIdle();
+                if (renderer.readback(window.Get()) != overlayPixels[eye])
+                    throw std::runtime_error("The window's copy differs from the image the headset got");
+                if (overlay.readback(copied[eye].Get()) != overlayPixels[eye])
+                    throw std::runtime_error("The window's copy changed the image the headset got");
+            }
+            std::cout << "PASS the window's copy of the shown eye behind an asynchronous overlay: exact "
+                         "pixels.\n";
+        }
+        {
             // Game-style webs: a taut web with its splat, a slack web, and one
             // still being shot. Drawn over the left eye for visual inspection.
             const Pose camera{{-.032f, 19.7f, 19}, {}};

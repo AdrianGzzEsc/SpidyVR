@@ -212,6 +212,52 @@ RAY_TRACING_OFF = ('Ray-Traced Reflections: off for VR. The eyes cannot have the
                    'cutscene opened. Your setting returns when the game closes.')
 
 
+# The console's line where a session put the player's Aspect Ratio at Auto (vr_display.SESSION has why).
+ASPECT_RATIO_AUTO = ("Aspect Ratio: Auto for VR. With a fixed shape chosen in the game's display settings, "
+                     "players' games ended as VR started. Your setting returns when the game closes.")
+
+# Windows' own libraries, by name. A program loads a library from its own folder first, so a file with
+# one of these names beside Spider-Man.exe is neither Windows' nor the game's, whose folder holds none of
+# them: it is how another mod, an overlay or a trainer gets into the game, and it takes the calls the
+# game meant for Windows. REAL_VR: what the R.E.A.L. VR mod keeps there beside its dxgi.dll. With that
+# mod in the game a player's headset stayed black on SteamVR and on Virtual Desktop alike: in the six
+# sessions of October 10-12 that reached VR, none of 1,270 to 4,899 frames had a picture for the
+# headset, slow motion never found the game's time scale where it looks (9702), and once the eyes were
+# on another graphics device than the game's (3502). His folder and the game's module list of October
+# 13 showed the mod's dxgi.dll loaded.
+WRAPPERS = ('dxgi.dll', 'd3d12.dll', 'd3d11.dll', 'dinput8.dll', 'version.dll', 'winmm.dll', 'winhttp.dll',
+            'xinput1_3.dll', 'xinput1_4.dll', 'xinput9_1_0.dll', 'dsound.dll', 'opengl32.dll')
+REAL_VR = ('realvr.ini', 'realvr64.log', 'realconfig.bat', 'realrepo')
+
+
+def other_mods(folder):
+    """What else loads into the game from its own `folder`, by the names the files have there: (the
+    R.E.A.L. VR mod's files, any other library that stands in for one of Windows'). One of the two is
+    empty: R.E.A.L. VR's own library is among the first."""
+    try:
+        names = {entry.name.lower(): entry.name for entry in pathlib.Path(folder).iterdir()}
+    except OSError:
+        return [], []
+    wrappers = [names[name] for name in WRAPPERS if name in names]
+    real = [names[name] for name in REAL_VR if name in names]
+    return (wrappers+real, []) if wrappers and real else ([], wrappers)
+
+
+def real_vr_refusal(folder, files):
+    """The error that ends a session in a game the R.E.A.L. VR mod is in."""
+    return (f"The R.E.A.L. VR mod is in the game's folder ({', '.join(files)}). It loads into the game with "
+            "Spidy and takes the game's picture for itself: the headset stays black and the controllers do "
+            f'nothing. Close the game, move those files out of {folder} (Verify integrity of game files in '
+            'Steam leaves them there), then press START VR.')
+
+
+def other_mods_warning(folder, files):
+    """The console's line on any other library in the game's folder that loads into the game."""
+    return (f"WARNING: another mod or tool loads into the game from its folder ({', '.join(files)}). Spidy "
+            'has not been run beside it. If the headset stays black or the game closes, close the game, move '
+            f"{'it' if len(files) == 1 else 'them'} out of {folder} and press START VR again.")
+
+
 def ray_traced_view(ray_traced):
     """Whether the game's own view keeps rendering in VR play, and the console's line (None: nothing to say).
 
@@ -1595,8 +1641,11 @@ def session(a, startup):
         print('Game settings for VR: frame generation off, vertical sync off (the game would wait for the '
               "monitor), controllers through XInput only (SteamVR's virtual gamepads would take the menus from "
               'the VR controllers); they return when the game closes.', flush=True)
-        if vr_display.session_changes().get('RTReflections'):
+        changed = vr_display.session_changes()
+        if changed.get('RTReflections'):
             print(RAY_TRACING_OFF, flush=True)
+        if changed.get('ForcedAspectRatio'):
+            print(ASPECT_RATIO_AUTO, flush=True)
         kept = picture_kept(a)
         off = [text for name, text in (('depth_of_field', 'depth of field off'),
                                        ('sharpening', 'sharpening at its lowest')) if name not in kept]
@@ -1628,6 +1677,14 @@ def session(a, startup):
         print(f'This Spider-Man.exe is version {EXPECTED_VERSION} but not Steam\'s file (an Epic Games Store copy?). '
               'Spidy tries it: should the game\'s code differ where Spidy works with it, VR stops with a code '
               'to tell us.', flush=True)
+    # Before anything of Spidy's goes into the game: another VR mod there leaves the headset black.
+    startup.stage = "checking the game's folder"
+    real_vr, others = other_mods(game.path.parent)
+    startup.fields['other_mods'] = real_vr+others
+    if real_vr:
+        raise RuntimeError(real_vr_refusal(game.path.parent, real_vr))
+    if others:
+        print(other_mods_warning(game.path.parent, others), flush=True)
     startup.stage = "looking for the game's graphics queue"
     process = bridge = xr = rays = None
     bridge_active = xr_active = False

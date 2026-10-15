@@ -110,8 +110,21 @@ DWORD createHooks() {
     desc.AlphaMode=DXGI_ALPHA_MODE_IGNORE;
     ComPtr<IDXGISwapChain1> swap;
     hr=factory->CreateSwapChainForComposition(queue.Get(),&desc,nullptr,&swap);
-    if(FAILED(hr)) return 2104;
+    // Proton's DXGI (DXVK/vkd3d-proton) has no composition swapchains: use a hidden window there.
+    HWND window{};
+    if(FAILED(hr)) {
+        const auto module=GetModuleHandleW(nullptr);
+        WNDCLASSEXW wc{sizeof(wc)};wc.lpfnWndProc=DefWindowProcW;wc.hInstance=module;
+        wc.lpszClassName=L"SpidyRenderProbe";
+        RegisterClassExW(&wc);
+        window=CreateWindowExW(0,wc.lpszClassName,L"",WS_OVERLAPPED,0,0,16,16,nullptr,nullptr,module,nullptr);
+        if(!window) return 2104;
+        hr=factory->CreateSwapChainForHwnd(queue.Get(),window,&desc,nullptr,nullptr,&swap);
+        if(FAILED(hr)) { DestroyWindow(window);return 2105; }
+    }
     presentTarget=(*reinterpret_cast<void***>(swap.Get()))[8];
+    swap.Reset();
+    if(window) DestroyWindow(window);
     executeTarget=(*reinterpret_cast<void***>(queue.Get()))[10];
     auto status=MH_Initialize();
     if(status!=MH_OK) return 2200+status;

@@ -639,6 +639,28 @@ Windows kept from it) keeps its own view rendering, as with
 report's `eyes.ray_traced`). Turning the setting on in the game during a
 session is not covered.
 
+Since October 13's third build such a game also runs with its Aspect Ratio at
+Auto (`Graphics\ForcedAspectRatio` 0, where the game saved it). The value is
+the choice in the game's Display settings counted from Auto: the option's
+reader (`1cc1e70`) and writer (`1cca6d0`) touch offset `0x28` of the
+settings alone, which the settings table (`1cf7bc0`) names
+`ForcedAspectRatio`; `AspectRatio` beside it (`0x24`) is a number in
+thousandths. With a fixed shape two players' games ended as VR started
+(October 11; both had VR at Auto), and one report of it (16:9, a 1920 x 1080 window) ends with
+the device removed after 30 eye pictures: `gpu.completed` is
+18446744073709551615 and `gpu.pairs` 0. What the game does to an eye's view
+with a fixed shape was not looked into.
+
+Once the game's process is there, the session looks in its folder for
+another program's way into the game (`other_mods` in `tools/run_game_vr.py`):
+a file named as one of Windows' libraries (`WRAPPERS`), which the game loads
+from its own folder before Windows'. The game's folder holds none. With the
+R.E.A.L. VR mod's files beside one (`REAL_VR`) the session ends at the stage
+"checking the game's folder" with the files in the report's `other_mods`:
+that mod's `dxgi.dll` left a player's headset black in six sessions (no
+frame submitted, `slow_motion.status` 9702, once `gpu.error` 3502). Any other
+such file is named in a warning and the session goes on.
+
 Each session writes its console to `reports\game-vr-<time>-console.log`, and a
 session that ends before VR starts writes `game-vr-<time>.json` with the
 `stage` it reached, the `error`, `xr_runtime`, `queue_search` (why each look
@@ -796,7 +818,7 @@ was made on October 4 for a performance comparison: the game's `VSync` registry
 value went from 1 to 0 (backup in `reports/vsync-before-performance-test.json`).
 When the VR launcher starts the game, it changes only the window settings
 (windowed, size, position), frame generation, vertical sync, ray-traced
-reflections, depth of field, sharpening and Windows.Gaming.Input for that
+reflections, the aspect ratio, depth of field, sharpening and Windows.Gaming.Input for that
 session and writes them back after the game closes; see
 [Start Spider-Man in VR](#start-spider-man-in-vr).
 
@@ -873,6 +895,22 @@ cut to the window's shape about its middle (`mirrorEye` in
 `src/native_eye_gpu.cpp`, drawn over the back buffer in the Present hook).
 The view renders again the moment a game screen is wanted, in flat mode, and
 when the session stops; `-GameMonitorView` keeps it rendering throughout.
+
+Since October 13 that left eye is the one the headset showed. The XR worker
+draws Spidy's own things (gloves and webs, the aim markers, the combat marks,
+the focus meter, slow motion's colour, the calibration panel) onto the
+headset's images, after the game's eye was copied into them, so the game's
+own image of the eye has none of them, and until then the window had none
+either. After that pass the worker hands the left image to
+`native_gpu::keepShownEye`, which copies it to a texture of the bridge's own
+on the game's queue, and only when the window has drawn since the last copy:
+one eye-sized copy for each picture the window gets, none for the headset
+frames in between. `mirrorEye` draws that copy while it is fresh
+(`shownEyeFresh` in `include/spidy/monitor_rate.hpp`: half a second) and the
+game's image of the eye otherwise, which is the first picture after a menu
+and the window of a headset that takes no frames. The window's picture is
+later than it was by up to one of its own pictures. `SpidyPresentCount(3)`
+counts the presents that drew a copy, `(1)` every mirrored one.
 
 The game presents its window once a frame whether or not it rendered a view
 for it, and a present is not free: on a laptop whose screen hangs on the
@@ -1156,7 +1194,7 @@ still requires a running game or headset.
 | `tools/inspect_game.py`, `tools/discover_render_types.py` | Offline game research |
 | `src/game_observer.cpp`, `tools/observe_game.py` | Opt-in native camera callback diagnostic |
 | `tools/game_driver.mjs` | Observed game launch, screenshots, and input workflow |
-| `tools/vr_display.py` | Small desktop window, no frame generation, no vertical sync, no ray-traced reflections and no Windows.Gaming.Input for VR launches; restores the game's settings |
+| `tools/vr_display.py` | Small desktop window, no frame generation, no vertical sync, no ray-traced reflections, Aspect Ratio at Auto and no Windows.Gaming.Input for VR launches; restores the game's settings |
 | `src/stereo_probe.cpp`, `src/native_eye_gpu.cpp`, `include/spidy/eye_resolution.hpp` | The eyes' scene views: their buffers, lenses, anti-aliasing and upscaling, exposure; the game's own view at the head and its rest; the staged eye pairs and the monitor's left eye |
 | `tools/probe_vr_load.py`, `tools/probe_render_commands.py`, `tools/probe_exposure.py` | The eyes' cost and picture in the game without a headset: frame rate, GPU time by view, render commands by view, and both eyes' brightness |
 | `tools/xr_runtime.py` | The OpenXR runtimes, and the one a headset is connected to (`--detect`) |

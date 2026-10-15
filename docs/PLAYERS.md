@@ -16,6 +16,8 @@ WHAT YOU NEED
   (Steam Link). Other SteamVR headsets and Meta Quest Link should work too.
   The launcher finds the runtime your headset is connected to.
 - About 19 GB of memory Windows can give programs (RAM plus page file).
+- Windows. On Linux, Spidy runs inside the game's Steam Proton session: that is
+  experimental and has its own steps, in LINUX.md in this folder.
 
 
 INSTALL
@@ -75,17 +77,29 @@ off (under SteamVR it would take the controllers away from Spidy). It turns
 Ray-Traced Reflections off too: the headset cannot show them, and with them
 on the game ended with its display driver error (DXGI_ERROR_DEVICE_HUNG)
 when a menu, the map or a cutscene opened. Leave them off in the game's
-settings while you play in VR. The launcher also turns the game's Depth of
+settings while you play in VR. It puts the game's Aspect Ratio at Auto:
+with a fixed shape chosen there, players' games ended as VR started. The
+launcher also turns the game's Depth of
 Field off and its Sharpness to the lowest: in the headset the game blurs
 away from where its own camera focuses, not from where you look, and its
 sharpening rings on edges. "Game's depth of field" and "Game's sharpening"
 in the launcher's options keep your own. Your settings come back when the
 game closes.
 
-While you swing in VR, the game window on the desktop shows your left eye,
-30 pictures a second: every picture sent to the monitor costs the graphics
-card time the headset could have. "Monitor frame rate" in the launcher's
-options chooses Every frame, 60, 30, 15 or 5 a second. On menus, cutscenes
+Spidy cannot share the game with another VR mod. If the R.E.A.L. VR mod's
+files are in the game's folder (dxgi.dll, RealVR.ini and others), the
+launcher names them and does not start VR: with them the headset stays
+black. Move them out of the game's folder; Steam's "Verify integrity of game
+files" does not remove them. Other tools that load into the game from its
+folder (ReShade, for one) are named in the session log with a warning, and
+VR starts.
+
+While you swing in VR, the game window on the desktop shows your left eye
+as the headset shows it, with Spidy's own marks on it (the combat marks, the
+aim markers, the focus meter), 30 pictures a second: every picture sent to
+the monitor costs the graphics card time the headset could have. "Monitor
+frame rate" in the launcher's options chooses Every frame, 60, 30, 15 or 5 a
+second; 60 makes a smoother recording of the window. On menus, cutscenes
 and the flat screen the window shows the game as usual.
 
 The picture in each eye is anti-aliased and upscaled by the game itself:

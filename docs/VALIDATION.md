@@ -602,7 +602,43 @@ layer and the coverage it gives depend on neither. `--no-prompt-help`
 (XrConfig option bit 20) leaves the game's prompts alone if reading them ever
 misbehaves.
 
-## Steam Frame controllers: a layout of their own — previous build, not tried on a Steam Frame
+## The game window shows the eye the headset showed — October 13 build (released in 0.3.5), not run in the game
+
+The user: "why are the combat indicators and custom ui not visible on the
+mirror on screen? shouldnt it litterally show on e of the eyes?", then:
+"showing the battle ui is most important, i also don't want to hit
+performance too much".
+
+**Where it came from** (read, not run):
+
+| | |
+| --- | --- |
+| The window's picture | `mirrorEye` (`src/native_eye_gpu.cpp`) drew `stagedEyes[0]`: the game's eye image as `stagePair` copied it |
+| Spidy's own drawings | `overlay.renderViews` in the XR worker (`src/game_xr.cpp`), onto the headset's images, after `copyLatest` filled them from the staged pair |
+| So | the staged image never had them: combat marks, aim markers, focus meter, slow motion's grade, calibration panel, overlay gloves and webs |
+
+**What it does now:** after the overlay pass the worker calls
+`native_gpu::keepShownEye` with the left image. While the window mirrors the
+eye and has drawn since the last copy, it copies that image to `shownEye`
+on the game's queue (the overlay's commands went to that queue before it).
+`mirrorEye` draws `shownEye` while `shownEyeFresh` (500 ms; two and a half
+pictures of a window slower than 5 a second) and the staged eye otherwise.
+
+**Checked without the game:**
+
+| | |
+| --- | --- |
+| Core tests | 286 pass. New: a copy stays half a second, longer for a window slower than 5 pictures a second; none before the first copy; a clock that went back |
+| Graphics test, Direct3D debug layer, 1536 x 1536 and 2064 x 2208 | pass, no debug-layer error. New: the copy `keepShownEye` makes (headset image in RENDER_TARGET, the bridge's own texture resting in COPY_SOURCE, read as a shader resource) queued right behind an asynchronous overlay, from a typed sRGB and a typeless image: the overlay's drawings exactly, the headset's image unchanged |
+| Python checks | 114 pass, none new: no protocol changed |
+
+**Not checked:** the game. Nothing was started on this PC. So not seen: the
+marks in the window, the window with the headset off the head, and what the
+copies cost. In a session, `SpidyPresentCount(3)` against `(1)` says how
+many of the window's pictures were the headset's; a recording of the window
+in a fight shows the rest.
+
+## Steam Frame controllers: a layout of their own — preceding build, not tried on a Steam Frame
 
 The user: "check if people with steam frame reported bugs on discord and fix
 them". Read from Discord on October 12 (the bug, help and idea forums, the
