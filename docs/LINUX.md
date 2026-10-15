@@ -41,6 +41,8 @@ stayed the more reliable of the two.
 1. Start SteamVR and connect the headset (SteamVR home showing), or start WiVRn and connect the
    headset in the WiVRn app. Do this before the game: Proton sets up its OpenXR bridge only when the
    game starts.
+   A USB cable instead of Wi-Fi worked with both runtimes too: turn on Developer Mode for the Quest
+   (in the Meta Horizon phone app), then allow USB debugging in the headset when you plug it in.
 2. Start the game from Steam and wait at the main menu.
 3. From the Spidy folder run `bash tools/spidy-steamvr.sh` or `bash tools/spidy-wivrn.sh` (a zip
    made on Windows keeps no run permission for the scripts). Each checks its runtime first;
@@ -58,7 +60,9 @@ stayed the more reliable of the two.
   `~/steam-1817070.log`, a working setup shows xrizer and the headset (for WiVRn, `WiVRn HMD`) next to
   `wineopenxr test instance`. Remove `PROTON_LOG=1` afterwards: it slows the game.
 - The scripts warn when the game was started before SteamVR or WiVRn (the usual cause of -51), and
-  when WiVRn is used but the game was started without `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1`.
+  when WiVRn is used but the game was started without `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1`
+  or, for the Flatpak, without `PRESSURE_VESSEL_FILESYSTEMS_RW` sharing WiVRn's folder (the
+  container then cannot read WiVRn's manifest: -51 even when the start order is right).
 - Back to SteamVR after WiVRn: WiVRn deletes `~/.config/openxr/1/active_runtime.json` when it exits,
   and SteamVR does not recreate it, so the game finds no runtime. When the file is missing or still
   names WiVRn, `spidy-steamvr.sh` points it at SteamVR's `steamxr_linux64.json` (in whichever Steam
