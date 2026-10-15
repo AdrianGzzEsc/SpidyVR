@@ -95,6 +95,22 @@ wivrn)
     if [[ -n "$game" ]] && (( ! imported )); then
         echo "Warning: the game was not started with PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 in its launch options; it may not find WiVRn." >&2
     fi
+    # The Flatpak's manifest is outside what the container sees unless PRESSURE_VESSEL_FILESYSTEMS_RW shares it.
+    manifest=$(readlink -f "$ACTIVE" 2>/dev/null || true)
+    if [[ -n "$game" && "$manifest" == */flatpak/app/io.github.wivrn.wivrn/* ]]; then
+        flatpak_dir="${manifest%%/io.github.wivrn.wivrn/*}/io.github.wivrn.wivrn"
+        shared=0
+        for pid in $(pgrep -f 'Spider-Man\.exe' || true); do
+            rw=$(grep -z '^PRESSURE_VESSEL_FILESYSTEMS_RW=' "/proc/$pid/environ" 2>/dev/null | tr -d '\0' || true)
+            IFS=: read -ra dirs <<< "${rw#*=}"
+            for dir in "${dirs[@]}"; do
+                [[ -n "$dir" && ( "$flatpak_dir" == "${dir%/}" || "$flatpak_dir" == "${dir%/}"/* ) ]] && { shared=1; break 2; }
+            done
+        done
+        if (( ! shared )); then
+            echo "Warning: the game was not started with PRESSURE_VESSEL_FILESYSTEMS_RW=$flatpak_dir in its launch options; it cannot read WiVRn's Flatpak (error -51)." >&2
+        fi
+    fi
     check_start_order "$server" WiVRn
     ;;
 *)
