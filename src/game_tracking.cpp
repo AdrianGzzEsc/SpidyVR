@@ -213,9 +213,11 @@ Input trackedSwingInput(const XrFrame& f, const Rig& rig, bool triggerWebs) {
         // The web button and the reel: the grip and the trigger, or swapped.
         const float web = triggerWebs ? hand.trigger : hand.squeeze;
         const float reel = triggerWebs ? hand.squeeze : hand.trigger;
+        // The hand aims from its web shooter where it points (webShooter),
+        // not along the controller's aim pose.
         if (handValid(hand))
-            input.hands[i] = {rig.toWorld(hand.aim), hand.grip.position - f.head.position, true,
-                              std::clamp(reel, 0.f, 1.f), std::clamp(web, 0.f, 1.f)};
+            input.hands[i] = {rig.toWorld(webShooter(hand.grip, i)), hand.grip.position - f.head.position,
+                              true, std::clamp(reel, 0.f, 1.f), std::clamp(web, 0.f, 1.f)};
     }
     const auto& move = f.hands[0];
     if (handValid(move) && std::hypot(move.stickX, move.stickY) > .2f) {

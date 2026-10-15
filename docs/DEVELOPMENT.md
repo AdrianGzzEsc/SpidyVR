@@ -396,6 +396,34 @@ fists, the T-pose calibration and the game's menus keep the controllers' own
 buttons. A change lets go of both webs, so a button held across it does
 nothing until it is let go.
 
+**Aim.** Each hand aims from its web shooter (`webShooter`, tracking.hpp,
+made in `trackedSwingInput`): the palm side of the wrist the body draws, 8 cm
+back from the controller's grip point, pointing along the hand (the grip's
+-y, from the wrist out past the knuckles; up is the thumb's side). The swing,
+the grab, the web shooter, gadgets, pointing at the game's interactions and
+the aim markers all take it, and the webs the game and the overlay draw
+start there. The controller's aim pose is not used: Meta's runtime, and
+Virtual Desktop's copy of its poses, turn it 30 degrees from the hand toward
+the thumb. Punches put the fist 13 cm on along the hand (game_punch).
+
+**Webs in the air.** game_swing's `physicsConfig` turns on
+`SwingConfig::taut` - a web in the air is no slacker than its hand made it by
+reaching toward its end (`HandState::slack`, `handSlack` 0.8 m at most),
+checked after the winch and allowing for the hand's own pull in the step, or
+those pulls are taken in twice - and `groundClearance` 1.4 m: a body a web
+holds from above has its fall turned along the ground below it at
+`groundTurn` (15 m/s^2), its speed kept, so it skims with the feet 0.4 m up.
+No web is wound in for the ground: an October 15 build that did pulled the
+player toward the web's end half the time he swung. A bare `SwingConfig` has
+both off, as it has walls and physical webs.
+
+**Webs round corners.** A web bent round edges (physical webs) is drawn by
+the game's rope from the web shooter round each edge to where it sticks: the
+ray module hands the edges on (`SpidySwingBends`, `game_swing::Bends`,
+nearest the hand first), and native_webs lays them as the rope's first points
+in the game's hand-points step (95f9c0, `native_webs::ropePoints`), as it lays
+a web held in both hands.
+
 Webs are drawn by the game's own web-line system. If they look wrong in the
 eyes, start with `Launch Spidy VR.cmd -OverlayWebs` for Spidy's overlay strands.
 

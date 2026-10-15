@@ -22,6 +22,10 @@ __declspec(dllexport) AimData SpidyAimData;
 __declspec(dllexport) Ropes SpidyRopeData;
 }
 namespace {
+// Each hand's web's edges (Bends, SpidySwingBends), written with Data.
+Bends bends;
+}
+namespace {
 using Call = DWORD(WINAPI*)(void*);
 // A movement command must outlast the longest step the solver predicts
 // (longestNativeStep) twice over, because visit() tolerates one missed
@@ -703,6 +707,11 @@ void visit(const native_rays::QueryContext& world) {
                 r.whole[i] += w.bends[static_cast<size_t>(b)].span;
         }
         InterlockedIncrement64(&r.sequence);
+        InterlockedIncrement64(&bends.sequence);
+        for (unsigned i = 0; i < 2; ++i)
+            bends.hands[i] = edgesOf(solver.webs()[i]);
+        bends.status = 2;
+        InterlockedIncrement64(&bends.sequence);
     }
     auto& d = SpidySwingData;
     InterlockedIncrement64(&d.sequence);
@@ -971,6 +980,20 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingSample(void* out) {
         sample.takeoffPhase = sample.takeoffAttempts = 0;
         for (auto& web : sample.webs)
             web = {};
+    }
+    ReleaseSRWLockShared(&control);
+    return copy(out, &sample, sizeof(sample)) ? 0 : 2201;
+}
+// The edges each hand's web bends round (Bends), for drawing it round them.
+extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingBends(void* out) {
+    AcquireSRWLockShared(&control);
+    AcquireSRWLockShared(&output);
+    auto sample = bends;
+    ReleaseSRWLockShared(&output);
+    if (!enabled || GetTickCount64() >= deadline || GetTickCount64() >= inputDeadline || !command.focused) {
+        sample.status = 0;
+        for (auto& hand : sample.hands)
+            hand = {};
     }
     ReleaseSRWLockShared(&control);
     return copy(out, &sample, sizeof(sample)) ? 0 : 2201;

@@ -73,10 +73,6 @@ class WebTimeline {
   private:
     std::array<Hand, 2> hands_{};
 };
-// Web shooters sit on the palm side of the wrist, behind the grip centre.
-inline Vec3 webWrist(Pose hand) {
-    return hand.position + hand.orientation.rotate({0, -.025f, .03f});
-}
 // Which of the game's two swing ropes draws which hand's web, and from which
 // wrist. The game makes a rope with the sound of a web shot, so a rope is
 // made for a web that was shot and never for a hand that takes hold of the

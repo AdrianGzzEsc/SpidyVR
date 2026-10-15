@@ -240,7 +240,9 @@ game writes one, are in the game's folder under Documents.
 
 `tools/probe_eye_frames.py` (main menu) and `tools/probe_web_frames.py` (free
 roam) exercise the eye views, game webs, and the native swing in the real game
-with no headset connected; see their `--help`. `tools/probe_game_screen.py`
+with no headset connected; see their `--help`. `tools/probe_web_bends.py` lays
+one of the game's ropes round edges and reads back the points the game built
+(native_webs' probe command v3 carries the edges). `tools/probe_game_screen.py`
 steps through game states itself (Esc for the pause menu) and, for each, saves
 the headset's game-screen source (the copied back buffer) and a left eye copying
 the stock camera beside the game window's own image, with brightness and alpha

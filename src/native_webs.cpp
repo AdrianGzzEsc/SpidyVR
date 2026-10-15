@@ -37,17 +37,17 @@ bool hooked{};
 HandPoints originalHandPoints{};
 void* handPointsHook{};
 bool heldHooked{};
-// What the update running on this thread wants of a web in both hands: the
-// rope, its hand's Start, and the other wrist. Set and cleared around the
-// game's update, which calls the hand points.
-struct Holding {
+// What the update running on this thread lays at the start of each of
+// Spidy's ropes (ropePoints): for a web in both hands the other wrist, and
+// the edges a web bends round. Set and cleared around the game's update,
+// which calls the hand points.
+struct Laying {
     uintptr_t rope{};
-    unsigned hand{};
-    Vec3 lower{};
-    float slack{};
-    int drawnAt = -1; // the point the rope left the upper wrist from, once laid
+    int count{};      // points laid
+    int drawnAt = -1; // the point among them the rope leaves its wrist from
+    Vec3 points[8]{};
 };
-thread_local Holding holding{};
+thread_local std::array<Laying, 2> laying{};
 std::atomic<bool> enabled{}, stopping{};
 std::atomic<uint32_t> ownedRopes{}, failedHands{};
 std::atomic<uint64_t> lastHeroUpdate{};
@@ -60,6 +60,7 @@ Vec3 builtStarts[2]{};
 uint32_t builtHands{};
 uint64_t startSample{};
 native_webs::Request request{};
+native_webs::Bent requestBends[2]{};
 uint64_t requestDeadline{};
 native_webs::Status current{};
 std::array<std::atomic<uintptr_t>, 48> webParts{};
@@ -90,32 +91,22 @@ uintptr_t pointer(uintptr_t p) {
     return v;
 }
 void handPoints(void* manager, uint8_t* rope, float dt, int32_t* count) {
-    auto& h = holding;
+    const Laying* h{};
+    for (const auto& candidate : laying)
+        if (candidate.rope && reinterpret_cast<uintptr_t>(rope) == candidate.rope)
+            h = &candidate;
     uint32_t flags{}, type{};
-    uintptr_t typeData{};
-    int16_t most{};
-    // Only the rope Spidy asked for, attached (not released: +70c bit 2), a
-    // swing rope (type 2), with room for the hand's points.
-    if (!h.rope || reinterpret_cast<uintptr_t>(rope) != h.rope || !count ||
-        !read(h.rope + 0x70c, &flags, 4) || (flags & 4) || !read(h.rope + 0x700, &type, 4) || type != 2 ||
-        !read(h.rope + 8, &typeData, 8) || !read(typeData + 0x28, &most, 2)) {
+    // Only a rope Spidy lays, attached (not released: +70c bit 2), a swing
+    // rope (type 2).
+    if (!h || !count || h->count < 2 || h->count > 8 || !read(h->rope + 0x70c, &flags, 4) || (flags & 4) ||
+        !read(h->rope + 0x700, &type, 4) || type != 2) {
         originalHandPoints(manager, rope, dt, count);
         return;
     }
-    const int points = std::min<int>(8, std::min<int>(128, most) - 2);
-    Vec3 to{};
-    if (points < 3 || !read(reinterpret_cast<uintptr_t>(manager) + 0x7d60 + h.hand * 12, &to, sizeof(to)) ||
-        !finite(to)) {
-        originalHandPoints(manager, rope, dt, count);
-        return;
-    }
-    Vec3 laid[8]{};
-    native_webs::heldPoints(h.lower, to, h.slack, points, laid);
-    // The last is the upper wrist exactly: the game draws on from it.
-    laid[points - 1] = to;
-    std::memcpy(rope + 0x1c, laid, sizeof(Vec3) * points);
-    *count = points;
-    h.drawnAt = points - 1;
+    // The game goes on from the rope's Start, which the update made the last
+    // of them.
+    std::memcpy(rope + 0x1c, h->points, sizeof(Vec3) * h->count);
+    *count = h->count;
 }
 bool entry(uintptr_t rva, const unsigned char* expected, size_t n) {
     unsigned char b[32]{};
@@ -162,8 +153,11 @@ void update(void* manager, float dt) {
     }
     lastHeroUpdate = GetTickCount64();
     native_webs::Request wanted{};
+    native_webs::Bent wantedBends[2]{};
     AcquireSRWLockShared(&requestLock);
     wanted = request;
+    wantedBends[0] = requestBends[0];
+    wantedBends[1] = requestBends[1];
     const bool live = !stopping && GetTickCount64() < requestDeadline;
     ReleaseSRWLockShared(&requestLock);
     // Tracked wrists were placed from the player position sampled for that
@@ -265,37 +259,73 @@ void update(void* manager, float dt) {
             starts[hand] = start;
             wrote[hand] = true;
         }
-        // One web in both hands: its rope comes to the upper wrist from the
-        // lower one (handPoints, which the update calls).
-        holding = {};
+        // What each rope is laid with at its start (handPoints, which the
+        // update calls): one web in both hands comes to the upper wrist from
+        // the lower one, and a web that bends round edges goes round them.
+        // The game's own line to the anchor leaves from the rope's Start, not
+        // from the last point laid (679dc0 places every point after the laid
+        // ones between Start and the anchor), so for this update Start is the
+        // last point laid. Left at the wrist, a web round an edge came back
+        // from that edge to the wrist and ran on from there through the
+        // building to where it sticks (October 15: "a second line is drawn
+        // from the original edge and the hand"), doubled back on itself as
+        // it took the edge, which lay on the line from the wrist to the end;
+        // the game closed 0.1 s after a web took one.
+        laying = {};
         const auto& held = wanted.held;
-        if (heldHooked && held.rope >= 1 && held.rope <= 2) {
-            const unsigned hand = held.rope - 1;
+        for (unsigned hand = 0; hand < 2; ++hand) {
             const auto& rope = owned[hand];
+            if (!heldHooked || !wrote[hand] || !rope.handle || rope.trailing)
+                continue;
+            auto bent = wantedBends[hand];
+            bent.count = std::min<uint32_t>(bent.count, native_webs::maxRopeBends);
+            for (uint32_t k = 0; k < bent.count; ++k)
+                if (!finite(bent.points[k]))
+                    bent.count = 0;
             const Vec3 lower = held.wrist + travel;
-            if (wrote[hand] && rope.handle && !rope.trailing && finite(lower) && std::isfinite(held.slack))
-                if (const auto slot = get(manager, rope.handle))
-                    holding = {slot, hand, lower, std::clamp(held.slack, 0.f, 3.f)};
+            const bool both = held.rope == hand + 1 && finite(lower) && std::isfinite(held.slack);
+            const auto slot = both || bent.count ? get(manager, rope.handle) : 0;
+            uintptr_t typeData{};
+            int16_t most{};
+            // With room for the hand's points: the most points the rope's
+            // type takes.
+            if (!slot || !read(slot + 8, &typeData, 8) || !read(typeData + 0x28, &most, 2))
+                continue;
+            Laying lay{};
+            lay.count = native_webs::ropePoints(starts[hand], both ? &lower : nullptr,
+                                                both ? std::clamp(held.slack, 0.f, 3.f) : 0.f, bent,
+                                                std::min<int>(8, std::min<int>(128, most) - 2), lay.points,
+                                                &lay.drawnAt);
+            if (lay.count < 2)
+                continue;
+            lay.rope = slot;
+            laying[hand] = lay;
+            const Vec3 from = lay.points[lay.count - 1];
+            std::memcpy(reinterpret_cast<void*>(mgr + 0x7d60 + hand * 12), &from, sizeof(from));
         }
         originalUpdate(manager, dt);
-        const int heldAt = holding.drawnAt;
-        const uintptr_t heldRope = holding.rope;
-        holding = {};
+        const auto laid = laying;
+        laying = {};
         std::memcpy(reinterpret_cast<void*>(mgr + 0x7d40), hashes, sizeof(hashes));
+        // Start is the wrist again between updates: the hero's own update
+        // (95f6c0) takes the hand's velocity from how it moves.
+        for (unsigned hand = 0; hand < 2; ++hand)
+            if (laid[hand].rope)
+                std::memcpy(reinterpret_cast<void*>(mgr + 0x7d60 + hand * 12), &starts[hand], sizeof(Vec3));
         // 679dc0 starts each attached rope's points (rope +1c) at Start. A
         // released one (+70c bit 2) drifts from it, and the tail above moved
         // point 0 away, so a gap here means the rope does not leave the wrist.
         // A web in both hands leaves the upper wrist where it comes to it.
-        for (unsigned hand = 0; hand < 2; ++hand)
-            if (const auto slot = wrote[hand] && owned[hand].handle && !owned[hand].trailing
-                                      ? get(manager, owned[hand].handle)
-                                      : 0;
-                slot && read(slot + 0x1c + (slot == heldRope && heldAt > 0 ? heldAt * 12 : 0), &built[hand],
-                             sizeof(Vec3)) &&
-                finite(built[hand])) {
+        for (unsigned hand = 0; hand < 2; ++hand) {
+            const bool ours = wrote[hand] && owned[hand].handle && !owned[hand].trailing;
+            const auto slot = ours ? get(manager, owned[hand].handle) : 0;
+            const auto& lay = laid[hand];
+            const int first = slot && slot == lay.rope && lay.drawnAt > 0 ? lay.drawnAt : 0;
+            if (slot && read(slot + 0x1c + first * 12, &built[hand], sizeof(Vec3)) && finite(built[hand])) {
                 startError = std::max(startError, length(built[hand] - starts[hand]));
                 builtMask |= 1u << hand;
             }
+        }
     } else {
         originalUpdate(manager, dt);
     }
@@ -400,9 +430,11 @@ void native_webs::retarget(uintptr_t heroRecord) {
     record = heroRecord;
     ReleaseSRWLockExclusive(&lifecycle);
 }
-void native_webs::submit(const Request& next, uint32_t leaseMs) {
+void native_webs::submit(const Request& next, uint32_t leaseMs, const Bent* bends) {
     AcquireSRWLockExclusive(&requestLock);
     request = next;
+    requestBends[0] = bends ? bends[0] : Bent{};
+    requestBends[1] = bends ? bends[1] : Bent{};
     requestDeadline = GetTickCount64() + leaseMs;
     ReleaseSRWLockExclusive(&requestLock);
 }
@@ -455,14 +487,25 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyWebsStart(void* input) {
 }
 extern "C" __declspec(dllexport) DWORD WINAPI SpidyWebsSubmit(void* input) {
     native_webs::ProbeCommand c{};
-    if (!read(reinterpret_cast<uintptr_t>(input), &c, sizeof(c)) || c.magic != 0x5357424d || c.version != 2 ||
-        c.bytes != sizeof(c) || c.leaseMs > 500 || !finite(c.request.feet) || c.request.held.rope > 2 ||
-        !finite(c.request.held.wrist) || !std::isfinite(c.request.held.slack))
+    // Version 2 ends before the bends.
+    const auto from = reinterpret_cast<uintptr_t>(input);
+    if (!read(from, &c, native_webs::probeCommandBytesV2) || c.magic != 0x5357424d ||
+        (c.version == 3 ? c.bytes != sizeof(c) || !read(from, &c, sizeof(c))
+                        : c.version != 2 || c.bytes != native_webs::probeCommandBytesV2) ||
+        c.leaseMs > 500 || !finite(c.request.feet) || c.request.held.rope > 2 || !finite(c.request.held.wrist) ||
+        !std::isfinite(c.request.held.slack))
         return 6502;
     for (const auto& hand : c.request.hands)
         if (hand.attached > 2 || hand.tracked > 1 || !finite(hand.anchor) || !finite(hand.wrist))
             return 6502;
-    native_webs::submit(c.request, c.leaseMs);
+    for (const auto& bent : c.bends) {
+        if (bent.count > native_webs::maxRopeBends)
+            return 6502;
+        for (uint32_t k = 0; k < bent.count; ++k)
+            if (!finite(bent.points[k]))
+                return 6502;
+    }
+    native_webs::submit(c.request, c.leaseMs, c.bends);
     return 0;
 }
 extern "C" __declspec(dllexport) DWORD WINAPI SpidyWebsStop(void*) {

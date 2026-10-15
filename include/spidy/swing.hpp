@@ -130,6 +130,32 @@ struct SwingConfig {
     // take the web again above the other: hand over hand. 0: every press
     // shoots.
     float strandReach = .16f;
+    // In the air a web is slack only as far as its hand makes it: a body that
+    // comes nearer the web's end - thrown toward it by a zip, carried on up
+    // by a jump, swinging past close to it, turned along the ground - has the
+    // web taken in by as much, and hangs from where it got to. Until October
+    // 15 a web kept the length it was shot with, and the body fell free for
+    // all the slack it had come in by before the web caught it again: up to
+    // 56 m at a time in that day's session ("webs are too stretchy when
+    // you're in the air with them"). The slack a hand makes reaching toward
+    // the web's end (handSlack at most) it keeps, and takes up first as it
+    // draws back, so the arms pump nothing: the first build took that in too,
+    // and every move of an arm after it pulled the body up the web ("too
+    // springy"); a second kept up to 0.6 m of any slack, and caught a fast
+    // swing past close to a web's end 0.6 m late, at up to 9 m/s. On the
+    // ground and on a wall a web keeps its length, as before (payOut).
+    bool taut = false;
+    float handSlack = .8f;
+    // Near misses: a body a web holds from above in the air comes down to the
+    // ground no nearer than groundClearance (its centre over the ground), its
+    // fall turned along the ground at groundTurn (m/s^2) from as high as that
+    // takes, its speed kept. The web is not wound in for it: October 15's
+    // first build wound it in wherever the swing's bottom was under the
+    // street, from the moment it was shot - half of the next session's
+    // swinging, the player pulled toward the web's end and held at the speed
+    // limit ("throw me too much", "the wind is too strong", "i want the near
+    // misses"). 0: none.
+    float groundClearance = 0, groundTurn = 15;
 };
 // The edges one web bends round at most (SwingConfig::physical).
 constexpr int maxBends = 6;
@@ -422,6 +448,9 @@ class Swing {
         // The same place whatever the webs are, as the latest sample had it:
         // where the hand takes hold of the other hand's web.
         Vec3 reach{};
+        // The slack this hand made reaching toward its web's end, which a
+        // taut web keeps (SwingConfig::taut).
+        float slack{};
     };
     void inputs(float dt, const Input&, const WorldQueries&);
     void step(float dt, const Input&, const WorldQueries&, const World* collision);
@@ -455,6 +484,9 @@ class Swing {
     // The share of this hand's winch rate the body's velocity takes up, given
     // the unit direction from its anchor to the body.
     float follow(int hand, Vec3 radial) const;
+    // Turns the fall of a body a web holds along the ground near it, for a
+    // step of `dt` (SwingConfig::groundClearance).
+    void skimGround(float dt, const WorldQueries&);
     SwingConfig config_;
     Body body_{};
     std::array<Web, 2> webs_{};

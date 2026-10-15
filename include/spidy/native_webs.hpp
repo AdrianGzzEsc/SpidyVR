@@ -34,6 +34,14 @@ struct Held {
     float slack{};
     Vec3 wrist{};
 };
+// The edges a web bends round (the swing's physical webs), the one nearest
+// the hand first: the game's rope goes round them to the web's end, its
+// Hand's anchor.
+constexpr int maxRopeBends = 6;
+struct Bent {
+    uint32_t count{};
+    Vec3 points[maxRopeBends]{};
+};
 // Wrists are world positions placed from `feet`. The game thread moves them
 // with the player to the simulation frame it is updating.
 struct Request {
@@ -65,6 +73,31 @@ inline void heldPoints(Vec3 from, Vec3 to, float slack, int count, Vec3* out) {
         out[i] = from + chord * s + bow * (4 * sag * s * (1 - s));
     }
 }
+// The points Spidy lays at the start of one of the game's ropes, `capacity`
+// at most: from the wrist `start` - or for a web in both hands from the lower
+// wrist `lower`, bowing `slack` up to `start` (heldPoints) - then round each
+// edge it bends round. The game draws on from the rope's Start to its end, so
+// the last of them is made its Start while the game lays the rope. Returns how
+// many, and in `upperAt` where `start` is among them; 0 when there is nothing
+// to lay but `start`.
+inline int ropePoints(Vec3 start, const Vec3* lower, float slack, const Bent& bent, int capacity, Vec3* out,
+                      int* upperAt = nullptr) {
+    const int edges = std::clamp(static_cast<int>(bent.count), 0, maxRopeBends);
+    if (capacity < 2 || !out || (!lower && !edges))
+        return 0;
+    int n = 1;
+    if (lower) {
+        // The bow takes what the edges leave it, three points at least.
+        n = std::min(capacity, std::max(3, capacity - edges));
+        heldPoints(*lower, start, slack, n, out);
+    }
+    out[n - 1] = start;
+    if (upperAt)
+        *upperAt = n - 1;
+    for (int k = 0; k < edges && n < capacity; ++k)
+        out[n++] = bent.points[k];
+    return n;
+}
 enum State : uint32_t { off = 0, waiting = 1, active = 2, failed = 3 };
 struct Status {
     uint32_t state{}, live{}; // live: bit per hand with a game rope
@@ -78,7 +111,9 @@ uint32_t start(uintptr_t base, uintptr_t record);
 // The local player became another actor (a loaded save, a respawn, a
 // character switch); zero until there is one again.
 void retarget(uintptr_t record);
-void submit(const Request&, uint32_t leaseMs);
+// `bends`: the edges each of the request's two webs bends round (Bent, one
+// per Request::hands entry); none when null.
+void submit(const Request&, uint32_t leaseMs, const Bent* bends = nullptr);
 Status status();
 // True while the game draws this hand's web, so the overlay must not.
 bool drawing(unsigned hand);
@@ -101,9 +136,13 @@ struct ProbeConfig {
     uint64_t base{}, record{};
 };
 struct ProbeCommand {
-    uint32_t magic = 0x5357424d, version = 2, bytes = sizeof(ProbeCommand), leaseMs{};
+    uint32_t magic = 0x5357424d, version = 3, bytes = sizeof(ProbeCommand), leaseMs{};
     Request request{};
+    // Version 3: the edges each of the request's two webs bends round (Bent).
+    // Version 2 (probeCommandBytesV2) ends before them.
+    Bent bends[2]{};
 };
+constexpr uint32_t probeCommandBytesV2 = 136;
 static_assert(sizeof(Hand) == 40 && sizeof(Held) == 20 && sizeof(Request) == 120 && sizeof(ProbeConfig) == 32 &&
-              sizeof(ProbeCommand) == 136);
+              sizeof(Bent) == 76 && sizeof(ProbeCommand) == 288);
 } // namespace spidy::native_webs

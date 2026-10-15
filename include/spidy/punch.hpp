@@ -47,8 +47,9 @@ struct PunchConfig {
     // enough to steady tracking noise (millimetres at 72-120 Hz, a tenth of
     // a metre per second), short enough not to lag a fist already at him.
     float smoothing = .008f;
-    // Damage at minSpeed and at fullSpeed (the game's hit points).
-    float minDamage = 10, maxDamage = 40;
+    // Damage at minSpeed and at fullSpeed (the game's hit points). 10 and 40
+    // until October 15, 30% more: the user wanted enemies to last longer.
+    float minDamage = 7, maxDamage = 28;
     // An upward blow this steep (the sine of its pitch) and this strong
     // is an uppercut.
     float uppercutRise = .6f, uppercutStrength = .4f;

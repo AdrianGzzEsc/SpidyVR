@@ -415,6 +415,9 @@ BridgeCall startRays{}, submitRays{}, stopRays{};
 // struct itself, and the session is in the same process as it.
 const native_rays::Data* rayResults{};
 BridgeCall startSwing{}, submitSwing{}, sampleSwing{}, stopSwing{}, retargetSwing{}, sampleGrab{}, sampleAim{};
+// Each web's edges (game_swing::Bends): optional, without it a web round an
+// edge is drawn to that edge.
+BridgeCall sampleBends{};
 BridgeCall startPunch{}, samplePunch{}, stopPunch{}, swingSettings{}, sampleStrike{};
 BridgeCall startShooter{}, sampleShooter{}, stopShooter{}, wheelShooter{};
 // The game's own crawl under the player (game_warp, in the same module):
@@ -786,6 +789,7 @@ DWORD WINAPI run(void*) {
             InterlockedIncrement64(&SpidyXrData.sequence);
         }
         game_swing::Data swingState;
+        game_swing::Bends swingBends;
         // What each hand's web holds, when it caught a thug instead of a wall.
         game_grab::Data grabState;
         uint32_t grabPhases[2]{};
@@ -855,12 +859,13 @@ DWORD WINAPI run(void*) {
         // does not shrink the body.
         float standingEye{};
         // Each hand's fingers (HandPoser): the web-shooting hand as its web
-        // button goes down and for a moment after the shot, else a fist,
+        // button goes down and while the shot is on its way, else a fist,
         // closed by the grip, by a web held or by a hand moving fast relative
         // to the head (a punch); and where each grip was relative to the
         // head. What the swing's frame says of each hand for it: a web ball
-        // left it, it holds the other hand's web (taken hold of, not shot);
-        // and an enemy is marked or within a fist's reach.
+        // left it, it holds the other hand's web (taken hold of, not shot),
+        // its own web holds (attachedBefore); and an enemy is marked or
+        // within a fist's reach.
         HandPoser fingers[2];
         Vec3 gripsBefore[2]{};
         bool gripsSeen[2]{};
@@ -1642,6 +1647,8 @@ DWORD WINAPI run(void*) {
                         }
                         check(submitSwing(&input), "Tracked swing input");
                         check(sampleSwing(&swingState), "Native swing feedback");
+                        if (!sampleBends || sampleBends(&swingBends))
+                            swingBends = {};
                         // Nothing here changes who holds the player on a wall
                         // behind his back. Every way of doing it from the room
                         // around him dropped him (October 14: switching the
@@ -1720,7 +1727,8 @@ DWORD WINAPI run(void*) {
                                 runtime.haptic(i, 1);
                             attachedBefore[i] = attached;
                             webTaken[i] = taken;
-                            webTimes.update(i, attached, swingState.webs[i].anchor, webWrist(motion.hands[i]),
+                            webTimes.update(i, attached, swingState.webs[i].anchor,
+                                            webShooter(motion.grips[i], i).position,
                                             frame.predictedDisplayTime);
                         }
                         zipBefore = swingState.zips;
@@ -1881,13 +1889,15 @@ DWORD WINAPI run(void*) {
                         }
                         fightNear = input.focused && ((fighting && strikes.cueTarget != 0) || punch.bots != 0);
                         if (websStarted && motion.active && !flatScreen) {
-                            // The game draws these webs from the tracked wrists.
+                            // The game draws these webs from the tracked web shooters.
                             native_webs::Request webs;
+                            native_webs::Bent bent[2]{};
                             webs.feet = motion.anchor;
                             for (unsigned i = 0; i < 2; ++i) {
                                 auto& hand = webs.hands[i];
                                 // Each rope draws the web WebRopes gave it, from the
-                                // wrist of the hand that holds that web nearer its end.
+                                // web shooter of the hand that holds that web nearer
+                                // its end.
                                 const auto& rope = webRopes.rope(i);
                                 const auto from =
                                     static_cast<unsigned>(rope.hands ? rope.from : rope.last >= 0 ? rope.last : i);
@@ -1897,7 +1907,21 @@ DWORD WINAPI run(void*) {
                                 hand.tracked = motion.swing.hands[from].tracked;
                                 hand.attachedAt = rope.key;
                                 hand.anchor = trail ? trailEnds[from] : swingState.webs[from].anchor;
-                                hand.wrist = webWrist(motion.hands[from]);
+                                hand.wrist = webShooter(motion.grips[from], from).position;
+                                // A web round edges: to where it sticks, round each of them. The
+                                // swing's anchor is the nearest edge, and drawn to it the web's end
+                                // jumped to each new one. Where Spidy cannot lay the rope's points
+                                // (no hand points hook) it stays drawn to that edge, not straight
+                                // through the building to its end.
+                                if (const auto& edges = swingBends.hands[from];
+                                    hand.attached == 1 && !grabPhases[from] && edges.count &&
+                                    finite(edges.end) && native_webs::drawsHeld()) {
+                                    hand.anchor = edges.end;
+                                    bent[i].count =
+                                        std::min<uint32_t>(edges.count, native_webs::maxRopeBends);
+                                    for (uint32_t k = 0; k < bent[i].count; ++k)
+                                        bent[i].points[k] = edges.points[k];
+                                }
                             }
                             // One web in both hands: its rope comes to the upper
                             // wrist from the lower one, in the game's own material.
@@ -1905,7 +1929,7 @@ DWORD WINAPI run(void*) {
                                 const auto lower = static_cast<unsigned>(1 - upper);
                                 const int slot = webRopes.slot(lower);
                                 if (slot >= 0 && motion.swing.hands[lower].tracked) {
-                                    const Vec3 wrist = webWrist(motion.hands[lower]);
+                                    const Vec3 wrist = webShooter(motion.grips[lower], lower).position;
                                     webs.held.rope = static_cast<uint32_t>(slot) + 1;
                                     webs.held.wrist = wrist;
                                     webs.held.slack =
@@ -1914,7 +1938,7 @@ DWORD WINAPI run(void*) {
                                                  0.f);
                                 }
                             }
-                            native_webs::submit(webs, 200);
+                            native_webs::submit(webs, 200, bent);
                         }
                     }
                     const bool steering = motion.active && !flatScreen && controlsVisible;
@@ -2621,6 +2645,7 @@ DWORD WINAPI run(void*) {
                             doing.squeeze = hand.squeeze;
                             doing.speed = speed;
                             doing.gripping = onStrandBefore[i] || webTaken[i];
+                            doing.holding = attachedBefore[i];
                             doing.shot = ballShot[i];
                             doing.fighting = fightNear;
                             ballShot[i] = false;
@@ -2854,10 +2879,10 @@ DWORD WINAPI run(void*) {
                             const bool lower = web.attached && upper >= 0 && upper != static_cast<int>(hand);
                             WebLine line;
                             const auto between = [&](Vec3 start) {
-                                auto other = rendered.hands[static_cast<size_t>(upper)];
+                                auto other = rendered.grips[static_cast<size_t>(upper)];
                                 other.position += travel;
                                 line.start = start;
-                                line.end = webWrist(other);
+                                line.end = webShooter(other, static_cast<unsigned>(upper)).position;
                                 line.slack = std::max(
                                     web.length - saved->webs[static_cast<size_t>(upper)].length -
                                         length(line.end - line.start),
@@ -2875,15 +2900,16 @@ DWORD WINAPI run(void*) {
                                     appendWeb(vertices, line, viewer, pixelAngle);
                                 continue;
                             }
-                            auto pose = rendered.hands[hand];
-                            pose.position += travel;
-                            shooters[hand] = webWrist(pose);
+                            auto grip = rendered.grips[hand];
+                            grip.position += travel;
+                            const Vec3 shooter = webShooter(grip, hand).position;
+                            shooters[hand] = shooter;
                             shooterHands |= 1u << hand;
                             if (gameWeb) {
                                 // The game draws the piece between the hands
                                 // itself where it can (native_webs::Held).
                                 if (lower && !native_webs::drawsHeld()) {
-                                    between(webWrist(pose));
+                                    between(shooter);
                                     appendWeb(vertices, line, viewer, pixelAngle);
                                 } else if (web.attached && slot == static_cast<int>(hand) &&
                                            native_eyes::renderWebStart(imageGeneration, hand, ropeStarts[hand])) {
@@ -2892,16 +2918,16 @@ DWORD WINAPI run(void*) {
                                 }
                                 continue;
                             } else if (lower) {
-                                between(webWrist(pose));
+                                between(shooter);
                                 appendWeb(vertices, line, viewer, pixelAngle);
                             } else if (web.attached) {
-                                line.start = webWrist(pose);
+                                line.start = shooter;
                                 line.end = web.anchor;
                                 line.slack = web.tension > 0 ? 0.f
                                                              : std::max(web.length - length(line.end - line.start), 0.f);
                                 line.extended = WebAnimation::extended((shown - timing.attachedAt) * 1e-9f);
                                 appendWeb(vertices, line, viewer, pixelAngle);
-                            } else if (WebAnimation::released((shown - timing.releasedAt) * 1e-9f, webWrist(pose),
+                            } else if (WebAnimation::released((shown - timing.releasedAt) * 1e-9f, shooter,
                                                               timing.anchor, line)) {
                                 appendWeb(vertices, line, viewer, pixelAngle);
                             }
@@ -3288,6 +3314,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyXrStart(void* input) {
     startSwing = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidySwingStart"));
     submitSwing = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidySwingSubmit"));
     sampleSwing = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidySwingSample"));
+    sampleBends = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidySwingBends"));
     rayResults = reinterpret_cast<const native_rays::Data*>(GetProcAddress(rays, "SpidyRayData"));
     stopSwing = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidySwingStop"));
     retargetSwing = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidySwingRetarget"));

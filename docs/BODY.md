@@ -26,23 +26,24 @@ The body is the game's own hero model, its joints turned every frame
 | Walk around your room | The feet stay put until your hips are 15 cm from over them, then follow |
 | Swing, fall, jump | The legs keep the game's pose (a swing's tuck, a fall's flail) under your upright body |
 | Flip (the left stick or A in the air, with the experimental FLIPS on) | The whole body turns with you about your eyes; the legs keep the game's pose |
-| Hold the web button (or shoot a web ball) | That hand makes the web-shooting hand: the two middle fingers pressed into the palm, the first and little fingers and the thumb out ([below](#the-web-shooting-hand-october-12)), for as long as the button is held (a web ball: half a second) |
+| Shoot a web (or a web ball) | That hand makes the web-shooting hand: the two middle fingers pressed into the palm, the first and little fingers and the thumb out ([below](#the-web-shooting-hand-october-12)). Once the web holds (0.15 s after the shot) the hand closes into a fist on it, for as long as the button is held; a web that missed keeps the shooting hand that long (a web ball: half a second) |
 | Take hold of the other hand's web | That hand closes into a fist on it |
 | Squeeze a grip | Otherwise that hand closes into a fist |
 | Move a hand fast | It closes into a fist too, and opens again within a third of a second; while it shoots it stays the shooting hand, unless an enemy is marked or within a fist's reach |
 | Punch a thug | A fist moving 2.2 m/s or faster into him lands a blow (table below); the controller kicks |
 
 How hard a punch lands depends on the fist's speed toward the thug, relative to
-your body (not your swing or run):
+your body (not your swing or run). Since October 15 a punch deals 30% less
+than it did (10 to 40 before):
 
 | Fist speed | Damage | What it does to him (the game's knockback level) |
 |---:|---:|---|
-| 2.2-2.7 m/s | 10-13 | flinches (kTwitch) |
-| 2.7-4.1 m/s | 13-21 | staggers (kStagger) |
-| 4.1-5.4 m/s | 21-28 | is knocked back (kKnockback) |
-| 5.4-6.7 m/s | 28-36 | is knocked down (kKnockdown) |
-| 6.7-10.5 m/s | 36-40 | flies back (kFlyBack) |
-| 10.5 m/s and more | 40 | flies far (kSuperFlyBack) |
+| 2.2-2.7 m/s | 7-9 | flinches (kTwitch) |
+| 2.7-4.1 m/s | 9-14 | staggers (kStagger) |
+| 4.1-5.4 m/s | 14-20 | is knocked back (kKnockback) |
+| 5.4-6.7 m/s | 20-25 | is knocked down (kKnockdown) |
+| 6.7-10.5 m/s | 25-28 | flies back (kFlyBack) |
+| 10.5 m/s and more | 28 | flies far (kSuperFlyBack) |
 | upward, from 4.3 m/s | as above | is popped up off his feet (kPopUp) |
 
 A blow must go into him: within about 72 degrees of the line from the fist to
@@ -428,7 +429,8 @@ hand in the XR worker):
 | | |
 |---|---|
 | The web button going down (the grip, or the trigger with WEB BUTTON: TRIGGER) | the pose comes with it: the button's value over 0.65, where it shoots |
-| The button held (past 0.65, until it is back under 0.35), whether the web holds or missed | the whole pose, for as long as it is held; let go, it goes in 0.2 s. The first build kept it 0.3 s and then closed the hand on the web: "the web shooting pose turns almost immidiatly to a fist" |
+| The button held (past 0.65, until it is back under 0.35) and the web missed | the whole pose, for as long as it is held; let go, it goes in 0.2 s |
+| Its own web holds (hanging from something, or holding a thug or a prop it caught) | the whole pose for 0.15 s after the web took hold, while the shot is on its way (`connectSeconds`); then the pose goes in 0.2 s and the hand closes on the web, a fist as far as the button is down, with the trigger as the web button too. The first build kept the pose 0.3 s and then closed the hand on the web ("the web shooting pose turns almost immidiatly to a fist"); the second kept it as long as the button was held, swinging too ("when web connects and held lets change the hand to fist and not keep the horn pose", October 15) |
 | The hand on the other hand's web (the tick), and while it holds that web | no pose: the button closes a fist on the strand, with the trigger as the web button too, where the grip is open |
 | A web ball leaving the hand | the whole pose for 0.5 s |
 | The hand moving faster than 1.2 m/s against the head | a fist, as before, under the pose: it shows as the pose goes |
@@ -443,10 +445,12 @@ the hero's mesh in the game without a headset:
 
 ## Open
 
-- The web-shooting hand on the hero's mesh and in the headset, now that it
-  stays while the button is held: whether the two pressed fingers reach the
-  palm or go into it, and whether a hand that swings on a web all the while
-  in that pose is what you want.
+- The web-shooting hand on the hero's mesh and in the headset: whether the
+  two pressed fingers reach the palm or go into it, and whether the fist
+  comes as the web lands. The game's rope draws the shot; its update
+  (`679dc0`) appears to time it from the rope's age (`+0x6b4`) against its
+  type's settings (`[rope + 8] + 0xc0..0xc8`), whose values were never read,
+  so `connectSeconds` (0.15 s) is a guess.
 - How the new fists and the 30-degree palm correction look and feel in the
   headset; the probe above in the game.
 - A thug in a fight reacting to a punch (his hit reaction, knockdown, flight)

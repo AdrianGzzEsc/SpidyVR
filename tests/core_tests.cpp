@@ -107,6 +107,22 @@ Input aimed() {
     in.hands[0] = {{{0, 0, 0}, {.70710678f, 0, 0, .70710678f}}, {0, 0, 0}, true, 1, 1};
     return in;
 }
+// The point anchor over a street at y = 0, which a ray down meets.
+struct Street : TestWorld {
+    std::optional<RayHit> raycast(Vec3 o, Vec3 d, float distance) const override {
+        if (const auto hit = TestWorld::raycast(o, d, distance))
+            return hit;
+        if (d.y < -1e-4f && o.y > 0 && -o.y / d.y <= distance)
+            return RayHit{o + d * (-o.y / d.y), {0, 1, 0}, 9, true};
+        return {};
+    }
+};
+// The left hand at `from`, its grip held, aiming at `at`.
+Input aimedAt(Vec3 from, Vec3 at) {
+    Input in;
+    in.hands[0] = {{from, arc({0, 0, -1}, normalized(at - from))}, {0, 0, 0}, true, 0, 1};
+    return in;
+}
 // Two point anchors up to the left and right of a body on the y axis.
 struct TwoAnchors : TestWorld {
     Vec3 anchors[2]{{-10, 20, 0}, {10, 20, 0}};
@@ -530,16 +546,36 @@ int main() {
         check(out.swing.hands[0].tracked&&out.swing.hands[1].tracked,"hands not independent");
         near(out.swing.hands[0].gripRelativeToHead.y,-.5f);
     });
-    test("visible hand fingers agree with aim while wrist stays at grip position", [] {
+    test("each hand aims from its web shooter, on the wrist the body draws, where the hand points", [] {
+        // Meta's runtimes, and Virtual Desktop's, turn the aim pose 30 degrees
+        // from the hand toward the thumb; the hand aims along its own grip.
         GameTrackingRig rig; auto f=trackedFrame();
-        f.hands[0].grip.orientation={.70710678f,0,0,.70710678f};
-        f.hands[0].aim.orientation=Quat::yaw(.4f);
+        const Quat aimTurn=Quat::around({1,0,0},-1.0471976f);
+        f.hands[0].grip.orientation=Quat::around({0,1,0},.7f)*Quat::around({0,0,1},1.2f);
+        f.hands[1].grip.orientation=Quat::around({1,0,0},.4f);
+        for(auto& h:f.hands)h.aim.orientation=h.grip.orientation*aimTurn;
         rig.update(f,{10,20,30},{1,0,0},true);
         f.predictedDisplayTime=2;
         const auto out=rig.update(f,{10,20,30},{1,0,0},true);
-        near(length(out.hands[0].orientation.rotate({0,0,-1})-
+        const body::Config c;
+        for(unsigned i=0;i<2;++i){
+            const auto& grip=out.grips[i];const auto& aim=out.swing.hands[i].aim;
+            // From the wrist out past the knuckles, the thumb's side up.
+            near(length(aim.orientation.rotate({0,0,-1})-grip.orientation.rotate({0,-1,0})),0);
+            near(length(aim.orientation.rotate({0,1,0})-grip.orientation.rotate({0,0,-1})),0);
+            // On the palm's side of the wrist the body puts there.
+            const Vec3 wrist=grip.position+grip.orientation.rotate(
+                {i==0?-c.wristFromGrip.x:c.wristFromGrip.x,c.wristFromGrip.y,c.wristFromGrip.z});
+            const Vec3 palm=grip.orientation.rotate({i==0?1.f:-1.f,0,0});
+            check(length(aim.position-wrist)<.035f,"the web shooter is not on the wrist");
+            check(dot(aim.position-wrist,palm)>.02f,"the web shooter is not on the palm's side of the wrist");
+            check(length(aim.position-webShooter(grip,i).position)<1e-4f,"the webs leave from elsewhere");
+        }
+        // The controller's own aim pose steers nothing.
+        f.predictedDisplayTime=3;f.hands[0].aim.orientation=Quat::yaw(.4f);
+        const auto again=rig.update(f,{10,20,30},{1,0,0},true);
+        near(length(again.swing.hands[0].aim.orientation.rotate({0,0,-1})-
                     out.swing.hands[0].aim.orientation.rotate({0,0,-1})),0);
-        near(length(out.hands[0].position-out.swing.hands[0].aim.position),0);
     });
     test("native grounded prediction never requests gravity through support", [] {
         TestWorld world;world.enabled=false;Swing swing;
@@ -798,6 +834,10 @@ int main() {
         near(length(web.end()-w.anchor),0);
         check(web.length<shot&&web.length+web.bends[0].span>=shot-.01f&&web.length+web.bends[0].span<shot+.3f,
               "the rope changed its length as it bent");
+        // Drawn from the hand round that edge on to where it sticks, not to the edge.
+        const auto edges=game_swing::edgesOf(web);
+        check(edges.count==1&&length(edges.points[0]-web.anchor)<1e-5f,"the edge is not handed on");
+        near(length(edges.end-w.anchor),0);
         // It holds the body from the corner now: flying on, the body goes round it.
         const Vec3 bend=web.anchor;const float beyond=web.length;
         float farthest{};
@@ -875,6 +915,32 @@ int main() {
             kept=old.predictNativeStep(1.f/90,same,w,other);
         }
         near(kept.target.y,0,.001f);
+    });
+    test("a taut web pumps nothing for a hand that reaches toward its end and back", [physical] {
+        // Hanging under the web's end, the hand reaches 0.4 m up toward it and
+        // comes back, five times. A web that took in the hand's slack as well
+        // ("too springy", October 15) climbed the body 0.4 m with each.
+        auto c=physical();c.gravity=9.81f;c.taut=true;Swing s(c);
+        TestWorld w;auto in=aimed();in.hands[0].trigger=0;
+        Body body{{0,0,0},{},false};
+        auto intent=s.predictNativeStep(1.f/90,in,w,body);
+        check(s.webs()[0].attached,"no web");
+        const auto settle=[&](int steps){
+            for(int i=0;i<steps;++i){body={intent.target,intent.velocity,false};intent=s.predictNativeStep(1.f/90,in,w,body);}
+        };
+        settle(90);
+        const float start=intent.target.y, rope=s.webs()[0].length;
+        // Half a second each way, below a yank's speed: no zip.
+        for(int cycle=0;cycle<5;++cycle)
+            for(int i=0;i<90;++i){
+                in.hands[0].gripRelativeToHead.y+=(i<45?.4f:-.4f)/45;
+                settle(1);
+            }
+        settle(180);
+        // What the body coasts on after each draw of the hand is taken in:
+        // 4 cm a time, where taking in the reaches took 0.4 m.
+        check(std::abs(intent.target.y-start)<.25f,"the hand's reaches pumped the body up the web");
+        check(rope-s.webs()[0].length<.25f,"the hand's reaches wound the web in");
     });
     test("a snap turn carries a held rope's hand round no faster than a hand moves", [physical] {
         TestWorld w;Swing s(physical());auto in=aimed();in.hands[0].trigger=0;
@@ -1997,7 +2063,7 @@ int main() {
         near(on.surfaceHeight,0);near(on.surfaceClearance,.5f,.002f);
         // Eyes, hands and the web hands go with the head; the feet stay the anchor.
         near(on.eyes[0][12]-on.head[12],-.032f);near(on.hands[0].position.x-upright.hands[0].position.x,.5f,.002f);
-        near(on.swing.hands[1].aim.position.x-on.hands[1].position.x,0);
+        near(on.swing.hands[1].aim.position.x-upright.swing.hands[1].aim.position.x,.5f,.002f);
         near(length(on.anchor-feet),0);
         // Off the wall, the head comes back over the feet.
         const auto off=playFor(rig,f,feet,{0,1,0},.6f);
@@ -2368,6 +2434,57 @@ int main() {
         }
         check(peak < 113, "energy injection");
     });
+    test("in the air a taut web takes in its slack: a body thrown at its end hangs where it got to", [] {
+        // Thrown straight up at the web's end, 20 m over it, at 10 m/s: it gets
+        // 5.1 m up. A web that kept its length let it fall back all the way.
+        const auto rise=[](bool taut){
+            TestWorld w;auto c=inert();c.gravity=9.81f;c.taut=taut;Swing s(c);
+            auto in=aimed();in.hands[0].trigger=0;
+            Body body{{0,0,0},{0,10,0},false};
+            float lowest=100;
+            for(int i=0;i<180;++i){
+                const auto intent=s.predictNativeStep(1.f/60,in,w,body);
+                check(intent.valid,"prediction rejected");
+                body={intent.target,intent.velocity,false};
+                if(i>=70)lowest=std::min(lowest,body.position.y);
+            }
+            check(s.webs()[0].attached,"the web let go");
+            return std::pair{lowest,s.webs()[0].length};
+        };
+        const auto [held,rope]=rise(true);
+        check(held>4.8f&&held<5.3f,"the taut web let the body fall from where it got to");
+        near(rope,20-held,.05f);
+        check(rise(false).first<.1f,"the web that kept its length held the body up");
+    });
+    test("a web in the air swings the body along the ground, not into it", [] {
+        // A street at y = 0, the web's end 20 m over it and 25 m on from where
+        // the body is shot from at rest, 15 m up: the swing's bottom, on a
+        // 25.5 m rope, is 5.5 m under the street. The body skims it instead,
+        // its fall turned along it, and swings on.
+        const auto swing=[](float clearance){
+            Street w;auto c=inert();c.gravity=9.81f;c.taut=true;c.groundClearance=clearance;Swing s(c);
+            const Vec3 from{-25,15,0};
+            const auto in=aimedAt(from,w.anchor);
+            Body body{from,{},false};
+            float lowest=100,furthest=-100;
+            for(int i=0;i<300;++i){
+                const auto intent=s.predictNativeStep(1.f/60,in,w,body);
+                check(intent.valid,"prediction rejected");
+                body={intent.target,intent.velocity,false};
+                lowest=std::min(lowest,body.position.y);furthest=std::max(furthest,body.position.x);
+            }
+            check(s.webs()[0].attached,"the web let go");
+            return std::pair{lowest,furthest};
+        };
+        const auto [kept,across]=swing(2.5f);
+        check(kept>2.3f,"the swing came nearer the street than its clearance");
+        check(across>3,"held off the street, the body did not swing on past the web's end");
+        check(swing(0).first<-4,"without a clearance the swing did not go under the street");
+        auto bad=inert();bad.groundClearance=2;bad.groundTurn=0;
+        bool threw=false;
+        try{Swing broken(bad);(void)broken;}catch(const std::invalid_argument&){threw=true;}
+        check(threw,"a clearance with no brake accepted");
+    });
     test("fixed physics agrees across refresh rates", [] {
         auto run = [](int hz) {
             TestWorld w;
@@ -2505,6 +2622,8 @@ int main() {
         TestWorld world;
         auto config = game_swing::physicsConfig({});
         config.gravity = 0;
+        // Slack in the air, as webs had before they were taut there.
+        config.taut = false;
         Swing swing(config);
         Body actual{{0, 0, 0}, {}, false};
         auto in = aimed();
@@ -2529,6 +2648,17 @@ int main() {
         check(!swing.webs()[0].attached, "grip release kept the web");
         near(length(released.velocity - actual.velocity), 0);
         check(released.target.y > actual.position.y, "release lost reel momentum");
+        // Taut, as in the game, the web takes those ten metres in at once.
+        auto tautConfig = game_swing::physicsConfig({});
+        tautConfig.gravity = 0;
+        Swing taut(tautConfig);
+        Body body{{0, 0, 0}, {}, false};
+        auto hold = aimed();
+        hold.hands[0].trigger = 0;
+        taut.predictNativeStep(.02f, hold, world, body);
+        body.position.y = 10;
+        taut.predictNativeStep(.02f, hold, world, body);
+        near(taut.webs()[0].length, 9.4f);
     });
     test("native swing profile retains speed and steering across physics rates", [] {
         const auto config = game_swing::physicsConfig({});
@@ -2796,6 +2926,55 @@ int main() {
                 check(roughest > .5f, "the unsettled comparison no longer shows the jolt");
             }
         }
+    });
+    test("the game's webs swing a native body over the street, and catch a fall past their end without a jolt", [] {
+        // The game's swing (physicsConfig) at real weight, its mover stepping
+        // 16 to 28 ms, a web shot at rest to its end 20 m over the street.
+        const float frames[] = {.018f, .026f, .0282f, .026f, .0178f, .0188f, .0196f, .0188f, .024f, .016f};
+        struct Flight {
+            float lowest = 100, roughest{}, furthest = -100;
+            bool attached{};
+        };
+        const auto fly = [&](Vec3 from, bool before) {
+            auto config = game_swing::physicsConfig({});
+            config.gravity = 9.81f;
+            // The webs before October 15: slack in the air, and no clearance.
+            if (before) {
+                config.taut = false;
+                config.groundClearance = 0;
+            }
+            Street world;
+            Swing swing(config);
+            NativeMover mover;
+            mover.position = mover.last = from;
+            const auto in = aimedAt(from, world.anchor);
+            Flight f;
+            Vec3 previous{};
+            for (unsigned i = 0; i < 200; ++i) {
+                mover.dt = frames[i % 10];
+                const Vec3 observed = mover.run(swing, in, world);
+                if (i >= 2)
+                    f.roughest = std::max(f.roughest, length(observed - previous));
+                previous = observed;
+                f.lowest = std::min(f.lowest, mover.position.y);
+                f.furthest = std::max(f.furthest, mover.position.x);
+            }
+            f.attached = swing.webs()[0].attached;
+            return f;
+        };
+        // From 15 m up and 25 m short of the web's end: its swing, 25.4 m
+        // long, would bottom out 6 m under the street.
+        const auto low = fly({-25, 15, 0}, false);
+        check(low.attached, "the web let go");
+        check(low.lowest > 1.2f, "the native swing came nearer the street than its clearance");
+        check(low.furthest > 3, "the native swing did not go on past the web's end");
+        check(low.roughest < 2, "winding the web in jolted the native swing");
+        // From 10 m over the web's end: the body falls past it. The old web
+        // went slack and caught it 10 m/s at once.
+        const auto over = fly({-10, 30, 0}, false), old = fly({-10, 30, 0}, true);
+        check(old.roughest > 8, "the old web no longer shows its catch");
+        check(over.attached && over.roughest < 2, "a taut web jolted the body falling past its end");
+        check(over.lowest > 1.2f, "the fall past the web's end came too near the street");
     });
     test("native flight removes motion a wall blocked exactly once", [] {
         TestWorld world;
@@ -3507,6 +3686,25 @@ int main() {
         native_webs::heldPoints(lower,lower,.3f,5,points);
         near(lower.y-points[2].y,.15f,1e-4f);
     });
+    test("a web round edges: the game's rope is laid from the wrist round each of them, the nearest first", [] {
+        Vec3 points[8];
+        const Vec3 wrist{0,1.4f,0},lower{.1f,1.1f,.2f};
+        native_webs::Bent bent;
+        // Straight: nothing to lay but the wrist.
+        check(native_webs::ropePoints(wrist,nullptr,0,bent,8,points)==0,"a straight web was laid");
+        bent.count=2;bent.points[0]={3,10,-2};bent.points[1]={8,15,-6};
+        int upper=-1;
+        check(native_webs::ropePoints(wrist,nullptr,0,bent,8,points,&upper)==3&&upper==0,"not the wrist and two edges");
+        near(length(points[0]-wrist),0);near(length(points[1]-bent.points[0]),0);near(length(points[2]-bent.points[1]),0);
+        // In both hands as well: the bow to the upper wrist first, then the edges.
+        check(native_webs::ropePoints(wrist,&lower,.2f,bent,8,points,&upper)==8&&upper==5,"not the bow and the edges");
+        near(length(points[0]-lower),0);near(length(points[5]-wrist),0);near(length(points[7]-bent.points[1]),0);
+        // Six edges and the bow: the bow keeps three points; edges past the room are left out.
+        bent.count=6;
+        for(int k=0;k<6;++k)bent.points[k]={float(k),20,0};
+        check(native_webs::ropePoints(wrist,&lower,.2f,bent,8,points,&upper)==8&&upper==2,"the bow lost its points");
+        near(length(points[7]-bent.points[4]),0);
+    });
     test("a web taken hold of gets no rope of its own: the web's rope draws it, from the nearer hand", [] {
         using Hand=WebRopes::Hand;
         WebRopes r;
@@ -3546,7 +3744,7 @@ int main() {
         r.clear();
         check(!r.rope(0).hands&&r.slot(0)==-1,"cleared ropes still draw");
     });
-    test("hands: the web button makes the web-shooting hand, for as long as it is held", [] {
+    test("hands: the web button makes the web-shooting hand; a web that missed keeps it while held", [] {
         HandPoser p;HandPoseInput in;in.tracked=true;
         const float dt=1.f/90;
         HandPose pose;
@@ -3601,6 +3799,37 @@ int main() {
         // An untracked hand is neither.
         thrown.tracked=false;pose=fight.update(dt,thrown);
         near(pose.fist,0);near(pose.shoot,0);
+    });
+    test("hands: a web that holds closes the hand on it once the shot is there", [] {
+        // "when web connects and held lets change the hand to fist and not keep the horn pose"
+        const float dt=1.f/90;
+        HandPose pose;
+        // Pressed, the web holding from that frame: the pose whole while the shot is on its way (0.1 s).
+        HandPoser p;HandPoseInput in;in.tracked=true;in.web=in.squeeze=1;in.holding=true;
+        for(int i=0;i<9;++i)pose=p.update(dt,in);
+        near(pose.shoot,1,.001f);near(pose.fist,1,.001f);
+        // There: the hand closes on the web, a fist 0.4 s after the shot, and for as long as it is held.
+        for(int i=0;i<27;++i)pose=p.update(dt,in);
+        near(pose.shoot,0,.001f);near(pose.fist,1,.001f);
+        for(int i=0;i<450;++i)pose=p.update(dt,in);
+        near(pose.shoot,0,.001f);near(pose.fist,1,.001f);
+        // Let go, the hand opens; the next web makes the pose again.
+        in.web=in.squeeze=0;in.holding=false;
+        for(int i=0;i<45;++i)pose=p.update(dt,in);
+        near(pose.shoot,0,.001f);near(pose.fist,0,.001f);
+        in.web=in.squeeze=1;in.holding=true;
+        for(int i=0;i<9;++i)pose=p.update(dt,in);
+        near(pose.shoot,1,.001f);
+        // With the trigger as the web button the grip is open: the hand closes on the web all the same.
+        HandPoser swapped;HandPoseInput trigger;trigger.tracked=trigger.holding=true;trigger.web=1;
+        for(int i=0;i<9;++i)pose=swapped.update(dt,trigger);
+        near(pose.shoot,1,.001f);near(pose.fist,0,.001f);
+        for(int i=0;i<36;++i)pose=swapped.update(dt,trigger);
+        near(pose.shoot,0,.001f);near(pose.fist,1,.001f);
+        // A web that missed is no hold: the pose stays while the button is.
+        HandPoser missed;HandPoseInput miss;miss.tracked=true;miss.web=miss.squeeze=1;
+        for(int i=0;i<90;++i)pose=missed.update(dt,miss);
+        near(pose.shoot,1,.001f);
     });
     test("web timeline animates the shot and the release", [] {
         WebTimeline t;
@@ -3696,7 +3925,7 @@ int main() {
         Vec3 shared{}, late{};
         check(native_eyes::reanchorOffset(m.anchor,rope,shared)&&native_eyes::reanchorOffset(m.anchor,render,late),
               "normal travel rejected");
-        const Vec3 eye{m.eyes[0][12],m.eyes[0][13],m.eyes[0][14]}, wrist=webWrist(m.hands[0]);
+        const Vec3 eye{m.eyes[0][12],m.eyes[0][13],m.eyes[0][14]}, wrist=webShooter(m.grips[0],0).position;
         near(length((wrist+shared)-(eye+shared)-(wrist-eye)),0);
         near(length((wrist+shared)-(eye+late)-(wrist-eye)),.71f);
     });
@@ -7598,7 +7827,7 @@ int main() {
         near(e.speed,6,.4f);
         check(e.direction.z<-.99f,"the blow points the wrong way");
         near(e.point.z,-.7f,.07f);
-        check(e.knockback==Knockback::Knockdown&&e.damage>25&&e.damage<35,"a firm punch did the wrong harm");
+        check(e.knockback==Knockback::Knockdown&&e.damage>17&&e.damage<25,"a firm punch did the wrong harm");
         // Pulled back slowly and thrown again: a second punch.
         s.move({0,1.4f,-.8f},{0,1.4f,-.2f},.8f);
         s.move({0,1.4f,-.2f},{0,1.4f,-1.f},4);

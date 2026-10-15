@@ -127,6 +127,8 @@ web, and the grip reels in and shoots web balls. Fists, the T-pose
 calibration and the game's menus keep the buttons as they are.
 
 Swinging
+  Aiming ................ webs leave the web shooter on your wrist and go
+                          where your hand points: along it, past the knuckles
   Squeeze a grip ........ shoot that hand's web; hold to swing
   Release the grip ...... let go
   Trigger ............... reel in while the web is attached
@@ -151,6 +153,12 @@ Swinging
                           edges at most
   Walking with a web .... it pays out as you go, and holds you at its new
                           length when you step off an edge
+  In the air ............ a web never goes slack under you: come nearer its
+                          end (a zip, a jump, flying up) and it takes the
+                          slack in, so it holds you from where you got to.
+                          Slack you make reaching toward it stays
+  Swinging low .......... holding a web you skim the street, feet just over
+                          it, and swing on; let go to land
 
 Grabbing
   Grip aimed at a prop or thug ... catch it with your web
@@ -190,10 +198,11 @@ Your body and fists
   Shoot a web .......... the hand makes Spider-Man's web-shooting hand: the
                          two middle fingers on the trigger in the palm, the
                          first and little fingers and the thumb out. They
-                         come down as the web button goes down, and the hand
-                         stays so for as long as you hold the button: the
-                         web leaves your wrist, your fingers keep the
-                         trigger down. A web ball does it for half a second
+                         come down as the web button goes down; once the web
+                         holds, the hand closes into a fist on it for as
+                         long as you hold the button. A web that misses
+                         keeps the shooting hand while you hold the button,
+                         and a web ball shows it for half a second
   Take the other hand's  that hand closes into a fist on the web
   web
   Squeeze a grip ....... otherwise closes that hand into a fist (the grip

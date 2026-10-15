@@ -1,5 +1,127 @@
 # Validation — 2026-10-15
 
+## One line round an edge; the 17:43 crash (latest build)
+
+The user: "game crashed. also when web goes around edges a second line is
+drawn from the original edge and the hand". The session:
+`dist\Spidy-0.3.4\reports\game-vr-20261015-174325.json` (the 17:42 deploy:
+the fist on the web and the late-night swing build).
+
+| | |
+| --- | --- |
+| How it ended | XR frames advance smoothly to 222.59 s, then stop; `game_exited` true, `final.status` 3 (VR active), `error` 0, `presentation` immersive, gate open |
+| What the web did | the right hand's web took an edge between swing serials 60985 and 61001 (anchor (83.98, 226.02, 2534.81) to (86.59, 220.87, 2525.41), length 58.67 to 47.64 m; `ropes.bends` [0, 1], `wraps` 22 in the session); the last swing sample is serial 61005 |
+| The game's own log | ends at 17:46:46 with its once-a-minute `[Render]` line: no `[Crash]` block, no `NIXXES log closed` (the 17:39 session before it closed cleanly) |
+| Crash reports | none: no minidump in `crs\reports` (newest 10:19) or Documents, no WER report, no Application Error event |
+| Memory | `free_commit_mb` lowest 12203; the game's commit 14.4 GB at 17:46:46 |
+| Frames before | `xr_ms` 11-22 ms, no stalls, `dropped` 18 all session |
+
+**The second line, from the game's code.** In RopeManager::Update, `679dc0`
+lays Start (manager `+0x7d60 + hand * 12`) as point 0, calls the hand points
+(`call [rax + 0x78]` at `0067a5cf`, where Spidy lays the wrist and the edges),
+then measures the line from Start - not from the last point laid - to the
+target (`0067a5d2`-`0067a647`) and fills every point after the laid ones on it:
+point i at `t = (i - (count - 1)) / (n - 1)` from Start (`0067ac0c`-`0067acf1`),
+n = max(2, (min(128, most) - count + 1) x the shot's progress), at most to
+min(128, most) points. So a rope laid [wrist, edge] came back from the edge to
+just past the wrist and ran on to the web's end. Start is also read by the
+hero's update `95f6c0` (the hand's velocity from how Start moves, `+0x7df8`,
+used only by the game's own tail, which a zero Grip leaves out) and by
+`679670` (a rope's own search for where it sticks, before it holds).
+
+**The fix.** native_webs lays the points in its update, sets Start to the last
+of them for the game's update, and puts the wrist back afterwards. 337 core
+tests, all six protocol suites. Not run in the game; `tools/probe_web_bends.py`
+(new) is the check: straight, an edge on the line (the moment a web takes it),
+1 cm to 5 m off it, two and six edges, an edge at the wrist and at the end, both
+hands round an edge, and an edge sweeping off the line, each read back from the
+game's rope slot (off the line from the last edge to the end, back toward the
+wrist, the game still running). `--modules DIR` runs it with another build's
+spidy_stereo_probe.dll: a build without the fix shows the fold.
+
+## A hand on its web is a fist (the build before)
+
+The user: "when web connects and held lets change the hand to fist and not
+keep the horn pose".
+
+| Check (`HandPoser`, 90 Hz) | Result |
+| --- | --- |
+| Pressed, the web holding from that frame | the pose whole at 0.1 s; gone by 0.35 s, the fist whole; both so five seconds later |
+| Let go; then the next web | both gone within 0.5 s; the pose whole again 0.1 s into the next web |
+| The trigger as the web button (the grip open), the web holding | at 0.1 s the pose and no fist; at 0.5 s the fist and no pose |
+| Pressed, the web missed | the pose whole after a second |
+| The checks before (a missed web held 5 s, half let go, let go; the other hand's web; a web ball; a punch) | unchanged |
+
+**Checked:** 337 core tests, the launcher's, all six protocol suites. Not run
+in the game, not tried in the headset.
+
+## No pull to the web's end, near misses, webs round corners (late-night build)
+
+The player's session on the build below (`game-vr-20261015-165818.json`,
+8 minutes, 184 webs, 104 zips), against the one before it (`155311`):
+
+| | before (15:53) | build below (16:58) |
+| --- | --- | --- |
+| pull past gravity while hanging in the air, median / p90 | 0.9 / 24.6 m/s^2 | 10.6 / 51.3 m/s^2 |
+| share of that time over 4 g | 5.9% | 13.9% |
+| speed while on a web, median | 17.0 m/s | 26.5 m/s |
+| rope wound in, not by the trigger nor a zip | 47 m in 50 s | 1,345 m in 196 s |
+
+After zips the rope kept 91% of its length (median), and swings over 5 g
+followed 14% of zips (12% before): the zips were not the difference.
+
+The same stand-in for the game's mover as below, the game's swing:
+
+| start (from the web's end) | before today | this build |
+| --- | --- | --- |
+| 25 m short, 5 m under it | -6.0 m, 0.5 m/s, 20.2 m/s at the bottom | 1.4 m, 1.2 m/s, 16.4 m/s |
+| 10 m short, 10 m over it | 4.8 m, 10.5 m/s (slack caught) | 9.5 m, 1.3 m/s |
+| 40 m short, 15 m under it | -23.1 m, 0.4 m/s | 1.4 m, 1.1 m/s |
+| 25 m short, 20 m over it | -13.0 m, 10.6 m/s (slack caught) | 1.6 m, 2.7 m/s |
+
+(Lowest body centre over the street, worst change of speed in a step.) Keeping
+0.6 m of any slack, tried on the way, caught a fall past the web's end 0.6 m
+late at 9.1 m/s; only the hand's own slack is kept now.
+
+**Checked:** 336 core tests (the hand's reach pumps 4 cm a cycle, against
+0.4 m when all slack was taken in; the rope's points laid round edges, with a
+web in both hands too; a corner's edge handed on), the GPU test, all six
+protocol suites. Not run in the game.
+
+## Webs from the web shooter, taut in the air, over the street (night build)
+
+The player's session (`dist\Spidy-0.3.4\reports\game-vr-20261015-155311.json`,
+Virtual Desktop, Quest 3, weight 100%): 69 webs, 42 zips; while the swing owned the
+flight a web was slack (the body nearer its end than its length) by up to
+56 m, and taut ones held the body 0.5-1.3 m beyond their length (the hand's
+place, physical webs). Most were 100 m webs in open air. From 124 s to 139 s,
+on 26-100 m webs, the feet swung down to 0.2 m over the street and touched it.
+
+Virtual Desktop's poses (`virtualdesktop-openxr/action.cpp`, its calibration
+of the Oculus runtime's): in the grip's frame the aim pose's forward is
+(0, -0.866, -0.5), the grip turned 30 degrees about its +x from the hand's
+-y toward the thumb; its origin (0, -0.067, -0.074) from the grip point.
+
+A stand-in for the game's mover (tests' `NativeMover`: the step in flight,
+settled step lengths, steps of 16-28 ms as in the October 5 probe), the
+game's swing at real weight, a web shot at rest to its end 20 m over a street:
+
+| start (from the web's end) | before: lowest, worst step | now: lowest, worst step |
+| --- | --- | --- |
+| 25 m short, 5 m under it | -6.0 m, 0.5 m/s | 5.8 m, 1.4 m/s |
+| 10 m short, 10 m over it | 4.8 m, 10.5 m/s (slack caught) | 9.5 m, 1.3 m/s |
+| 40 m short, 15 m under it | -23.1 m, 0.4 m/s | 2.1 m, 1.4 m/s |
+| 25 m short, 20 m over it | -13.0 m, 10.6 m/s (slack caught) | 9.4 m, 3.0 m/s |
+
+(Lowest: the body's centre over the street; the clearance asked is 2.5 m.)
+Braking the body at the ground below it instead, the first try, kept it 2.5 m
+up but yanked it toward the web's end 9 m/s in one step when the web lay
+near level, and took a swing's speed at the bottom from 20 to 27 m/s.
+
+**Checked:** 334 core tests, the GPU test (13 checks), all six protocol
+suites. Not run in the game: the probes give the swing their own aim poses,
+and the webs' start is the XR worker's.
+
 ## The vent from where the player stands (noon build)
 
 The player's session (`dist\Spidy-0.3.4\reports\game-vr-20261015-111549.json`, the

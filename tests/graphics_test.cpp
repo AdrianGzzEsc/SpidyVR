@@ -3,6 +3,7 @@
 #include "spidy/d3d12_renderer.hpp"
 #include "spidy/gadget_wheel.hpp"
 #include "spidy/lab_world.hpp"
+#include "spidy/tracking.hpp"
 #include "spidy/web_visual.hpp"
 #include <algorithm>
 #include <cmath>
@@ -325,17 +326,17 @@ int main(int argc, char** argv) {
             const Pose left{{-.17f, 19.4f, 18.5f}, Quat{0, 0, 0, 1}};
             std::vector<Vertex> webs = hands;
             WebLine line;
-            line.start = webWrist(right);
+            line.start = webShooter(right, 1).position;
             line.end = {17, 30, -5};
             appendWeb(webs, line, camera.position, pixelAngle);
             line = {};
-            line.start = webWrist(left);
+            line.start = webShooter(left, 0).position;
             line.end = {-12, 26, -20};
             line.slack = 3;
             line.seed = 1.7f;
             appendWeb(webs, line, camera.position, pixelAngle);
             line = {};
-            line.start = webWrist(right);
+            line.start = webShooter(right, 1).position;
             line.end = {5, 35, -40};
             line.extended = .6f;
             appendWeb(webs, line, camera.position, pixelAngle);

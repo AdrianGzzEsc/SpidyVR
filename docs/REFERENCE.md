@@ -216,7 +216,11 @@ Inside RopeManager::Update `676dd0`, `679dc0` rebuilds every attached rope's
 points from scratch each update: Start, Grip when it is not zero, then the
 hero's hand points (`95f9c0`, the hero rope manager's vtable `+0x78`, entry
 `48 8b c4 f3 0f 11 50 18 55 53 56 41 56 48 8d a8`, `void(mgr, rope, dt,
-int* count)`), then the line from the last of those to the anchor; `677f40`,
+int* count)`), then the line to the anchor - from Start (or a non-zero Grip),
+NOT from the last hand point (checked October 15, `0067a5d2` and the fill loop
+at `0067ac0c`): points after the hand points lie on Start-to-anchor, at most to
+min(128, most) in all. A caller laying points of its own makes the last of them
+Start for the update (native_webs does), or the line comes back to Start; `677f40`,
 still inside the update, copies the points into the tube and ribbon geometry
 with their bounds. Points written after the update are never drawn; written
 by the hand points, they are (native_webs' `handPoints`). The most points a

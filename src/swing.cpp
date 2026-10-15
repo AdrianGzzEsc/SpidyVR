@@ -53,7 +53,8 @@ Swing::Swing(SwingConfig c) : config_(c) {
         c.maxZipImpulse,    c.jumpSpeed,       c.pointLaunchWindow, c.zipLandingWindow, c.obstructionTime,
         c.anchorClearance,  c.wallStep,        c.wallCarry,       c.wallWalkSpeed,   c.wallAcceleration,   c.wallBrake,
         c.wallJumpOut,      c.wallJumpUp,      c.wallJumpPause,   c.wallGrace,          c.crestSeconds,
-        c.crestPush,        c.crestHop,        c.strandReach};
+        c.crestPush,        c.crestHop,        c.strandReach,     c.handSlack,          c.groundClearance,
+        c.groundTurn};
     for (float v : nonnegative)
         if (!std::isfinite(v) || v < 0)
             throw std::invalid_argument("Invalid swing configuration");
@@ -70,6 +71,8 @@ Swing::Swing(SwingConfig c) : config_(c) {
         throw std::invalid_argument("Invalid wall mount");
     if (!std::isfinite(c.handHeight) || c.bendRope > c.minRope || c.strandReach > 1)
         throw std::invalid_argument("Invalid physical web");
+    if (c.groundClearance > 0 && !(c.groundTurn > 0))
+        throw std::invalid_argument("Invalid ground clearance");
 }
 void Swing::allowPhysical(bool allowed) {
     config_.physical = allowed;
@@ -599,6 +602,7 @@ void Swing::release(int i, EventKind reason) {
     hands_[i].zipUsed = false;
     hands_[i].reeling = false;
     hands_[i].pullDistance = hands_[i].pullTime = hands_[i].obstructed = hands_[i].winch = 0;
+    hands_[i].slack = 0;
 }
 bool Swing::blocks(const RayHit& hit, Vec3 from, Vec3 anchor, bool bend) const {
     const float clearance =
@@ -643,6 +647,47 @@ float Swing::follow(int i, Vec3 radial) const {
     // to a right angle between them; past it, hold the carried speed there.
     const float cosHalfAngle = std::sqrt(std::max(0.f, (1 + dot(radial, delta / dist)) / 2));
     return std::min(1.f, cosHalfAngle * 1.4142135f);
+}
+void Swing::skimGround(float dt, const WorldQueries& world) {
+    const float falling = -body_.velocity.y;
+    if (!(config_.groundClearance > 0) || !(dt > 0) || !(falling > 0) || !finite(body_.position))
+        return;
+    // Only a body a web holds from above: one on a web to the ground below
+    // it goes down to it.
+    bool held = false;
+    for (int i = 0; i < 2; ++i)
+        if (bears(i)) {
+            const Vec3 up = hold(i) - body_.position;
+            held |= up.y > .3f * length(up);
+        }
+    if (!held)
+        return;
+    const float turn = config_.groundTurn;
+    // As far as the ground matters: the clearance, and what turning this
+    // fall level takes.
+    const float reach = config_.groundClearance + falling * falling / (2 * turn) + falling * dt + .5f;
+    const auto ground = world.raycast(body_.position, {0, -1, 0}, std::min(reach, config_.maxRange));
+    if (!ground || !finite(ground->point) || !finite(ground->normal))
+        return;
+    const Vec3 face = normalized(ground->normal);
+    if (length(face) < .5f || face.y < .5f)
+        return;
+    // The fastest fall that still turns level at the clearance; and no more
+    // turn in a step than three times the usual, behind as the body may be.
+    const float height = body_.position.y - ground->point.y;
+    const float allowed = std::sqrt(2 * turn * std::max(0.f, height - config_.groundClearance));
+    const float kept = std::max(allowed, falling - 3 * turn * dt);
+    if (kept >= falling)
+        return;
+    // What the fall loses goes on along the ground, the way the body goes.
+    const float speed = length(body_.velocity);
+    const float across = length(Vec3{body_.velocity.x, 0, body_.velocity.z});
+    body_.velocity.y = -kept;
+    if (across > .5f) {
+        const float along = std::sqrt(std::max(0.f, speed * speed - kept * kept)) / across;
+        body_.velocity.x *= along;
+        body_.velocity.z *= along;
+    }
 }
 WebShot Swing::shot(Pose aim, Vec3 from, const WorldQueries& world) const {
     WebShot out;
@@ -712,8 +757,15 @@ void Swing::inputs(float dt, const Input& in, const WorldQueries& world) {
         if (config_.physical) {
             const float over = std::max({dt, stepSeconds_, 1e-3f});
             if (s.sample) {
+                const Vec3 was = s.offset;
                 s.offset += limited(offset - s.offset, config_.maxHandSpeed * dt);
                 s.rate = limited(turn.rotate(h.gripRelativeToHead - s.previous) / over, config_.maxHandSpeed);
+                // Toward the web's end the hand makes slack; back from it, it
+                // takes that up first (SwingConfig::taut).
+                if (w.attached)
+                    s.slack = std::clamp(s.slack + length(w.anchor - was - body_.position) -
+                                             length(w.anchor - s.offset - body_.position),
+                                         0.f, config_.handSlack);
             } else {
                 s.offset = offset;
                 s.rate = {};
@@ -740,7 +792,7 @@ void Swing::inputs(float dt, const Input& in, const WorldQueries& world) {
             s.triggerReleased = false;
             s.reeling = false;
             s.zipUsed = hands_[o].zipUsed;
-            s.pullDistance = s.pullTime = s.obstructed = 0;
+            s.pullDistance = s.pullTime = s.obstructed = s.slack = 0;
             events_.push_back({EventKind::Join, i, .5f});
         } else if (!w.attached && shoot) {
             // From the body, stood off a surface the game holds it on.
@@ -754,7 +806,7 @@ void Swing::inputs(float dt, const Input& in, const WorldQueries& world) {
                 s.triggerReleased = false;
                 s.reeling = false;
                 s.zipUsed = false;
-                s.pullDistance = s.pullTime = s.obstructed = 0;
+                s.pullDistance = s.pullTime = s.obstructed = s.slack = 0;
                 events_.push_back({EventKind::Attach, i, .65f});
             } else {
                 events_.push_back({EventKind::Miss, i, .15f});
@@ -905,6 +957,8 @@ void Swing::step(float dt, const Input& in, const WorldQueries& world, const Wor
         }
         body_.velocity = limited(body_.velocity, config_.maxSpeed);
         body_.grounded = supported;
+        if (!supported && !wasGrounded)
+            skimGround(dt, world);
     }
     move(body_.position + body_.velocity * dt, collision);
     for (int i = 0; i < 2; ++i) {
@@ -944,10 +998,26 @@ void Swing::step(float dt, const Input& in, const WorldQueries& world, const Wor
         hands_[i].winch = (webs_[i].length - lengths[i]) / dt;
         webs_[i].length = lengths[i];
     }
+    const bool bearing[2] = {bears(0), bears(1)};
+    // Taut, in the air: no web slacker than its hand made it. After the
+    // winch, and with the hand's own pull in this step, or the rope's own
+    // pulls are taken in twice and the body climbs at twice their speed. On
+    // the ground the game walks the body, its webs paying out (payOut), and
+    // on a wall the stick walks it.
+    if (config_.taut && !body_.grounded && !wall_.on)
+        for (int i = 0; i < 2; ++i) {
+            auto& w = webs_[i];
+            const Vec3 out = body_.position - hold(i);
+            const float span = length(out);
+            if (!bearing[i] || span < 1e-5f)
+                continue;
+            const float pulled = std::max(0.f, dot(hands_[i].rate, out / span)) * dt;
+            const float slackest = span + hands_[i].slack + pulled;
+            w.length = std::min(w.length, std::max(std::min(config_.minRope, w.length), slackest));
+        }
     // What each rope holds the body to: its anchor, or with physical webs
     // the point that keeps the hand on it.
     const Rope ropes[2] = {{hold(0), webs_[0].length}, {hold(1), webs_[1].length}};
-    const bool bearing[2] = {bears(0), bears(1)};
     if (bearing[0] && bearing[1])
         move(projectTwoWebs(body_.position, ropes[0], ropes[1]), collision);
 

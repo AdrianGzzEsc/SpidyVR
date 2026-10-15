@@ -47,4 +47,22 @@ inline bool validTrackedPose(Pose p) {
     const float n = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
     return finite(p.position) && std::isfinite(n) && std::abs(n - 1) < .001f;
 }
+// Spider-Man's web shooter on the hand a controller's OpenXR grip pose holds:
+// on the palm's side of the wrist the player's body draws there
+// (body::Config::wristFromGrip has that wrist 9 cm from the grip point toward
+// the forearm, the grip's +y, and 2 cm toward the back of the hand), looking
+// where the hand points - from the wrist out past the knuckles, the grip's -y
+// - with the thumb's side up, the grip's -z. The grip's +x is normal to the
+// palm and to the right on both hands: out of a left palm, into a right one.
+// hand: 0 the left, 1 the right.
+//
+// Webs leave from here, and web balls, picks and pointing aim along it. Until
+// October 15 they aimed along the controller's aim pose, which Meta's runtime
+// (and Virtual Desktop's, calibrated to it) turns 30 degrees from the hand
+// toward the thumb: with the palm down, as a web is shot, 30 degrees inward
+// of where the hand pointed ("it feels off to the side a bit").
+inline Pose webShooter(Pose grip, unsigned hand) {
+    const float palm = hand == 0 ? .008f : -.008f;
+    return compose(grip, {{palm, .08f, 0}, {-.70710678f, 0, 0, .70710678f}});
+}
 } // namespace spidy

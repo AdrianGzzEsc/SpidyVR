@@ -3,6 +3,7 @@
 #include "presentation_gate.hpp"
 #include "swing.hpp"
 #include "swing_takeoff.hpp"
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -32,8 +33,13 @@ inline SwingConfig physicsConfig(const Config& c) {
     physics.zipMultiplier = 4.5f;
     // Walls are the swing's own from the start (Settings::walls).
     physics.walls = true;
-    // And webs are ropes (Settings::physical).
+    // And webs are ropes (Settings::physical), taut in the air, whose swings
+    // come down to the ground no nearer than his centre, a metre over his
+    // feet here, 1.4 m over it: his feet 0.4 m (SwingConfig::taut,
+    // groundClearance).
     physics.physical = true;
+    physics.taut = true;
+    physics.groundClearance = 1.4f;
     return physics;
 }
 // MoverStandard applies a velocity command during the physics step after the
@@ -223,6 +229,33 @@ struct Ropes {
     uint32_t shared{}, reserved{};
 };
 static_assert(sizeof(Ropes) == 96);
+// The edges each hand's web bends round (SpidySwingBends), for drawing it
+// round them to where it sticks. Data's webs end at the nearest edge, the
+// one the swing holds the body from, and the game's rope drawn to it jumped
+// from where the web stuck to each new edge (the player, October 15: "the
+// rope origin point seem to teleport to the new edge").
+struct Bends {
+    uint32_t magic = 0x53574245, version = 1, bytes = sizeof(Bends), status{};
+    int64_t sequence{};
+    struct Hand {
+        uint32_t count{};        // edges in `points`; 0: the web lies straight
+        Vec3 end{};              // where the web sticks
+        Vec3 points[maxBends]{}; // the edges, the one nearest the hand first
+    } hands[2];
+};
+static_assert(sizeof(Bends) == 200);
+// A web's edges as Bends hands them on: its anchor is the edge nearest the
+// hand, and each edge records the one before it, back to where it sticks.
+inline Bends::Hand edgesOf(const Web& w) {
+    Bends::Hand out;
+    if (!w.attached)
+        return out;
+    out.end = w.end();
+    out.count = static_cast<uint32_t>(std::clamp(w.bent, 0, maxBends));
+    for (int k = 0; k < static_cast<int>(out.count); ++k)
+        out.points[k] = k == 0 ? w.anchor : w.bends[static_cast<size_t>(w.bent - k)].from;
+    return out;
+}
 // The movement module's own limit: every speed the VR settings offer.
 constexpr float motionSpeedLimit = 65;
 // The most gravity a swing takes, m/s^2: every weight the VR settings offer.

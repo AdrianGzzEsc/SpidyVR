@@ -3,7 +3,152 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 15, evening): the game screen from the pause menu.**
+**Latest build (October 15, late night): one line round an edge, and the
+crash.** You: "game crashed. also when web goes around edges a second line is
+drawn from the original edge and the hand".
+
+- **One line round an edge.** A web that bends round an edge is drawn with the
+  game's own rope: Spidy lays its first points, your web shooter and then each
+  edge, and the game draws the rest to where the web sticks. The game draws
+  that rest from the rope's start, which was still your wrist, not from the
+  last edge: a second line ran from your hand straight to where the web stuck,
+  through the building. Now the rope's start is the last edge while the game
+  builds it, so the line goes on from there and only from there.
+- **The crash.** Your 17:43 session stopped 3 minutes 42 seconds into VR,
+  mid-swing, a tenth of a second after your right hand's web took an edge.
+  The game wrote no crash report of its own and Windows recorded none: it
+  simply ended, with 12 GB of memory free and nothing wrong in the frames
+  before. At the moment a web takes an edge, that edge lies on the line from
+  your wrist to where the web sticks, so the rope went out to the edge and
+  straight back along itself to your wrist: a rope folded back on itself,
+  where drawing a rope as a tube is likeliest to break. With the second line
+  gone, so is the fold. That the fold was the crash is my best reading, not a
+  measurement: the game left nothing to read.
+- If Spidy cannot lay the rope's points (the game's hook missing), a web round
+  an edge is drawn to the nearest edge as before tonight, never straight
+  through the building to its end.
+- **Checked:** 337 core tests, all six protocol suites. **Not run in the game,
+  not tried in the headset:** you are trying it. A new probe,
+  `tools/probe_web_bends.py`, lays one of the game's ropes round edges in the
+  running game (the moment a web takes an edge among them) and reads back
+  what the game built; it has not been run yet.
+
+**Earlier build (October 15, late night): punches hit 30% softer.** You: "lower
+the damage by about 30% i want enemies to last longer".
+
+- A punch now deals 7 to 28 of the game's hit points, by how fast your fist
+  goes (10 to 40 before; a street thug has about 50). A web strike's blow is a
+  punch, and the combo, called blows, slams and finishers multiply it, so all
+  of those are 30% softer too. How hard a thug flinches, falls or flies still
+  comes from your fist's speed alone. Webs and thrown enemies are unchanged.
+- **Checked:** the core tests. **Not tried: in the game or in the headset.**
+
+**Earlier build (October 15, late night): a hand on its web is a fist.** You:
+"when web connects and held lets change the hand to fist and not keep the
+horn pose".
+
+- **The web-shooting hand is for the shot.** The two middle fingers still
+  come down as the web button goes down, and the hand is the web-shooting
+  hand as the web leaves your wrist. Once the web holds, 0.15 s after the shot
+  (while it is on its way to what it sticks to), the first and little fingers
+  and the thumb close over: a fist on the web, for as long as you hold the
+  button. The same for a web that caught a thug or a prop, and with WEB
+  BUTTON: TRIGGER (the hand closes though the grip is open).
+- A web that misses keeps the web-shooting hand while you hold the button,
+  and a web ball still shows it for half a second.
+- **Checked:** 337 core tests (one new: a web that holds, the pose whole
+  0.1 s after the shot and gone by 0.35 s, the fist closed and still closed
+  five seconds on; the same with the trigger as the web button; a web that
+  missed keeps the pose), the launcher's, all six protocol suites. **Not
+  tried: in the game or in the headset.** If the fist comes before the web
+  lands, or after, that is one number (`HandPoseTuning::connectSeconds`).
+
+**Earlier build (October 15, late night): no pull toward the web's end, near
+misses over the street, and webs drawn round corners.** You, after the build
+below: "no swinging it too springy and throw me too much", "and the wind is
+too strong probably", "i want the near misses", and "when bending around edge
+the rope origin point seem to teleport to the new edge (its been like that
+for a while)".
+
+- **Nothing pulls you toward the web's end any more.** The build below wound a
+  web in wherever its swing would bottom out near the street, from the moment
+  it was shot. In your 16:58 session that was half of all your swinging: the
+  ropes took in 1,340 m that way (47 m in the session before), you were pulled
+  ten times as hard as before in a typical moment (10.6 against 0.9 m/s^2 past
+  gravity) and swung at 26.5 m/s where you had swung at 17. That pull was the
+  wind and the throwing. It is gone.
+- **Near misses.** A web in the air still never lets you hit the street: as
+  you come down to it, your fall is turned along it, keeping your speed, so you
+  skim it with your feet 0.4 m up and swing on. Nothing winds the web in for
+  it; it only acts in the last few metres.
+- **Your arms pump nothing.** The rope takes in only the slack your body makes
+  (a zip, a jump, swinging past close to the web's end). The slack your hand
+  makes reaching toward the web's end it keeps, and your hand takes that up
+  first as it draws back. Taking all slack in, the build below climbed you up
+  the web with every reach and pull of an arm.
+- **Webs round corners stay on what they stuck to.** A web that bends round an
+  edge was drawn only as far as that edge, its end jumping from the building
+  to each new edge. The game's rope now goes from your web shooter round each
+  edge to where the web sticks.
+- **Checked:** 336 core tests, the GPU test, all six protocol suites. In a
+  stand-in for the game's mover at your session's frame times: a swing that
+  bottomed out 6 m under the street skims it with the feet 0.4 m up, at
+  16.4 m/s (an unhindered swing: 20.2 m/s, through the street), at most
+  1.2 m/s of change a step; a fall past a web's end is caught by 1.3 m/s a
+  step (10.5 m/s with the webs before today). An arm reaching 0.4 m toward the
+  web and back five times moves the body 4 cm a time. **Not tried: in the game
+  or in the headset**; the corners' drawing is in the game's own rope update,
+  which no test reaches.
+
+**Earlier build (October 15, night): webs from the web shooter, aimed where
+your hand points, and taut in the air.** You: "lets make the webs come out of
+the webshooter and something is off with the aim, it feels off to the side a
+bit. also webs are too strechy when you're in the air with them it makes it
+hard to swing and feels like hitting the ground when i shouldnt".
+
+- **Out of the web shooter.** A web started 3 cm inside your fist, by the
+  knuckles: in your 15:53 session's pictures of your hands it comes out
+  between the fingers. Now webs, web balls and the web you hold in both hands
+  leave Spider-Man's web shooter, on the palm side of his wrist, where your
+  body puts that wrist (8 cm behind the controller's grip).
+- **Aimed where your hand points.** Webs, web balls, catching props and
+  thugs, gadgets and pointing at the game's interactions all went along the
+  controller's aim ray. Meta's runtime tilts that ray 30 degrees from the hand
+  toward the thumb, and Virtual Desktop copies Meta's poses (its source
+  records them). Held palm down, as a web is shot, that is 30 degrees inward
+  of where Spider-Man's hand points: the right hand's webs went left of it,
+  the left hand's right. Now they go straight along the hand, from the wrist
+  out past the knuckles, the way his fingers point, and the aim markers with
+  them. It is a 30 degree change: if it now feels high or low, that is one
+  angle to set.
+- **Taut in the air.** In the 15:53 session most webs were 100 m webs in open
+  air, and whenever you came nearer a web's end (a zip, a jump, flying up) it
+  went slack, 5 to 50 m at a time, and you fell free until it caught you again
+  with a jolt. Now a web in the air takes its slack in as you come nearer its
+  end: it holds you from where you got to, and the swing starts there. On the
+  ground and on walls a web keeps its length, and pays out as you walk, as
+  before.
+- **Swings clear the street.** A web whose swing would bottom out within
+  2.5 m of the ground under it (your body's middle; your feet 1.5 m up) winds
+  in until it does not, from the moment it is shot: speeding up gently, never
+  a yank, and slowing as it gets there. In the session a 100 m web held you
+  2 m over the street, and 26 to 36 m webs ran you along it. While you hold a
+  web you stay off the ground; let go of it to land.
+- **Punches** still land with the knuckles: the fist is measured 13 cm along
+  the hand from the web shooter, 7 cm from where it was.
+- **Checked:** 334 core tests (5 new or rewritten: where the web shooter is
+  and where it aims; a body thrown at its web's end hangs where it got to; a
+  swing kept off the street; and both with a stand-in for the game's mover at
+  your session's frame times), the GPU test, all six protocol suites. In that
+  stand-in, a body falling past its web's end was caught at 10.5 m/s in one
+  step by the old web and changes speed by 1.3 m/s a step at most with the new
+  one; a swing that bottomed out 6 m under the street stays 5.8 m over it
+  (19.4 m/s at the bottom, 20.2 m/s before); a low shot at a far building,
+  23 m under the street before, stays 2.1 m over it. **Not tried: in the game
+  or in the headset.** How the webs feel and where the hand aims them are
+  yours to try first.
+
+**Earlier build (October 15, evening): the game screen from the pause menu.**
 You: "move the VIEW: GAME SCREEN to the first menu (the one with resume)",
 and "its the same menu as the ones spidy settings are in just not the same
 depth".

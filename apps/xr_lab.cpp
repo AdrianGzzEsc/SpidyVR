@@ -146,8 +146,8 @@ int main(int argc, char** argv) {
                     const Vec3 viewer = haveHead ? lastHead.position : Vec3{};
                     // One web in both hands is one strand: to the hand that holds it
                     // nearer its end, and on from wrist to wrist.
-                    const Vec3 wrists[2] = {webWrist(rig.toWorld(f.hands[0].grip)),
-                                            webWrist(rig.toWorld(f.hands[1].grip))};
+                    const Vec3 wrists[2] = {webShooter(rig.toWorld(f.hands[0].grip), 0).position,
+                                            webShooter(rig.toWorld(f.hands[1].grip), 1).position};
                     const int upper = !swing.shared() || !f.hands[0].valid || !f.hands[1].valid ? -1
                                       : swing.webs()[1].length < swing.webs()[0].length         ? 1
                                                                                                 : 0;
@@ -165,7 +165,7 @@ int main(int argc, char** argv) {
                                 held.phase != GrabPhase::None ? props.find(held.target) : std::nullopt;
                             if (web.attached || target) {
                                 WebLine line;
-                                line.start = webWrist(hand);
+                                line.start = wrists[i];
                                 line.end = target ? target->position : web.anchor;
                                 const float rope = target ? held.length : web.length;
                                 const bool taut = target ? held.taut : web.tension > 0;
@@ -182,7 +182,8 @@ int main(int argc, char** argv) {
                                 // roughly one milliradian per recommended pixel.
                                 appendWeb(geometry, line, haveHead ? viewer : hand.position, .001f);
                             } else {
-                                const auto aim = rig.toWorld(f.hands[i].aim);
+                                const auto aim =
+                                    rig.toWorld(webShooter(f.hands[i].grip, static_cast<unsigned>(i)));
                                 // What a grip press would web: a prop lights up above it.
                                 if (const auto next = grab.preview(aim, world, props)) {
                                     const Vec3 top = next->position + Vec3{0, next->radius + .25f, 0};
