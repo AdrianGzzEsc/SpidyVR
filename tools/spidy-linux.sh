@@ -27,18 +27,63 @@ fi
 [[ -x "$CLIENT" ]] || { echo "steam-runtime-launch-client not found (set SPIDY_LAUNCH_CLIENT)." >&2; exit 1; }
 [[ -f "$SPIDY_DIR/tools/run_game_vr.py" ]] || { echo "Spidy not found in $SPIDY_DIR (set SPIDY_DIR)." >&2; exit 1; }
 
-# Proton's OpenXR bridge uses the runtime the host's active_runtime.json names.
+# Proton's OpenXR bridge uses the runtime the host's active_runtime.json names, and sets it up
+# only when the game starts: the runtime has to be running and selected before the game starts.
+# SPIDY_RUNTIME=steamvr|wivrn (set by spidy-steamvr.sh / spidy-wivrn.sh); default: the active one.
 ACTIVE="${XDG_CONFIG_HOME:-$HOME/.config}/openxr/1/active_runtime.json"
-if grep -qi wivrn "$ACTIVE" 2>/dev/null; then
-    pgrep -x wivrn-server >/dev/null || echo "Warning: WiVRn does not seem to be running. Start it and connect the headset first." >&2
+STEAMVR_JSON="$HOME/.local/share/Steam/steamapps/common/SteamVR/steamxr_linux64.json"
+RUNTIME="${SPIDY_RUNTIME:-}"
+if [[ -z "$RUNTIME" ]]; then
+    if grep -qi wivrn "$ACTIVE" 2>/dev/null; then RUNTIME=wivrn; else RUNTIME=steamvr; fi
+fi
+game=$(pgrep -o -f 'Spider-Man\.exe' || true)
+
+# Warns when the game started before the VR server (Proton then has no VR bridge: error -51).
+check_start_order() {
+    local server=$1 name=$2 game_age server_age
+    [[ -n "$game" && -n "$server" ]] || return 0
+    game_age=$(ps -o etimes= -p "$game" | tr -d ' ')
+    server_age=$(ps -o etimes= -p "$server" | tr -d ' ')
+    if [[ -n "$game_age" && -n "$server_age" ]] && (( game_age > server_age )); then
+        echo "Warning: the game was started before $name (or $name restarted since). Close the game and start it again from Steam." >&2
+    fi
+}
+
+case "$RUNTIME" in
+steamvr)
+    if pgrep -x wivrn-server >/dev/null; then
+        echo "WiVRn is running and owns the OpenXR runtime. Close WiVRn, then start SteamVR and the game." >&2
+        exit 1
+    fi
+    if [[ "$(readlink -f "$ACTIVE" 2>/dev/null)" != "$(readlink -f "$STEAMVR_JSON")" ]]; then
+        # WiVRn deletes this file when it exits, and SteamVR does not recreate it.
+        mkdir -p "$(dirname "$ACTIVE")"
+        ln -sfn "$STEAMVR_JSON" "$ACTIVE"
+        echo "SteamVR is now the OpenXR runtime. Close the game, start it again from Steam, then run this again." >&2
+        exit 1
+    fi
+    server=$(pgrep -ox vrserver || true)
+    [[ -n "$server" ]] || echo "Warning: SteamVR does not seem to be running. Start it and connect the headset first." >&2
+    check_start_order "$server" SteamVR
+    ;;
+wivrn)
+    server=$(pgrep -ox wivrn-server || true)
+    if [[ -z "$server" ]]; then
+        echo "WiVRn is not running. Start it, connect the headset, then start the game from Steam." >&2
+        exit 1
+    fi
+    grep -qi wivrn "$ACTIVE" 2>/dev/null || echo "Warning: WiVRn is running but is not the active OpenXR runtime ($ACTIVE)." >&2
     # pressure-vessel hides the host's runtime from the game unless asked to import it.
-    game=$(pgrep -f 'Spider-Man\.exe' | head -n1 || true)
     if [[ -n "$game" ]] && ! tr '\0' '\n' < "/proc/$game/environ" 2>/dev/null | grep -q '^PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1$'; then
         echo "Warning: the game was not started with PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 in its launch options; it may not find WiVRn." >&2
     fi
-else
-    pgrep -x vrserver >/dev/null || echo "Warning: SteamVR does not seem to be running. Start it and connect the headset first." >&2
-fi
+    check_start_order "$server" WiVRn
+    ;;
+*)
+    echo "Unknown SPIDY_RUNTIME '$RUNTIME' (use steamvr or wivrn)." >&2
+    exit 1
+    ;;
+esac
 
 if ! "$CLIENT" --list 2>/dev/null | grep -qx -- "--bus-name=$BUS"; then
     cat >&2 <<MSG

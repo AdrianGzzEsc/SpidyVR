@@ -22,7 +22,15 @@ stayed the more reliable of the two.
        PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 PRESSURE_VESSEL_FILESYSTEMS_RW=/var/lib/flatpak/app/io.github.wivrn.wivrn STEAM_COMPAT_LAUNCHER_SERVICE=proton %command%
 
    A WiVRn installed from your distribution's packages does not need `PRESSURE_VESSEL_FILESYSTEMS_RW`.
-   Without these the container does not see WiVRn.
+   Without these the container does not see WiVRn. With SteamVR the short options above are the
+   tested ones.
+4. SteamVR over Steam Link: SteamVR's beta branch (Steam > SteamVR > Properties > Betas) has worked
+   better. If a firewall runs, open Steam's streaming ports, for example with ufw:
+
+       sudo ufw allow 27031/udp
+       sudo ufw allow 27036/udp
+       sudo ufw allow 27036:27037/tcp
+       sudo ufw reload
 
 ## Play
 
@@ -30,8 +38,9 @@ stayed the more reliable of the two.
    headset in the WiVRn app. Do this before the game: Proton sets up its OpenXR bridge only when the
    game starts.
 2. Start the game from Steam and wait at the main menu.
-3. Run `bash tools/spidy-linux.sh` from the Spidy folder (a zip made on Windows keeps no run
-   permission for the script).
+3. From the Spidy folder run `bash tools/spidy-steamvr.sh` or `bash tools/spidy-wivrn.sh` (a zip
+   made on Windows keeps no run permission for the scripts). Each checks its runtime first;
+   `tools/spidy-linux.sh` uses whichever runtime is active.
 4. Click the game window once, load your save with mouse or keyboard, and VR takes over in gameplay.
 
 ## When it does not work
@@ -44,8 +53,12 @@ stayed the more reliable of the two.
 - To see what Proton found, add `PROTON_LOG=1` to the launch options and start the game: in
   `~/steam-1817070.log`, a working setup shows xrizer and the headset (for WiVRn, `WiVRn HMD`) next to
   `wineopenxr test instance`. Remove `PROTON_LOG=1` afterwards: it slows the game.
-- The script warns when WiVRn is the active runtime but the game was started without
-  `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1`.
+- The scripts warn when the game was started before SteamVR or WiVRn (the usual cause of -51), and
+  when WiVRn is used but the game was started without `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1`.
+- Back to SteamVR after WiVRn: WiVRn deletes `~/.config/openxr/1/active_runtime.json` when it exits,
+  and SteamVR does not recreate it, so the game finds no runtime. `spidy-steamvr.sh` points it at
+  SteamVR again and asks you to restart the game; SteamVR Settings > OpenXR > "Set SteamVR as
+  OpenXR Runtime" does the same.
 - WiVRn: stepping outside the Quest's boundary stops the game until you are back inside. The headset
   shows passthrough and the session loses focus, and Spidy reads no input without focus. Make the
   boundary larger, use a stationary boundary, or (developer mode, over USB)
