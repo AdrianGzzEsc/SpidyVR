@@ -2,6 +2,7 @@
 // game's own web-shooter shots fired through the hero's gadget on the main
 // thread, and what they do where they land (game_shooter.hpp).
 #include "spidy/game_shooter.hpp"
+#include "spidy/game_warp.hpp"
 #include "spidy/game_targets.hpp"
 #include "spidy/native_bodies.hpp"
 #include <MinHook.h>
@@ -37,6 +38,36 @@ constexpr uintptr_t shotWebShooter = 0x3907d30, shotEventRva = 0xd2a570, findFie
                     readFieldRva = 0x1f9db60, refRecordRva = 0x1f7b760;
 constexpr uint32_t collisionEvent = 0xd930bcb2, hitActorField = 0x21eb297b, hitPositionField = 0x568973e3,
                    hitNormalField = 0xc3272bc7;
+// The player's gadgets. A component of an actor by its type (as
+// native_bodies finds one); the hero's weapon manager, by its type and its
+// table; a loaded weapon by its id (21633c0); a weapon's charges and the most
+// it holds, for a trigger (vtable +0x188 and +0x190, every gadget's own:
+// float (weapon, index)). Every gadget's weapon class by its table, in the
+// order of spidy::Gadget.
+constexpr uintptr_t findInTableRva = 0x16799a0, findInListRva = 0x167ab40, weaponManagerType = 0x6dd84e0,
+                    weaponManagerTable = 0x38b59b8, weaponByIdRva = 0x21633c0, ammoNowRva = 0xe3b710,
+                    ammoMostRva = 0xe3b790;
+constexpr uintptr_t gadgetTables[] = {0x391c950, 0x3919a80, 0x391bfc0, 0x3919110, 0x391ace0,
+                                      0x391b1a0, 0x391b658, 0x39186a0, 0x391bb10};
+// Each gadget's own part of its fire event (vtable +0x100), in that order.
+constexpr uintptr_t gadgetFills[] = {0xe55310, 0xe4e6f0, 0xe535d0, 0xe4d960, 0xe51950,
+                                     0xe51f90, 0xe52620, 0xe490a0, 0xe52eb0};
+// Equipping one, as the game's own wheel does (791c20, 793320): the hero's
+// GameInventoryManager (by its type), its GameEquipInventory (bbfba0), whose
+// items (its vtable +0x3a0 the count, +0x1b0 one by index) are weapons at
+// +0x88 3, their weapon id at +0x184 (the item's own config at +0x148, the
+// id at its +0x3c); one the wheel offers (bbc3d0 0), equipped while the
+// inventory allows it (+0x30), through a request (bbb8d0, its byte 4 set)
+// that the game carries out the next frame (bbb9a0). The game's own call
+// with a GUID (bbc2d0) makes the item when it finds none: never used here.
+constexpr uintptr_t inventoryManagerType = 0x6e096f0, equipInventoryTable = 0x38e2440, inventoryOfRva = 0xbbfba0,
+                    itemCountRva = 0x1f60060, itemAtRva = 0x1f55ed0, canEquipRva = 0x1f56900,
+                    offeredRva = 0xbbc3d0, requestRva = 0xbbb8d0, equipRva = 0xbbb9a0;
+// A weapon's charge to fire (vtable +0x180: bool (weapon, cost, trigger)).
+constexpr uintptr_t hasAmmoRva = 0xe3b650;
+using FindComponent = uintptr_t (*)(void*, const void*);
+using WeaponById = uintptr_t (*)(void*, uint32_t);
+using Ammo = float (*)(void*, uint32_t);
 using Frame = uint64_t (*)(void*, float, uint64_t, uint64_t);
 using Muzzle = float* (*)(void*, float*, uint32_t);
 using ShotEvent = void* (*)(void*, uint64_t, void*, uint64_t);
@@ -89,6 +120,16 @@ constexpr unsigned flyingSize = 16;
 Flying flying[flyingSize];
 unsigned flyingNext{};
 SRWLOCK flyingLock = SRWLOCK_INIT;
+// The gadget wheel: whether the hand fires the equipped gadget, a weapon id
+// to equip at the next frame, and whether this game's code for it is the
+// build Spidy reads (checked at start; without it the web shooter fires as
+// before and nothing is listed or equipped).
+std::atomic<bool> gadgetFire{}, gadgetsReady{};
+std::atomic<uint32_t> equipWanted{};
+// The weapon manager and the equipped weapon id the latest listing read
+// (main thread).
+uintptr_t listedManager{};
+uint16_t listedEquipped{};
 // The shot the main thread fires now: that weapon's muzzle, asked on that
 // thread, is the hand's.
 std::atomic<uint64_t> firingWeapon{};
@@ -339,9 +380,27 @@ bool reference(uintptr_t record, uint64_t& ref) {
         return false;
     }
 }
-bool fill(uintptr_t weapon, uint8_t* event) {
+bool fill(uintptr_t weapon, uint8_t* event, uintptr_t rva = fillEventRva) {
     __try {
-        reinterpret_cast<FillEvent>(base + fillEventRva)(reinterpret_cast<void*>(weapon), event);
+        reinterpret_cast<FillEvent>(base + rva)(reinterpret_cast<void*>(weapon), event);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+// Writes the aim where the game's own fire puts it (e3c150) and every
+// gadget's event reads it (e3bcf0): the target, the aim point, the facing,
+// and which of them counts.
+bool aimWeapon(uintptr_t weapon, uint64_t ref, Vec3 aimPoint, Vec3 facing) {
+    __try {
+        auto* w = reinterpret_cast<uint8_t*>(weapon);
+        std::memcpy(w + 0x670, &ref, 8);
+        std::memset(w + 0x678, 0, 12);
+        std::memcpy(w + 0x684, &aimPoint, 12);
+        std::memcpy(w + 0x690, &facing, 12);
+        // Bit 2: the aim point counts; 3: resolve the target; 5 set as the
+        // game sets it (the event's +0x38, +0x39, +0x3b).
+        w[0x6a0] = static_cast<uint8_t>((w[0x6a0] & 0xc3) | 4 | (ref ? 8 : 0) | 0x20);
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
@@ -360,15 +419,60 @@ bool fire(uintptr_t weapon, uint8_t* event) {
     firingWeapon = 0;
     return done;
 }
+// Below, with the player's gadgets.
+template <class R, class... A> bool callGame(uintptr_t rva, R& out, A... args);
+uintptr_t equippedGadget();
 // One shot through the gadget, as its R1 fires one. False when there is no
 // gadget or no player to fire it, or the game refused it.
 struct Fired {
     uint64_t shot{};
-    bool resolved{};
+    bool resolved{}, gadget{}, empty{};
 };
+// The equipped gadget fired from the hand: with a charge to fire, as the
+// game asks before its own; its own event from the aim written into it; the
+// shot from the hand (the muzzle). The game takes the charge itself.
+bool fireGadget(uintptr_t weapon, const Pending& p, Vec3 origin, Vec3 forward, Fired& out) {
+    const auto setup = pointer(weapon + 0x48);
+    const auto triggers = value<uint32_t>(setup + 0xd0);
+    if (!setup || !triggers || triggers > 8)
+        return false;
+    const uint32_t index = std::min<uint32_t>(p.shot.hand == 1 ? 0 : 1, triggers - 1);
+    bool charged{};
+    if (!callGame(hasAmmoRva, charged, reinterpret_cast<void*>(weapon), 1.f, index))
+        return false;
+    if (!charged) {
+        out.empty = true;
+        return false;
+    }
+    uint64_t ref{};
+    if (p.shot.target && liveRecord(p.shot.target))
+        reference(p.shot.target, ref);
+    Vec3 facing = normalized({forward.x, 0, forward.z});
+    if (length(facing) < .5f)
+        facing = {0, 0, 1};
+    alignas(16) uint8_t event[0x100]{};
+    uint32_t id{};
+    const auto own = pointer(pointer(weapon) + 0x100) - base;
+    if (!aimWeapon(weapon, ref, p.shot.aimPoint, facing) || !fill(weapon, event, own) || !newId(id))
+        return false;
+    std::memcpy(event, eventHeader, sizeof(eventHeader));
+    const auto weaponId = value<uint16_t>(weapon + 0x5bc);
+    std::memcpy(event + 8, &weaponId, 2);
+    event[0xa] = static_cast<uint8_t>(index);
+    event[0xb] = 1;
+    std::memcpy(event + 0xc, &id, 4);
+    muzzleMatrix(origin, forward, firingMatrix);
+    if (!fire(weapon, event))
+        return false;
+    out.gadget = true;
+    out.resolved = ref && (value<uint32_t>(weapon + 0x68) & 1);
+    out.shot = resolve(value<uint32_t>(weapon + 0x518 + 4ull * index));
+    return true;
+}
 bool fireNow(const Pending& p, Fired& out) {
-    const auto weapon = gadgets.current();
-    if (!liveGadget(weapon)) {
+    const auto gadget = equippedGadget();
+    const auto weapon = gadget ? gadget : gadgets.current();
+    if (!gadget && !liveGadget(weapon)) {
         gadgets.lost();
         return false;
     }
@@ -383,6 +487,8 @@ bool fireNow(const Pending& p, Fired& out) {
     const Vec3 forward = normalized(p.shot.aimPoint - origin);
     if (!finite(origin) || !finite(p.shot.aimPoint) || length(forward) < .5f)
         return false;
+    if (gadget)
+        return fireGadget(gadget, p, origin, forward, out);
     alignas(16) uint8_t event[0x80]{};
     uint32_t id{};
     if (!fill(weapon, event) || !newId(id))
@@ -418,6 +524,152 @@ bool fireNow(const Pending& p, Fired& out) {
         ReleaseSRWLockExclusive(&flyingLock);
     }
     return true;
+}
+// The player's gadgets, read on the main thread.
+uintptr_t componentOf(uintptr_t record, uintptr_t type) {
+    const bool hashed = value<uint16_t>(record + 0x88) != 0;
+    __try {
+        return reinterpret_cast<FindComponent>(base + (hashed ? findInTableRva : findInListRva))(
+            reinterpret_cast<void*>(record + (hashed ? 0x80 : 0x58)), reinterpret_cast<void*>(base + type));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+uintptr_t weaponById(uintptr_t manager, uint16_t id) {
+    __try {
+        return reinterpret_cast<WeaponById>(base + weaponByIdRva)(reinterpret_cast<void*>(manager), id);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+float ammo(uintptr_t rva, uintptr_t weapon) {
+    __try {
+        return reinterpret_cast<Ammo>(base + rva)(reinterpret_cast<void*>(weapon), 0);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+uint8_t charges(float v) {
+    return static_cast<uint8_t>(std::isfinite(v) ? std::clamp(std::lround(v), 0l, 255l) : 0);
+}
+// A call into the game that may fault on an object that went away.
+template <class R, class... A> bool callGame(uintptr_t rva, R& out, A... args) {
+    __try {
+        out = reinterpret_cast<R (*)(A...)>(base + rva)(args...);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+// The gadgets the game's own wheel offers, walked as it walks them (793320):
+// its inventory's weapon items that it offers, each with its weapon id.
+// Calls `each`(item, id) until it returns true. 0, or why not: 2 no
+// inventory, 5 a fault.
+template <class F> uint16_t wheelItems(uintptr_t record, uintptr_t& inventory, F each) {
+    const auto manager = componentOf(record, inventoryManagerType);
+    if (!manager || !callGame(inventoryOfRva, inventory, reinterpret_cast<void*>(manager)) || !inventory ||
+        pointer(inventory) != base + equipInventoryTable)
+        return 2;
+    void* const inv = reinterpret_cast<void*>(inventory);
+    int32_t count{};
+    if (!callGame(itemCountRva, count, inv))
+        return 5;
+    for (int32_t i = 0; i < std::min(count, 512); ++i) {
+        uintptr_t item{};
+        if (!callGame(itemAtRva, item, inv, static_cast<uint32_t>(i)) || !item || value<uint32_t>(item + 0x88) != 3)
+            continue;
+        int32_t offered = -1;
+        if (!callGame(offeredRva, offered, inv, reinterpret_cast<void*>(item)) || offered != 0)
+            continue;
+        if (each(item, value<uint16_t>(item + 0x184)))
+            break;
+    }
+    return 0;
+}
+// Equips the player's own gadget whose weapon id is `wanted` (Data::equipResult).
+uint16_t equipNow(uint16_t wanted) {
+    const auto record = heroRecord.load(std::memory_order_relaxed);
+    if (!record || !liveRecord(record))
+        return 1;
+    uintptr_t inventory{}, found{};
+    if (const auto code = wheelItems(record, inventory, [&](uintptr_t item, uint16_t id) {
+            found = id == wanted ? item : 0;
+            return found != 0;
+        }))
+        return code;
+    if (!found)
+        return 3;
+    bool allowed{};
+    if (!callGame(canEquipRva, allowed, reinterpret_cast<void*>(inventory)) || !allowed)
+        return 4;
+    alignas(16) uint8_t request[16]{};
+    void* made{};
+    if (!callGame(requestRva, made, static_cast<void*>(request)))
+        return 5;
+    request[4] = 1;
+    uint64_t done{};
+    return callGame(equipRva, done, reinterpret_cast<void*>(inventory), reinterpret_cast<void*>(found),
+                    static_cast<void*>(request))
+               ? 0
+               : 5;
+}
+// The player's gadgets: the weapons the game's wheel offers, one of each
+// gadget, at its place round the wheel in their order. The weapon manager's
+// own list (+0x1a8) has more: the built-in web shooter, which no wheel item
+// names, and a suit power's weapon (in the game, October 15: Web Blossom).
+void listGadgets() {
+    const auto record = heroRecord.load(std::memory_order_relaxed);
+    Owned found[8]{};
+    uint32_t count{}, error{};
+    uint16_t equipped{};
+    uintptr_t manager{};
+    if (!gadgetsReady.load(std::memory_order_relaxed))
+        error = 3;
+    else if (!record || !liveRecord(record))
+        error = 1;
+    else if (manager = componentOf(record, weaponManagerType); !manager || pointer(manager) != base + weaponManagerTable)
+        error = 2, manager = 0;
+    else {
+        equipped = value<uint16_t>(manager + 0x6c); // slot 0
+        uintptr_t inventory{};
+        if (wheelItems(record, inventory, [&](uintptr_t, uint16_t id) {
+                const auto weapon = id ? weaponById(manager, id) : 0;
+                const auto table = weapon ? pointer(weapon) : 0;
+                uint8_t kind{};
+                for (size_t k = 0; k < 8; ++k)
+                    if (table == base + gadgetTables[k])
+                        kind = static_cast<uint8_t>(k + 1);
+                if (kind && std::none_of(found, found + count, [&](const Owned& o) { return o.kind == kind; })) {
+                    const uint8_t most = charges(ammo(ammoMostRva, weapon));
+                    found[count++] = {id, kind, static_cast<uint8_t>(kind - 1),
+                                      most ? std::min(charges(ammo(ammoNowRva, weapon)), most) : uint8_t{}, most};
+                }
+                return count >= 8;
+            }))
+            error = 4;
+    }
+    listedManager = manager;
+    listedEquipped = equipped;
+    publish([&](Data& d) {
+        d.manager = manager;
+        d.gadgetCount = count;
+        d.gadgetError = error;
+        d.equipped = equipped;
+        std::copy(found, found + 8, d.gadgets);
+    });
+}
+// The gadget the game has equipped, for the hand to fire: its weapon; 0 for
+// the web shooter (its own way, below) or with the wheel's fire off.
+uintptr_t equippedGadget() {
+    if (!gadgetFire.load(std::memory_order_relaxed) || !gadgetsReady.load(std::memory_order_relaxed) ||
+        !listedManager || !listedEquipped || pointer(listedManager) != base + weaponManagerTable)
+        return 0;
+    const auto weapon = weaponById(listedManager, listedEquipped);
+    const auto table = weapon ? pointer(weapon) : 0;
+    for (size_t k = 1; k < 8; ++k)
+        if (table == base + gadgetTables[k] && pointer(table + 0x100) == base + gadgetFills[k])
+            return weapon;
+    return 0;
 }
 // One of Spidy's own shots, still flying: its entry, taken off the list.
 bool ours(uintptr_t shot, Flying& out) {
@@ -551,9 +803,11 @@ void fireQueued() {
         publish([&](Data& d) {
             if (!ok) {
                 ++d.dropped;
+                d.emptyPulls += fired.empty;
                 return;
             }
             ++d.fired;
+            d.gadgetShots += fired.gadget;
             auto& h = d.hands[p.shot.hand];
             ++h.shots;
             h.lastTarget = p.shot.target;
@@ -567,11 +821,25 @@ void fireQueued() {
 }
 uint64_t frame(void* self, float seconds, uint64_t a, uint64_t b) {
     const auto result = originalFrame(self, seconds, a, b);
+    // The hero's own transitions Spidy asked for (game_warp): this is the
+    // main thread, after the hero's update.
+    game_warp::frame();
     if (!enabled.load(std::memory_order_relaxed))
         return result;
     ++active;
     if (enabled) {
-        ++frames;
+        // The gadgets every half second (at 60 frames a second), and one
+        // the wheel chose, equipped.
+        if (++frames % 30 == 1)
+            listGadgets();
+        if (const auto wanted = equipWanted.exchange(0))
+            if (gadgetsReady.load(std::memory_order_relaxed)) {
+                const auto code = equipNow(static_cast<uint16_t>(wanted));
+                publish([&](Data& d) {
+                    d.equipResult = code;
+                    ++d.equips;
+                });
+            }
         fireQueued();
     }
     --active;
@@ -627,6 +895,46 @@ uint32_t game_shooter::start(uintptr_t gameBase) {
                                   0xe3, 0x20, 0x48})) {
             result = 9601;
             break;
+        }
+        // The gadget wheel's own functions: without them the web shooter
+        // fires as before, and nothing is listed or equipped.
+        {
+            const auto table = [](uintptr_t vtable, uintptr_t offset, uintptr_t rva) {
+                return pointer(base + vtable + offset) == base + rva;
+            };
+            bool ready =
+                entry(findInTableRva, {0x44, 0x0f, 0xb7, 0x49, 0x08, 0x4c, 0x8b, 0xc2, 0x4c, 0x8b, 0x11, 0x41, 0xff,
+                                       0xc9, 0x49, 0xc1}) &&
+                entry(findInListRva, {0x48, 0x89, 0x5c, 0x24, 0x08, 0x57, 0x48, 0x83, 0xec, 0x20, 0x48, 0x8b, 0xda,
+                                      0x48, 0x8b, 0xf9}) &&
+                entry(weaponByIdRva, {0x48, 0x89, 0x5c, 0x24, 0x08, 0x57, 0x48, 0x83, 0xec, 0x20, 0x48, 0x8b, 0x01,
+                                      0x8b, 0xfa, 0x48}) &&
+                entry(ammoNowRva, {0x48, 0x89, 0x5c, 0x24, 0x08, 0x57, 0x48, 0x83, 0xec, 0x20, 0x8b, 0xfa, 0x48, 0x8b,
+                                   0xd9, 0x33}) &&
+                entry(ammoMostRva, {0x40, 0x53, 0x48, 0x83, 0xec, 0x20, 0x8b, 0xda, 0xe8, 0x03, 0x85, 0x31, 0x01,
+                                    0x48, 0x85, 0xc0}) &&
+                entry(hasAmmoRva, {0x48, 0x89, 0x5c, 0x24, 0x08, 0x57, 0x48, 0x83, 0xec, 0x30, 0x0f, 0x29, 0x74,
+                                   0x24, 0x20, 0x41}) &&
+                entry(inventoryOfRva, {0x40, 0x53, 0x48, 0x83, 0xec, 0x20, 0x48, 0x81, 0xc1, 0x18, 0x01, 0x00, 0x00,
+                                       0xe8, 0x3e, 0x9d}) &&
+                entry(offeredRva, {0x48, 0x83, 0xec, 0x28, 0x83, 0xba, 0x88, 0x00, 0x00, 0x00, 0x03, 0x75, 0x13,
+                                   0x48, 0x8b, 0xca}) &&
+                entry(requestRva, {0xc7, 0x41, 0x08, 0x4c, 0xab, 0xac, 0x6d, 0x48, 0x8b, 0xc1, 0xc7, 0x01, 0xff,
+                                   0xff, 0xff, 0xff}) &&
+                entry(equipRva, {0x48, 0x89, 0x5c, 0x24, 0x08, 0x48, 0x89, 0x6c, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24,
+                                 0x18, 0x48}) &&
+                entry(itemCountRva, {0x8b, 0x81, 0x14, 0x01, 0x00, 0x00, 0xc3}) &&
+                entry(itemAtRva, {0x48, 0x89, 0x5c, 0x24, 0x08, 0x57, 0x48, 0x83, 0xec, 0x70, 0x48, 0x8b, 0xf9, 0x8b,
+                                  0xda, 0x48}) &&
+                entry(canEquipRva, {0x40, 0x53, 0x48, 0x83, 0xec, 0x20, 0x48, 0x8b, 0xd9, 0x48, 0x83, 0xc1, 0x50,
+                                    0xe8, 0x4e, 0x9c}) &&
+                table(equipInventoryTable, 0x30, canEquipRva) && table(equipInventoryTable, 0x1b0, itemAtRva) &&
+                table(equipInventoryTable, 0x3a0, itemCountRva);
+            for (size_t k = 0; k < std::size(gadgetTables); ++k)
+                ready = ready && table(gadgetTables[k], 0x188, ammoNowRva) && table(gadgetTables[k], 0x190, ammoMostRva) &&
+                        table(gadgetTables[k], 0x180, hasAmmoRva) && table(gadgetTables[k], 0x100, gadgetFills[k]) &&
+                        table(gadgetTables[k], 0x108, weaponEventRva) && table(gadgetTables[k], 0x160, muzzleRva);
+            gadgetsReady = ready;
         }
         // The webbing and the pushes go out through the damage system's and
         // the props' main-thread hook; the web grab or the fists may have
@@ -803,6 +1111,11 @@ void game_shooter::update(float seconds, const Input& in, uint32_t busy, uint64_
             d.bots = static_cast<uint32_t>(targets.size());
     });
 }
+void game_shooter::gadgetWheel(bool fire, uint16_t equip) {
+    gadgetFire = fire;
+    if (equip)
+        equipWanted = equip;
+}
 void game_shooter::cancel() {
     if (!enabled.load(std::memory_order_relaxed) || !TryAcquireSRWLockShared(&updating))
         return;
@@ -833,6 +1146,14 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyShooterSample(void* out) {
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return 9503;
     }
+    return 0;
+}
+extern "C" __declspec(dllexport) DWORD WINAPI SpidyShooterGadgets(void* input) {
+    GadgetCommand g{};
+    if (!read(reinterpret_cast<uintptr_t>(input), &g, sizeof(g)) || g.magic != 0x53484f47 || g.version != 1 ||
+        g.bytes != sizeof(g) || g.fire > 1)
+        return 9508;
+    game_shooter::gadgetWheel(g.fire != 0, g.equip);
     return 0;
 }
 // One shot from a probe, fired at the next frame: 0 once the game fired it.

@@ -228,7 +228,7 @@ std::vector<std::string> App::blockers() {
         reasons.push_back("The game was not found.");
     else if (scan_.build == Build::checking)
         reasons.push_back("Checking the game version...");
-    else if (scan_.build != Build::supported)
+    else if (scan_.build != Build::supported && scan_.build != Build::sameVersion)
         reasons.push_back("This game version is not supported.");
     if (scan_.runtimes.empty())
         reasons.push_back("No VR runtime is installed.");
@@ -769,8 +769,9 @@ void App::setupCard(float width) {
         const std::string path = narrow(scan_.gameExe);
         if (scan_.done && scan_.gameExe.empty()) {
             mark = Mark::error;
-            detail = scan_.epicFound ? "Only the Epic Games Store version was found. Spidy works with the Steam version."
-                                     : "Not found in your Steam libraries. Install it on Steam, or show Spidy where "
+            detail = scan_.epicFound ? "The Epic Games Store has it installed, but not where. Show Spidy where "
+                                       "Spider-Man.exe is."
+                                     : "Not found in your Steam or Epic Games Store libraries. Show Spidy where "
                                        "Spider-Man.exe is.";
         } else if (scan_.done) {
             switch (scan_.build) {
@@ -781,10 +782,17 @@ void App::setupCard(float width) {
                 detail = (scan_.gameSource == "Steam" ? "Steam, supported version" : "Supported version, " + scan_.gameSource) +
                          (scan_.gameRunning ? ", running now" : "") + "\n" + path;
                 break;
+            case Build::sameVersion:
+                mark = Mark::warning;
+                detail = "Version " + scan_.gameVersion + ", but not Steam's file (" + scan_.gameSource +
+                         "): Spidy tries it, and stops with a code if the game's code differs" +
+                         (scan_.gameRunning ? ". Running now" : "") + "\n" + path;
+                break;
             case Build::unsupported:
                 mark = Mark::error;
                 detail = scan_.gameSource == "Epic Games Store"
-                             ? "Epic Games Store version. Spidy works with the Steam version only.\n" + path
+                             ? "Epic Games Store, version " + scan_.gameVersion + ". Spidy works with version " +
+                                   scan_.expectedVersion + ".\n" + path
                              : spidy::launcher::unsupportedGame(scan_.gameVersion, scan_.expectedVersion,
                                                                 scan_.steamApp) +
                                    "\n" + path;
@@ -1085,10 +1093,6 @@ void App::optionsCard(ImVec2 size) {
     option("Weight", "How heavy you are while swinging and after letting go. 100% is real gravity.", S(150), [&] {
         stepCombo("##weight", kWeights, kWeightValues, static_cast<int>(std::size(kWeightValues)), &o.weight);
     });
-    option("Physical webs",
-           "Webs bend round edges instead of letting go, pulling a web's hand pulls you, and a web pays out while "
-           "you walk. Off: as before.",
-           S(40), [&] { changed |= toggle("##physical", &o.physicalWebs); });
     option("Snap turn", "How far a flick of the right stick turns you.", S(150), [&] {
         stepCombo("##snap", kSnapTurns, kSnapValues, static_cast<int>(std::size(kSnapValues)), &o.snapTurn);
     });
@@ -1112,8 +1116,12 @@ void App::optionsCard(ImVec2 size) {
         static constexpr int sizes[] = {0, 1, 2, 3};
         stepCombo("##hud", kHudSizes, sizes, 4, &o.hud);
     });
-    option("Stand on walls", "Walking or stopped on a wall, your view turns so it is your floor; off, you stay upright.",
-           S(40), [&] { changed |= toggle("##walls", &o.standOnWalls); });
+    option("Wall running", "On: a wall you swing or fly onto is Spidy's, and you run along it. Stop on any wall "
+                           "and the game's own crawl holds you, so its vents, doors and prompts work; push the "
+                           "stick up a wall to run up it, the game's own wall run. Off: every wall is the game's "
+                           "crawl. Either way you stand upright on the wall and your view turns so the wall is "
+                           "your floor.",
+           S(40), [&] { changed |= toggle("##wallrun", &o.wallRun); });
     option("Flips (experimental)", "In the air the left stick turns you over; tap A for one flip, hold A to stay.",
            S(40), [&] { changed |= toggle("##flips", &o.flips); });
     option("Flip speed", "How fast a flip turns you over, at full tilt of the left stick.", S(150), [&] {
@@ -1237,7 +1245,7 @@ void App::startBlock(ImVec2 size) {
         tint = scan_.done ? kAmber : kMuted;
     } else {
         title = "Ready";
-        detail = "Starts Steam and the game. Connect your headset first.";
+        detail = "Starts the game. Connect your headset first.";
         tint = kGreen;
     }
     auto* draw = ImGui::GetWindowDrawList();
@@ -1350,6 +1358,8 @@ void App::controls(ImVec2 origin, ImVec2 size) {
           {"Trigger", "Reel in while the web is attached"},
           {"Pull the hand sharply", "Zip toward the web's anchor"},
           {"Pull the hand in", "The web is a rope in your hand: you go where you pull it"},
+          {"Other hand on the web, grip", "It takes hold of the same web. The upper hand carries you: pull with "
+                                          "it, or climb hand over hand"},
           {"A corner in the way", "The web bends round it and holds; swing back and it lies straight again"}}},
         {"GRABBING",
          {{"Grip, aimed at a prop or thug", "Catch it with your web"},
@@ -1390,8 +1400,8 @@ void App::controls(ImVec2 origin, ImVec2 size) {
           {"Right stick down", "Heal: the game's D-pad down. Push it right down and hold it a moment"},
           {"Right stick up", "The game's LT + RT: zip to a point, enter a vent, where the game shows the two"},
           {"Hand to your temple, trigger", "Scan your surroundings: the game's R3"},
-          {"Menu button", "Pause; VR settings are in Settings > SPIDY VR, and VIEW there switches between VR "
-                          "and a flat game screen"},
+          {"Menu button", "Pause; there SWITCH TO GAME SCREEN plays the game as it is, on a 3D screen, and VR "
+                          "settings are in Settings > SPIDY VR"},
           {"X", "Game menu: map, suits, skills"}}},
         {"MENUS AND CUTSCENES",
          {{"Left stick", "Move through menus (they show on a screen in the headset)"},

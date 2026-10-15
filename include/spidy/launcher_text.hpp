@@ -507,9 +507,11 @@ struct SessionOptions {
     int hud = 2; // the game's HUD in the headset: 0 off, 1 small, 2 medium, 3 large
     // Walking a wall or stopped on it, your view turns so that the wall is your floor; off, you stay upright.
     bool standOnWalls = true;
-    // Webs are ropes: they bend round edges instead of letting go, a pull of the hand that holds one pulls
-    // you, and they pay out while you walk; off, as before October 12.
-    bool physicalWebs = true;
+    // The swing takes you onto a wall and runs it; off, the game's own wall crawl takes you there instead, as
+    // before October 10. Off is slower and stiffer, and it is how to tell whether something on a wall is the
+    // swing's doing: the game refuses its own interactions while the swing owns the hero (October 13, a closed
+    // vent reached by walking up the wall it is on).
+    bool wallRun = true;
     // The game's own Depth of Field and Sharpness settings stay as they are in VR; off (the default), a
     // session turns the first off and the second to its lowest, and puts both back when the game closes.
     bool gameDepthOfField = false, gameSharpening = false;
@@ -555,10 +557,8 @@ inline std::vector<std::wstring> sessionArguments(const SessionOptions& options,
         args.emplace_back(L"--flips");
     if (options.triggerWebs)
         args.emplace_back(L"--trigger-webs");
-    if (!options.standOnWalls)
-        args.emplace_back(L"--no-stand-on-walls");
-    if (!options.physicalWebs)
-        args.emplace_back(L"--no-physical-webs");
+    if (!options.wallRun)
+        args.emplace_back(L"--no-wall-run");
     if (options.gameDepthOfField)
         args.emplace_back(L"--game-depth-of-field");
     if (options.gameSharpening)
@@ -639,10 +639,8 @@ inline bool headsetSettings(std::string_view line, SessionOptions& options) {
             next.flips = number != 0;
         else if (key == "trigger_webs")
             next.triggerWebs = number != 0;
-        else if (key == "stand_on_walls")
-            next.standOnWalls = number != 0;
-        else if (key == "physical_webs")
-            next.physicalWebs = number != 0;
+        else if (key == "wall_run")
+            next.wallRun = number != 0;
         else if (key == "swing_speed")
             next.swingSpeed = std::clamp(number, 10, 65);
         else if (key == "snap_turn")

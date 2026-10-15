@@ -302,6 +302,33 @@ class LauncherTests(unittest.TestCase):
             game.close.assert_not_called()
             launch.assert_not_called()
 
+    def test_the_epic_games_stores_copy_is_started_when_steam_has_none(self):
+        game=Mock(pid=42)
+        missing=RuntimeError('Spider-Man is not running.')
+        link='com.epicgames.launcher://apps/ns%3Aitem%3Aapp?action=launch&silent=true'
+        prepare=Mock()
+        with patch.object(launcher,'find_game',side_effect=[missing,42,42]), \
+             patch.object(launcher,'Game',return_value=game),patch.object(launcher.time,'sleep'), \
+             patch.object(launcher,'steam_executable',return_value=None), \
+             patch.object(launcher,'epic_launch',return_value=link), \
+             patch.object(launcher.os,'startfile',create=True) as started, \
+             patch.object(launcher.subprocess,'Popen') as steam:
+            self.assertIs(launcher.wait_for_game(prepare=prepare,ready=lambda game: True),game)
+        started.assert_called_once_with(link)
+        prepare.assert_called_once_with()
+        steam.assert_not_called()
+        # Steam with the game installed starts Steam's copy, Epic or not.
+        with patch.object(launcher,'find_game',side_effect=[missing,42,42]), \
+             patch.object(launcher,'Game',return_value=game),patch.object(launcher.time,'sleep'), \
+             patch.object(launcher,'steam_executable',return_value=pathlib.Path('C:/Steam/steam.exe')), \
+             patch.object(launcher,'steam_has_game',return_value=True), \
+             patch.object(launcher,'epic_launch',return_value=link), \
+             patch.object(launcher.os,'startfile',create=True) as started, \
+             patch.object(launcher.subprocess,'Popen') as steam:
+            launcher.wait_for_game(ready=lambda game: True)
+        started.assert_not_called()
+        steam.assert_called_once()
+
     def test_game_closed_before_load_releases_handle(self):
         game=Mock(pid=42)
         with patch.object(launcher,'find_game',side_effect=[42,42,RuntimeError('Spider-Man is not running.')]), \

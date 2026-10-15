@@ -12,8 +12,16 @@ class SwingTakeoff {
         bool waiting{}, jump{}, resumed{}, timedOut{};
         Vec3 launchVelocity{};
     };
+    // surface: out of what holds the body as the takeoff begins - the world's
+    // up on the ground, a wall's normal on the game's own crawl. The body is
+    // off once it is 12 cm out along it: a jump off the ground goes up, one
+    // off a wall goes out from it and a little down (October 14, the first
+    // mission's shaft: 70.27 m to 69.26 m), and waiting for it to come 12 cm
+    // above where it started held a web from a crawled wall a third of a
+    // second longer than it needed.
     Result update(uint64_t now, bool attached, bool supported, bool collidable, bool wantsLift,
-                  bool newGesture, Vec3 position, Vec3 velocity, Vec3 impulse, bool pointLaunch = false) {
+                  bool newGesture, Vec3 position, Vec3 velocity, Vec3 impulse, bool pointLaunch = false,
+                  Vec3 surface = {0, 1, 0}) {
         pointLaunch_ |= pointLaunch;
         if (!attached && !pointLaunch_) {
             reset();
@@ -32,13 +40,14 @@ class SwingTakeoff {
             phase_ = ReleaseJump;
             started_ = attemptStarted_ = now;
             origin_ = position;
+            surface_ = finite(surface) && length(surface) > .5f ? normalized(surface) : Vec3{0, 1, 0};
             attempts_ = 1;
         }
         // Remember a deliberate yank while the game performs takeoff. Collision
         // feedback during these frames must not erase that one-shot gesture.
         if (finite(impulse) && impulse.y > 0 && length(impulse) > length(launch_))
             launch_ = impulse;
-        if (!supported && collidable && position.y > origin_.y + .12f)
+        if (!supported && collidable && dot(position - origin_, surface_) > .12f)
             ++airSamples_;
         else
             airSamples_ = 0;
@@ -70,6 +79,7 @@ class SwingTakeoff {
         attempts_ = airSamples_ = 0;
         pointLaunch_ = false;
         origin_ = launch_ = {};
+        surface_ = {0, 1, 0};
     }
     Phase phase() const {
         return phase_;
@@ -83,7 +93,7 @@ class SwingTakeoff {
     uint64_t started_{}, attemptStarted_{};
     uint32_t attempts_{}, airSamples_{};
     bool pointLaunch_{};
-    Vec3 origin_{}, launch_{};
+    Vec3 origin_{}, launch_{}, surface_{0, 1, 0};
 };
 
 // The input bridge's Space bit (game_bridge_protocol.hpp keyCodes[4]).

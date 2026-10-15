@@ -90,6 +90,9 @@ def main():
                    help="off: the game's own wall crawl takes the player, as before")
     p.add_argument('--reel-seconds', type=float, default=4, help='longest reel toward the wall')
     p.add_argument('--gravity', type=float, default=7.848, help="the swing's gravity, m/s^2 (weight 80%%)")
+    p.add_argument('--handover', action='store_true',
+                   help="standing on the swing's wall, let the walls go and see whether the game's own crawl "
+                        "catches the player where he stands (the interact's hand-over, game_pad::WallHandover)")
     a = p.parse_args()
     game = Game(find_game())
     process = None
@@ -121,16 +124,19 @@ def main():
             ('SpidyRayStart', 'SpidyRayStop', 'SpidyRaySubmit', 'SpidyRayData', 'SpidySwingStart',
              'SpidySwingSubmit', 'SpidySwingStop', 'SpidySwingData', 'SpidySwingSettings'))
 
-        def invoke(address, payload, what):
+        def invoke(address, payload, what, already=()):
             code = call_with_payload(process, address, payload)
-            if code:
+            # 1000 is "already running": the bridge takes one start per game, and
+            # anything that touched it earlier in the launch has had it.
+            if code and code not in already:
                 raise RuntimeError(f'{what}: {code}')
+            return code
         invoke(rays['SpidyRayStart'], struct.pack('<4IQ2I', 0x53525943, 1, 32, game.pid, game.base, 30000, 0x410),
-               'World rays start')
+               'World rays start', (1000,))
         rays_active = True
         invoke(rays['SpidySwingStart'], struct.pack('<4I4QI2fI', 0x53574346, 1, 64, game.pid, game.base, record,
                                                     mover, motion_module, 30000, 32., a.gravity, 0),
-               'Native swing start')
+               'Native swing start', (1000,))
         swing_active = True
         invoke(rays['SpidySwingSettings'], settings(a.walls == 'on', a.gravity), 'Swing settings')
         started = time.monotonic()
@@ -285,6 +291,37 @@ def main():
             run(.8)
             measure('stopped', normal)
             report['phases']['stopped'] = (t, round(time.monotonic()-started, 3))
+            if a.handover:
+                # The hand-over the interact makes (game_pad::WallHandover): at a vent the game has
+                # withdrawn its own interact because the swing holds the player off the surface, so the
+                # walls go off for a moment and the game's crawl is meant to take him where he stands.
+                # What this measures is whether it does, or whether he falls.
+                t = mark("the walls off: the interact's hand-over")
+                before = actor(game, record)
+                invoke(rays['SpidySwingSettings'], settings(False, a.gravity), 'Walls off')
+                # Into the wall as the walls go off. The swing holds the body
+                # 0.9 m off the surface, so letting go on its own drops the
+                # player straight down past it, touching nothing - which is what
+                # a headset felt twice. Driven at the wall he reaches it, and
+                # the game's own crawl takes a player who arrives at one.
+                run(1., move=scale(normal, -1))
+                measure('handed back', normal)
+                after = actor(game, record)
+                held = sample()
+                report['handover'] = dict(
+                    seconds=t,
+                    dropped=round(before['feet'][1]-after['feet'][1], 3) if before and after else None,
+                    tilt_before=tilt(before['up']) if before else None,
+                    tilt_after=tilt(after['up']) if after else None,
+                    surface=held.get('wall'), contact=held.get('contact'),
+                    collision=held.get('collision_flags'), owned=held.get('owned'))
+                mark('the walls on again')
+                invoke(rays['SpidySwingSettings'], settings(a.walls == 'on', a.gravity), 'Walls on')
+                run(1.)
+                measure('the walls back', normal)
+                back = sample()
+                report['handover'].update(surface_back=back.get('wall'), owned_back=back.get('owned'))
+                print(json.dumps(report['handover'], indent=1), flush=True)
             t = mark("jump off the wall (the swing input's jump)")
             run(.12, jump=True)
             report['phases']['jump'] = (t, round(time.monotonic()-started, 3))

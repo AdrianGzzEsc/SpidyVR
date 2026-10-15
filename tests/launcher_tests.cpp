@@ -230,13 +230,24 @@ int main() {
         options.triggerWebs = true;
         args = sessionArguments(options, L"r.json", L"", L"");
         check(args.size() == 8 && args[7] == L"--trigger-webs", "the web button on the trigger");
+        // The view turning onto a wall is no option of its own and is never passed: it turns whoever holds
+        // the player there, the swing or the game's own crawl, which is the whole point of giving the crawl
+        // the view (the player, October 14: "i like how it feel to walk on building and stand on their side",
+        // of a vent that only works while the game holds him). A launcher.ini from the build that tied the
+        // view to wall running can still have it off, and that is not read back either.
         options = {};
         check(options.standOnWalls, "no standing on walls in a new launcher");
-        args = sessionArguments(options, L"r.json", L"", L"");
-        check(args.size() == 7, "standing on walls, the default, said to the session");
         options.standOnWalls = false;
         args = sessionArguments(options, L"r.json", L"", L"");
-        check(args.size() == 8 && args[7] == L"--no-stand-on-walls", "standing on walls switched off");
+        check(args.size() == 7, "the view on walls was passed to the session");
+        // Wall running, the default, goes unsaid; off, the game's own wall crawl takes a wall, which is
+        // what tells whether something on a wall is the swing's doing (October 13, a vent the game would
+        // not interact with while the swing owned the hero).
+        options = {};
+        check(options.wallRun, "wall running is not the default");
+        options.wallRun = false;
+        args = sessionArguments(options, L"r.json", L"", L"");
+        check(args.size() == 8 && args[7] == L"--no-wall-run", "wall running switched off");
         // Real gravity is the default weight since October 12, and goes unsaid; the old default is passed.
         options = {};
         check(options.weight == 100, "the weight in a new launcher is not real gravity");
@@ -245,15 +256,9 @@ int main() {
         options.weight = 80;
         args = sessionArguments(options, L"r.json", L"", L"");
         check(args.size() == 9 && args[7] == L"--weight" && args[8] == L"80", "a lighter weight");
-        // Physical webs are on, and the game's depth of field and sharpening are the session's to turn
-        // off, unless switched.
+        // The game's depth of field and sharpening are the session's to turn off, unless switched.
         options = {};
-        check(options.physicalWebs && !options.gameDepthOfField && !options.gameSharpening,
-              "physical webs off, or the game's picture kept, in a new launcher");
-        options.physicalWebs = false;
-        args = sessionArguments(options, L"r.json", L"", L"");
-        check(args.size() == 8 && args[7] == L"--no-physical-webs", "physical webs switched off");
-        options = {};
+        check(!options.gameDepthOfField && !options.gameSharpening, "the game's picture kept in a new launcher");
         options.gameDepthOfField = options.gameSharpening = true;
         args = sessionArguments(options, L"r.json", L"", L"");
         check(args.size() == 9 && args[7] == L"--game-depth-of-field" && args[8] == L"--game-sharpening",
@@ -306,13 +311,17 @@ int main() {
               "the line changed nothing");
         check(!options.aimMarkers && !options.airWebs && options.swingSpeed == 48 && options.weight == 150 &&
                   options.snapTurn == 45 && options.smoothTurn == 90 && options.haptics == 50 && options.flips &&
-                  options.flipSpeed == 300 && options.triggerWebs && options.hud == 0 && !options.standOnWalls &&
+                  options.flipSpeed == 300 && options.triggerWebs && options.hud == 0 &&
                   options.screenDepth == 3 && options.screenSize == 2,
               "every value, the last one before a carriage return");
-        check(options.physicalWebs && headsetSettings("VR settings from the headset: physical_webs=0", options) &&
-                  !options.physicalWebs && headsetSettings("VR settings from the headset: physical_webs=1", options) &&
-                  options.physicalWebs,
-              "physical webs switched in the headset");
+        // ... and `stand_on_walls` in that line is no longer one of them.
+        check(options.standOnWalls, "the view on walls was taken from a headset line");
+        // Webs are always physical since October 15: an older session's physical_webs changes nothing.
+        {
+            const auto before = options;
+            check(!headsetSettings("VR settings from the headset: physical_webs=0", options) && options == before,
+                  "a headset line's physical_webs, no longer a setting, changed the options");
+        }
         const auto kept = options;
         check(!headsetSettings("VR settings from the headset: aim_markers=0 air_webs=0", options) && options == kept,
               "the same values again");

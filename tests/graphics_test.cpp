@@ -1,6 +1,7 @@
 #include "spidy/body_calibration.hpp"
 #include "spidy/copy_eye_texture.hpp"
 #include "spidy/d3d12_renderer.hpp"
+#include "spidy/gadget_wheel.hpp"
 #include "spidy/lab_world.hpp"
 #include "spidy/web_visual.hpp"
 #include <algorithm>
@@ -203,9 +204,12 @@ int main(int argc, char** argv) {
             throw std::runtime_error("Eye parallax is reversed or missing");
         D3D12Renderer overlay;
         overlay.initialize(renderer.device(), renderer.queue());
+        // Two hand-sized blocks, one either side, in the overlay.
         std::vector<Vertex> hands;
-        addTrackedHand(hands, {{-.15f, 19.5f, 18.5f}, {}}, 0, 1, true);
-        addTrackedHand(hands, {{.15f, 19.5f, 18.5f}, {}}, 1, .3f, false);
+        const Vec3 red{.65f, .025f, .035f}, blue{.035f, .06f, .24f};
+        addBox(hands, {-.19f, 19.48f, 18.4f}, {-.11f, 19.52f, 18.59f}, red);
+        addBox(hands, {.11f, 19.48f, 18.4f}, {.19f, 19.52f, 18.59f}, red);
+        addBeam(hands, {.15f, 19.5f, 18.5f}, {.15f, 19.47f, 18.35f}, .012f, blue);
         std::array<std::vector<unsigned char>, 2> overlayPixels;
         std::array<D3D12Renderer::ViewTarget, 2> pairedViews;
         for (unsigned eye = 0; eye < 2; ++eye) {
@@ -300,6 +304,40 @@ int main(int argc, char** argv) {
             if (argc >= 2)
                 saveBmp(std::filesystem::path(argv[1]) / "web-overlay.bmp", image, width, height);
             std::cout << "PASS game-style web overlay: " << drawn << " pixels, " << white << " bright.\n";
+        }
+        {
+            // The gadget wheel 0.45 m ahead of the left eye, facing it: the web
+            // shooter at the top and seven gadgets round it, the impact web lit
+            // and the spider-drone equipped. Saved for visual inspection.
+            const Pose camera{{-.032f, 19.7f, 19}, {}};
+            const auto vp = multiply(projection(-.8f, .8f, -.65f, .65f), viewMatrix(camera));
+            GadgetWheelView wheel;
+            wheel.open = true;
+            wheel.age = 1;
+            wheel.frame.centre = camera.position + Vec3{0, -.05f, -.45f};
+            const Gadget all[] = {Gadget::webShooter,  Gadget::impactWeb,       Gadget::webBomb,
+                                  Gadget::electricWeb, Gadget::tripMine,        Gadget::concussionBlast,
+                                  Gadget::spiderDrone, Gadget::suspensionMatrix};
+            for (int p = 0; p < gadgetPlaces; ++p) {
+                wheel.places[static_cast<size_t>(p)] = all[p];
+                wheel.most[static_cast<size_t>(p)] = p ? 4 : 0;
+                wheel.ammo[static_cast<size_t>(p)] = static_cast<uint8_t>(p == 5 ? 0 : 3);
+            }
+            wheel.lit = 1;
+            wheel.equipped = 6;
+            std::vector<Vertex> drawnWheel;
+            appendGadgetWheel(drawnWheel, wheel);
+            const auto before = overlay.readback(copied[0].Get());
+            overlay.render(copied[0].Get(), DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, width, height, vp, drawnWheel, true);
+            const auto image = overlay.readback(copied[0].Get());
+            size_t drawn{};
+            for (size_t i = 0; i < image.size(); i += 4)
+                drawn += !std::equal(image.begin() + i, image.begin() + i + 4, before.begin() + i);
+            if (drawn < 2000)
+                throw std::runtime_error("Gadget wheel missing");
+            if (argc >= 2)
+                saveBmp(std::filesystem::path(argv[1]) / "gadget-wheel.bmp", image, width, height);
+            std::cout << "PASS gadget wheel overlay: " << drawn << " pixels.\n";
         }
         {
             // Aim markers over the left eye, translucent and farthest first as

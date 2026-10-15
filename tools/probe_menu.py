@@ -38,6 +38,7 @@ EXPORTS = ('SpidyMenuStart', 'SpidyMenuSample', 'SpidyMenuStop')
 # game_menu.cpp's hooks: the UI's Flash calls, the pause menu's Settings callbacks, the settings system's questions
 # about a setting (kind, value, whether it can change, default, default choice), its set and reset, and text lookups.
 HOOKS = (0x1d1cf30, 0x7dc400, 0x72d640, 0x72d650, 0x72e1d0, 0x72d5f0, 0x72d610, 0x730ee0, 0x730ae0, 0x1749970,
+         0x80a220,
          0x1749ae0)
 MAGIC = 0x554e4d53
 # ProbeSettings / ProbeSample flags, as XrData's settings bits plus the aim markers and a body calibration asked for.
@@ -168,33 +169,30 @@ def main():
         press('down')
         press('right', wait=.8)
         step('smooth_turn_60', dict(smooth_turn=60, snap_turn=45), changes=9)
-        # Down past vibration and the screen size: the HUD, MEDIUM until stepped down to SMALL and OFF.
-        press('down', 'down', 'down')
+        # Down past vibration, the screen size and its depth: the HUD, MEDIUM until stepped down to SMALL and OFF.
+        # (VR VIEW is on the pause menu's first page since October 15, not here.)
+        press('down', 'down', 'down', 'down')
         press('left', wait=.8)
         step('hud_small', dict(hud=1, smooth_turn=60), changes=10)
         press('left', wait=.8)
         step('hud_off', dict(hud=0), changes=11)
-        # Standing on walls, on until switched off.
-        press('down')
-        press('right', wait=.8)
-        step('stand_on_walls_off', dict(stand_on_walls=False, hud=0), changes=12)
         # Down past the EXPERIMENTAL heading: the flips, off until switched on.
         press('down')
         press('right', wait=.8)
-        step('flips_on', dict(flips=True, stand_on_walls=False), changes=13)
+        step('flips_on', dict(flips=True, hud=0), changes=12)
         # The flip speed, 180 degrees a second until stepped up to 240.
         press('down')
         press('right', wait=.8)
-        step('flip_speed_240', dict(flip_speed=240, flips=True), changes=14)
+        step('flip_speed_240', dict(flip_speed=240, flips=True), changes=13)
         press('y', wait=1.2)
         step('reset_all_asks')
         press('a', wait=1.2)
-        # Spidy's defaults: eleven settings changed back (the web button, aim markers, swing speed, weight, the
-        # calibration asked for, snap turn, smooth turn, the HUD, standing on walls, the flips, the flip speed).
-        # The web shooter, which the tab does not offer, stays as the probe started it.
-        step('reset_all', dict(trigger_webs=False, aim_markers=True, air_webs=True, swing_speed=32.0, weight=80,
-                               calibrate=False, snap_turn=30, smooth_turn=0, hud=2, stand_on_walls=True, flips=False,
-                               flip_speed=180, web_shooter=False, body=True), changes=25)
+        # Spidy's defaults: nine settings changed back (the web button, aim markers, swing speed, the calibration
+        # asked for, snap turn, smooth turn, the HUD, the flips, the flip speed; the weight the probe stepped to
+        # is Spidy's default, 100%). The web shooter, which the tab does not offer, stays as the probe started it.
+        step('reset_all', dict(trigger_webs=False, aim_markers=True, air_webs=True, swing_speed=32.0, weight=100,
+                               calibrate=False, snap_turn=30, smooth_turn=0, hud=2, flips=False,
+                               flip_speed=180, web_shooter=False, body=True), changes=22)
         press('b', wait=.8)
         press('b', wait=.8)
         press('b', wait=1.5)

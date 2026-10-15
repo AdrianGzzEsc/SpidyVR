@@ -132,6 +132,9 @@ struct Command {
     Vec3 look{};
 };
 constexpr uint32_t commandBytesV2 = 168, commandBytesV3 = 184;
+// attached: 0 none, else bits: 1 a web; 2 both hands hold it (Swing::shared:
+// the other hand's web is the same one); 4 this hand took hold of it and did
+// not shoot it (Web::taken; it stays when the other hand lets go).
 struct WebState {
     uint32_t attached{}, bodyId{};
     Vec3 anchor{};
@@ -140,8 +143,9 @@ struct WebState {
 // Data::wall: what holds the player on a wall or a ceiling now.
 enum class Surface : uint32_t {
     none,
-    wall, // the swing's own wall (SwingConfig's walls): wall running, walking
-    game, // the game's wall crawl (its actor turned onto the surface)
+    wall,  // the swing's own wall (SwingConfig's walls): wall running, walking
+    game,  // the game's wall crawl (its actor turned onto the surface)
+    floor, // the game's crawl on a floor: a vent or a duct, too low to stand in
 };
 struct Data {
     uint32_t magic = 0x53574441, version = 4, bytes = sizeof(Data), status{};
@@ -177,9 +181,15 @@ static_assert(sizeof(Config) == 64 && sizeof(Hand) == 52 && sizeof(Command) == 2
 // airWebs: a web that meets nothing within reach holds in open air there;
 // off, it misses (Swing::allowAirAnchors). gravity: the swing's, m/s^2 (the
 // VR settings' weight), up to maxGravity. Version 4, walls: a player in the
-// air stays on the walls it comes into (Swing::allowWalls); off, the game's
-// own wall crawl takes it as before. Version 3 (settingsBytesV3, the
-// probes') ends before it and leaves the walls as they are. Version 5,
+// air stays on the walls it comes into (Swing::allowWalls); 0, the game's own
+// wall crawl takes it as before, and the wall he is on goes with the setting.
+// 2 keeps that wall and takes no other (Swing::takeNewWalls), which is what
+// indoors asks for: letting go outright drops him - the body is held 0.9 m
+// clear of its wall, so a release is a fall straight past it, measured twice
+// in the headset - while taking no new ones drops nobody and leaves the next
+// wall to the game, where its vents, doors and prompts work. Version 3
+// (settingsBytesV3, the probes') ends before it and leaves the walls as they
+// are. Version 5,
 // physical: webs are ropes (SwingConfig::physical: they bend round edges,
 // are held by the hand and pay out on the ground); off, as before October
 // 12. Version 4 (settingsBytesV4) ends before it and leaves the webs as they
@@ -197,7 +207,7 @@ static_assert(sizeof(Settings) == 36 && offsetof(Settings, walls) == settingsByt
               offsetof(Settings, physical) == settingsBytesV4);
 // Physical webs (SpidyRopeData): what the ropes did, for the session report.
 struct Ropes {
-    uint32_t magic = 0x53575250, version = 1, bytes = sizeof(Ropes), physical{};
+    uint32_t magic = 0x53575250, version = 2, bytes = sizeof(Ropes), physical{};
     int64_t sequence{};
     // Bends made round an edge and taken off again; webs let go because
     // something stayed in the way (no edge found, or too many); steps a web
@@ -207,8 +217,12 @@ struct Ropes {
     // of it from its end (m).
     uint32_t bends[2]{};
     float free[2]{}, whole[2]{};
+    // Version 2: grips taken on the other hand's web (EventKind::Join), and
+    // whether both hands hold one web now.
+    uint64_t joins{};
+    uint32_t shared{}, reserved{};
 };
-static_assert(sizeof(Ropes) == 80);
+static_assert(sizeof(Ropes) == 96);
 // The movement module's own limit: every speed the VR settings offer.
 constexpr float motionSpeedLimit = 65;
 // The most gravity a swing takes, m/s^2: every weight the VR settings offer.
@@ -235,6 +249,7 @@ enum class AimKind : uint32_t {
     blocked,   // the web misses: what the ray meets cannot hold it, or the body has no clear line
     prop,      // the web catches this prop
     character, // the web catches this character
+    strand,    // the hand is on the other hand's web: the press takes hold of that web, at `point` its end
 };
 struct Aim {
     uint32_t kind{}; // AimKind

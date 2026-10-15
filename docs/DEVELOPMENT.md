@@ -15,9 +15,13 @@ start it checks the PC and shows what it finds:
 
 - **The game:** in every Steam library (Steam's registry entries, then
   `libraryfolders.vdf` and the app manifest), else where you point it with
-  *Change...*. It compares `Spider-Man.exe` with the supported build's SHA-256
-  (read from `tools/inspect_game.py`) and explains when the copy is the Epic
-  Games Store version or another file: it names the file's version against
+  *Change...*, or in the Epic Games Store's install manifests. It compares
+  `Spider-Man.exe` with the supported build's SHA-256 (read from
+  `tools/inspect_game.py`). Another file of `EXPECTED_VERSION` (an Epic Games
+  Store copy) is tried, marked yellow: every module checks the game's code where
+  it works with it and refuses where it differs, and a session starts such a
+  copy through the Epic Games Launcher's link when Steam has none. For any
+  other file it names the file's version against
   `EXPECTED_VERSION` and, from Steam's app manifest beside the game, the fix
   (a beta chosen in *Properties > Betas*, an update waiting, else *Verify
   integrity of game files*); only a newer version needs a Spidy update.
@@ -303,6 +307,26 @@ of impact:
   milliseconds, measures with rays how far the feet and the eyes (placed as
   before, and stood off as `GameTrackingRig` does) are from the wall, jumps
   off, and saves the game window on the wall and after the jump.
+- `tools/probe_prompt_watch.py`: what the game asks a player for, in the
+  running game with no headset. The prompt reading rides game_menu's hooks, so
+  a VR session is not needed: `SpidyMenuStart` puts the same hooks in and
+  `SpidyPromptsWatch` (0 off, 1 read, 2 read and rewrite) turns the reading on,
+  `SpidyPromptsWatched` copies out the counters, the millisecond timeline and
+  the census of every name the UI called with one example of its arguments,
+  and `SpidyPromptsNote` puts the probe's own presses in that timeline beside
+  the game's calls. `--press y` sends the game's interact every couple of
+  seconds.
+- `tools/probe_vent.py`: the same reading, plus driving the game there from one
+  attach, with a little script of steps - `a*6@2` (a press, repeated, seconds
+  apart), `walk:4` and `look:2,-1,0` (the sticks, held), `watch`, `watched`,
+  `press:y` (a press with a note), `shot:name`, `wait:2` and `release`. One
+  process for a whole run instead of one per press. `release` calls
+  `SpidyPadRelease`, which hands the player his own controller back: the
+  virtual pad holds input slot 0, and the game stops reading the keyboard once
+  it has seen a pad press, so without it a probe's press leaves whoever is at
+  the keyboard unable to move until the game is closed. A probe that never
+  submits a pad state never takes the pad at all, so a read-only watch can run
+  while someone plays.
 - `tools/probe_vr_load.py`: renders the VR views at the headset's resolution
   where the player stands and reports, per phase, the game's frame rate, its
   render commands per frame, GPU use, memory and clock, the GPU time of each
@@ -465,9 +489,9 @@ are printed as the graphics of Spidy's videos are: the style system's colours
 ghosts), a keyline round every shape, a hard drop instead of a shadow, and
 motion on twos: a pose held a twelfth of a second, then the next
 (`Print` in `src/web_visual.cpp`). To see a change to them without a
-headset, run `tools/preview-marks.ps1`. `-NoBody` hides the hero and draws
-gloves instead; `-NoPunch` lets fists pass through and switches the strike off
-with them. See [docs/BODY.md](BODY.md).
+headset, run `tools/preview-marks.ps1`. `-NoBody` hides the hero, with no hands
+of any kind (Spidy's own gloves went on October 15); `-NoPunch` lets fists pass
+through and switches the strike off with them. See [docs/BODY.md](BODY.md).
 
 The intro, menus, loading, the map, hint cards, cutscenes, finishers and death
 appear on a screen in front of you, as the game shows them on the monitor; VR
@@ -552,14 +576,17 @@ it took; the session log prints the first once the runtime says. A Frame on
 `touch` with `steam_frame` among the layouts taken is a binding the player
 chose in SteamVR; without it there, a SteamVR that lacks the extension.
 
-VIEW in the SPIDY VR tab (FLAT SCREEN, or VR) switches between immersive VR
-and a flat screen inside the headset; until October 12 a click of both
-thumbsticks did, which a player hit by accident (each stick's click has a use
-of its own: slow motion, the game's LB + RB). Each session starts in VR. Flat
-mode uses the
-stock game camera and the game's own controls on a real gamepad (not the
-keyboard, as above; the Touch controllers pass only the menu button and X);
-VR movement and web input are released. In immersive VR the monitor shows your
+VIEW in the SPIDY VR tab (GAME SCREEN, or VR) switches between immersive VR
+and the game as it is on the game screen inside the headset; until October 12
+a click of both thumbsticks did, which a player hit by accident (each stick's
+click has a use of its own: slow motion, the game's LB + RB). Each session
+starts in VR. GAME SCREEN plays like the game screen of menus and cutscenes
+(`vrPlay` false in `game_xr.cpp`): the stock game camera, in 3D at GAME SCREEN
+3D's depth when the HUD panel reaches it (eye mode 3, else the presented frame,
+flat), the controllers the game's Xbox controller (`Mapping::menus`) with Back
+and the D-pad added by `game_pad::ScreenControls`; VR movement, the body and
+web input are released. Until October 15 it was eye mode 2, flat, played with
+a real gamepad. In immersive VR the monitor shows your
 left eye, cut to the window's shape (the game does not render a view of its
 own then: see [Graphics settings in VR](#graphics-settings-in-vr)); in flat
 mode and on the game screen it shows the normal game view. `-GameMonitorView`
@@ -697,6 +724,7 @@ reattaching after a stopped session or a rebuilt DLL.
 | `-Size 2048` | Square eye resolution instead of the runtime's recommendation (not with `-RenderScale`) |
 | `-Upscale 67` | The size the scene inside each eye is rendered at, in percent of the eye's size per side; the game's temporal anti-aliasing brings it to the eye's size (50-100; 67 by default, 100 is anti-aliasing alone) |
 | `-NoEyeAntialiasing` | The eyes as they were before October 10's eighth build: no anti-aliasing, no upscaling, for comparison |
+| `-NoPromptHelp` | Leave the game's own button prompts alone: Spidy neither reads which button they ask for nor names the VR control in them, and the interact button is the game's Y as before (the pad layer still gives the whole controller) |
 | `-NoWebGrab` | Webs swing only; they do not catch props or thugs |
 | `-NoAirWebs` | A web that meets nothing within 100 m misses instead of holding in open air |
 | `-NoWebShooter` | The trigger only reels |
@@ -706,7 +734,7 @@ reattaching after a stopped session or a rebuilt DLL.
 | `-TriggerWebs` | The trigger shoots and holds webs, and the grip reels them in and shoots web balls (WEB BUTTON: TRIGGER) |
 | `-EyeHeight 1630 -ArmLength 590` | Your T-pose calibration in millimetres (the console's last "VR settings from the headset" line has it): Spider-Man's body takes your eye height and arm length, and the first gameplay asks for none |
 | `-NoCalibrationPrompt` | Without a calibration, do not ask for the T-pose at the first gameplay (Settings > SPIDY VR > CALIBRATE BODY still does it) |
-| `-NoBody` | Hide the hero and draw gloves |
+| `-NoBody` | Hide the hero (no hands are drawn) |
 | `-NoPunch` | Fists pass through thugs |
 | `-OverlayWebs` | Spidy's overlay strands instead of the game's web lines |
 | `-FullDesktopView` | Start the game with your own window settings, not the small VR window |
@@ -1118,6 +1146,9 @@ still requires a running game or headset.
 | `src/game_grab.cpp`, `src/native_bodies.cpp`, `src/game_targets.cpp` | Web grab in the game: candidates, freed Havok props, flung bots |
 | `src/native_render_memory.cpp`, `tools/vr_launcher.py` | A larger per-frame render memory ring, installed while the game starts |
 | `src/web_visual.cpp` | Fallback game-style web strands for the headset overlay and lab |
+| `src/prompt_buttons.cpp`, `include/spidy/prompt_buttons.hpp` | The game's own button vocabulary: what each icon id of its nine device families asks of the pad, the letters its prompt texts spell out, which of them VR play can send, what the player does instead, and a prompt text rewritten in those terms. Pure and covered by the core tests; `game_pad.hpp` is built on it |
+| `src/game_prompts.cpp`, `tools/probe_prompts.py` | What the game is asking for now: the prompt and QTE interface watched through `game_menu`'s hooks on the UI's call wrapper and text lookup, the live demand the interact button sends, the counters a session report carries; plus the October 11 research exports (for a game with no VR session running) |
+| `src/game_offers.cpp`, `src/game_warp.cpp`, `include/spidy/offer_pointing.hpp`, `tools/research_warp.py` | The game's interactions on Spidy's wall: the hero's offer processor, each offer's check and a vent's own check answered as the game's crawl would where the swing holds the player, and the offers it gathered near him; a hand pointing at one and the interact's use of it - the game's own crawl entry under him (`game_warp`), its pick, then its Y; the in-game check (`research_warp.py --use`) |
 | `src/game_xr.cpp`, `src/game_tracking.cpp` | Native eye presentation and Quest controls |
 | `src/native_hud.cpp`, `include/spidy/native_hud.hpp`, `tools/probe_hud.py` | The game's HUD in VR: its panel in front of the head, the second movie (markers, subtitles, prompts) on it, and its check in the game |
 | `src/native_rays.cpp`, `src/native_movement.cpp`, `src/game_swing.cpp` | Native world queries and collision-controlled swing requests |

@@ -392,17 +392,33 @@ void solveHero(float* out, uintptr_t job, uintptr_t instance) {
         if (on) {
             // World axes relative to the feet into the hero's model space.
             const Quat toModel = toWorld.conjugate();
+            const bool standing = (wanted.flags & native_body::standing) != 0 && finite(wanted.standUp) &&
+                                  length(wanted.standUp) > .5f && finite(wanted.floor);
             body::Targets t;
             t.head = true;
             t.airborne = wanted.flags & native_body::airborne;
-            t.up = toModel.rotate({0, 1, 0});
+            // The player's up, as he stands: the world's, or the surface the
+            // view stands him on, whatever the hero's own frame does there -
+            // turned onto it by the game's crawl, upright in the air Spidy's
+            // own wall holds him in. The body stands with the player: taking
+            // the actor's frame for it on the crawl and the view's turn on
+            // top of that laid the body a quarter turn off, along the wall in
+            // front of him ("still body in front of me", October 14).
+            t.up = toModel.rotate(standing ? normalized(wanted.standUp) : Vec3{0, 1, 0});
+            // And the game's legs are no stance there - the crawl's, splayed
+            // on the wall, or the air pose: the feet are planted on that
+            // surface under the hips instead.
+            t.plant = standing;
+            t.floor = standing ? toModel.rotate(wanted.floor) : Vec3{};
+            t.kneel = standing && (wanted.flags & native_body::kneel);
             t.eyes = toModel.rotate(wanted.eyes);
             t.facing = toModel * wanted.facing;
             if (const Quat tilt = wanted.tilt; tilt.x != 0 || tilt.y != 0 || tilt.z != 0)
                 t.tilt = toModel * tilt * toWorld;
             for (int i = 0; i < 2; ++i) {
                 const auto& h = wanted.hands[i];
-                t.hands[i] = {h.tracked != 0, toModel.rotate(h.grip), toModel * h.orientation, h.fist};
+                t.hands[i] = {h.tracked != 0, toModel.rotate(h.grip), toModel * h.orientation, h.fist,
+                              wanted.shoot[i]};
             }
             lastTargets = t;
         }
@@ -632,13 +648,15 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyBodyStart(void* input) {
     return native_body::start(c.base);
 }
 extern "C" __declspec(dllexport) DWORD WINAPI SpidyBodySubmit(void* input) {
-    // A version 1 command (the probe's) is shorter: read as many bytes as it says.
+    // A version 1, 2 or 3 command (the probe's) is shorter: read as many bytes as it says.
     Command c{};
     uint32_t header[3]{};
     const auto at = reinterpret_cast<uintptr_t>(input);
     if (!read(at, header, sizeof(header)) || header[0] != 0x53424443 ||
         !((header[1] == 1 && header[2] == native_body::commandBytesV1) ||
-          (header[1] == 2 && header[2] == sizeof(c))) ||
+          (header[1] == 2 && header[2] == native_body::commandBytesV2) ||
+          (header[1] == 3 && header[2] == native_body::commandBytesV3) ||
+          (header[1] == 4 && header[2] == sizeof(c))) ||
         !read(at, &c, header[2]) || c.leaseMs > 500 || !finite(c.eyes) || !std::isfinite(c.height) ||
         !(c.armLength >= 0 && c.armLength <= 2))
         return 7502;

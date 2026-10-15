@@ -34,7 +34,7 @@ from probe_game_screen import user32
 from probe_game_swing import snapshot as swing_snapshot
 from vr_launcher import bring_to_front
 
-KINDS = {0: 'none', 1: 'anchor', 2: 'air', 3: 'blocked', 4: 'prop', 5: 'character'}
+KINDS = {0: 'none', 1: 'anchor', 2: 'air', 3: 'blocked', 4: 'prop', 5: 'character', 6: 'strand'}
 AIM_SIZE = 96
 
 

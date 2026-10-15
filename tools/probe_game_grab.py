@@ -111,9 +111,9 @@ def prop_bodies(game, actor):
 
 def web_request(feet, wrist, anchor, attached, attached_at):
     """native_webs::ProbeCommand for the left hand: attached 1 holds a web on `anchor`, 2 trails a web let go of."""
-    raw = struct.pack('<4I3f4x', 0x5357424d, 1, 112, 200, *feet)
+    raw = struct.pack('<4I3f4x', 0x5357424d, 2, 136, 200, *feet)
     raw += struct.pack('<2Iq6f', attached, 1, attached_at, *anchor, *wrist)
-    return raw+struct.pack('<2Iq6f', 0, 0, 0, *([0.]*6))
+    return raw+struct.pack('<2Iq6f', 0, 0, 0, *([0.]*6))+struct.pack('<If3f4x', 0, 0, 0, 0, 0)
 
 
 def grab_snapshot(game, address):

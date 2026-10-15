@@ -38,9 +38,21 @@ enum Flags : uint32_t {
     // height is from the T-pose calibration (body_calibration.hpp), not the
     // headset's running height: the body takes it over a wider range.
     calibrated = 16,
+    // The player stands on a wall or a ceiling (the view turned onto it):
+    // Command::standUp and Command::floor say which. The body stands along
+    // that surface, its feet planted on it, and its fingers are its own -
+    // whether the game's crawl holds the hero there (its pose splayed on the
+    // wall) or Spidy's own wall does (its air pose). The player, October 14:
+    // "i dont want the crawling animation on legs or hands ever"; and of a
+    // body solved upright in the world while he stood on the wall, "i dont
+    // want it to be lying at all".
+    standing = 32,
+    // Standing so, the view holds the head below the player's own under a
+    // roof (a vent, a duct): the legs kneel (body::Targets::kneel).
+    kneel = 64,
 };
 struct Command {
-    uint32_t magic = 0x53424443, version = 2, bytes = sizeof(Command), flags{};
+    uint32_t magic = 0x53424443, version = 4, bytes = sizeof(Command), flags{};
     uint64_t serial{};
     uint32_t leaseMs = 250, reserved{};
     Vec3 eyes{};   // between the eyes, relative to the feet
@@ -59,9 +71,20 @@ struct Command {
     // level): the whole body turns with it about the eyes. Version 1
     // (commandBytesV1, the probe's) ends before it: level.
     Quat tilt{};
+    // Version 3: how far each hand is in the web-shooting pose, 0 to 1
+    // (body::Targets::Hand::shoot). Version 2 (commandBytesV2) ends before
+    // it: fists only.
+    float shoot[2]{};
+    // Version 4, with Flags::standing: the surface the player stands on -
+    // its up, world axes, and a point on it relative to the feet. The tilt
+    // above is then a flip's alone (none on a wall). Version 3
+    // (commandBytesV3) ends before them: the world's floor.
+    Vec3 standUp{};
+    Vec3 floor{};
 };
-constexpr uint32_t commandBytesV1 = 144;
-static_assert(sizeof(Hand) == 36 && sizeof(Command) == 160 && offsetof(Command, tilt) == commandBytesV1);
+constexpr uint32_t commandBytesV1 = 144, commandBytesV2 = 160, commandBytesV3 = 168;
+static_assert(sizeof(Hand) == 36 && sizeof(Command) == 192 && offsetof(Command, tilt) == commandBytesV1 &&
+              offsetof(Command, shoot) == commandBytesV2 && offsetof(Command, standUp) == commandBytesV3);
 
 enum State : uint32_t { off = 0, waiting = 1, active = 2, failed = 3 };
 // Why the body is not on the hero (Status::problem).

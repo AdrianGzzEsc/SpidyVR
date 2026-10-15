@@ -29,15 +29,12 @@ struct Values {
     // gravity, since October 12; 80 from October 9; before, 60 (the 6 m/s^2
     // Spidy flew at from October 5).
     int weight = 100;
-    // Webs are ropes (the tab's PHYSICAL WEBS; SwingConfig::physical): a web
-    // bends round the edge that comes between you and its end instead of
-    // letting go, its length is measured to the hand that holds it, so a pull
-    // of that hand pulls you, and it pays out while you walk. Off, as before
-    // October 12.
-    bool physicalWebs = true;
-    // The flat game screen instead of VR, in the headset (the tab's VIEW).
-    // Each session starts in VR: the launcher does not keep it. Until October
-    // 12 a click of both thumbsticks switched it.
+    // The game as it is instead of VR (the tab's VIEW: GAME SCREEN): its own
+    // camera on the game screen in the headset, in 3D at GAME SCREEN 3D's
+    // depth, played as on an Xbox controller, with nothing of Spidy's on the
+    // hero. Each session starts in VR: the launcher does not keep it. Until
+    // October 12 a click of both thumbsticks switched it; until October 15
+    // it showed the game flat, played with a real controller.
     bool flatScreen = false;
     // A T-pose calibration of your body is wanted at the next gameplay (the
     // tab's CALIBRATE BODY: ON RESUME); the XR worker clears it once the
@@ -121,7 +118,6 @@ enum class Item : uint8_t {
     flipSpeed,
     standOnWalls,
     screenDepth,
-    physicalWebs,
     view,
 };
 inline constexpr Item lastItem = Item::view;
@@ -134,8 +130,12 @@ struct Row {
     const char* title{};
     const char* help{};
     std::span<const char* const> choices{};
+    // On the pause menu's first page, under RESUME, instead of the tab: VR
+    // VIEW (the user, October 15: "move the VIEW: GAME SCREEN to the first
+    // menu (the one with resume)").
+    bool page{};
 };
-const std::array<Row, 21>& rows();
+const std::array<Row, 19>& rows();
 // The choice a setting shows for these values: a switch 0 (off) or 1 (on), a
 // list its step nearest to the value (a launcher value between two steps
 // shows the nearer one, the lower on a tie).

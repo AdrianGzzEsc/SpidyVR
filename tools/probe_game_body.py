@@ -338,12 +338,15 @@ def roles_payload(roles, joints):
     return struct.pack('<4I4h2h8h8h12h6h', 0x53424452, 1, 96, joints, *values)
 
 
-def command(serial, flags, eyes, facing, hands, height=0., lease=250, arm_length=0.):
-    """A native_body::Command; `arm_length` (m) is a T-pose calibration's, 0 the hero's own arms."""
-    raw = struct.pack('<4IQ2I3f4f', 0x53424443, 1, 144, flags, serial, lease, 0, *eyes, *facing)
+def command(serial, flags, eyes, facing, hands, height=0., lease=250, arm_length=0., shoots=None):
+    """A native_body::Command; `arm_length` (m) is a T-pose calibration's, 0 the hero's own arms. With `shoots`
+    (how far each hand is in the web-shooting pose, 0 to 1) it is a version 3 command, level; without, version 1."""
+    raw = struct.pack('<4IQ2I3f4f', 0x53424443, 3 if shoots else 1, 168 if shoots else 144, flags, serial, lease, 0,
+                      *eyes, *facing)
     for grip, orientation, tracked, fist in hands:
         raw += struct.pack('<3f4fIf', *grip, *orientation, tracked, fist)
-    return raw+struct.pack('<3f', height, 0, arm_length)
+    raw += struct.pack('<3f', height, 0, arm_length)
+    return raw+struct.pack('<4f2f', 0, 0, 0, 1, *shoots) if shoots else raw
 
 
 def hero_frame(game, record):
@@ -551,6 +554,9 @@ def main():
     parser.add_argument('--fists', default='0,1',
                         help='how far the left and right hands close into fists, 0 to 1 (default: left open, '
                              'right closed)')
+    parser.add_argument('--shoots', default='0,0',
+                        help='how far the left and right hands are in the web-shooting pose, 0 to 1, over the fists '
+                             '(default: neither)')
     parser.add_argument('--punch-hero', action='store_true',
                         help='also deal the hero a light stagger, to check the damage pipeline without a bot')
     parser.add_argument('--output', type=pathlib.Path, default=ROOT/'reports/body-probe.json')
@@ -559,6 +565,9 @@ def main():
     fists = [min(1., max(0., float(v))) for v in args.fists.split(',')]
     if len(fists) != 2:
         parser.error('--fists takes two values, left and right')
+    shoots = [min(1., max(0., float(v))) for v in args.shoots.split(',')]
+    if len(shoots) != 2:
+        parser.error('--shoots takes two values, left and right')
     game = Game(find_game())
     process = None
     report = dict(phases=phases)
@@ -659,7 +668,8 @@ def main():
                 # By default the right hand punching ahead is a closed fist.
                 hands = [(grip, orientation, 1, fists[side]) for side, (grip, orientation) in enumerate(targets)]
                 code = call_with_payload(process, stereo['SpidyBodySubmit'],
-                                         command(serial, flags, eyes_rel, look or facing, hands, 1.75))
+                                         command(serial, flags, eyes_rel, look or facing, hands, 1.75,
+                                                 shoots=shoots if any(shoots) else None))
                 if code:
                     raise RuntimeError(f'Body command: {code}')
                 if eye_driver:
@@ -688,8 +698,9 @@ def main():
                 result['head_scale'] = round(math.sqrt(dot(column(solved['body'][roles['head']], 0),
                                                            column(solved['body'][roles['head']], 0))), 4)
                 if names:
-                    result['hands'] = [dict(fist=fists[side], **(hand_shape(names, solved['body'], transform, side,
-                                                                            targets[side][1]) or {}))
+                    result['hands'] = [dict(fist=fists[side], shoot=shoots[side],
+                                            **(hand_shape(names, solved['body'], transform, side,
+                                                          targets[side][1]) or {}))
                                        for side in (0, 1)]
             result['screenshot'] = screenshot(game, 'ik-third-person')
             report['ik'] = result

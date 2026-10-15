@@ -7,8 +7,11 @@
 #include "spidy/eye_job_table.hpp"
 #include "spidy/eye_pair_state.hpp"
 #include "spidy/native_rays.hpp"
+#include "spidy/native_webs.hpp"
 #include "spidy/native_render_memory.hpp"
+#include "spidy/enclosure.hpp"
 #include "spidy/game_pad.hpp"
+#include "spidy/gadget_wheel.hpp"
 #include "spidy/controller_layout.hpp"
 #include "spidy/game_swing.hpp"
 #include "spidy/native_movement.hpp"
@@ -22,14 +25,18 @@
 #include "spidy/web_grab.hpp"
 #include "spidy/lab_props.hpp"
 #include "spidy/body_ik.hpp"
+#include "spidy/crawl_stick.hpp"
 #include "spidy/body_calibration.hpp"
 #include "spidy/overlay_text.hpp"
 #include "spidy/punch.hpp"
 #include "spidy/shooter.hpp"
 #include "spidy/slow_motion.hpp"
+#include "spidy/hand_pose.hpp"
 #include "spidy/impact_sound.hpp"
 #include "spidy/web_strike.hpp"
+#include "spidy/prompt_buttons.hpp"
 #include "spidy/xr_layers.hpp"
+#include "spidy/offer_pointing.hpp"
 #include <algorithm>
 #include <cstring>
 #include <functional>
@@ -38,6 +45,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <vector>
 #ifdef _WIN32
 #include "spidy/game_targets.hpp"
 // Stand-ins for the game's classes, by the names the target scan's rules look
@@ -165,6 +173,13 @@ struct Building : TestWorld {
 SwingConfig walled() {
     SwingConfig c;
     c.walls = true;
+    return c;
+}
+// The swing's walls with the ground mount on, as they were from October 10 to
+// 14: what the mount does when it is asked to.
+SwingConfig mounted() {
+    SwingConfig c = walled();
+    c.mountFromGround = true;
     return c;
 }
 // Flies a body through native steps: the game moves it where each prediction
@@ -595,6 +610,27 @@ int main() {
         r=t.update(2080,true,true,true,true,false,{0,1,0},{},{});
         check(r.jump,"landed web cannot request native jump");
     });
+    test("a takeoff from the game's crawl is off once it is clear of the wall, not above where it began", [] {
+        // The wall x = 0 with its normal +x. A jump off it goes out and a little down (October 14, the first
+        // mission's shaft: 70.27 m to 69.26 m), so "12 cm above where it began" held the web a third of a
+        // second longer than it needed. Along the wall's normal it is off as soon as it is clear.
+        SwingTakeoff t;const Vec3 n{1,0,0};
+        auto r=t.update(1000,true,true,true,true,true,{.3f,70,0},{},{},false,n);
+        check(r.waiting&&!r.jump,"takeoff did not begin with a released jump");
+        r=t.update(1080,true,true,true,false,false,{.3f,70,0},{},{},false,n);
+        check(r.waiting&&r.jump,"native jump never pressed");
+        r=t.update(1130,true,false,true,false,false,{.5f,69.9f,0},{3,-1,0},{},false,n);
+        check(r.waiting,"one sample off the wall resumed control");
+        r=t.update(1160,true,false,true,false,false,{.7f,69.8f,0},{3,-1,0},{},false,n);
+        check(r.resumed&&!r.waiting,"a body clear of its wall was still waited on");
+        // The ground is unchanged: falling is not taking off.
+        SwingTakeoff g;
+        g.update(1000,true,true,true,true,true,{0,1,0},{},{});
+        g.update(1080,true,true,true,false,false,{0,1,0},{},{});
+        r=g.update(1130,true,false,true,false,false,{0,.8f,0},{},{});
+        r=g.update(1160,true,false,true,false,false,{0,.6f,0},{},{});
+        check(r.waiting&&!r.resumed,"a body falling from the ground was taken for one taking off");
+    });
     test("takeoff retries a missed input edge then waits for a new gesture", [] {
         SwingTakeoff t;
         unsigned edges{};bool held{};
@@ -866,6 +902,133 @@ int main() {
         old.payOut({6,0,0},.1f);
         near(old.webs()[0].length,20,.001f);
     });
+    test("a press with the free hand on the other hand's web takes hold of that web", [physical] {
+        for(const bool ropes:{true,false}) {
+            TestWorld w;Swing s(ropes?physical():inert());auto in=aimed();in.hands[0].trigger=0;
+            // The right hand 0.3 m up the web from the left one, open.
+            in.hands[1]={in.hands[0].aim,{0,.3f,0},true,0,0};
+            Body body{{0,0,0},{},false};
+            auto intent=s.predictNativeStep(1.f/90,in,w,body);
+            const auto step=[&]{body={intent.target,intent.velocity,false};intent=s.predictNativeStep(1.f/90,in,w,body);};
+            check(s.webs()[0].attached&&!s.webs()[1].attached&&!s.shared(),"no web to take hold of");
+            const float first=s.webs()[0].length;
+            step();
+            check(s.onStrand(1)&&!s.onStrand(0),"the hand on the web is not seen on it");
+            in.hands[1].grip=1;step();
+            bool joined{},shot{};
+            for(const auto& e:s.events()){joined|=e.kind==EventKind::Join&&e.hand==1;shot|=e.kind==EventKind::Attach;}
+            check(joined&&!shot&&s.shared()&&!s.onStrand(1),"the press did not take hold of the web");
+            check(s.webs()[1].taken&&!s.webs()[0].taken,"the hold is not marked as taken, or the shot web is");
+            // The hand nearer the web's end bears the body; with one length for both, both do.
+            check(s.bears(1)&&s.bears(0)==!ropes,"the wrong hand bears the body");
+            near(length(s.webs()[1].anchor-w.anchor),0);
+            // To the hand that took it: 0.3 m nearer the web's end where webs are ropes.
+            near(s.webs()[1].length,ropes?first-.3f:first,.001f);
+            near(length(intent.target),0,.001f);near(length(intent.velocity),0,.001f);
+            // One hand lets go: the other has the web still, alone.
+            in.hands[0].grip=0;step();
+            check(!s.webs()[0].attached&&s.webs()[1].attached&&!s.shared(),"letting go with one hand lost the web");
+        }
+    });
+    test("one web in both hands: the upper hand pulls, and hand over hand climbs it", [physical] {
+        TestWorld w;Swing s(physical());auto in=aimed();in.hands[0].trigger=0;
+        in.hands[1]={in.hands[0].aim,{0,.3f,0},true,0,0};
+        Body body{{0,0,0},{},false};
+        auto intent=s.predictNativeStep(1.f/90,in,w,body);
+        const auto step=[&]{body={intent.target,intent.velocity,false};intent=s.predictNativeStep(1.f/90,in,w,body);};
+        step();in.hands[1].grip=1;step();
+        check(s.shared(),"no web in both hands");
+        // The upper hand comes down 0.3 m: the body goes up as far, and each hand keeps its hold.
+        for(int i=0;i<30;++i){in.hands[1].gripRelativeToHead.y-=.01f;step();}
+        near(intent.target.y,.3f,.02f);
+        near(s.webs()[0].length,19.4f,.001f);near(s.webs()[1].length,19.1f,.001f);
+        // The lower hand moves nothing: it holds the slack below the other.
+        for(int i=0;i<30;++i){in.hands[0].gripRelativeToHead.y-=.01f;intent.velocity={};step();}
+        near(intent.target.y,.3f,.02f);
+        in.hands[0].gripRelativeToHead.y+=.3f;
+        // It lets go, goes 0.3 m up past the other and takes the web there.
+        in.hands[0].grip=0;
+        for(int i=0;i<10;++i){in.hands[0].gripRelativeToHead.y+=.03f;intent.velocity={};step();}
+        check(!s.webs()[0].attached&&s.webs()[1].attached&&s.onStrand(0),"the free hand is not on the web above the other");
+        in.hands[0].grip=1;intent.velocity={};step();
+        check(s.shared(),"the hand did not take the web again above the other");
+        near(s.webs()[0].length,18.8f,.01f);
+        // And pulls in its turn.
+        for(int i=0;i<30;++i){in.hands[0].gripRelativeToHead.y-=.01f;step();}
+        near(intent.target.y,.6f,.04f);
+    });
+    test("a hand beside the web shoots its own, and a web in both hands zips once", [physical] {
+        TestWorld w;Swing s(physical());auto in=aimed();in.hands[0].trigger=0;
+        // The right hand 0.4 m to the side of the left one's web.
+        in.hands[1]={in.hands[0].aim,{.4f,.3f,0},true,0,0};
+        Body body{{0,0,0},{},false};
+        auto intent=s.predictNativeStep(1.f/90,in,w,body);
+        const auto step=[&]{body={intent.target,intent.velocity,false};intent=s.predictNativeStep(1.f/90,in,w,body);};
+        step();
+        check(!s.onStrand(1),"a hand 0.4 m off the web is on it");
+        in.hands[1].grip=1;step();
+        check(s.webs()[1].attached&&!s.shared()&&s.webs()[1].strand!=s.webs()[0].strand,"a press beside the web took hold of it");
+        // With no reach every press shoots.
+        auto never=physical();never.strandReach=0;
+        Swing off(never);auto same=aimed();same.hands[0].trigger=0;same.hands[1]={same.hands[0].aim,{0,.3f,0},true,0,0};
+        Body other{{0,0,0},{},false};
+        auto at=off.predictNativeStep(1.f/90,same,w,other);
+        other={at.target,at.velocity,false};at=off.predictNativeStep(1.f/90,same,w,other);
+        check(!off.onStrand(1),"a hand is on the web of a swing that shares none");
+        same.hands[1].grip=1;other={at.target,at.velocity,false};off.predictNativeStep(1.f/90,same,w,other);
+        check(off.webs()[1].attached&&!off.shared(),"a swing that shares no web shared one");
+        // One web, one zip, whichever hand yanks.
+        Swing z(physical());auto pull=aimed();pull.hands[0].trigger=0;pull.hands[1]={pull.hands[0].aim,{0,.3f,0},true,0,0};
+        Body hanging{{0,0,0},{},false};
+        auto to=z.predictNativeStep(1.f/90,pull,w,hanging);
+        const auto next=[&]{
+            hanging={to.target,to.velocity,false};to=z.predictNativeStep(1.f/90,pull,w,hanging);
+            unsigned n=0;for(const auto& e:z.events())n+=e.kind==EventKind::Zip;
+            return n;
+        };
+        next();pull.hands[1].grip=1;next();
+        check(z.shared(),"no web in both hands");
+        // The lower hand's yank pulls on slack; the upper hand's zips, once.
+        unsigned zips=0;
+        for(int i=0;i<6;++i){pull.hands[0].gripRelativeToHead.y-=.05f;zips+=next();}
+        check(zips==0,"a yank of the slack below the other hand zipped");
+        for(int i=0;i<6;++i){pull.hands[1].gripRelativeToHead.y-=.05f;zips+=next();}
+        check(zips==1,"the upper hand's yank did not zip");
+        pull.hands[1].gripRelativeToHead.y+=.3f;next();
+        for(int i=0;i<6;++i){pull.hands[1].gripRelativeToHead.y-=.05f;zips+=next();}
+        check(zips==1,"the same web zipped again");
+        auto bad=physical();bad.strandReach=2;
+        try{Swing wide(bad);check(false,"a strand reach of 2 m accepted");}catch(const std::invalid_argument&){}
+    });
+    test("one web in both hands: the bearing hand lets go and the other has the web where it is", [physical] {
+        // Hanging, with weight. The right hand holds the web 0.3 m above the left, which shot it.
+        const auto hanging=[&](float lowerMoves){
+            auto c=physical();c.gravity=9.81f;
+            TestWorld w;Swing s(c);auto in=aimed();in.hands[0].trigger=0;
+            in.hands[1]={in.hands[0].aim,{0,.3f,0},true,0,0};
+            Body body{{0,0,0},{},false};
+            auto intent=s.predictNativeStep(1.f/90,in,w,body);
+            const auto step=[&]{body={intent.target,intent.velocity,false};intent=s.predictNativeStep(1.f/90,in,w,body);};
+            step();in.hands[1].grip=1;step();
+            check(s.shared()&&s.bears(1)&&!s.bears(0),"the upper hand does not bear the body");
+            for(int i=0;i<45;++i)step();
+            const float hung=intent.target.y;
+            near(hung,0,.01f);
+            // The lower hand moves along the web meanwhile: nothing happens.
+            for(int i=0;i<20;++i){in.hands[0].gripRelativeToHead.y+=lowerMoves/20;step();}
+            near(intent.target.y,hung,.01f);
+            // The upper hand lets go.
+            in.hands[1].grip=0;
+            float lowest=hung,highest=hung;
+            for(int i=0;i<45;++i){step();lowest=std::min(lowest,intent.target.y);highest=std::max(highest,intent.target.y);}
+            check(s.webs()[0].attached&&!s.webs()[1].attached,"the web went with the hand that let go");
+            check(lowest>hung-.03f,"the body dropped onto the lower hand's hold");
+            check(highest<hung+.03f,"the body was snapped up to the lower hand's hold");
+        };
+        hanging(0);     // its hold 0.3 m of slack below
+        hanging(-.2f);  // moved further down the web: the hold would have been 0.2 m too short
+        hanging(.25f);  // moved up beside the other
+    });
     test("a body that flies into a wall at an angle runs along it", [] {
         // The wall: x = 5, facing -x. The body's centre keeps 0.9 m off it.
         Building w;Swing s(walled());Input in;
@@ -1059,6 +1222,27 @@ int main() {
             check(body.position.z*way>3,"the strip stopped sideways walking");
         }
     });
+    test("a wall the body is behind is the inside of one, never held", [] {
+        // The game's crawl holds the body on a wall's surface, inside its collision; a ray from there meets a
+        // face turned back at the body. Held, it stood the player's view out along that backward normal,
+        // through the wall (October 14: "got oob completely").
+        struct Inside : Building {
+            std::optional<RayHit> raycast(Vec3 o, Vec3 d, float distance) const override {
+                // Every ray from inside the building meets its west face, turned the wrong way for a body in here.
+                if (o.x > low.x && d.x > .5f)
+                    return RayHit{{low.x, o.y, o.z}, {-1, 0, 0}, 7, true};
+                return Building::raycast(o, d, distance);
+            }
+        } w;
+        Swing s(walled());Input in;
+        in.move={1,0,0};
+        Body body=fly(s,w,{{5.4f,10,0},{2,0,0},false},in,.5f);
+        check(!s.wall().on,"a wall the body was behind was held");
+        // In front of the same face, it is a wall like any other.
+        Swing front(walled());Input none;
+        fly(front,w,{{0,10,0},{12,0,0},false},none,1);
+        check(front.wall().on&&front.wall().distance>0,"the face from in front was not held");
+    });
     test("walls leave a grounded body and a swing without walls alone", [] {
         Building w;Input in;
         Swing off;
@@ -1080,9 +1264,203 @@ int main() {
         live.allowWalls(false);
         check(!live.wall().on,"walls switched off kept the body");
     });
+    test("taking no new walls keeps the one the body is on and leaves the next to the game", [] {
+        // What indoors asks for. Switching the walls off outright lets go of the wall at once, and the body
+        // is held 0.9 m clear of it, so that is a fall straight past it - the player was dropped by it twice
+        // in the headset. Taking no new ones drops nobody: he keeps what he is on, and the next wall is the
+        // game's own crawl, the one hold the game itself calls standing and so the one whose vents work.
+        Building w;Input in;
+        Swing kept(walled());
+        fly(kept,w,{{0,10,0},{12,0,0},false},in,1);
+        check(kept.wall().on,"no wall to keep");
+        const Vec3 held=kept.wall().normal;
+        kept.takeNewWalls(false);
+        check(!kept.takingNewWalls(),"the switch did not take");
+        check(kept.wall().on,"taking no new walls let go of the wall it was on");
+        // And it stays on it, where switching the walls off would have dropped him.
+        Body body=kept.body();
+        for(int i=0;i<60;++i)
+            kept.predictNativeStep(1.f/60,in,w,body);
+        check(kept.wall().on,"the wall it was on went anyway");
+        check(length(kept.wall().normal-held)<.01f,"the wall it was on changed");
+        // What it refuses is a wall OFFERED to it - the surface the game's own
+        // crawl is already holding him on (game_swing offers it as soon as the
+        // game turns him onto one). That is the wall the swing would otherwise
+        // steal, jumping him out of the one hold whose vents and doors work.
+        const Body beside{{4.5f,1.2f,0},{},false};
+        Swing stolen(walled());
+        for(int i=0;i<20&&!stolen.wall().on;++i) {
+            stolen.offerWall({{5,1,0},{-1,0,0},0,true});
+            stolen.predictNativeStep(1.f/60,in,w,beside);
+        }
+        check(stolen.wall().on,"an offered wall was not taken with walls on");
+        Swing left(walled());
+        left.takeNewWalls(false);
+        for(int i=0;i<20;++i) {
+            left.offerWall({{5,1,0},{-1,0,0},0,true});
+            left.predictNativeStep(1.f/60,in,w,beside);
+        }
+        check(!left.wall().on,"the game's own wall was stolen with new walls off");
+        check(!left.takingNewWalls(),"the switch did not take");
+        // What it never refuses is the next wall of a climb. Refusing that drops
+        // the player: the game's own crawl cannot catch a body held 0.9 m clear
+        // of a wall, so a refused wall is a fall, and it was one at the vent he
+        // was climbing to (the player, October 14: "i went forward, wall walked
+        // to the vent and fell").
+        Swing climbing(walled());
+        climbing.takeNewWalls(false);
+        Body flew=fly(climbing,w,{{0,10,0},{12,0,0},false},in,1);
+        check(climbing.wall().on&&flew.position.x<=10,"a climb's next wall was refused, which is a fall");
+        // Off outright still lets go, as it always did: that is what it means.
+        Swing off(walled());
+        fly(off,w,{{0,10,0},{12,0,0},false},in,1);
+        off.allowWalls(false);
+        check(!off.wall().on,"walls switched off kept the body");
+    });
+    test("held against its wall, the body is drawn in at a walk and never let go of", [] {
+        // What a vent needs: the game's own collision meeting the wall, which it answers by sticking the body
+        // to the wall in its crawl (the one hold the game calls standing), while the swing holds the body the
+        // whole time. The usual clearance keeps that collision off the wall on purpose.
+        Building w;Input in;
+        Swing s(walled());
+        Body body=fly(s,w,{{0,10,0},{12,0,0},false},in,1);
+        check(s.wall().on,"no wall to hold");
+        const float out=s.wall().distance;
+        near(out,walled().wallClearance,.05f);
+        s.hugWalls(true);
+        check(s.huggingWalls(),"the switch did not take");
+        // Drawn in, not snapped: a tenth of a second in, it is on its way.
+        body=fly(s,w,body,in,.1f);
+        check(s.wall().on,"holding against the wall let go of it");
+        check(s.wall().distance<out-.05f&&s.wall().distance>walled().hugClearance+.05f,"it was not drawn in at a walk");
+        body=fly(s,w,body,in,1);
+        check(s.wall().on,"holding against the wall let go of it");
+        check(s.wall().distance>=walled().hugClearance-.01f&&s.wall().distance<=walled().hugClearance+.11f,
+              "it did not come to rest against the wall");
+        // It does not slide down the wall meanwhile: held is held.
+        const float height=body.position.y;
+        body=fly(s,w,body,in,1);
+        near(body.position.y,height,.05f);
+        // Back out to its clearance when the hold ends, still on the wall.
+        s.hugWalls(false);
+        body=fly(s,w,body,in,1);
+        check(s.wall().on,"ending the hold let go of the wall");
+        near(s.wall().distance,walled().wallClearance,.05f);
+        // A clearance out of range is no configuration.
+        SwingConfig bad=walled();bad.hugClearance=bad.wallClearance+.1f;
+        bool threw=false;try{Swing x(bad);}catch(const std::invalid_argument&){threw=true;}
+        check(threw,"a hug clearance outside the wall clearance was accepted");
+    });
+    test("walked onto a wall the player is the swing's, but not in a vent", [] {
+        // Since October 15, the player: "use our locomotion system only". The game's interactions work on the
+        // swing's wall (game_offers), so a wall walked at is mounted as one swung onto is held.
+        Building w;Swing s(walled());Input in;
+        check(walled().mountFromGround,"the ground mount is off by default");
+        const Body stands{{4.5f,1,0},{},true};
+        in.move={1,0,0};
+        bool wants{};
+        for(int i=0;i<30;++i){s.predictNativeStep(1.f/60,in,w,stands);wants|=s.mounting();}
+        check(wants,"walking at a wall did not mount it");
+        // Crawled through a vent (allowMounts off), a duct's wall is not mounted and the game's own crawl
+        // offered there is not taken from it, the stick on or not.
+        Swing vent(walled());vent.allowMounts(false);
+        for(int i=0;i<60;++i) {
+            vent.offerWall({{5,1,0},{-1,0,0},0,true});
+            vent.predictNativeStep(1.f/60,in,w,stands);
+            check(!vent.mounting()&&!vent.mountBegun()&&!vent.wall().on,"a wall was mounted in a vent");
+        }
+        Input none;
+        Body body=fly(vent,w,{{4.5f,1.2f,0},{0,11,0},false},none,.3f);
+        check(!vent.wall().on,"a jump in a vent ended on the wall the crawl had offered");
+        // Out of it, mounts are back.
+        vent.allowMounts(true);
+        wants=false;
+        for(int i=0;i<30;++i){vent.predictNativeStep(1.f/60,in,w,stands);wants|=vent.mounting();}
+        check(wants,"allowing mounts again did not");
+        // Swinging or flying into a wall is the swing's, as before.
+        Swing flying(walled());
+        body=fly(flying,w,{{0,10,0},{12,0,0},false},none,1);
+        check(flying.wall().on,"a body that flew into a wall was not held on it");
+    });
+    test("the wall the game's crawl held the body on is not taken from behind", [] {
+        // A wall's face at x = 5, facing -x, and the body just inside it, as the game's crawl leaves it: a ray
+        // from there toward the open side meets the face from behind, turned toward the body, as the game's
+        // collision answered in the first mission's shaft (October 15, the morning build: a player held on
+        // the wrong side of it until he fell out of the world).
+        struct Slab : TestWorld {
+            std::optional<RayHit> raycast(Vec3 o, Vec3 d, float distance) const override {
+                if (std::abs(d.x) < 1e-4f)
+                    return {};
+                const float t = (5 - o.x) / d.x;
+                if (t <= 0 || t > distance)
+                    return {};
+                return RayHit{o + d * t, {o.x > 5 ? 1.f : -1.f, 0, 0}, 7, true};
+            }
+            bool exists(std::uint64_t id) const override {
+                return id == 7;
+            }
+        } slab;
+        Input away;away.move={-1,0,0};
+        const Body inside{{5.2f,10,0},{},false};
+        // Without the game's crawl before it, the face is taken, as any wall pushed at would be.
+        Swing plain(walled());
+        plain.predictNativeStep(1.f/60,away,slab,inside);
+        check(plain.wall().on&&plain.wall().normal.x>.5f,"the test's face was no wall");
+        // The game's crawl held the body on that face a moment ago: its back is refused.
+        Swing s(walled());
+        s.supportSurface({-1,0,0},{5,10,0});
+        s.supportSurface({});
+        for(int i=0;i<30;++i) {
+            s.predictNativeStep(1.f/60,away,slab,inside);
+            check(!s.wall().on,"the crawl's wall was taken from behind");
+        }
+        // Its own face, from the open side, is a wall as ever.
+        Swing front(walled());Input at;at.move={1,0,0};
+        front.supportSurface({-1,0,0},{5,10,0});
+        front.predictNativeStep(1.f/60,at,slab,{{4.4f,10,0},{},false});
+        check(front.wall().on&&front.wall().normal.x<-.5f,"the crawl's own wall was refused");
+        // backSeconds on, the guard is gone.
+        Swing later(walled());
+        later.supportSurface({-1,0,0},{5,10,0});
+        later.supportSurface({});
+        Input none;
+        for(int i=0;i<int(Swing::backSeconds*60)+2;++i)
+            later.predictNativeStep(1.f/60,none,slab,{{3,10,0},{},true});
+        later.predictNativeStep(1.f/60,away,slab,inside);
+        check(later.wall().on,"the guard outlived its time");
+    });
+    test("in the game's own wall states the swing takes no wall", [] {
+        // There the body is on the wall's surface, inside its collision, and a ray from it meets the back of
+        // the wall, turned toward the body: taken, it held a player behind the first mission's shaft until he
+        // fell out of the world (October 15).
+        Building w;Swing s(walled());Input none;
+        s.gameHoldsWall(true);
+        Body body=fly(s,w,{{0,10,0},{12,0,0},false},none,1);
+        check(!s.wall().on,"a wall was taken while the game held the body on one of its own");
+        // A wall the swing holds is left the moment the game holds the body.
+        Swing on(walled());
+        body=fly(on,w,{{0,10,0},{12,0,0},false},none,1);
+        check(on.wall().on,"no wall to leave");
+        on.gameHoldsWall(true);
+        body=fly(on,w,body,none,1.f/60);
+        check(!on.wall().on,"the swing kept its wall under the game's own");
+        // The game's own hold over, the swing has walls again.
+        on.gameHoldsWall(false);
+        body=fly(on,w,{{0,10,0},{12,0,0},false},none,1);
+        check(on.wall().on,"walls did not come back after the game's own");
+        // But the mount's jump off the game's crawl - the walk on from it - still ends on the swing's wall.
+        Swing crawl(mounted());Input walk;walk.move={0,1,0};
+        const RayHit wall{{5,10,0},{-1,0,0},7,true};
+        crawl.offerWall(wall);
+        crawl.predictNativeStep(1.f/60,walk,w,{{5,11,0},{},true});
+        check(crawl.mounting(),"the walk on asked for no jump");
+        crawl.gameHoldsWall(true);
+        crawl.predictNativeStep(1.f/60,none,w,{{4.7f,10.8f,0},{-7,-12,0},false});
+        check(crawl.wall().on,"the mount's jump did not end on the wall");
+    });
     test("walked at a wall the standing body mounts it by the game's jump", [] {
         // The wall x = 5 faces -x; the body stands against it, its centre a metre up.
-        Building w;Swing s(walled());Input in;
+        Building w;Swing s(mounted());Input in;
         const Body stands{{4.5f,1,0},{},true};
         for(int i=0;i<30;++i) {
             s.predictNativeStep(1.f/60,in,w,stands);
@@ -1095,7 +1473,7 @@ int main() {
         check(s.mounting()&&steps>=6&&steps<=8,"the mount did not come a tenth of a second into the walk");
         check(!s.wall().on,"a wall took a body that stands");
         // From the first step of that walk the caller keeps the stick from the game.
-        Swing first(walled());
+        Swing first(mounted());
         first.predictNativeStep(1.f/60,in,w,stands);
         check(first.mountBegun()&&!first.mounting(),"the walk at the wall did not begin a mount");
         // The game's jump lifts it at 11 m/s: the wall has it at once, and it
@@ -1118,7 +1496,7 @@ int main() {
         near(body.velocity.y,6,.05f);near(body.position.x,4.1f,.02f);
         // The stick let go before the body left the ground: the jump already
         // asked for still ends on the wall, at rest.
-        Swing late(walled());
+        Swing late(mounted());
         for(int i=0;i<8;++i)late.predictNativeStep(1.f/60,in,w,stands);
         check(late.mounting(),"no mount");
         in.move={};
@@ -1130,7 +1508,7 @@ int main() {
     test("a stroll past a wall, a glance at it, a kerb and a far wall mount nothing", [] {
         Building w;Input in;
         const Body stands{{4.5f,1,0},{},true};
-        const auto mounts=[&](const WorldQueries& world,Vec3 stick,Body body,SwingConfig c=walled()) {
+        const auto mounts=[&](const WorldQueries& world,Vec3 stick,Body body,SwingConfig c=mounted()) {
             Swing s(c);
             in.move=stick;
             bool wants{};
@@ -1150,12 +1528,25 @@ int main() {
         check(!mounts(kerb,{1,0,0},stands),"a kerb was mounted");
         check(!mounts(w,{1,0,0},stands,SwingConfig{}),"a swing without walls mounts one");
     });
-    test("the game's crawl hands its wall to the swing as the body leaves it", [] {
+    test("the game's crawl hands its wall to the swing when the stick walks on", [] {
         // The game has the body on the wall x = 5 in its crawl: its feet on
         // the wall, and reported as standing.
-        Building w;Swing s(walled());Input in;
+        Building w;Swing s(mounted());Input in;
         const Body crawls{{5,11,0},{0,2,0},true};
         const RayHit wall{{5,10,0},{-1,0,0},7,true};
+        // At rest there the player is the game's: the crawl Spidy put him on
+        // to use one of its interactions (game_offers) runs it, and a move of
+        // the game's own off the wall - a vent's way in - is not taken.
+        s.offerWall(wall);
+        s.predictNativeStep(1.f/60,in,w,crawls);
+        check(!s.mounting()&&!s.wall().on,"the crawl's wall asked for a jump at rest");
+        Swing still(mounted());
+        still.offerWall(wall);
+        still.predictNativeStep(1.f/60,in,w,crawls);
+        still.predictNativeStep(1.f/60,in,w,{{4.7f,10.8f,0},{-7,-12,0},false});
+        check(!still.wall().on,"the game's own move off its crawl was taken from it");
+        // The stick walks him on: the game's jump, then the swing's wall.
+        in.move={0,1,0};
         s.offerWall(wall);
         s.predictNativeStep(1.f/60,in,w,crawls);
         check(s.mounting()&&!s.wall().on,"the crawl's wall asked for no jump");
@@ -1163,7 +1554,11 @@ int main() {
         s.predictNativeStep(1.f/60,in,w,crawls);
         check(!s.mounting(),"an offer went on by itself");
         // The game's jump throws the body off the wall, out and down: the
-        // swing has it at once, at rest, and brings it out to the clearance.
+        // swing has it at once, at rest, and brings it out to the clearance,
+        // the stick let go of by then or not.
+        s.offerWall(wall);
+        s.predictNativeStep(1.f/60,in,w,crawls);
+        in.move={};
         s.offerWall(wall);
         s.predictNativeStep(1.f/60,in,w,crawls);
         const auto intent=s.predictNativeStep(1.f/60,in,w,{{4.7f,10.8f,0},{-7,-12,0},false});
@@ -1172,7 +1567,7 @@ int main() {
         const Body body=fly(s,w,{intent.target,intent.velocity,false},in,.5f);
         near(body.position.x,4.1f,.02f);near(body.position.y,10.8f,.02f);
         // A ceiling and a wall the swing may not take are not offered.
-        Swing under(walled());
+        Swing under(mounted());
         under.offerWall({{0,3,0},{0,-1,0},7,true});
         under.predictNativeStep(1.f/60,in,w,crawls);
         check(!under.mounting(),"a ceiling was offered");
@@ -1180,6 +1575,147 @@ int main() {
         off.offerWall(wall);
         off.predictNativeStep(1.f/60,in,w,crawls);
         check(!off.mounting(),"a swing without walls took an offer");
+    });
+    test("a hand points at one of the game's interactions within its cone and reach", [] {
+        using namespace offer_pointing;
+        // A vent two metres ahead of a hand at head height, another to the right of it, one beyond reach.
+        const Offer offers[]{fromGame(0x100001, {0, 1.5f, -2}, 0, true), fromGame(0x200002, {1.5f, 1.5f, -2}, 0, true),
+                             fromGame(0x300003, {0, 1.5f, -9}, 0, true)};
+        const Aim ahead{true, {0, 1.5f, 0}, {0, 0, -1}};
+        const auto turned = [](float degrees) {
+            const float a = degrees * 3.14159265f / 180;
+            return Aim{true, {0, 1.5f, 0}, {std::sin(a), 0, -std::cos(a)}};
+        };
+        auto p = pick(ahead, offers, 3);
+        check(p && p->handle == 0x100001 && p->usable, "the vent ahead was not picked");
+        // Ten degrees off it still points at it; twenty does not, two metres off.
+        p = pick(turned(-10), offers, 3);
+        check(p && p->handle == 0x100001, "ten degrees off the vent lost it");
+        check(!pick(turned(-20), offers, 3), "twenty degrees off picked something");
+        p = pick(turned(36.9f), offers, 3);
+        check(p && p->handle == 0x200002, "the other vent was not picked");
+        // At arm's length the cone widens to the offer's size: thirty degrees off one half a metre away.
+        const Offer close[]{fromGame(0x400004, {0, 1.5f, -.5f}, 0, true)};
+        check(pick(turned(30), close, 1).has_value(), "a vent at arm's length needed a precise aim");
+        check(!pick(turned(60), close, 1), "sixty degrees off a vent at arm's length picked it");
+        // Nine metres off, an untracked hand, one the game says no to but for its range: none.
+        check(!pick(ahead, offers + 2, 1), "an offer nine metres off was picked");
+        check(!pick(Aim{false, {0, 1.5f, 0}, {0, 0, -1}}, offers, 3), "an untracked hand picked");
+        const Offer refused[]{fromGame(0x500005, {0, 1.5f, -2}, 0x40, true),
+                              fromGame(0x600006, {0, 1.5f, -2}, 0, false)};
+        check(!pick(ahead, refused, 2), "an offer the game refuses was picked");
+        // Too far for the game - its range alone - it is shown, to walk up to.
+        const Offer far[]{fromGame(0x700007, {0, 1.5f, -2}, rangeReason, true)};
+        p = pick(ahead, far, 1);
+        check(p && !p->usable, "an offer out of reach was not shown");
+        // A spot found for it on the wall within his reach: usable, the game's crawl goes there.
+        const Offer spot[]{fromGame(0x700007, {0, 1.5f, -2}, rangeReason, true, true)};
+        p = pick(ahead, spot, 1);
+        check(p && p->usable, "an offer with a spot within reach was not usable");
+        check(!fromGame(1, {0, 1, 0}, rangeReason | 0x40, true, true).usable &&
+                  !fromGame(1, {0, 1, 0}, rangeReason, false, true).usable,
+              "a spot answered more than the range");
+        // Of two hands, a usable pick before one out of reach, then the nearer to its aim.
+        const Pointed a{1, {}, false, .01f}, b{2, {}, true, .1f}, c{3, {}, true, .05f};
+        check(either(a, b)->handle == 2 && either(b, c)->handle == 3 && either(std::nullopt, a)->handle == 1 &&
+                  !either(std::nullopt, std::nullopt),
+              "the hands' picks were not weighed");
+    });
+    test("the interact on a pointed offer asks for its use and presses the game's for the player", [] {
+        using namespace offer_pointing;
+        Use use;
+        const std::optional<Pointed> vent = Pointed{0x100001, {0, 1, -1}, true, .05f};
+        const std::optional<Pointed> farVent = Pointed{0x100001, {0, 1, -3}, false, .05f};
+        Use::Game game;
+        std::vector<uint32_t> asked;
+        bool agree = true;
+        const auto ask = [&](uint32_t handle) {
+            asked.push_back(handle);
+            return agree;
+        };
+        constexpr float dt = 1.f / 72;
+        // Off Spidy's wall the interact is the game's own, pointed or not; on it, pointed at nothing usable, too.
+        check(use.update(dt, true, false, vent, game, ask) && asked.empty(), "the interact off the wall was kept");
+        check(!use.update(dt, false, false, vent, game, ask), "a let-go interact stayed down");
+        check(use.update(dt, true, true, std::nullopt, game, ask) && asked.empty(), "a press at nothing was kept");
+        use.update(dt, false, true, std::nullopt, game, ask);
+        check(use.update(dt, true, true, farVent, game, ask) && asked.empty(), "a vent out of reach was asked for");
+        use.update(dt, false, true, farVent, game, ask);
+        // Pointed at the vent: its use is asked for, and the press stays off the game while it is held.
+        check(!use.update(dt, true, true, vent, game, ask) && asked.size() == 1 && asked[0] == 0x100001,
+              "the press at the vent did not ask for it");
+        check(use.busy() && use.phase() == Use::Phase::asked && use.handle() == 0x100001, "no use under way");
+        for (int i = 0; i < 20; ++i)
+            check(!use.update(dt, true, true, vent, game, ask), "the asking press reached the game");
+        // The game's crawl takes him: the game's interact waits for the game to pick the vent, and a moment
+        // more - the game raises its own prompt as it picks it, and a press in that frame was lost.
+        ++game.taken;
+        check(!use.update(dt, false, false, std::nullopt, game, ask) && use.phase() == Use::Phase::settling,
+              "the crawl taking him was missed");
+        // A press of the player's own meanwhile is not the game's either.
+        check(!use.update(dt, true, false, std::nullopt, game, ask), "a press during the use reached the game");
+        game.best = 0x100001;
+        float waited = 0;
+        while (!use.update(dt, true, false, std::nullopt, game, ask) && waited < 2)
+            waited += dt;
+        check(std::abs(waited - Use::pickDelay) < 2 * dt, "the press did not wait for the game's prompt");
+        int held = 1;
+        while (use.update(dt, false, false, std::nullopt, game, ask))
+            ++held;
+        check(std::abs(held * dt - Use::pressSeconds) < 2 * dt, "the press was not a press");
+        // The game takes it: its pick goes, and the use with it.
+        game.best = 0;
+        use.update(dt, false, false, std::nullopt, game, ask);
+        check(!use.busy() && use.asks() == 1 && use.presses() == 1 && use.picked() == 1 && !use.retries(),
+              "the use did not end");
+        // The game still holding the vent after a press: pressed once more, and no more than that.
+        use.update(dt, true, true, vent, game, ask);
+        use.update(dt, false, true, vent, game, ask);
+        ++game.taken;
+        game.best = 0x100001;
+        int downs = 0;
+        bool was = false;
+        for (int i = 0; i < 72 * 4; ++i) {
+            const bool down = use.update(dt, false, false, std::nullopt, game, ask);
+            downs += down && !was;
+            was = down;
+        }
+        check(downs == 2 && !use.busy() && use.retries() == 1 && use.unanswered() == 1,
+              "the press was not made once more, or more than that");
+        // A game slow to pick the vent gets the press after settleSeconds anyway.
+        game.best = 0;
+        use.update(dt, true, true, vent, game, ask);
+        use.update(dt, false, true, vent, game, ask);
+        ++game.taken;
+        waited = 0;
+        while (!use.update(dt, false, false, std::nullopt, game, ask) && waited < 2)
+            waited += dt;
+        check(std::abs(waited - Use::settleSeconds) < 2 * dt && use.presses() == 4 && use.picked() == 2,
+              "the press did not go out without the game's pick");
+        while (use.busy())
+            use.update(dt, false, false, std::nullopt, game, ask);
+        // The game refusing it at once: no use, and the press stays off the game, on whose wall it does nothing.
+        agree = false;
+        check(!use.update(dt, true, true, vent, game, ask) && !use.busy() && use.refusals() == 1,
+              "a refused use was not refused");
+        use.update(dt, false, true, vent, game, ask);
+        // Its crawl not taking him (the swing kept him), or no answer within patience: given up.
+        agree = true;
+        use.update(dt, true, true, vent, game, ask);
+        use.update(dt, false, true, vent, game, ask);
+        ++game.declined;
+        use.update(dt, false, true, vent, game, ask);
+        check(!use.busy() && use.failures() == 1, "a declined use went on");
+        use.update(dt, true, true, vent, game, ask);
+        use.update(dt, false, true, vent, game, ask);
+        waited = 0;
+        while (use.busy() && waited < 5) {
+            use.update(dt, false, true, vent, game, ask);
+            waited += dt;
+        }
+        check(!use.busy() && std::abs(waited - Use::patience) < .05f && use.failures() == 2,
+              "an unanswered use did not end");
+        check(use.asks() == 5 && asked.size() == 6, "the asks were not counted");
     });
     test("pushed at a wall beside it a falling body takes the wall", [] {
         Building w;Swing s(walled());Input in;
@@ -1304,6 +1840,132 @@ int main() {
         out=rig.update(f,{},{0,0,-1},true);
         check(!out.walkRight&&!out.walkForward&&!out.nativeKeys,"resting stick walked");
     });
+    test("game rig lays the stick's axes into the game's crawl, so up a wall is not thrown away", [] {
+        // The stick was always read on the world's horizontal axes, which on a
+        // wall throw the whole of "up the wall" away - the one direction a
+        // player on a wall wants most. On the game's own crawl the same two
+        // axes are laid into the surface instead.
+        GameTrackingRig rig;auto f=trackedFrame();const Vec3 feet{10,20,30},n{1,0,0};
+        const SurfaceHold crawl{n,feet,3,true};
+        f.hands[0].stickY=1;
+        // On the ground they are the level ones, as they always were.
+        auto out=holdFor(rig,f,feet,{},.3f);
+        near(length(out.walkForwardAxis-Vec3{0,0,-1}),0,.001f);
+        near(length(out.walkRightAxis-cross(Vec3{0,0,-1},Vec3{0,1,0})),0,.001f);
+        // On the crawl, the view turned onto the wall: both axes lie in the
+        // surface, and the stick read back along them is the player's own
+        // intent turned onto that wall (swing.move). Nothing is lost.
+        out=holdFor(rig,f,feet,crawl,.6f,n);
+        check(out.standing,"the crawl did not turn the view");
+        near(dot(out.walkForwardAxis,n),0,.001f);near(dot(out.walkRightAxis,n),0,.001f);
+        near(length(out.walkForwardAxis),1,.001f);near(length(out.walkRightAxis),1,.001f);
+        near(length(out.walkForwardAxis*out.walkForward+out.walkRightAxis*out.walkRight-out.swing.move),0,.002f);
+        check(std::hypot(out.walkRight,out.walkForward)>.5f,"the stick came to nothing on the wall");
+        // The swing's own wall is not the game's: it moves the body itself and
+        // never reads this stick, so there the axes stay level.
+        GameTrackingRig own;auto g=trackedFrame();g.hands[0].stickY=1;
+        out=holdFor(own,g,feet,{n,feet+Vec3{0,1,0}-n*.9f,.5f,false},.6f,n);
+        near(length(out.walkForwardAxis-Vec3{0,0,-1}),0,.001f);
+    });
+    test("game rig sends the crawl its stick along the camera's look on the wall, or its up facing it", [] {
+        // Measured in the game, October 15: on a building's face (normal -z) the crawl took the stick
+        // along the game camera's look laid onto the wall, and where the camera faced the wall too
+        // squarely for that, along the camera's up laid onto it; right was the wall's own right of that.
+        // Up the first mission's shaft the camera looks up the shaft beside the player, and the level axes
+        // this replaces sent his "up" to the game as a sideways push (October 14: half his pushes there
+        // under a metre a second).
+        struct Case { Vec3 n, look, up, ahead, right; const char* what; };
+        const Case cases[]{
+            // Behind the player, facing the wall: stick up went up it, right went -x.
+            {{0,0,-1},{.01f,-.09f,1},{0,1,.09f},{0,1,0},{-1,0,0},"facing the wall"},
+            // Beside him on the wall, looking along it: up went along it (-x), right went down.
+            {{0,0,-1},{-.91f,-.09f,-.41f},{-.08f,1,-.04f},{-1,-.1f,0},{.1f,-1,0},"along the wall"},
+            // The lift shaft's own camera, looking up it: up went up, right went along the wall.
+            {{-.7071068f,0,-.7071068f},{.12f,.985f,.12f},{-.696f,.174f,-.696f},{0,1,0},
+             {-.7071068f,0,.7071068f},"up the shaft"},
+            // A vent's shaft: the camera up it beside a wall that faces across its level look.
+            {{.7071068f,0,.7071068f},{.12f,.985f,-.12f},{-.696f,.174f,.696f},{.12f,.985f,-.12f},
+             {.696f,-.17f,-.696f},"up a vent's shaft"},
+        };
+        for (const auto& c : cases) {
+            GameTrackingRig rig;auto f=trackedFrame();const Vec3 feet{10,20,30};
+            const Vec3 n=normalized(c.n);
+            const SurfaceHold crawl{n,feet,0,true};
+            // Onto the wall from a level start, then the camera as measured.
+            holdFor(rig,f,feet,{},.1f);
+            GameMotionFrame out;
+            for(int i=0;i<60;++i){
+                ++f.predictedDisplayTime;
+                out=rig.update(f,feet,normalized(c.look),true,n,true,crawl,normalized(c.up));
+            }
+            check(out.standing,c.what);
+            near(length(out.walkForwardAxis-normalized(c.ahead)),0,.05f);
+            near(length(out.walkRightAxis-normalized(c.right)),0,.05f);
+            // Whatever way the player pushes along the wall, the stick says that way in those axes.
+            for(const float a:{0.f,.785f,1.571f,2.356f,3.142f,4.712f}){
+                f.hands[0].stickX=std::sin(a);f.hands[0].stickY=std::cos(a);
+                ++f.predictedDisplayTime;
+                out=rig.update(f,feet,normalized(c.look),true,n,true,crawl,normalized(c.up));
+                const Vec3 sent=out.walkForwardAxis*out.walkForward+out.walkRightAxis*out.walkRight;
+                near(dot(out.swing.move,n),0,.002f);
+                near(length(sent-out.swing.move),0,.002f);
+                check(length(out.swing.move)>.9f,"the push came to nothing on the wall");
+            }
+            f.hands[0].stickX=f.hands[0].stickY=0;
+        }
+        // The old level axes on the vent's shaft, for the record: they read "up" as a push to the side.
+        const Vec3 n=normalized(Vec3{.7071068f,0,.7071068f}),level=normalized(Vec3{.12f,0,-.12f});
+        near(std::abs(dot(normalized(level-n*dot(level,n)),Vec3{0,1,0})),0,.001f);
+    });
+    test("game rig keeps the view on the wall through a frame play cannot place, levels it for a menu", [] {
+        GameTrackingRig rig;auto f=trackedFrame();const Vec3 feet{10,20,30},n{1,0,0};
+        const SurfaceHold crawl{n,feet,0,true};
+        auto out=holdFor(rig,f,feet,crawl,.6f,n);
+        check(out.standing,"the crawl did not stand the view on the wall");
+        near(out.viewTilt,1.5707963f,.001f);
+        // A frame the headset repeated, then one of no game camera at all (a camera switching as the game
+        // turns the hero onto a shaft's wall): October 14 levelled the view there and turned it back.
+        out=rig.update(f,feet,{0,0,-1},true,n,true,crawl);
+        check(!out.active&&(out.inactive&GameTrackingRig::staleDisplay),"a repeated frame was placed");
+        ++f.predictedDisplayTime;
+        out=rig.update(f,feet,{},true,n,true,crawl);
+        check(out.active,"a frame with no camera after the start was not placed");
+        near(out.viewTilt,1.5707963f,.001f);
+        f.seconds=.3f;++f.predictedDisplayTime;
+        out=rig.update(f,feet,{0,0,-1},true,n,true,crawl);
+        check(!out.active&&(out.inactive&GameTrackingRig::badFrameTime),"a long frame was placed");
+        f.seconds=1.f/90;
+        out=holdFor(rig,f,feet,crawl,1.f/90,n);
+        check(out.standing,"a stutter took the view off the wall");near(out.viewTilt,1.5707963f,.001f);
+        // A menu: the game's own camera, and level when play comes back (then the wall turns it again).
+        ++f.predictedDisplayTime;
+        out=rig.update(f,feet,{0,0,-1},false,n,true,crawl);
+        check(!out.active&&(out.inactive&GameTrackingRig::notPlaying),"a menu was placed");
+        out=holdFor(rig,f,feet,{},1.f/90);
+        near(out.viewTilt,0,.001f);
+    });
+    test("game rig turns the view onto a wall about the player's eyes, which go straight to the wall", [] {
+        GameTrackingRig rig;auto f=trackedFrame();const Vec3 feet{10,20,30},n{1,0,0};
+        auto out=holdFor(rig,f,feet,{},.1f);
+        const Vec3 from=out.headPose.position;
+        const SurfaceHold crawl{n,feet,0,true};
+        std::vector<Vec3> path;
+        for(int i=0;i<30;++i){
+            out=holdFor(rig,f,feet,crawl,1.f/90,n);
+            path.push_back(out.headPose.position);
+        }
+        // Standing on the wall: the eyes 1.7 m out from it, at the feet's height - in a sixth of a second.
+        const Vec3 to=out.headPose.position;
+        near(length(to-(feet+n*1.7f)),0,.002f);
+        near(out.viewTilt,1.5707963f,.001f);
+        near(length(path[15]-to),0,.002f);
+        // On the way, on the line between: about the feet they swung round an arc 0.5 m off it.
+        const Vec3 way=normalized(to-from);
+        float off=0;
+        for(const auto& p:path)
+            off=std::max(off,length((p-from)-way*dot(p-from,way)));
+        check(off<.01f,"the eyes left the straight way to the wall");
+    });
     test("invalid controller cannot walk or attach a web", [] {
         auto f=trackedFrame();f.hands[0].valid=false;f.hands[0].stickY=1;
         f.hands[1].aim.position.x=std::numeric_limits<float>::quiet_NaN();
@@ -1349,6 +2011,7 @@ int main() {
         // A run along it never turns the view.
         auto out=holdFor(rig,f,feet,wall,.5f);
         check(!out.standing,"a run stood on the wall");near(out.viewTilt,0);
+        near(length(out.standUp-Vec3{0,1,0}),0,.001f);near(length(out.floor),0);
         near(out.headPose.position.x,10);near(out.headPose.position.y,21.7f);
         // At rest the wall becomes the floor: up along its normal, the floor on
         // it under the body, a quarter turn in 0.15 s.
@@ -1358,6 +2021,10 @@ int main() {
         out=holdFor(rig,f,feet,wall,.3f);
         near(out.viewTilt,1.5707963f,.001f);
         near(length(out.headPose.orientation.rotate({0,1,0})-n),0,.001f);
+        // The body stands with him: along the wall's normal, its floor the wall's face under the body (a
+        // metre over the feet, 0.9 m behind them), and no tilt of its own on top (a flip's alone).
+        near(length(out.standUp-n),0,.001f);near(dot(out.floor,n),-.9f,.002f);
+        check(levelTilt(out.flipTilt),"the body was handed the wall's turn as a flip");
         near(out.headPose.position.x,9.1f+1.7f,.002f);near(out.headPose.position.y,21,.002f);
         near(out.headPose.position.z,30,.002f);
         // Hands and eyes go with the head, and hand motion turns with the view.
@@ -1451,6 +2118,42 @@ int main() {
         g.predictedDisplayTime+=1000;
         out=holdFor(upright,g,feet,crawl,.6f,n);
         check(!out.standing,"reset() switched STAND ON WALLS back on");
+    });
+    test("the head never goes through what is over the player: a vent's roof", [] {
+        // The player's eyes are 1.7 m up, as trackedFrame has them.
+        GameTrackingRig rig;auto f=trackedFrame();const Vec3 feet{10,20,30};
+        auto out=holdFor(rig,f,feet,{},.4f);
+        near(out.headPose.position.y-feet.y,1.7f,.01f);near(out.headDrop,0);
+        // A duct a metre high: the head stops headClearance short of its roof,
+        // where it stood out through it (the player, October 14, inside the
+        // first mission's vent: "the camera clips through the top of it").
+        rig.headroom(1);
+        out=holdFor(rig,f,feet,{},.4f);
+        near(out.headPose.position.y-feet.y,1.f-headClearance,.01f);
+        near(out.headDrop,1.7f-(1.f-headClearance),.01f);
+        // Never closer to his feet than a crouch, however low the roof.
+        rig.headroom(.2f);
+        out=holdFor(rig,f,feet,{},.4f);
+        near(out.headPose.position.y-feet.y,leastHeadroom,.01f);
+        // A roof over his own head changes nothing, and neither does none.
+        rig.headroom(2.5f);
+        out=holdFor(rig,f,feet,{},.4f);
+        near(out.headPose.position.y-feet.y,1.7f,.01f);near(out.headDrop,0);
+        rig.headroom(0);
+        out=holdFor(rig,f,feet,{},.4f);
+        near(out.headPose.position.y-feet.y,1.7f,.01f);
+        // On a wall it is one rule along the wall's own normal: the head stops
+        // short of the duct's far side as it does of its roof.
+        const Vec3 n{1,0,0};
+        rig.headroom(1);
+        out=holdFor(rig,f,feet,{n,feet,3,true},.8f,n);
+        check(out.standing,"the crawl did not turn the view");
+        near(out.headPose.position.x-feet.x,1.f-headClearance,.02f);
+        near(out.headPose.position.y-feet.y,0,.02f);
+        // A reading that is no number is no reading.
+        rig.headroom(std::numeric_limits<float>::quiet_NaN());
+        out=holdFor(rig,f,feet,{},.4f);
+        near(out.headPose.position.y-feet.y,1.7f,.01f);
     });
     test("game rig head stays still while the actor rocks on the wall", [] {
         // Measured in the game (reports/wall-crawl.json): on the wall the
@@ -2774,6 +3477,131 @@ int main() {
         check(length(onAimLine(hit,{},origin,direction)-hit)<1e-5f,"missing normal used");
         check(length(onAimLine(hit,normal,origin,{0,0,1})-hit)<1e-5f,"crossing behind the hand used");
     });
+    test("a web in both hands: the game's rope comes from the lower wrist to the upper one, bowing as its slack says", [] {
+        Vec3 points[8];
+        // A web across, and one straight up and down between the hands.
+        for(const auto& [lower,upper]:{std::pair{Vec3{.2f,1.1f,.4f},Vec3{-.25f,1.3f,.45f}},
+                                       std::pair{Vec3{.1f,1.1f,.4f},Vec3{.1f,1.6f,.4f}}}){
+            const Vec3 along=normalized(upper-lower);
+            // Taut: the straight line, its ends exactly the two wrists.
+            native_webs::heldPoints(lower,upper,0,8,points);
+            near(length(points[0]-lower),0,1e-6f);
+            near(length(points[7]-upper),0,1e-6f);
+            for(int i=1;i<7;++i)near(length(cross(points[i]-lower,along)),0,1e-5f);
+            // Slack: off the line, about that much longer than it, and never above it.
+            for(const float slack:{.05f,.2f}){
+                native_webs::heldPoints(lower,upper,slack,8,points);
+                float run=0;
+                for(int i=1;i<8;++i)run+=length(points[i]-points[i-1]);
+                near(run-length(upper-lower),slack,slack*.25f);
+                for(int i=1;i<7;++i){
+                    const Vec3 on=lower+(upper-lower)*(i/7.f);
+                    check(length(points[i]-on)>.005f && points[i].y<=on.y+1e-5f,"a slack web does not bow below its line");
+                }
+            }
+        }
+        // Far more slack than half a metre's bow: no further than that; hands together: half of it hangs.
+        const Vec3 lower{.2f,1.1f,.4f},upper{-.25f,1.3f,.45f};
+        native_webs::heldPoints(lower,upper,3,8,points);
+        for(int i=0;i<8;++i)check(length(points[i]-(lower+(upper-lower)*(i/7.f)))<.5f+1e-4f,"the web bowed beyond half a metre");
+        native_webs::heldPoints(lower,lower,.3f,5,points);
+        near(lower.y-points[2].y,.15f,1e-4f);
+    });
+    test("a web taken hold of gets no rope of its own: the web's rope draws it, from the nearer hand", [] {
+        using Hand=WebRopes::Hand;
+        WebRopes r;
+        // The left hand shoots a web: the left rope, a new one, from the left wrist.
+        r.update({Hand{true,false,false,19.4f,100},Hand{}});
+        check(r.rope(0).hands==1&&r.rope(0).key==100&&r.rope(0).from==0&&!r.rope(1).hands,"a shot web has no rope of its side");
+        check(r.slot(0)==0&&r.slot(1)==-1&&r.upper()==-1,"one hand's web is in both, or in none");
+        // The right hand takes hold of it 0.3 m nearer its end: the same rope, no new one, now from the right wrist.
+        r.update({Hand{true,false,true,19.4f,100},Hand{true,true,true,19.1f,200}});
+        check(r.rope(0).hands==3&&r.rope(0).key==100&&!r.rope(1).hands,"taking hold of a web made a rope");
+        check(r.slot(1)==0&&r.upper()==1&&r.rope(0).from==1,"the strand does not come to the hand nearer its end first");
+        // The hands move as they like: nothing changes hands. A reel that makes the other rope the shorter does.
+        r.update({Hand{true,false,true,19.4f,100},Hand{true,true,true,19.1f,200}});
+        check(r.upper()==1,"the web changed hands with no hold changed");
+        r.update({Hand{true,false,true,18.9f,100},Hand{true,true,true,19.1f,200}});
+        check(r.upper()==0&&r.rope(0).from==0&&r.rope(0).key==100,"the shorter rope is not the nearer hand");
+        r.update({Hand{true,false,true,19.4f,100},Hand{true,true,true,19.1f,200}});
+        // The hand that shot it lets go: the rope stays, from the hand that has the web.
+        r.update({Hand{},Hand{true,true,false,19.1f,200}});
+        check(r.rope(0).hands==2&&r.rope(0).key==100&&r.rope(0).from==1&&r.slot(1)==0&&r.upper()==-1,
+              "the web lost its rope with the hand that shot it");
+        // That hand shoots a new web: the free rope, the other side's, and its own key.
+        r.update({Hand{true,false,false,30,300},Hand{true,true,false,19.1f,200}});
+        check(r.rope(1).hands==1&&r.rope(1).key==300&&r.rope(1).from==0&&r.rope(0).hands==2&&r.slot(0)==1,
+              "a new web took the held web's rope, or none");
+        // The held web is let go of: its rope ends, and remembers whose it was (a let-go web trails from it).
+        r.update({Hand{true,false,false,30,300},Hand{}});
+        check(!r.rope(0).hands&&r.rope(0).key==100&&r.rope(0).last==1&&r.rope(0).from==-1,"a web let go of kept its rope");
+        // A web shot anew between two frames is another web: its rope's key changes.
+        r.update({Hand{true,false,false,25,400},Hand{}});
+        check(r.rope(0).hands==1&&r.rope(0).key==400&&!r.rope(1).hands,"a web shot anew kept the old web's rope");
+        // Both appear at once (focus back), one of them a hold on the other's: still one rope.
+        WebRopes both;
+        both.update({Hand{true,true,true,19.1f,500},Hand{true,false,true,19.4f,450}});
+        check(both.rope(1).hands==3&&both.rope(1).key==450&&!both.rope(0).hands&&both.upper()==0,
+              "two holds on one web seen at once made two ropes");
+        r.clear();
+        check(!r.rope(0).hands&&r.slot(0)==-1,"cleared ropes still draw");
+    });
+    test("hands: the web button makes the web-shooting hand, for as long as it is held", [] {
+        HandPoser p;HandPoseInput in;in.tracked=true;
+        const float dt=1.f/90;
+        HandPose pose;
+        // The button part of the way down: the two fingers start for the trigger.
+        in.web=in.squeeze=.3f;
+        for(int i=0;i<20;++i)pose=p.update(dt,in);
+        near(pose.shoot,.3f/.65f,.01f);near(pose.fist,.3f,.001f);
+        // Pressed: the whole pose within 0.1 s, though the grip is clenched, and still after five seconds.
+        in.web=in.squeeze=1;
+        for(int i=0;i<9;++i)pose=p.update(dt,in);
+        near(pose.shoot,1,.001f);near(pose.fist,1,.001f);
+        for(int i=0;i<450;++i)pose=p.update(dt,in);
+        near(pose.shoot,1,.001f);
+        // Half let go, it is held still (the web is); let go, the hand opens.
+        in.web=in.squeeze=.5f;
+        for(int i=0;i<20;++i)pose=p.update(dt,in);
+        near(pose.shoot,1,.001f);
+        in.web=in.squeeze=0;
+        for(int i=0;i<45;++i)pose=p.update(dt,in);
+        near(pose.shoot,0,.001f);near(pose.fist,0,.001f);
+    });
+    test("hands: a hand that takes the other hand's web grips it; a web ball shoots; a punch is a fist", [] {
+        const float dt=1.f/90;
+        HandPose pose;
+        // On the other hand's web the button closes a fist, on the way down and held.
+        HandPoser grip;HandPoseInput on;on.tracked=on.gripping=true;on.web=on.squeeze=.4f;
+        for(int i=0;i<20;++i)pose=grip.update(dt,on);
+        near(pose.shoot,0,.001f);near(pose.fist,.4f,.001f);
+        on.web=on.squeeze=1;
+        for(int i=0;i<90;++i)pose=grip.update(dt,on);
+        near(pose.shoot,0,.001f);near(pose.fist,1,.001f);
+        // With the trigger as the web button the grip is open: the hand closes on the web all the same.
+        HandPoser swapped;HandPoseInput trigger;trigger.tracked=trigger.gripping=true;trigger.web=1;
+        for(int i=0;i<30;++i)pose=swapped.update(dt,trigger);
+        near(pose.fist,1,.001f);near(pose.shoot,0,.001f);
+        // A web ball from an open hand: the pose for half a second.
+        HandPoser ball;HandPoseInput in;in.tracked=true;in.shot=true;
+        pose=ball.update(dt,in);in.shot=false;
+        for(int i=0;i<5;++i)pose=ball.update(dt,in);
+        near(pose.shoot,1,.001f);near(pose.fist,0,.001f);
+        for(int i=0;i<34;++i)pose=ball.update(dt,in);
+        near(pose.shoot,1,.001f);
+        for(int i=0;i<30;++i)pose=ball.update(dt,in);
+        near(pose.shoot,0,.001f);
+        // A fast hand shoots as the shooting hand; with somebody to punch it is a fist.
+        HandPoser fast;HandPoseInput thrown;thrown.tracked=true;thrown.web=thrown.squeeze=1;thrown.speed=3;
+        for(int i=0;i<5;++i)pose=fast.update(dt,thrown);
+        near(pose.shoot,1,.001f);near(pose.fist,1,.001f);
+        HandPoser fight;thrown.fighting=true;
+        for(int i=0;i<5;++i)pose=fight.update(dt,thrown);
+        near(pose.shoot,0,.001f);near(pose.fist,1,.001f);
+        // An untracked hand is neither.
+        thrown.tracked=false;pose=fight.update(dt,thrown);
+        near(pose.fist,0);near(pose.shoot,0);
+    });
     test("web timeline animates the shot and the release", [] {
         WebTimeline t;
         t.update(0,true,{1,2,3},{0,1,0},1000);
@@ -3923,6 +4751,616 @@ int main() {
         check(fromControllers(face,Mapping::gameplay).buttons==back,"X is not the game menu");
         check(fromControllers(face,Mapping::menus).buttons==x,"X on the game screen is not the game's X");
     });
+    // The prompt and button work of October 13: the game names the button of
+    // every prompt it raises, and VR play could send nine of the pad's
+    // sixteen controls. These cover the whole pad instead of the moments
+    // players have reported, which is how the gaps kept being found.
+    test("on the game's own crawl the jump goes out as its RT + A, the only jump that leaves the wall", [] {
+        using namespace game_pad;
+        // Measured on the first mission's shaft, October 14: A alone, with the stick any way or none, only
+        // leaps the hero along the wall; B, the bumpers, either trigger and a held A do nothing; RT + A
+        // leaves it in 0.09 s. RT is all the parkour field adds - not LT, which with RT is the game's zip.
+        XrFrame f;f.hands[0].valid=f.hands[1].valid=true;
+        Walk jump{};jump.jump=true;jump.parkour=true;
+        const auto s=fromControllers(f,Mapping::gameplay,jump);
+        check((s.buttons&a)!=0,"the jump went out without A");
+        check(s.rightTrigger==255&&s.leftTrigger==0,"the parkour jump was not RT alone");
+        Walk plain{};plain.jump=true;
+        const auto t=fromControllers(f,Mapping::gameplay,plain);
+        check(t.rightTrigger==0&&t.leftTrigger==0,"a plain jump carried a trigger");
+        // Nowhere but play: the menus get nothing of it.
+        check(fromControllers(f,Mapping::menus,jump).rightTrigger==0,"the menus got the parkour trigger");
+    });
+    test("every control of the pad can be sent in VR play, by gameplay or the pad layer", [] {
+        using namespace game_pad;
+        using prompt_buttons::Demand;
+        // What a mapping can be made to send, over every control of the VR
+        // controllers: each button, each grip, each trigger, each stick click
+        // and the right stick's four ways, alone and in the pairs that matter.
+        const auto sendable=[](Mapping mapping){
+            std::vector<State> out;
+            // Touch and Index, which is what reachableInPlay answers for: the
+            // Steam Frame's own View and D-pad are left out here (only that
+            // controller has them, and its own test covers them).
+            const uint32_t faces[]={0,buttonA,buttonB,buttonX,buttonY,buttonMenu};
+            // The swing's leave, as game_xr fills it: every flag on its own.
+            Walk walks[9]{};
+            walks[1].jump=true;walks[2].interact=true;walks[3].dodge=true;walks[4].pull=true;
+            walks[5].heal=true;walks[6].zip=true;walks[7].scan=true;walks[8].right=1;
+            for(uint32_t face:faces)
+                for(const auto& walk:walks)
+                    for(int grips=0;grips<4;++grips)
+                        for(int triggers=0;triggers<4;++triggers)
+                            for(int clicks=0;clicks<4;++clicks)
+                                for(int way=0;way<5;++way){
+                                    XrFrame f;f.buttons=face;
+                                    for(unsigned h=0;h<2;++h){
+                                        f.hands[h].valid=true;
+                                        f.hands[h].squeeze=grips&(1<<h)?1.f:0.f;
+                                        f.hands[h].trigger=triggers&(1<<h)?1.f:0.f;
+                                        f.hands[h].stickClick=(clicks&(1<<h))!=0;
+                                    }
+                                    const float ways[5][2]={{0,0},{0,1},{0,-1},{-1,0},{1,0}};
+                                    f.hands[1].stickX=ways[way][0];f.hands[1].stickY=ways[way][1];
+                                    out.push_back(fromControllers(f,mapping,walk));
+                                }
+            return out;
+        };
+        const auto play=sendable(Mapping::gameplay),layer=sendable(Mapping::pad);
+        // A control is sendable when some combination holds its bits and
+        // nothing else of the pad: a press the player can make on purpose.
+        const auto holds=[](const std::vector<State>& states,Demand d){
+            for(const auto& s:states){
+                if(s.buttons!=d.buttons)continue;
+                if((s.leftTrigger>200)!=d.leftTrigger||(s.rightTrigger>200)!=d.rightTrigger)continue;
+                return true;
+            }
+            return false;
+        };
+        std::string missing;
+        for(const auto& control:prompt_buttons::controls()){
+            const bool inPlay=holds(play,control.demand),inLayer=holds(layer,control.demand);
+            if(!inPlay&&!inLayer)missing+=std::string(missing.empty()?"":", ")+control.name;
+            // What prompt_buttons tells a player matches what the mapping does.
+            check(prompt_buttons::reachableInPlay(control.demand)==inPlay,
+                  std::string("reachableInPlay disagrees with the gameplay mapping for ")
+                      .append(control.name).c_str());
+        }
+        check(missing.empty(),("VR play cannot send "+missing).c_str());
+        // And the nine the pad layer is there for: play alone never had them.
+        using prompt_buttons::padX;using prompt_buttons::padLeftThumb;using prompt_buttons::padDpadUp;
+        using prompt_buttons::padDpadLeft;using prompt_buttons::padDpadRight;
+        using prompt_buttons::padLeftShoulder;using prompt_buttons::padRightShoulder;
+        const Demand alone[]={{padX},{padLeftThumb},{padDpadUp},{padDpadLeft},{padDpadRight},
+                              {padLeftShoulder},{padRightShoulder},
+                              {0,true,false},{0,false,true}};
+        for(const auto& d:alone){
+            check(!holds(play,d),"a control the pad layer is for reached the game in play after all");
+            check(holds(layer,d),"the pad layer does not send one of the nine");
+            check(!prompt_buttons::reachableInPlay(d),"reachableInPlay called one of the nine reachable");
+        }
+    });
+    test("the game played on its screen: a tap of the menu button pauses, held it is Back, and the left stick's "
+         "click with the right stick is the D-pad", [] {
+        using namespace game_pad;
+        const float dt=1.f/90;
+        // `seconds` of frames, each through the screen controls: the pad of the last.
+        const auto run=[&](ScreenControls& c,float seconds,const XrFrame& f,bool play=true){
+            State s;
+            for(float t=0;t<seconds-1e-4f;t+=dt){s=fromControllers(f,Mapping::menus);c.apply(dt,play,f,s);}
+            return s;
+        };
+        XrFrame rest,menu;menu.buttons=buttonMenu;
+        // A tap: nothing while it is down, Start as it is let go, for a tenth of a second.
+        {
+            ScreenControls c;
+            check(!(run(c,.2f,menu).buttons&(start|back)),"the menu button went out before it was let go");
+            check(run(c,dt,rest).buttons==start,"a tap of the menu button is no Start");
+            check(run(c,.2f,rest).buttons==0,"Start stayed down");
+        }
+        // Held: Back from half a second on, and nothing as it is let go.
+        {
+            ScreenControls c;
+            check(run(c,.4f,menu).buttons==0,"Back came too early");
+            check(run(c,.2f,menu).buttons==back,"the menu button held is not Back");
+            check(run(c,dt,rest).buttons==0 && run(c,.2f,rest).buttons==0,"a held menu button paused as well");
+        }
+        // A press from the pause menu, still down as the game comes back, does nothing until it is let go.
+        {
+            ScreenControls c;
+            run(c,.1f,menu,false);
+            check(run(c,.6f,menu).buttons==0 && run(c,dt,rest).buttons==0,"the pause menu's Start came back");
+        }
+        // The left stick's click with the right stick pushed: the D-pad, turning no camera; no L3 after it.
+        {
+            ScreenControls c;
+            XrFrame f;f.hands[0].stickClick=true;f.hands[1].valid=true;f.hands[1].stickY=-.9f;
+            const auto s=run(c,.2f,f);
+            check(s.buttons==dpadDown && s.thumbRX==0 && s.thumbRY==0,"the left click and a push down is no D-pad down");
+            f.hands[1].stickY=0;f.hands[1].stickX=.8f;
+            check(run(c,dt,f).buttons==dpadRight,"a push right is no D-pad right");
+            check(run(c,dt,rest).buttons==0,"an L3 after the D-pad");
+        }
+        // The left click alone is the game's L3 as it is let go; with the right stick's click, the two at once.
+        {
+            ScreenControls c;
+            XrFrame f;f.hands[0].stickClick=true;
+            check(run(c,.2f,f).buttons==0,"L3 before it was let go");
+            check(run(c,dt,rest).buttons==leftThumb,"a click of the left stick is no L3");
+            run(c,.2f,rest);
+            f.hands[1].stickClick=true;
+            check(run(c,dt,f).buttons==(leftThumb|rightThumb),"both clicks are not the game's L3 + R3");
+            check(run(c,dt,rest).buttons==0,"an L3 after both clicks");
+        }
+        // Not played on the screen (its menus, VR): as the game screen has it.
+        {
+            ScreenControls c;
+            check(run(c,.6f,menu,false).buttons==start,"the menu button is not Start in the game's menus");
+        }
+    });
+    test("the gadget wheel: held, it opens in front of the hand; the hand's way lights a gadget; let go, it is "
+         "chosen", [] {
+        const float dt=1.f/90;
+        const Vec3 head{0,1.7f,0},hand{.2f,1.2f,-.4f};
+        // `seconds` of updates with the hand at `at`: the events of all of them.
+        const auto run=[&](GadgetWheel& w,float seconds,bool held,Vec3 at,uint8_t places,bool allowed=true){
+            GadgetWheel::Event all;
+            for(float t=0;t<seconds-1e-4f;t+=dt){
+                const auto e=w.update(dt,held,allowed,at,head,places);
+                all.tap|=e.tap;all.opened|=e.opened;all.lit|=e.lit;
+                if(e.chosen>=0)all.chosen=e.chosen;
+            }
+            return all;
+        };
+        const uint8_t all=0xff;
+        // A short press is the button's own; nothing opens.
+        {
+            GadgetWheel w;
+            check(!run(w,.2f,true,hand,all).opened && !w.open(),"a short press opened the wheel");
+            check(run(w,dt,false,hand,all).tap,"a short press is no tap");
+        }
+        // Held, it opens where the hand is, facing the eyes, upright.
+        GadgetWheel w;
+        check(run(w,.35f,true,hand,all).opened && w.open(),"held, the wheel did not open");
+        const auto& f=w.frame();
+        near(length(f.centre-hand),0,1e-6f);
+        // Its up as near the world's as facing the eyes allows.
+        const Vec3 upright=normalized(Vec3{0,1,0}-f.out*f.out.y);
+        check(dot(f.out,normalized(head-hand))>.999f && dot(f.up,upright)>.999f && dot(cross(f.up,f.out),f.right)>.999f,
+              "the wheel does not face the eyes, upright");
+        check(w.lit()<0,"a gadget lit with the hand still");
+        // To the player's right: the place there (2 of 8, a quarter turn clockwise from the top).
+        check(run(w,.05f,true,hand+f.right*.08f,all).lit && w.lit()==2,"the hand to the right lit no gadget there");
+        // Up and a little left: the top one; then back near the middle: none.
+        run(w,.05f,true,hand+f.up*.09f-f.right*.01f,all);
+        check(w.lit()==0,"the hand up lit no top gadget");
+        run(w,.05f,true,hand+f.up*.03f,all);
+        check(w.lit()<0,"a gadget stayed lit with the hand back in the middle");
+        // Let go there: nothing chosen.
+        check(run(w,dt,false,hand,all).chosen<0 && !w.open(),"let go in the middle, something was chosen");
+        // Only two gadgets: the nearer of them to the hand's way.
+        GadgetWheel two;
+        run(two,.35f,true,hand,0b10001);
+        const auto& g=two.frame();
+        run(two,.05f,true,hand+(g.up+g.right)*.06f,0b10001);
+        check(two.lit()==0,"the hand up and right did not light the top gadget");
+        check(run(two,dt,false,hand+(g.up+g.right)*.06f,0b10001).chosen==0,"let go on a lit gadget, it was not chosen");
+        // Play ending with it open closes it choosing nothing; a press held through it does nothing.
+        GadgetWheel cut;
+        run(cut,.35f,true,hand,all);
+        run(cut,.05f,true,hand+f.right*.08f,all);
+        check(run(cut,dt,true,hand,all,false).chosen<0 && !cut.open(),"the wheel stayed open out of play");
+        const auto after=run(cut,.5f,true,hand,all);
+        check(!after.opened && !cut.open() && !run(cut,dt,false,hand,all).tap,"a press held through the end of play did something");
+    });
+    test("the gadget wheel draws its gadgets, names that the font has, and nothing while shut", [] {
+        for(int g=1;g<=static_cast<int>(Gadget::webBlossom);++g){
+            const char* name=gadgetName(static_cast<Gadget>(g));
+            check(*name,"a gadget without a name");
+            for(const char* c=name;*c;++c)check(*c==' '||drawable(*c),"a gadget's name has a letter the font lacks");
+        }
+        GadgetWheelView view;
+        std::vector<Vertex> v;
+        appendGadgetWheel(v,view);
+        check(v.empty(),"a shut wheel drew something");
+        view.open=true;view.age=1;view.frame.centre={0,1.2f,-.4f};
+        view.places[0]=Gadget::webShooter;view.places[2]=Gadget::impactWeb;view.most[2]=5;view.ammo[2]=3;
+        view.lit=2;view.equipped=0;
+        appendGadgetWheel(v,view);
+        check(v.size()>300 && v.size()%3==0,"the wheel drew too little");
+        for(const auto& vertex:v)
+            check(length(vertex.position-view.frame.centre)<.3f,"the wheel drew outside itself");
+    });
+    test("the pad layer: both stick clicks latch it, a web or idleness lets it go", [] {
+        using game_pad::PadLayer;
+        const auto run=[](PadLayer& l,float seconds,bool allowed,bool left,bool right,bool busy=false){
+            bool on=false;
+            for(float t=0;t<seconds;t+=1.f/90)on=l.update(1.f/90,allowed,left,right,busy);
+            return on;
+        };
+        PadLayer layer;
+        check(!run(layer,.3f,true,false,false),"latched with no chord");
+        check(!run(layer,.05f,true,true,true),"latched before chordSeconds");
+        check(run(layer,PadLayer::chordSeconds+.05f,true,true,true),"the chord did not latch the layer");
+        check(layer.entries()==1,"the entry was not counted");
+        // Held on, the chord toggles once: it must be let go of first.
+        check(run(layer,1.f,true,true,true),"the held chord let the layer go again");
+        check(run(layer,.2f,true,false,false),"letting the chord go let the layer go");
+        check(!run(layer,PadLayer::chordSeconds+.05f,true,true,true),"the second chord did not let it go");
+        check(layer.entries()==1,"letting go counted as an entry");
+        // One stick alone is no chord (it is the pull and the slow motion).
+        PadLayer single;
+        check(!run(single,1.f,true,false,true)&&!run(single,1.f,true,true,false),"one stick latched the layer");
+        // A web carrying the player ends it, and the chord it was holding is spent.
+        PadLayer carried;
+        check(run(carried,PadLayer::chordSeconds+.05f,true,true,true),"the chord did not latch");
+        check(!carried.update(1.f/90,false,true,true,false),"a web did not end the layer");
+        check(!run(carried,1.f,true,true,true),"a chord held through a web latched it again");
+        // Nothing pressed for idleSeconds and it lets go by itself; a press keeps it.
+        PadLayer idle;
+        run(idle,PadLayer::chordSeconds+.05f,true,true,true);
+        run(idle,.2f,true,false,false);
+        check(run(idle,PadLayer::idleSeconds-1,true,false,false,true),"a busy layer let go");
+        check(!run(idle,PadLayer::idleSeconds+1,true,false,false,false),"an idle layer did not let go");
+    });
+    test("the interact button sends what the game asks for, and keeps it for the press", [] {
+        using game_pad::ContextPress;
+        using prompt_buttons::Demand;
+        const Demand pull{prompt_buttons::padLeftShoulder|prompt_buttons::padRightShoulder};
+        const Demand vent{0,true,true};
+        ContextPress press;
+        check(!press.update(false,pull).any(),"a demand went out with no press");
+        check(press.update(true,pull)==pull,"the press did not send the demand");
+        check(press.presses()==1,"the press was not counted");
+        // The demand it began with stands until the button is let go, even
+        // after the prompt ends or another one takes its place.
+        check(press.update(true,{})==pull,"the demand went when the prompt did");
+        check(press.update(true,vent)==pull,"a new prompt changed the buttons under the thumb");
+        check(!press.update(false,vent).any(),"the demand stayed after the press");
+        check(press.update(true,vent)==vent,"the next press did not take the new demand");
+        check(press.presses()==2,"the second press was not counted");
+        // Y held while the hero walks up to a door takes the prompt that then shows.
+        ContextPress walking;
+        check(!walking.update(true,{}).any(),"a press with no prompt sent something");
+        check(walking.presses()==0,"a press with no prompt was counted");
+        check(walking.update(true,pull)==pull,"a prompt that arrived under the thumb was not taken");
+        check(walking.presses()==1,"the arrival was not counted");
+    });
+    test("the game's icon ids say what a prompt asks of the pad, in every device family", [] {
+        using namespace prompt_buttons;
+        const Demand shoulders{padLeftShoulder|padRightShoulder},both{0,true,true};
+        check(forIcon("XBButtonBothShoulders")==shoulders,"XBButtonBothShoulders");
+        check(forIcon("XBButtonBothTriggers")==both,"XBButtonBothTriggers");
+        check(forIcon("XBButtonA")==Demand{padA},"XBButtonA");
+        check(forIcon("XBButtonASmall")==Demand{padA},"XBButtonASmall");
+        check(forIcon("XBButtonX")==Demand{padX},"XBButtonX");
+        check(forIcon("XBButtonDpadUp")==Demand{padDpadUp},"XBButtonDpadUp");
+        check(forIcon("XBButtonDpadLeftRight")==Demand{padDpadLeft|padDpadRight},"XBButtonDpadLeftRight");
+        check(forIcon("XBButtonStickRightPress")==Demand{padRightThumb},"XBButtonStickRightPress");
+        check(forIcon("XBButtonLeftShoulderOutline")==Demand{padLeftShoulder},"an outline is its button");
+        check(forIcon("XBButtonRightTrigger")==Demand{0,false,true},"XBButtonRightTrigger");
+        check(forIcon("XB360ButtonStart")==Demand{padStart},"XB360ButtonStart");
+        check(forIcon("XBOneButtonView")==Demand{padBack},"XBOneButtonView");
+        // The same endings in the other eight families.
+        check(forIcon("SteamButtonBothShoulders")==shoulders,"SteamButtonBothShoulders");
+        check(forIcon("SwitchProButtonRightShoulder")==Demand{padRightShoulder},"SwitchProButtonRightShoulder");
+        check(forIcon("SwitchProButtonPlus")==Demand{padStart},"SwitchProButtonPlus");
+        check(forIcon("GenericButtonDpadDown")==Demand{padDpadDown},"GenericButtonDpadDown");
+        check(forIcon("SteamButtonRightTriggerSoftpull")==Demand{0,false,true},"a soft pull is its trigger");
+        // PlayStation names the face buttons by shape: its X is the pad's A.
+        check(forIcon("PSButtonX")==Demand{padA},"PSButtonX is the pad's A");
+        check(forIcon("PSButtonSquare")==Demand{padX},"PSButtonSquare is the pad's X");
+        check(forIcon("PSButtonCircle")==Demand{padB},"PSButtonCircle is the pad's B");
+        check(forIcon("PSButtonTriangle")==Demand{padY},"PSButtonTriangle is the pad's Y");
+        check(forIcon("PSButtonDpadLeft")==Demand{padDpadLeft},"a PlayStation D-pad is still the D-pad");
+        check(forIcon("PSDualShockButtonOptions")==Demand{padStart},"PSDualShockButtonOptions");
+        // A stick pushed a way, and the sticks and keys that ask nothing of the pad.
+        check(forIcon("LeftStickUp")==Demand{0,false,false,false,0,1},"LeftStickUp");
+        check(forIcon("RightStickLeft")==Demand{0,false,false,false,0,0,-1,0},"RightStickLeft");
+        check(!forIcon("XBButtonStickLeft").any(),"a stick with no way asks for a button");
+        check(!forIcon("MkbKeyboardEnter").any(),"a keyboard key asks for a pad button");
+        check(!forIcon("MkbMouseLeft").any(),"a mouse button asks for a pad button");
+        check(!forIcon("GadgetTripmine").any(),"a gadget icon asks for a button");
+        check(!forIcon("EmojiPoo").any(),"an emoji asks for a button");
+        check(!forIcon("SteamButtonBackGripTopLeft").any(),"a back grip was read as the game's Back");
+        // A word that only starts like an id is none.
+        check(!forIcon("XBButtonAway").any(),"XBButtonAway was read as XBButtonA");
+        check(!forIcon("").any(),"an empty id asks for something");
+    });
+    test("a prompt text says its buttons, and is rewritten with the VR controls", [] {
+        using namespace prompt_buttons;
+        const Demand shoulders{padLeftShoulder|padRightShoulder};
+        // The hint line of the Shocker fight, as the October 11 research saw it.
+        const auto thrown=forText("LB + RB (Hold) Throw");
+        check(thrown.buttons==shoulders.buttons&&thrown.hold,"the hint line's buttons or its hold");
+        check(forText("L1 + R1 Pull").buttons==shoulders.buttons,"the PlayStation spelling");
+        check(forText("Press LT + RT to enter").leftTrigger&&forText("Press LT + RT to enter").rightTrigger,
+              "the vent's triggers");
+        // Spelled apart, the two still make the pair.
+        check(forText("LB to aim, RB to fire").buttons==shoulders.buttons,"two spellings do not join");
+        // The markup an icon comes in.
+        check(forText("Tap <img id='XBButtonX'> repeatedly")==Demand{padX},"an icon id in markup");
+        check(!forText("Open the door").any(),"a text with no button named one");
+        check(!forText("Climb the ladder").any(),"a text with no button named one");
+        char out[256];
+        // Rewritten for a VR player: the control they have, not the pad's name.
+        check(rewrite("LB + RB (Hold) Throw",out,sizeof out,false)&&!std::strcmp(out,"RIGHT STICK CLICK (Hold) Throw"),
+              "the hint line was not rewritten for VR");
+        check(rewrite("Press LT + RT to enter",out,sizeof out,false)&&
+                  !std::strcmp(out,"Press RIGHT STICK UP to enter"),"the vent line was not rewritten");
+        // An icon id is read but never rewritten: it sits inside the game's own
+        // markup, and a name changed in there is markup it cannot resolve.
+        check(!rewrite("Tap <img id='XBButtonX'> repeatedly",out,sizeof out,false),"an icon id was rewritten");
+        check(!rewrite("Tap <img id='XBButtonX'> repeatedly",out,sizeof out,true),"an icon id was rewritten");
+        // With the interact button serving prompts, what VR play has no control
+        // for becomes Y; what it does have keeps the control's own name.
+        check(rewrite("Tap LB to aim",out,sizeof out,true)&&!std::strcmp(out,"Tap Y to aim"),
+              "the interact button was not offered for a bumper VR play cannot send");
+        check(rewrite("LB + RB (Hold) Throw",out,sizeof out,true)&&
+                  !std::strcmp(out,"RIGHT STICK CLICK (Hold) Throw"),
+              "a control VR play has was replaced by the interact button");
+        // A text that names no button is left to the game.
+        check(!rewrite("Open the door",out,sizeof out,false),"a text with no button was rewritten");
+        // A keyboard key is a token of the vocabulary with no pad button: untouched.
+        check(!rewrite("Press MkbKeyboardEnter",out,sizeof out,false),"a keyboard prompt was rewritten");
+        check(!rewrite("LB + RB",out,1,false),"a rewrite wrote into no room");
+        // What the player is told matches what the mapping sends.
+        check(!std::strcmp(vrControl(shoulders),"RIGHT STICK CLICK"),"the pull's VR control");
+        check(!std::strcmp(vrControl(Demand{padX}),"PAD + X"),"the game's X needs the pad layer");
+        check(!std::strcmp(vrControl(Demand{padY}),"Y"),"the game's Y is the interact");
+        check(vrControl({})==nullptr,"an empty demand has a control");
+        check(vrControl(Demand{padA|padB})==nullptr,"a mix of buttons has one control");
+        // A held demand is the same control as a tapped one.
+        check(vrControl(Demand{padY,false,false,true})==vrControl(Demand{padY}),"holding changed the control");
+        // What the game ACTUALLY names its buttons with, found in it on October 13:
+        // the markup token [BTN_B], in a text that reached Flash as an argument of
+        // ShowText. Neither an icon id nor spelled letters, so nothing above fired.
+        const char* line="When wall running horizontally, <span class='emphasis'>hold</span> "
+                         "[BTN_B] to whip around a corner.";
+        const auto whip=forText(line);
+        check(whip.buttons==padB&&whip.hold,"the game's own prompt line named no button");
+        check(forText("Press [BTN_L1] to aim")==Demand{padLeftShoulder},"[BTN_L1]");
+        check(forText("Press [BTN_LB] to aim")==Demand{padLeftShoulder},"the Xbox spelling of the same");
+        check(forText("[BTN_R1]")==Demand{padRightShoulder},"[BTN_R1]");
+        check(forText("[BTN_L2]")==Demand{0,true,false},"[BTN_L2] is the left trigger");
+        check(forText("[BTN_R2]")==Demand{0,false,true},"[BTN_R2] is the right trigger");
+        check(forText("[BTN_A]")==Demand{padA}&&forText("[BTN_X]")==Demand{padX},"[BTN_A] or [BTN_X]");
+        check(forText("[BTN_Y]")==Demand{padY}&&forText("[BTN_L3]")==Demand{padLeftThumb},"[BTN_Y] or [BTN_L3]");
+        check(forText("[BTN_R3]")==Demand{padRightThumb},"[BTN_R3]");
+        // Two tokens in one line make the pair the game wants held together.
+        check(forText("Hold [BTN_L1] + [BTN_R1] to throw").buttons==shoulders.buttons,"a pair of tokens");
+        // These two name no pad control, and a guess would press the wrong thing.
+        check(!forText("[BTN_CANCEL] to go back").any(),"[BTN_CANCEL] was given a button");
+        check(!forText("[BTN_MAP_WAYPOINT_SET]").any(),"[BTN_MAP_WAYPOINT_SET] was given a button");
+        // A token that is none of the game's own stays unread.
+        check(!forText("[BTN_NOPE]").any(),"an unknown token was given a button");
+        // Rewritten: a control VR play has keeps its name; one it lacks becomes Y.
+        check(rewrite(line,out,sizeof out,true)&&!std::strcmp(out,
+              "When wall running horizontally, <span class='emphasis'>hold</span> B to whip around a corner."),
+              "the game's own line was not rewritten for VR");
+        check(rewrite("Press [BTN_L1] to aim",out,sizeof out,true)&&!std::strcmp(out,"Press Y to aim"),
+              "a bumper VR play cannot send was not offered to the interact button");
+        check(rewrite("Hold [BTN_L1] + [BTN_R1] to throw",out,sizeof out,false)&&
+                  !std::strcmp(out,"Hold PAD + LEFT GRIP + PAD + RIGHT GRIP to throw"),
+              "a pair of tokens was not rewritten");
+        check(!rewrite("[BTN_CANCEL] to go back",out,sizeof out,true),"[BTN_CANCEL] was rewritten");
+    });
+    test("the QTE's own handles: the D-pad, a stick to move, and the keyboard's keys", [] {
+        using namespace prompt_buttons;
+        // The rest of the exe's prompt vocabulary, which is what a story beat
+        // or an encounter asks with: the CineQTE handle table (image 0x387ae40
+        // and up) and the stick motion action beside it. Reading only [BTN_*]
+        // left every one of these a prompt Spidy could not answer.
+        check(forText("[DPAD_UP]")==Demand{padDpadUp},"[DPAD_UP]");
+        check(forText("[DPAD_DOWN]")==Demand{padDpadDown},"[DPAD_DOWN]");
+        check(forText("[DPAD_LEFT]")==Demand{padDpadLeft},"[DPAD_LEFT]");
+        check(forText("[DPAD_RIGHT]")==Demand{padDpadRight},"[DPAD_RIGHT]");
+        // A QTE that asks for a stick to be moved names no way to move it.
+        const auto stick=forText("Move [LS]");
+        check(stick.any()&&stick.leftStickMotion&&!stick.rightStickMotion,"[LS] asks for the left stick");
+        check(forText("[RS]").rightStickMotion,"[RS] asks for the right stick");
+        check(reachableInPlay(stick),"the left stick is the player's own walking in VR play");
+        check(!reachableInPlay(forText("[RS]")),"the right stick steers VR play: only the pad layer sends it");
+        // The nine the keyboard and the mouse own: nothing for a pad to press,
+        // and the game asking a device a player in a headset is not holding.
+        for (const char* token : {"[MKB_CUSTOM00]","[MKB_CUSTOM01]","[MKB_CUSTOM02]","[MKB_CUSTOM03]",
+                                  "[MKB_CUSTOM04]","[MKB_CUSTOM05]","[MKB_CUSTOM06]","[MKB_CUSTOM07]",
+                                  "[MKB_CUSTOM08]"}) {
+            check(!forText(token).any(),token);
+            check(forText(token).keyboard,token);
+        }
+        check(forIcon("MkbKeyboardF").keyboard,"the keyboard's own icon was not seen as a key");
+        check(forIcon("MkbMouseLeft").keyboard,"the mouse's icon was not seen as one");
+        check(!forIcon("XBButtonA").keyboard,"a pad button was taken for a key");
+        check(!forText("Open the door").keyboard,"a text that named nothing was taken for a key");
+        // Every one of them survives the word a hook hands the VR thread.
+        for (const char* token : {"[DPAD_UP]","[DPAD_DOWN]","[DPAD_LEFT]","[DPAD_RIGHT]","[LS]","[RS]",
+                                  "[MKB_CUSTOM00]","[MKB_CUSTOM08]","[BTN_Y]","[BTN_L2]"}) {
+            const auto asked=forText(token);
+            check(unpack(pack(asked))==asked,token);
+        }
+        check(pack({})==0,"an empty demand packs to something");
+        // What the player is told to do, and that a key leaves nothing to tell.
+        check(!std::strcmp(vrControl(forText("[LS]")),"LEFT STICK"),"the left stick's VR control");
+        check(!std::strcmp(vrControl(forText("[RS]")),"PAD + RIGHT STICK"),"the right stick's VR control");
+        check(vrControl(forText("[MKB_CUSTOM03]"))==nullptr,"a key was given a VR control");
+    });
+    test("what the game's own crawl makes of the stick it is sent, measured", [] {
+        using spidy::CrawlStick;
+        // The wall x = 0: its surface is the y-z plane, up it is the world's
+        // up, and the stick's own right there is ahead x up, as the rig lays
+        // the axes out.
+        const Vec3 n{1,0,0},ahead{0,1,0},side=cross(ahead,n);
+        // The game took the stick and moved the body `theta` round from it.
+        const auto feed=[&](CrawlStick& m,float w,float theta,float speed){
+            m.update(n,ahead,std::sin(w),std::cos(w),(ahead*std::cos(w+theta)+side*std::sin(w+theta))*speed);
+        };
+        // A frame fixed against the surface: every stick comes out the same
+        // quarter turn round, whichever way it was pushed. That is the answer
+        // that wants one line of correction.
+        CrawlStick fixed;
+        for(int i=0;i<40;++i)feed(fixed,.157f*static_cast<float>(i),1.5707963f,3);
+        check(fixed.samples()==40,"the samples were not taken");
+        near(fixed.turn(),1.5707963f,.001f);near(fixed.agreement(),1,.001f);near(fixed.speed(),3,.01f);
+        // The game taking it as sent: no turn at all, and the stick is right.
+        CrawlStick straight;
+        for(int i=0;i<40;++i)feed(straight,.157f*static_cast<float>(i),0,5);
+        near(straight.turn(),0,.001f);near(straight.agreement(),1,.001f);near(straight.speed(),5,.01f);
+        // A frame that is not fixed - the game's own camera swinging about as
+        // the player looks around - agrees with nothing, and says the stick is
+        // the wrong channel: the mover wants driving instead.
+        CrawlStick loose;
+        for(int i=0;i<40;++i)feed(loose,.3f*static_cast<float>(i),.157f*static_cast<float>(i),3);
+        check(loose.samples()==40,"the samples were not taken");
+        check(loose.agreement()<.2f,"a frame that was not fixed looked like one");
+        // A stick barely off its rest is nobody's intent, and a body that is
+        // not moving took no direction from it: neither is a sample.
+        CrawlStick quiet;
+        feed(quiet,0,0,3);
+        check(quiet.samples()==1,"a pushed stick on a moving body was not a sample");
+        quiet.update(n,ahead,0,CrawlStick::stick*.5f,ahead*3.f);
+        quiet.update(n,ahead,0,1,ahead*(CrawlStick::moving*.5f));
+        // Nor a body going straight into the wall, with nothing along it.
+        quiet.update(n,ahead,0,1,n*-4.f);
+        check(quiet.samples()==1,"a resting stick, a still body or a step into the wall was a sample");
+        // A surface or an axis that is no vector, and numbers that are not
+        // numbers, cannot carry a measurement.
+        const float nan=std::numeric_limits<float>::quiet_NaN();
+        CrawlStick odd;
+        odd.update({},ahead,0,1,ahead*3.f);
+        odd.update(n,{},0,1,ahead*3.f);
+        odd.update(n,ahead,nan,1,ahead*3.f);
+        odd.update(n,ahead,0,nan,ahead*3.f);
+        odd.update(n,ahead,0,1,{nan,0,0});
+        check(odd.samples()==0,"a measurement was taken from nothing");
+        near(odd.turn(),0);near(odd.agreement(),0);near(odd.speed(),0);
+    });
+    test("indoors the game keeps the walls: the room says where the player is", [] {
+        using spidy::Enclosure;
+        const float open = 5.f;    // the ray found nothing within its reach
+        const float close = 1.5f;  // a surface right there
+        // A vent: closed above and from both pairs of sides. Three ways.
+        const Enclosure::Room vent{close, close, close, close, close};
+        check(Enclosure::closedWays(vent)==3,"a vent did not read as closed in");
+        // A lift shaft: open above, closed on both pairs. Two ways - the shaft
+        // of the first mission, climbed to the vent.
+        const Enclosure::Room shaft{open, close, close, close, close};
+        check(Enclosure::closedWays(shaft)==2,"a lift shaft did not read as closed in");
+        // A corridor: a ceiling and two sides, open along its length.
+        const Enclosure::Room corridor{close, open, open, close, close};
+        check(Enclosure::closedWays(corridor)==2,"a corridor did not read as closed in");
+        // An alley: close on one pair, open sky. One way, and not indoors - a
+        // player wall running between two buildings keeps his walls.
+        const Enclosure::Room alley{open, open, open, close, close};
+        check(Enclosure::closedWays(alley)==1,"an alley read as closed in");
+        // A street, a rooftop, a building face: nothing near.
+        check(Enclosure::closedWays({open,open,open,open,open})==0,"the open city read as closed in");
+        const Enclosure::Room face{open, close, open, open, open};
+        check(Enclosure::closedWays(face)==0,"one wall read as closed in");
+        // `seconds` is the frame's own length, as every rule here takes it.
+        const Enclosure::Room city{open,open,open,open,open};
+        const float frame=1.f/90;
+        const auto hold=[&](Enclosure& e, Enclosure::Room room, float duration) {
+            bool out=e.indoors();
+            for (float t=0; t<duration; t+=frame)
+                out=e.update(frame,room);
+            return out;
+        };
+        Enclosure e;
+        check(!e.update(frame,vent),"it called him indoors on the first frame");
+        check(!hold(e,vent,Enclosure::settle*.5f),"it did not wait for the reading to hold");
+        check(hold(e,vent,Enclosure::settle),"it never called him indoors");
+        check(e.indoors()&&e.changes()==1,"the change was not counted");
+        // Out again, and the same wait on the way out.
+        check(hold(e,city,Enclosure::settle*.5f),"it left the moment one ray missed");
+        check(!hold(e,city,Enclosure::settle),"it never came back out");
+        check(e.changes()==2,"coming back out was not counted");
+        // A single open frame in the middle of a vent does not take the walls
+        // back: the reading has to hold.
+        Enclosure f;
+        hold(f,vent,Enclosure::settle*2);
+        check(f.indoors(),"it never called him indoors");
+        f.update(frame,city);
+        check(f.indoors(),"one open frame took the walls back");
+        check(hold(f,vent,Enclosure::settle),"the vent reading did not hold");
+        check(f.changes()==1,"a flap was counted as a change");
+        // A frame length that is no number, or absurd, cannot carry the verdict.
+        Enclosure g;
+        for (int i=0; i<200; ++i)
+            g.update(std::numeric_limits<float>::quiet_NaN(),vent);
+        check(!g.indoors(),"a frame length that was no number decided the verdict");
+        Enclosure h;
+        check(!h.update(1000.f,vent),"one absurd frame length decided the verdict");
+    });
+    test("nothing reaches the game until the headset has tracked once", [] {
+        using game_pad::Mapping;
+        using game_pad::mappingFor;
+        // October 13: a session ran 414 frames with the headset never tracking,
+        // the player's Touch B and A went out as the pad's, the title screen
+        // walked to QUIT GAME and the game saved and closed.
+        check(mappingFor(true,false,true,false)==Mapping::none,"a press went out before the headset tracked");
+        check(mappingFor(true,false,false,false)==Mapping::none,"play went out before the headset tracked");
+        check(mappingFor(true,false,false,true)==Mapping::none,"the pad layer went out before the headset tracked");
+        // Without the headset or the focus, nothing goes out either, as before.
+        check(mappingFor(false,true,true,false)==Mapping::none,"a press went out with no headset");
+        check(mappingFor(false,false,false,false)==Mapping::none,"something went out with neither");
+        // Once it has tracked, this is exactly what it always was.
+        check(mappingFor(true,true,true,false)==Mapping::menus,"the game's own screen is not the full pad");
+        check(mappingFor(true,true,true,true)==Mapping::menus,"the pad layer took the game's own screen");
+        check(mappingFor(true,true,false,false)==Mapping::gameplay,"VR play is not the gameplay mapping");
+        check(mappingFor(true,true,false,true)==Mapping::pad,"the latched layer is not the whole pad");
+    });
+    test("the interact hands the player back when the swing's wall is why the game offers nothing", [] {
+        using game_pad::WallHandover;
+        const float frame=1.f/90;
+        const auto hold=[&](WallHandover& h, float duration, bool asking, bool wall, bool offered) {
+            bool out=h.handing();
+            for (float t=0; t<duration; t+=frame)
+                out=h.update(frame,asking,wall,offered);
+            return out;
+        };
+        // The vent: the swing holds him on a wall of its own, so the game has
+        // withdrawn its interact and the press has nothing to land on.
+        WallHandover h;
+        check(!h.update(frame,false,true,false),"nothing pressed and it handed him back");
+        check(h.update(frame,true,true,false),"a press on the swing's wall did not hand him back");
+        check(h.handing()&&h.handovers()==1,"the hand-over was not counted");
+        // It lasts while the player holds the button, then puts the walls back.
+        check(hold(h,WallHandover::window*.5f,true,true,false),"it let go of the walls too early");
+        // The game offering again while he is handed back is the hand-over
+        // having worked; counted once, however many frames it offers for.
+        check(h.update(frame,true,true,true),"the game's own offer ended the hand-over early");
+        check(h.offered()==1,"the game's offer during a hand-over was not counted");
+        check(h.update(frame,true,true,true)&&h.offered()==1,"one hand-over's offer was counted twice");
+        check(!hold(h,WallHandover::window,true,true,false),"the walls did not come back");
+        // Holding on does not start another: it takes a new press.
+        check(!hold(h,.5f,true,true,false),"a held button started a second hand-over");
+        check(h.handovers()==1,"a held button was counted twice");
+        check(!h.update(frame,false,true,false),"letting go handed him back");
+        check(h.update(frame,true,true,false),"the next press did not hand him back");
+        check(h.handovers()==2,"the next press was not counted");
+        // Letting go ends it, once the press has had its chance.
+        check(hold(h,WallHandover::least*.5f,false,true,false),"it ended before the press could land");
+        check(!hold(h,WallHandover::least,false,true,false),"letting go did not put the walls back");
+        // Where the game IS offering something, the ordinary path works and
+        // nothing is handed back.
+        WallHandover offered;
+        check(!offered.update(frame,true,true,true),"it handed him back while the game was offering an interact");
+        check(offered.handovers()==0,"a hand-over was counted with an interact offered");
+        check(offered.offered()==0,"an offer was counted without a hand-over");
+        // And only for a wall of the swing's own: the game's own crawl already
+        // lets him interact, and in the air there is no wall to leave.
+        WallHandover elsewhere;
+        check(!elsewhere.update(frame,true,false,false),"it handed him back off the swing's wall");
+        check(elsewhere.handovers()==0,"a hand-over was counted off the swing's wall");
+        // A frame length that is no number cannot keep the walls off for ever.
+        WallHandover odd;
+        check(odd.update(frame,true,true,false),"the press did not hand him back");
+        for (int i=0; i<200; ++i)
+            odd.update(std::numeric_limits<float>::quiet_NaN(),true,true,false);
+        check(odd.handing(),"a frame length of no number ended it early");
+        check(!hold(odd,WallHandover::window,true,true,false),"the walls never came back");
+    });
     test("controller layouts: Touch and Index as they were, the Steam Frame's buttons each their own", [] {
         using Paths=std::vector<std::pair<ControllerInput,std::string>>;
         const auto of=[](ControllerKind kind) {
@@ -4660,6 +6098,20 @@ int main() {
         check(grab.grabs()[0].phase==GrabPhase::None,"grabbed through a wall");
         swing.predictNativeStep(.01f,forSwing,world,player);
         check(swing.webs()[0].attached,"the press was lost to the swing");
+    });
+    test("a press the swing keeps catches nothing, whatever the hand points at", [] {
+        TestWorld world;world.anchor={0,20,-30};
+        GrabTargets targets;targets.add(7,{0,1,-8});
+        WebGrab grab;Body player{{0,1,0},{},true};
+        const auto in=forward(),forSwing=grab.claim(1.f/90,in,world,targets,player,1);
+        check(grab.grabs()[0].phase==GrabPhase::None,"a kept press grabbed the prop");
+        near(forSwing.hands[0].grip,1);
+        // Held on, it still catches nothing; let go and pressed again, it does.
+        grab.claim(1.f/90,in,world,targets,player);
+        check(grab.grabs()[0].phase==GrabPhase::None,"a grip held on grabbed later");
+        auto open=in;open.hands[0].grip=0;grab.claim(1.f/90,open,world,targets,player);
+        grab.claim(1.f/90,in,world,targets,player);
+        check(grab.grabs()[0].phase==GrabPhase::Tethered,"the next press did not grab");
     });
     test("a slack web leaves its target alone; a taut one tows it after the hand", [] {
         TestWorld world;world.enabled=false;
@@ -5459,6 +6911,117 @@ int main() {
         check(dot(normalized(elbow-shoulder),normalized(wrist-elbow))>.99f,"the arm is not stretched");
         check(dot(normalized(wrist-shoulder),normalized(wristOf(t.hands[1],1)-shoulder))>.99f,"the arm does not point at the controller");
     });
+    test("body: on the game's own crawl the feet are planted under the hips, whatever its legs do", [] {
+        for(const bool odd:{false,true}){
+            auto b=testBody(odd);
+            // The crawl's legs: each thigh swung up and out to its side, the feet well off the floor - the game's
+            // crawl splayed on a wall. With the crawling flag the body's up is the model's own +y, the floor y 0.
+            auto from=b.rest;
+            body::Pose view(from.data(),static_cast<int>(b.rig.parent.size()));
+            for(int i=0;i<2;++i){
+                const auto& leg=b.rig.legs[i];
+                view.turn(b.rig.below[leg.upper],body::axisAngle({0,0,i==0?1.f:-1.f},1.1f),b.at(from,leg.upper));
+            }
+            check(b.at(from,b.rig.legs[0].foot).y>b.rig.ankleHeight[0]+.2f,"the crawl's legs were not lifted");
+            auto t=lookingAhead({0,1.7f,.08f});
+            t.plant=true;
+            body::State s;body::Result r;
+            const auto pose=solved(b,t,s,{},1,&r,&from);
+            check(r.grounded,"planted feet were not standing");
+            for(int i=0;i<2;++i){
+                const auto& leg=b.rig.legs[i];
+                const Vec3 foot=b.at(pose,leg.foot),hip=b.at(pose,leg.upper);
+                near(foot.y,b.rig.ankleHeight[i],.03f);
+                check(std::hypot(foot.x-hip.x,foot.z-hip.z)<.12f,"a planted foot is not under its hip");
+            }
+            // Without the plant, the same legs stay the game's, off the floor.
+            body::State kept;body::Result was;
+            const auto left=solved(b,lookingAhead({0,1.7f,.08f}),kept,{},1,&was,&from);
+            check(!was.grounded,"the game's lifted feet were taken for standing");
+            check(b.at(left,b.rig.legs[0].foot).y>b.rig.ankleHeight[0]+.15f,"the game's lifted foot came down");
+            // In the air nothing is planted, crawl or not.
+            auto air=lookingAhead({0,1.7f,.08f});
+            air.plant=true;air.airborne=true;
+            body::State a;body::Result ar;
+            solved(b,air,a,{},1,&ar,&from);
+            check(!ar.grounded,"feet were planted in the air");
+        }
+    });
+    test("body: on Spidy's own wall the body stands on the wall with the player, never lying", [] {
+        // The player, October 14, of a body solved upright in the world while he stood on the wall: "still body
+        // in front of me" - "i dont want it to be lying at all". The game holds the hero upright in its air
+        // there, 0.9 m off the wall, its legs in its air pose; the player stands on the wall, his up its normal.
+        for(const bool odd:{false,true}){
+            auto b=testBody(odd);
+            auto from=b.rest;
+            body::Pose view(from.data(),static_cast<int>(b.rig.parent.size()));
+            for(int i=0;i<2;++i){
+                const auto& leg=b.rig.legs[i];
+                view.turn(b.rig.below[leg.upper],body::axisAngle({1,0,0},-.9f),b.at(from,leg.upper));
+            }
+            // The wall: its normal the model's +x, its face 0.9 m behind the model's origin.
+            const Vec3 up{1,0,0},floor{-.9f,1,0};
+            body::Targets t;t.head=true;t.up=up;t.plant=true;t.floor=floor;
+            // His eyes 1.7 m out from it, looking along it, up the wall (the model's +y).
+            t.eyes=floor+up*1.7f+Vec3{0,.2f,0};
+            t.facing=body::fromAxes({0,0,-1},{1,0,0},{0,-1,0});
+            body::State s;body::Result r;
+            const auto pose=solved(b,t,s,{},1,&r,&from);
+            check(r.solved&&r.grounded,"the body on the wall was not standing on it");
+            check(dot(normalized(b.at(pose,4)-b.at(pose,1)),up)>.95f,"the torso does not stand along the wall's normal");
+            check(r.headError<1e-3f,"the head missed the eyes on the wall");
+            for(int i=0;i<2;++i){
+                const auto& leg=b.rig.legs[i];
+                const Vec3 foot=b.at(pose,leg.foot),hip=b.at(pose,leg.upper);
+                near(dot(foot-floor,up),b.rig.ankleHeight[i],.03f);
+                const Vec3 across=(foot-hip)-up*dot(foot-hip,up);
+                check(length(across)<.12f,"a foot on the wall is not under its hip");
+            }
+        }
+    });
+    test("body: held down under a duct's roof the legs kneel behind the player, not up in front of his eyes", [] {
+        // The first mission's duct, October 14 19:57: the head held a metre over its floor and the legs laid out
+        // in front of the player's eyes. Planted under a held head they kneel: the knees down on the floor, the
+        // shins back along it behind him. Folded under the hips instead (a squat), the knees come up in front.
+        for(const bool odd:{false,true}){
+            auto b=testBody(odd);
+            body::Targets t;t.head=true;t.plant=true;t.floor={};
+            t.eyes={0,1,0};t.facing={};
+            const Vec3 ahead{0,0,-1};
+            body::State s;body::Result r;
+            t.kneel=true;
+            const auto kneeling=solved(b,t,s,{},1,&r);
+            check(r.solved&&r.grounded,"the kneeling body was not on the floor");
+            check(r.headError<1e-3f,"the kneeling head missed the eyes");
+            for(int i=0;i<2;++i){
+                const auto& leg=b.rig.legs[i];
+                const Vec3 hip=b.at(kneeling,leg.upper),knee=b.at(kneeling,leg.lower);
+                const Vec3 foot=b.at(kneeling,leg.foot);
+                check(knee.y<.15f,"a kneeling knee is off the floor");
+                check(dot(knee-hip,ahead)<.05f,"a kneeling knee is in front of the hip");
+                check(dot(foot-hip,ahead)<-.3f,"a kneeling foot is not behind the player");
+                near(length(knee-hip),b.rig.thigh[i],.02f);
+            }
+            body::State q;
+            t.kneel=false;
+            const auto squatting=solved(b,t,q,{},1,&r);
+            float forward=-1;
+            for(int i=0;i<2;++i){
+                const auto& leg=b.rig.legs[i];
+                forward=std::max(forward,dot(b.at(squatting,leg.lower)-b.at(squatting,leg.upper),ahead));
+            }
+            check(forward>.2f,"a squat under the same head did not fold the knees up in front");
+            // Tall enough to stand, kneeling stands.
+            body::State u;
+            t.kneel=true;t.eyes={0,1.7f,0};
+            const auto tall=solved(b,t,u,{},1,&r);
+            for(int i=0;i<2;++i){
+                const Vec3 hip=b.at(tall,b.rig.legs[i].upper),foot=b.at(tall,b.rig.legs[i].foot);
+                const Vec3 across=(foot-hip)-Vec3{0,1,0}*dot(foot-hip,Vec3{0,1,0});
+                check(length(across)<.12f,"a standing kneel did not stand");
+            }
+        }
+    });
     test("body: on a wall the body stands up in the world and plants no feet", [] {
         auto b=testBody(true);
         // The hero crawls up a wall: the world's up is the model's -z.
@@ -5536,6 +7099,43 @@ int main() {
             }
         }
     });
+    test("body: a hand holding nothing is this body's own open hand, never the game's crawl splayed on a wall", [&] {
+        for(const bool odd:{false,true}){
+            auto b=testBody(odd,true);
+            // The game's hands: as at rest, splayed back as its wall crawl
+            // holds them on a wall, and curled.
+            const float games[3][3]={{0,0,0},{-.4f,-.3f,-.2f},{1.2f,1.3f,.9f}};
+            for(const auto& game:games){
+                auto from=b.rest;
+                body::Pose view(from.data(),static_cast<int>(b.rig.parent.size()));
+                for(int side=0;side<2;++side)
+                    for(const auto& f:b.rig.arms[side].fingers){
+                        const Vec3 hinge=heroHinge(b,from,f,side);
+                        for(size_t k=1;k<=3;++k)
+                            view.turn(b.rig.below[f[k]],body::axisAngle(hinge,game[k-1]),b.at(from,f[k]));
+                    }
+                body::Config c;c.hideHead=false;
+                // Nothing pressed: every joint sits at this body's own angle,
+                // whatever the game had done with it - its wall crawl's splay
+                // (the player, October 14: "i dont want the crawling
+                // animation on legs or hands ever") and the fists it closes
+                // after a swing alike.
+                body::State s;
+                const auto posed=solved(b,heroHandsOut(0),s,c,1,nullptr,&from);
+                for(int side=0;side<2;++side)
+                    for(const auto& fin:b.rig.arms[side].fingers)
+                        for(size_t k=1;k<=3;++k)
+                            near(bendOf(b,posed,fin,k,heroHinge(b,posed,fin,side)),c.openBend[k-1],.02f);
+                // And a fist closes over the open hand: the fist's angles win.
+                body::State closed;
+                const auto made=solved(b,heroHandsOut(1),closed,c,1,nullptr,&from);
+                for(int side=0;side<2;++side)
+                    for(const auto& fin:b.rig.arms[side].fingers)
+                        for(size_t k=1;k<=3;++k)
+                            near(bendOf(b,made,fin,k,heroHinge(b,made,fin,side)),c.fistBend[k-1],.02f);
+            }
+        }
+    });
     test("body: a fist closes every finger joint toward the palm and never back, however the game had bent it", [&] {
         for(const bool odd:{false,true}){
             auto b=testBody(odd,true);
@@ -5557,10 +7157,11 @@ int main() {
                     const auto pose=solved(b,heroHandsOut(fist),s,c,1,nullptr,&from);
                     for(int side=0;side<2;++side){
                         const auto& fingers=b.rig.arms[side].fingers;
-                        // Every joint goes `fist` of the way from the game's bend to the fist's, about its hinge.
+                        // Every joint goes `fist` of the way from the open hand's bend to the fist's, about its
+                        // hinge, however the game had bent it.
                         for(const auto& f:fingers)
                             for(size_t k=1;k<=3;++k){
-                                const float was=bendOf(b,from,f,k,heroHinge(b,from,f,side));
+                                const float was=c.openBend[k-1];
                                 near(bendOf(b,pose,f,k,heroHinge(b,pose,f,side)),was+(c.fistBend[k-1]-was)*fist,.01f);
                             }
                         if(fist<1)continue;
@@ -5576,6 +7177,70 @@ int main() {
                     }
                 }
             }
+        }
+    });
+    test("body: nothing the game's animation does to a hand shows: palm, spread, twist, thumb and wrist alike", [&] {
+        for(const bool odd:{false,true}){
+            auto b=testBody(odd,true);
+            // The game's hand: the wrist bent, each bone in the palm spread
+            // and twisted, every finger joint and the thumb turned off its
+            // hinge - all of what only bending the joints past the palm left
+            // in the hand ("Hand poses for web shooting (and in general) seem
+            // to be affected by some animations", October 15).
+            auto from=b.rest;
+            body::Pose view(from.data(),static_cast<int>(b.rig.parent.size()));
+            for(int side=0;side<2;++side){
+                const auto& arm=b.rig.arms[side];
+                view.turn(b.rig.below[arm.hand],body::axisAngle({.3f,1,-.4f},.7f),b.at(from,arm.hand));
+                int n=0;
+                for(const auto& f:arm.fingers)
+                    for(size_t k=0;k<4;++k,++n)
+                        view.turn(b.rig.below[f[k]],body::axisAngle({std::sin(n*1.7f),1,std::cos(n*.9f)},.25f+.05f*k),
+                                  b.at(from,f[k]));
+                for(size_t k=0;k+1<arm.thumbChain.size();++k)
+                    view.turn(b.rig.below[arm.thumbChain[k]],body::axisAngle({1,.2f*k,-.5f},.5f),
+                              b.at(from,arm.thumbChain[k]));
+            }
+            for(const auto [fist,shoot]:{std::pair{0.f,0.f},std::pair{1.f,0.f},std::pair{.5f,0.f},std::pair{0.f,1.f}}){
+                auto t=heroHandsOut(fist);
+                t.hands[0].shoot=t.hands[1].shoot=shoot;
+                body::Config c;c.hideHead=false;
+                body::State fromRest,fromGame;
+                const auto clean=solved(b,t,fromRest,c);
+                const auto posed=solved(b,t,fromGame,c,1,nullptr,&from);
+                // The same hand to the joint, its frame and all, as from the rest pose.
+                for(int side=0;side<2;++side)
+                    for(const auto j:b.rig.below[b.rig.arms[side].hand])
+                        for(int i=0;i<15;++i)
+                            near(posed[j*16+i],clean[j*16+i],5e-4f);
+            }
+        }
+    });
+    test("body: a hand the headset lost stays where it was last tracked from the body, not the game's arm", [&] {
+        for(const bool odd:{false,true}){
+            auto b=testBody(odd,true);
+            body::Config c;c.hideHead=false;
+            body::State s;
+            const auto t=heroHandsOut(0);
+            const auto first=solved(b,t,s,c);
+            // Lost, the controller's report says nothing; the player steps
+            // half a metre to the side, his eyes with him.
+            auto lost=t;
+            lost.hands[0].tracked=false;
+            lost.hands[0].grip={};
+            lost.eyes+=Vec3{.5f,0,0};
+            auto moved=t.hands[1];
+            moved.grip+=Vec3{.5f,0,0};
+            lost.hands[1]=moved;
+            const auto pose=solved(b,lost,s,c);
+            const auto& arms=b.rig.arms;
+            near(length(b.at(pose,arms[0].hand)-(wristOf(t.hands[0],0)+Vec3{.5f,0,0})),0,1e-3f);
+            near(length(b.at(pose,arms[1].hand)-wristOf(moved,1)),0,1e-3f);
+            // Its hand turned as it was, open.
+            near(dot(heroPalm(b,pose,0),heroPalm(b,first,0)),1,1e-3f);
+            for(const auto& fin:arms[0].fingers)
+                for(size_t k=1;k<=3;++k)
+                    near(bendOf(b,pose,fin,k,heroHinge(b,pose,fin,0)),c.openBend[k-1],.02f);
         }
     });
     test("body: a fist's thumb bends in one plane and lies on the curled fingers", [&] {
@@ -5598,6 +7263,65 @@ int main() {
                 near(std::atan2(length(cross(middle,last)),dot(middle,last)),c.thumbBend,.03f);
                 check(std::atan2(length(cross(base,middle)),dot(base,middle))<c.thumbBendMax+.03f,"the thumb bent too far");
             }
+        }
+    });
+    test("body: the web-shooting hand presses its two middle fingers into the palm and keeps the rest out", [&] {
+        for(const bool odd:{false,true}){
+            auto b=testBody(odd,true);
+            // From the game's open hand and over a closed fist alike; and half of the way from the fist.
+            for(const auto [fist,shoot]:{std::pair{0.f,1.f},std::pair{1.f,1.f},std::pair{1.f,.5f}}){
+                auto t=heroHandsOut(fist);
+                t.hands[0].shoot=t.hands[1].shoot=shoot;
+                body::Config c;c.hideHead=false;
+                body::State s;
+                const auto pose=solved(b,t,s,c);
+                for(int side=0;side<2;++side){
+                    const auto& arm=b.rig.arms[side];
+                    const auto& fingers=arm.fingers;
+                    for(size_t f=0;f<fingers.size();++f){
+                        const float* to=f==0||f==3?c.shootOut:c.shootPress;
+                        for(size_t k=1;k<=3;++k)
+                            near(bendOf(b,pose,fingers[f],k,heroHinge(b,pose,fingers[f],side)),
+                                 c.fistBend[k-1]+(to[k-1]-c.fistBend[k-1])*shoot,.01f);
+                    }
+                    near(length(b.at(pose,arm.hand)-wristOf(t.hands[side],side)),0,1e-3f);
+                    if(shoot<1)continue;
+                    const Vec3 palm=heroPalm(b,pose,side),along=normalized(b.at(pose,arm.finger)-b.at(pose,arm.hand));
+                    // The middle and ring fingers' tips in the palm; the index and little fingers out past their knuckles.
+                    for(const size_t f:{size_t{1},size_t{2}})
+                        check(dot(b.at(pose,fingers[f][4])-b.at(pose,fingers[f][1]),palm)>.01f&&
+                              dot(b.at(pose,fingers[f][4])-b.at(pose,fingers[f][1]),along)<0,"a middle finger is not in the palm");
+                    for(const size_t f:{size_t{0},size_t{3}})
+                        check(dot(normalized(b.at(pose,fingers[f][4])-b.at(pose,fingers[f][1])),along)>.8f,"an outer finger is not out");
+                    // The thumb straight, out to its own side in the palm's plane.
+                    const auto* thumb=heroThumbs[side];
+                    Vec3 aside=b.at(pose,fingers.front()[1])-b.at(pose,fingers.back()[1]);
+                    aside=aside-along*dot(aside,along);
+                    aside=normalized(aside-palm*dot(aside,palm));
+                    const Vec3 way=along*std::cos(c.shootThumb)+aside*std::sin(c.shootThumb);
+                    check(dot(normalized(b.at(pose,thumb[3])-b.at(pose,thumb[0])),way)>std::cos(.03f),"the thumb does not point out to its side");
+                    const Vec3 base=b.at(pose,thumb[1])-b.at(pose,thumb[0]),middle=b.at(pose,thumb[2])-b.at(pose,thumb[1]),
+                               last=b.at(pose,thumb[3])-b.at(pose,thumb[2]);
+                    check(dot(normalized(base),normalized(middle))>std::cos(.35f)&&dot(normalized(middle),normalized(last))>std::cos(.35f),
+                          "the thumb is not straight");
+                    for(const int j:{thumb[1],thumb[2],thumb[3]})
+                        near(length(b.at(pose,j)-b.at(pose,j-1)),length(b.at(b.rest,j)-b.at(b.rest,j-1)),1e-4f);
+                }
+            }
+        }
+    });
+    test("body: a hand of fewer than three fingers presses them all to shoot, its thumb out", [] {
+        for(const bool odd:{false,true}){
+            auto b=testBody(odd);
+            auto t=lookingAhead({0,1.7f,.08f});
+            t.hands[0]={true,{.3f,1.2f,.45f},gripFacing({0,0,1}),1,1};
+            body::Config c;c.hideHead=false;
+            body::State s;
+            const auto pose=solved(b,t,s,c);
+            const Vec3 palm=normalized(body::Pose(const_cast<float*>(pose.data()),38).direction(12,b.rig.handPalm[0]));
+            check(dot(b.at(pose,33)-b.at(pose,30),palm)>.02f,"the finger did not press into the palm");
+            check(length(b.at(pose,37)-b.at(pose,31))>.06f,"the thumb stayed on the finger");
+            near(length(b.at(pose,12)-wristOf(t.hands[0],0)),0,1e-3f);
         }
     });
     test("body: a taller player gets a body scaled about the feet", [] {
@@ -6636,37 +8360,49 @@ int main() {
             for (const char* c : row.choices)
                 check(c && *c, "an empty choice");
         }
-        check(headings == 4 && all[0].item == Item::none && all[7].item == Item::none && all[9].item == Item::none &&
-                  all[18].item == Item::none,
+        check(headings == 4 && all[0].item == Item::none && all[6].item == Item::none && all[8].item == Item::none &&
+                  all[16].item == Item::none,
               "the sections: webs, body, comfort, experimental");
-        check(all[19].item == Item::flips && all[19].choices.empty() && std::strcmp(all[18].title, "EXPERIMENTAL") == 0,
+        check(all[17].item == Item::flips && all[17].choices.empty() && std::strcmp(all[16].title, "EXPERIMENTAL") == 0,
               "the flips: a switch under EXPERIMENTAL");
-        check(all.size() == 21 && all[20].item == Item::flipSpeed && all[20].choices.size() == std::size(flipSpeeds),
+        check(all.size() == 19 && all[18].item == Item::flipSpeed && all[18].choices.size() == std::size(flipSpeeds),
               "the flip speed under the flips, the last row");
-        check(all[17].item == Item::standOnWalls && all[17].choices.empty() &&
-                  std::strcmp(all[17].title, "STAND ON WALLS") == 0,
-              "standing on walls: a switch, the last row of COMFORT");
-        check(all[14].item == Item::screenSize && all[16].item == Item::hud && all[16].choices.size() == 4 &&
-                  std::strcmp(all[16].choices[0], "OFF") == 0 && std::strcmp(all[16].choices[3], "LARGE") == 0,
+        // The wall view has no row of its own any more: it turned only while
+        // Spidy held the player on a wall, so it was never a choice of its own
+        // and the launcher's one "Wall running" now carries both (the player,
+        // October 14: "i dont get why we have a wall run and a wall stand
+        // options where wall run actually controlls wheter i stand or crawl",
+        // then "also merge the two options").
+        for (const auto& row : all)
+            check(row.item != Item::standOnWalls, "the wall view still has a row of its own");
+        check(all[13].item == Item::screenSize && all[15].item == Item::hud && all[15].choices.size() == 4 &&
+                  std::strcmp(all[15].choices[0], "OFF") == 0 && std::strcmp(all[15].choices[3], "LARGE") == 0,
               "the HUD after the game screen's rows: OFF, SMALL, MEDIUM, LARGE");
-        check(all[15].item == Item::screenDepth && std::strcmp(all[15].title, "GAME SCREEN 3D") == 0 &&
-                  all[15].choices.size() == 4 && std::strcmp(all[15].choices[0], "OFF") == 0 &&
-                  std::strcmp(all[15].choices[3], "HIGH") == 0,
+        check(all[14].item == Item::screenDepth && std::strcmp(all[14].title, "GAME SCREEN 3D") == 0 &&
+                  all[14].choices.size() == 4 && std::strcmp(all[14].choices[0], "OFF") == 0 &&
+                  std::strcmp(all[14].choices[3], "HIGH") == 0,
               "the game screen's depth under its size: OFF, LOW, MEDIUM, HIGH");
-        check(all[6].item == Item::physicalWebs && all[6].choices.empty() &&
-                  std::strcmp(all[6].title, "PHYSICAL WEBS") == 0,
-              "physical webs: a switch, the last row of WEBS");
-        check(all[13].item == Item::view && std::strcmp(all[13].title, "VIEW") == 0 && all[13].choices.size() == 2 &&
-                  std::strcmp(all[13].choices[0], "VR") == 0 && std::strcmp(all[13].choices[1], "FLAT SCREEN") == 0,
-              "the view above the game screen's rows: VR, or FLAT SCREEN");
+        // Webs are always physical (the user, October 15: "remove non physical web, no need for it").
+        for (const auto& row : all)
+            check(std::strcmp(row.title, "PHYSICAL WEBS") != 0, "webs can still be made non-physical");
+        check(all[12].item == Item::view && std::strcmp(all[12].title, "VR VIEW") == 0 && all[12].choices.size() == 2 &&
+                  std::strcmp(all[12].choices[0], "VR") == 0 && std::strcmp(all[12].choices[1], "GAME SCREEN") == 0,
+              "the view above the game screen's rows: VR, or GAME SCREEN");
+        // VR VIEW is on the pause menu's first page, beside RESUME, and no other row is.
+        for (const auto& row : all)
+            check(row.page == (row.item == Item::view), "a row on the wrong page");
         check(all[1].item == Item::webButton && all[1].choices.size() == 2 &&
                   std::strcmp(all[1].choices[0], "GRIP") == 0 && std::strcmp(all[1].choices[1], "TRIGGER") == 0,
               "the web button first under WEBS: GRIP, or TRIGGER");
         check(all[4].item == Item::swingSpeed && all[5].item == Item::weight, "the weight under the swing speed");
-        check(all[8].item == Item::calibrate && all[8].choices.size() == 2 &&
-                  std::strcmp(all[8].choices[1], "ON RESUME") == 0,
+        check(all[7].item == Item::calibrate && all[7].choices.size() == 2 &&
+                  std::strcmp(all[7].choices[1], "ON RESUME") == 0,
               "the body's calibration: NO, or ON RESUME");
-        check(seen == (2u << static_cast<unsigned>(lastItem)) - 2, "a setting missing");
+        // Every setting has a row but the wall view, which the launcher's one
+        // "Wall running" now carries along with who holds you on the wall.
+        constexpr unsigned everySetting = (2u << static_cast<unsigned>(lastItem)) - 2;
+        constexpr unsigned noRowOfItsOwn = 1u << static_cast<unsigned>(Item::standOnWalls);
+        check(seen == (everySetting & ~noRowOfItsOwn), "a setting missing");
         auto choicesOf = [&](Item item) {
             return std::find_if(all.begin(), all.end(), [&](const Row& r) { return r.item == item; })->choices.size();
         };
@@ -6730,14 +8466,10 @@ int main() {
         check(!defaults.flips && choice(Item::flips, defaults) == 0 && defaultChoice(Item::flips) == 0 &&
                   choose(Item::flips, 1, v) && v.flips && choice(Item::flips, v) == 1,
               "the experimental flips: OFF by default, a switch to ON");
-        check(defaults.physicalWebs && choice(Item::physicalWebs, defaults) == 1 &&
-                  defaultChoice(Item::physicalWebs) == 1 && choose(Item::physicalWebs, 0, v) && !v.physicalWebs &&
-                  !choose(Item::physicalWebs, 0, v) && choose(Item::physicalWebs, 1, v) && v.physicalWebs,
-              "physical webs: ON by default, a switch");
         check(!defaults.flatScreen && choice(Item::view, defaults) == 0 && defaultChoice(Item::view) == 0 &&
                   choose(Item::view, 1, v) && v.flatScreen && choice(Item::view, v) == 1 &&
                   !choose(Item::view, 2, v) && choose(Item::view, 0, v) && !v.flatScreen,
-              "the view: VR by default, FLAT SCREEN the other choice");
+              "the view: VR by default, GAME SCREEN the other choice");
         check(defaults.standOnWalls && choice(Item::standOnWalls, defaults) == 1 &&
                   defaultChoice(Item::standOnWalls) == 1 && choose(Item::standOnWalls, 0, v) && !v.standOnWalls &&
                   !choose(Item::standOnWalls, 0, v) && choose(Item::standOnWalls, 1, v) && v.standOnWalls,

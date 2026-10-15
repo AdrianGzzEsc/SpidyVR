@@ -313,7 +313,9 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyMotionStart(void* input) {
     AcquireSRWLockExclusive(&lifecycle);
     DWORD result{};
     do {
-        if (hookCount) {
+        // Running already: a second start is refused. Stopped, the hooks are
+        // still there, disabled, and a start takes them up again.
+        if (hookCount && enabled) {
             result = 1000;
             break;
         }
@@ -346,27 +348,35 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyMotionStart(void* input) {
             result = 1003;
             break;
         }
-        auto s = MH_Initialize();
-        if (s != MH_OK) {
-            result = 1100 + s;
+        const unsigned wanted = config.syncAirVelocity ? 4u : 2u;
+        if (hookCount && hookCount != wanted) {
+            result = 1000;
             break;
         }
-        const uintptr_t rvas[] = {0x1fbe360, 0x1fbda50, 0xa7b3a0, 0x1f9db60};
-        void* detours[] = {reinterpret_cast<void*>(query), reinterpret_cast<void*>(applyGravity),
-                           reinterpret_cast<void*>(handleAir), reinterpret_cast<void*>(readEvent)};
-        void** originals[] = {reinterpret_cast<void**>(&prequery), reinterpret_cast<void**>(&gravity),
-                              reinterpret_cast<void**>(&airEvent), reinterpret_cast<void**>(&eventRead)};
-        for (unsigned i = 0; i < (config.syncAirVelocity ? 4u : 2u); ++i) {
-            hooks[i] = reinterpret_cast<void*>(config.base + rvas[i]);
-            s = MH_CreateHook(hooks[i], detours[i], originals[i]);
+        auto s = MH_OK;
+        if (!hookCount) {
+            s = MH_Initialize();
             if (s != MH_OK) {
-                result = 1200 + s;
+                result = 1100 + s;
                 break;
             }
-            ++hookCount;
+            const uintptr_t rvas[] = {0x1fbe360, 0x1fbda50, 0xa7b3a0, 0x1f9db60};
+            void* detours[] = {reinterpret_cast<void*>(query), reinterpret_cast<void*>(applyGravity),
+                               reinterpret_cast<void*>(handleAir), reinterpret_cast<void*>(readEvent)};
+            void** originals[] = {reinterpret_cast<void**>(&prequery), reinterpret_cast<void**>(&gravity),
+                                  reinterpret_cast<void**>(&airEvent), reinterpret_cast<void**>(&eventRead)};
+            for (unsigned i = 0; i < wanted; ++i) {
+                hooks[i] = reinterpret_cast<void*>(config.base + rvas[i]);
+                s = MH_CreateHook(hooks[i], detours[i], originals[i]);
+                if (s != MH_OK) {
+                    result = 1200 + s;
+                    break;
+                }
+                ++hookCount;
+            }
+            if (result)
+                break;
         }
-        if (result)
-            break;
         request = reinterpret_cast<Request>(config.base + 0x1fc2e10);
         setTarget = reinterpret_cast<SetTarget>(config.base + 0x1fb88d0);
         timestep = reinterpret_cast<Timestep>(config.base + 0x16769f0);

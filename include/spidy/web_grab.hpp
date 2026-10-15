@@ -170,8 +170,11 @@ class WebGrab {
     // one without treating it as a new hand sample). A new grip press shoots
     // at a target when one is nearer than the world. Returns the input for the
     // swing, without the grips a grab owns, so the same press never also
-    // shoots a swing web.
-    Input claim(float seconds, const Input&, const WorldQueries&, const TargetQueries&, const Body& player);
+    // shoots a swing web. `kept`: a bit per hand whose press is the caller's
+    // (the hand is on the other hand's web, Swing::onStrand): it catches
+    // nothing.
+    Input claim(float seconds, const Input&, const WorldQueries&, const TargetQueries&, const Body& player,
+                unsigned kept = 0);
     // One physics step. Appends one command per target the webs act on.
     void step(float dt, const WorldQueries&, const TargetQueries&, std::vector<TargetCommand>& out);
     // The swing's view of `input`: without the grips (and triggers) a grab

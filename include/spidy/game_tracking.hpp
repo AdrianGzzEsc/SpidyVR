@@ -13,6 +13,9 @@ Input trackedSwingInput(const XrFrame& frame, const Rig& rig, bool triggerWebs =
 native_rays::Command controllerAimRays(const Input&, uint64_t serial);
 struct GameMotionFrame {
     bool active{}, releaseWebs = true;
+    // Why the frame could not be placed (GameTrackingRig::Inactive bits;
+    // zero while active).
+    uint32_t inactive{};
     std::int64_t predictedDisplayTime{};
     Input swing{};
     Mat4 head{};
@@ -28,7 +31,14 @@ struct GameMotionFrame {
     // The left stick in the stock camera's horizontal axes, -1..1: native
     // walking on the virtual Xbox controller, where nativeKeys has W/A/S/D.
     float walkRight{}, walkForward{};
+    // The axes those two were measured along, in the world. The game camera's
+    // forward and right, level - or laid into the surface, while the game's
+    // own crawl holds the player on one and the view has turned onto it.
+    Vec3 walkForwardAxis{}, walkRightAxis{};
     Vec3 anchor{}; // Player feet that placed this frame's head, eyes, and hands.
+    // How far the head was brought down to keep it under the surface over the
+    // player, metres (zero where nothing is over him).
+    float headDrop{};
     // How far the head, eyes and hands stand off the wall or ceiling the game
     // holds the player on (zero while it stands), and the head's height over
     // that surface as placed from the feet, before and after (while onSurface).
@@ -40,12 +50,24 @@ struct GameMotionFrame {
     // now, radians (0 level, a quarter turn on a wall).
     bool standing{};
     float viewTilt{};
+    // For the player's body: the up the view stands him along (the world's
+    // until it turns onto a surface), the point of that surface under his
+    // feet, from the feet (zero on the ground), and a flip's tilt alone, in
+    // the tracking space's axes as swing.tilt is (swing.tilt also carries
+    // the surface's turn).
+    Vec3 standUp{0, 1, 0}, floor{};
+    Quat flipTilt{};
 };
 // The wall or ceiling that holds the player, as the swing module reports it
 // (game_swing::Data's wall): the swing's own wall, or the game's wall crawl.
-// The XR worker passes the swing's own walls only: how the game's crawl takes
-// the stick is not measured yet, and a view turned onto a wall wants the
-// stick to go where the player looks along it.
+//
+// Both of them, since October 14. The crawl was held back while how it takes
+// the stick went unmeasured, and that left the one state whose own interacts
+// work on a wall - the crawl, the only one the game calls supported there -
+// looking nothing like the wall walking the player asked to keep ("i like how
+// it feel to walk on building and stand on their side"), so a vent cost him
+// the view. The stick's own axes are laid into the surface for it below, and
+// CrawlStick (crawl_stick.hpp) measures what the game does with them.
 struct SurfaceHold {
     Vec3 normal{}; // out of the surface, unit; zero: none holds the player
     Vec3 anchor{}; // the point of it under the player's body, in the world
@@ -72,6 +94,32 @@ constexpr float wallStandSpeed = 1.5f, wallStrideSpeed = 7.5f, wallTurnRate = 10
 // instead: wallClearance once the actor has turned onto it, then never closer
 // than minWallClearance; a head moved back stays where it went.
 constexpr float wallClearance = .5f, minWallClearance = .25f;
+// The head never goes through what is over the player. A ray from his feet
+// along the surface he stands on says how far there is, and the head stops
+// headClearance short of that, never closer to the feet than leastHeadroom -
+// a crouch, which is what a duct is. Inside the first mission's vent the head
+// stood at the player's own eye height over its floor and so out through its
+// roof (the player, October 14: "the camera clips through the top of it when
+// inside"). Measured along the surface's own normal, so it is one rule on a
+// wall, on a ceiling and on the ground; `headroomReach` is as far as the ray
+// bothers to look, past which nothing is over him that matters.
+constexpr float headClearance = .2f, leastHeadroom = .5f, headroomReach = 3.f;
+// The game's crawl on a floor is a vent or a duct: the game will not stand
+// the hero up there, so neither does the view. Once it has crawled him on the
+// floor for crawlSettleSeconds (its crawl turning him over a wall's top onto
+// a roof stands him up within 0.3 s) the head goes no higher than a crouch,
+// crawlRoom less headClearance over the floor, whatever a ray finds over it:
+// part of the first mission's duct has no roof the rays can hit, and the head
+// stood out through it at the player's own eye height (October 14, 19:57).
+constexpr float crawlRoom = 1.2f, crawlSettleSeconds = .4f;
+// On the game's crawl the stick goes along the game camera's own look laid
+// onto the surface; where less than crawlLook of that look lies along the
+// surface (the camera faces it), along the camera's up laid onto it instead.
+constexpr float crawlLook = .2f;
+// A break in play this short keeps the view standing where it stood
+// (GameTrackingRig::update); a floor that moves under a player the view has
+// turned onto it follows him in surfaceGlideSeconds (63%).
+constexpr float blipSeconds = .5f, surfaceGlideSeconds = .05f;
 // A surface: the actor's up more than 45 degrees from the world's; standing
 // again within 35 degrees.
 constexpr float surfaceEnterCos = .7071068f, surfaceLeaveCos = .819152f;
@@ -166,11 +214,25 @@ class FlipMotion {
 // movement, and must only submit while its gameplay/lifetime gate is valid.
 class GameTrackingRig {
   public:
-    // surfaceUp: the up of the player's actor, the world's while it stands.
-    // airborne: the player is in the air, so A or the left stick flips now
-    // (FlipMotion). surface: the wall or ceiling that holds the player.
+    // gameForward and gameUp: the game camera's look and its up, as it
+    // holds them (its third and second rows). surfaceUp: the up of the
+    // player's actor, the world's while it stands. airborne: the player is in
+    // the air, so A or the left stick flips now (FlipMotion). surface: the
+    // wall or ceiling that holds the player.
     GameMotionFrame update(const XrFrame&, Vec3 playerFeet, Vec3 gameForward, bool gameplay,
-                           Vec3 surfaceUp = {0, 1, 0}, bool airborne = false, const SurfaceHold& surface = {});
+                           Vec3 surfaceUp = {0, 1, 0}, bool airborne = false, const SurfaceHold& surface = {},
+                           Vec3 gameUp = {0, 1, 0});
+    // Why a frame was not placed (GameMotionFrame::inactive).
+    enum Inactive : uint32_t {
+        notPlaying = 1,     // a menu, a scene, the game's own camera
+        unfocused = 2,      // the headset not worn or not focused, or no frame
+        noHead = 4,         // the head's pose was not tracked
+        noFeet = 8,         // the player's feet were not a place
+        noCamera = 16,      // the game camera had no level look before the start
+        badFrameTime = 32,  // a frame of no time, or over a tenth of a second
+        staleDisplay = 64,  // the headset gave a display time no later than the last
+        noEyes = 128,       // an eye's pose or lens was not usable
+    };
     // How far a flick of the right stick turns the player (0: it does not);
     // 30 degrees until set. reset() keeps it.
     void snapTurn(float radians) {
@@ -209,6 +271,12 @@ class GameTrackingRig {
     // WALLS setting); on until set. Off, it stays upright: beside the swing's
     // wall, stood off the game's crawl. Switched off on a wall, the view turns
     // back level. reset() keeps it.
+    // How far it is from the player's feet to the surface over them, along
+    // the one he stands on, metres. Zero: nothing is, or nothing was measured,
+    // and the head goes where the player's own head is.
+    void headroom(float metres) {
+        headroom_ = std::isfinite(metres) && metres > 0 ? metres : 0.f;
+    }
     void standOnWalls(bool on) {
         standOnWalls_ = on;
     }
@@ -218,7 +286,7 @@ class GameTrackingRig {
     Rig rig_{};
     FlipMotion flip_{};
     Pose lastHead_{};
-    Vec3 lastFeet_{}, standOff_{};
+    Vec3 lastFeet_{}, standOff_{}, lastGameForward_{0, 0, -1};
     std::int64_t lastTime_{};
     bool initialized_{}, wasActive_{}, turnHeld_{}, pendingRecenter_{}, onSurface_{}, flips_{};
     // The trigger webs, and the web button changed since the last frame of play.
@@ -232,5 +300,7 @@ class GameTrackingRig {
     Quat surfaceTurn_{};
     Vec3 surfaceShift_{};
     bool standing_{}, standOnWalls_ = true;
+    float headroom_{};
+    Vec3 headDrop_{};
 };
 } // namespace spidy

@@ -10,6 +10,31 @@ EXPECTED_SHA256 = "e297d4d94f1ffe4febf289745e79e7b6fa233a788e7a00f480fc77c55db81
 # That file's own version (its version resource; the game logs "Build: v4.630.0.0"), Steam build 23986256 of
 # July 8, 2026. The launcher names it when a copy differs.
 EXPECTED_VERSION = "4.630.0.0"
+
+
+def file_version(path):
+    """An executable's own version, from its version resource ('4.630.0.0'); None without one."""
+    import ctypes as c
+    from ctypes import wintypes as w
+    version = c.WinDLL('version')
+    version.GetFileVersionInfoSizeW.argtypes = [w.LPCWSTR, c.POINTER(w.DWORD)]
+    version.GetFileVersionInfoSizeW.restype = w.DWORD
+    version.GetFileVersionInfoW.argtypes = [w.LPCWSTR, w.DWORD, w.DWORD, c.c_void_p]
+    version.GetFileVersionInfoW.restype = w.BOOL
+    version.VerQueryValueW.argtypes = [c.c_void_p, w.LPCWSTR, c.POINTER(c.c_void_p), c.POINTER(w.UINT)]
+    version.VerQueryValueW.restype = w.BOOL
+    size = version.GetFileVersionInfoSizeW(str(path), None)
+    if not size:
+        return None
+    data = c.create_string_buffer(size)
+    fixed, length = c.c_void_p(), w.UINT()
+    if not version.GetFileVersionInfoW(str(path), 0, size, data) or \
+            not version.VerQueryValueW(data, '\\', c.byref(fixed), c.byref(length)) or length.value < 16:
+        return None
+    signature, _, high, low = struct.unpack('<4I', c.string_at(fixed.value, 16))
+    if signature != 0xFEEF04BD:
+        return None
+    return f'{high >> 16}.{high & 0xffff}.{low >> 16}.{low & 0xffff}'
 # Research leads from ArkWeb 17ec697bd431fce96a60fff1075f7e399d296058.
 # These are byte/address facts, independently checked against the local PE.
 # A match does NOT establish a valid calling convention or render hook.

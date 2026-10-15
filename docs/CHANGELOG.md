@@ -3,7 +3,629 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 13): no display driver error when a menu opens,
+**Latest build (October 15, evening): the game screen from the pause menu.**
+You: "move the VIEW: GAME SCREEN to the first menu (the one with resume)",
+and "its the same menu as the ones spidy settings are in just not the same
+depth".
+
+- **SWITCH TO GAME SCREEN, under RESUME.** The pause menu's first page now
+  has it right under RESUME: A plays the game as it is on the 3D screen, and
+  the line then reads SWITCH TO VR, which A takes back to VR. It is no longer
+  in Settings > SPIDY VR. As you said, the page is built from the same kind
+  of items as the Settings tabs; it shows them as buttons, so this is a
+  button that says what it does next.
+- Measured in the game, without a headset: the line under RESUME, A turning
+  it to SWITCH TO VR (the view's setting to GAME SCREEN) and A again back;
+  the SPIDY VR tab without it, every one of its other rows still changing,
+  resetting and RESET ALL as before (tools/probe_menu.py, brought up to date:
+  it still stepped through STAND ON WALLS, gone since October 14).
+- `tools/probe_menu_trace.py` records the menus' calls into Flash and its
+  callbacks, which is how the page was found.
+
+**Earlier build (October 15, afternoon): hands of your own, one web through
+both hands, webs always physical, the game on a 3D screen, Epic copies.** You,
+on October 15: "Grabbing webs with both hands makes the section between the
+hands change shader", "Hand poses for web shooting (and in general) seem to be affected by some
+animations which is bad", "remove non physical web, no need for it", "remove
+old hands graphics", "add Epic Games Store support (or remove blocker)", and
+"add a pause menu button\toggle to switch between full vr mod and normal
+version in a virtual desktop (with 3d depth) and normal game conrols and
+mechanics".
+
+- **Your hands are never the game's.** Spidy bent only the finger joints past
+  the palm, and only while a hand made a fist or shot a web. The rest of the
+  hand was the game's animation: the bones in the palm, how far each finger
+  spreads and twists, the thumb, and the whole hand whenever it held nothing
+  (pokenate28's "the hands stay fists after web swinging until i jump" was
+  the game's fists). Now every frame starts the hand from Spider-Man's own
+  hand at rest, held to your wrist, and bends it from there: open when you
+  hold nothing, a fist, or the web-shooting hand. In the test, a game hand
+  with its wrist bent, every bone in the palm spread and twisted and every
+  finger joint and the thumb turned off its hinge comes out the same, joint
+  for joint, as a hand from rest.
+- **A controller the headset loses keeps its arm.** Out of the headset's view
+  (behind your back, close to your face) the arm went back to the game's
+  animation until the controller came back. Now the hand stays where it was
+  last seen from your body, moving and turning with it, and opens.
+- **No more red gloves.** Spidy's own gloves showed whenever the body was not
+  on the hero for a moment: the first frames, a respawn, a hitch of the game.
+  They are gone, so in such a moment there are no hands.
+- **The web between your two hands is the game's.** That piece was Spidy's
+  own strand, flat colour drawn over the game's picture: another material,
+  drawn over your fist, in full colour in slow motion. Now the game's rope for
+  that web leaves your lower wrist, bows as far as the web between your hands
+  is slack, and runs through the upper wrist on to where it hangs. It is still
+  one rope, so taking hold makes no shot's sound. Spidy hooks the game's own
+  step that lays a rope's points at the hand (95f9c0) for it; where that hook
+  cannot go in, Spidy's strand draws the piece as before.
+- **Webs are always physical.** PHYSICAL WEBS is gone from Settings > SPIDY VR
+  and from the launcher's options: a web always bends round an edge, is held
+  by your hand and pays out as you walk.
+- **VIEW: GAME SCREEN.** VIEW in Settings > SPIDY VR now switches between VR
+  and the game as it is: its own camera on the game screen in the headset, in
+  3D at GAME SCREEN 3D's depth as cutscenes are, Spider-Man and his webs the
+  game's, and the controllers an Xbox controller. Two controls the Touch
+  controllers lack: hold the menu button for the game's Back (the map; a tap
+  still pauses), and hold the left stick's click while you push the right
+  stick for its D-pad (down heals). The left stick's click alone is still the
+  game's L3, and both sticks clicked its L3 + R3. VIEW: VR goes back. Until
+  now that view was flat, and only a real gamepad played it.
+- **Epic Games Store copies.** The launcher took only Steam's file, by its
+  checksum. A copy of the same version (4.630.0.0) that is not Steam's file,
+  as the Epic Games Store's is, is now tried: the launcher marks it yellow,
+  and a session starts it through the Epic Games Launcher when Steam has no
+  copy. Whether VR runs on it depends on whether the code in Epic's file sits
+  where it does in Steam's. Each of Spidy's modules checks the game's code
+  where it works with it and refuses where it differs, so if it does not, VR
+  stops with a code in the session log instead of misbehaving.
+- **`-NoPromptHelp` started no VR**: its switch set a bit the XR module's
+  start refused (code 1001). Fixed.
+- **Gadgets: a wheel of your own.** Your Blade & Sorcery wheel ("wheel
+  shows im front of arm while holding button, motion with arm selects and
+  releasing sets seleciton"): hold X and a ring of your gadgets opens in
+  front of that hand (the right one on a Steam Frame, where X is), each with
+  its charges; move the hand toward one and it lights, with a tick; let go of
+  X and it is equipped in the game - its own HUD shows it - and your free
+  hand's trigger fires it from your hand. The web shooter at the top gives
+  you web balls again, as before (the wheel starts there). A tap of X is
+  still the game menu, sent as you let go.
+  - The gadgets are the ones the game's own wheel offers, read from your
+    inventory, equipped the way its wheel equips them, and fired through the
+    gadget's own fire, aimed where your hand points; the game takes the
+    charge. A gadget with no charge left does not fire.
+  - Measured in the game, without a headset, on your save: Electric Web, Web
+    Bomb, Trip Mine, Spider-Drone, Suspension Matrix and Impact Web each
+    equipped (the HUD followed), fired once from the hand and gave up one
+    charge (4 to 3, Impact Web 10 to 9); Concussion Blast had none left.
+    The gadget you had equipped was equipped again afterwards.
+
+**Checked:** 328 core tests (new: the game's animation changes nothing in a
+hand, a lost controller's arm, the game screen's two controls, the rope's
+points between two hands; rewritten: the
+open hand and the fist start from the body's own hand; the SPIDY VR rows
+without PHYSICAL WEBS), the launcher's, the GPU test, and the Python checks
+(new: an Epic copy started by its launcher's link when Steam has none, a game
+in another Steam library, the Epic manifest). With the hand's reset turned
+off, the new hand test fails as it should.
+
+**Run in the game without a headset** (15:00 to 15:50, fresh games each
+time): the body probe put every finger joint of the fist and of the
+web-shooting hand at its angle and the wrists on their targets, the fist
+clean in the eye image; the web probe with a web in both hands drew the
+game's own web from the lower wrist, bowing, through the upper one (its
+start on the upper wrist in all 271 frames); the shooter probe still fired
+web balls 8 of 8 from the hand; the gadget probe is above.
+**Not tried in the headset:** the hands' feel, the wheel itself (its look is
+in the GPU test's image), and VIEW: GAME SCREEN, whose gameplay only a
+headset session reaches. The web probe's command is version 2 (the web held
+in both hands), and `probe_web_frames.py --held` holds one that way;
+`probe_gadgets.py` equips and fires each gadget.
+No one with an Epic copy has tried it yet.
+
+**Earlier build (October 15, noon): the vent from where you stand.** You, on the
+build below: "didnt work, couldnt trigger it to ask for interaction". Your
+session (`game-vr-20261015-111549`) had you on Spidy's wall up the lift shaft,
+18 s of it at the vent's height, 32 presses of Y on that wall, and the game
+listing nothing near you the whole time - so no ring, and nothing for Y to use.
+
+- **The vent was never listed.** The game lists an offer near the hero (within
+  3.35 m) when its own check says yes - which Spidy answers as the crawl would
+  where you stand, and your feet were 2 m below the vent, out of its 1.25 m
+  reach - or when two more checks of its own on the real hero say "show it, not
+  yet usable", which a hero who came up the wall from below never passed. My
+  test runs had all climbed to the vent on the game's crawl first, and that is
+  why they listed it. Spidy now lists every offer the game checks for you,
+  whatever it answers.
+- **Usable from a couple of metres, not only from on top of it.** For the one
+  you point at, Spidy tries the wall around it, with the game's own check, for
+  a spot where the game says yes - within 2.5 m of you - and the use puts the
+  game's crawl there. From where you were that is a metre up the wall, to
+  where the game's own crawl stands at that vent.
+- **Spidy's Y came too early.** The game raises its "[Y] Enter" in the same
+  frame it picks the vent, and a Y in that frame was lost - and took the prompt
+  with it, so no Y worked after it until the hero walked out of reach and back.
+  Spidy now presses 0.3 s after the game's pick, and once more if the game
+  still holds the vent 0.8 s later.
+- The report (XrData 36) also carries the offer module's own counts: the
+  updates it ran with the crawl's mask, the offers the game checked for you,
+  the spot searches and the spots found, and Spidy's second presses.
+
+Measured in the game, without a headset, on three fresh games where the hero
+came up the lift shaft on Spidy's wall from below, the vent 2 m above his feet
+as in your session: the vent was listed, out of reach; the search found the
+spot the game's own crawl uses at it (1.1 m below its middle, 1.15 m up the
+wall from him); the use had him there on the game's crawl in 0.1 s, and the
+game picked the vent and raised its prompt 0.1 s later. Pressed in that same
+frame, Y did nothing, and no press after it did either. Pressed 0.3 s or 1 s
+after the pick, the game's "[Y] Enter" came 16 ms after the press and he went
+into the duct. Not yet seen in a headset: the ring and the reach from a real
+wall walk.
+
+**Earlier build (October 15, late morning): Spidy's own walls everywhere; point
+at a vent and press Y.** You, after the morning build: "feels really bad, and i
+oobed in like no time without the option to get back. can you not just use our
+locomotion system only and override the games state to what we need (make the
+game think we're crawling when on a wall when on a wall so that interactions
+work)", and then "why not allow me to point with my hand to select
+interactions?"
+
+- **Every wall is Spidy's again.** Walking at a wall from the ground takes you
+  up onto Spidy's own wall (the game's jump, then Spidy's hold), as swinging
+  into one does. Stopping on a wall no longer hands you to the game's crawl,
+  and the stick up a wall no longer runs the game's own wall run. Those
+  hand-overs between the game's crawl and Spidy's wall were what felt bad,
+  and one of them put you out of the world.
+- **The fall out of the world.** In your session (`game-vr-20261015-094756`,
+  55 s in, the lift shaft) the game was turning you from its crawl (its wall
+  state `0x80a6`), with your body on the wall's surface, inside its collision.
+  The stick pushed at the wall from there, and Spidy's ray met the wall's back
+  face, turned toward the body: Spidy took that face as a wall (its normal
+  pointing into the shaft's wall, you 0.6 m behind it) and held you on it, on
+  the wrong side. Spidy now takes no wall while the game holds you in one of
+  its own wall states, and for a second and a half after the game's crawl has
+  held you on a wall it never takes that wall's face met from behind. The one
+  way off the game's crawl onto Spidy's wall is the walk on from it, which
+  takes the crawl's own wall, found from the outside.
+- **Point at a vent or a door, press Y.** On Spidy's wall the game offers
+  nothing - it counts you as in the air - and found in the game, three things
+  shut it: the hero's offer list takes only the air's kinds there, each offer
+  judges your place from the hero's record (0.9 m off the wall), and a vent
+  also wants the crawl's state on you. While Spidy's wall holds you, Spidy
+  now answers those three as the game's crawl would where you stand; nothing
+  else in the game sees a change. The game still picks nothing for you there
+  by itself, so you pick: point either hand at the thing, and a turning ring
+  shows round it in that hand's colour, with a tick in the hand, when you can
+  use it from where you are; a faint ring when you need to come closer. Press
+  Y: the game's own crawl takes you onto the wall there (its own way onto a
+  wall, under a fifth of a second, no drop), the game picks the thing itself,
+  and Spidy presses its Y for you. It is the game's own vent entry from its
+  own crawl. Your stick waits until that is done; if the game will not take
+  you, you stay on Spidy's wall.
+- **Vents and ducts.** Inside one the game crawls you, as in the plain game:
+  no mount and no Spidy wall in there, its shafts included. Stand up or jump
+  out at its end and every wall is Spidy's again.
+- The session report (XrData 35) counts the frames a hand pointed at
+  something usable or out of reach, the presses that asked for a use, the
+  ones the game refused, the ones that reached its Y (and whether it had
+  picked the thing first), and the ones given up.
+
+Measured in the game, without a headset: at the first mission's vent, from
+Spidy's wall, the vent came up usable, the use was asked for, the game's crawl
+had the hero 0.1 s later, the game picked the vent 0.1 s after that, and its Y
+took him in: he ended on the duct's floor crawl, inside. Then 1,683 samples of
+crawling the duct with the stick sent to the game and to Spidy as a session
+sends it: no Spidy wall and no mount in any of them. In free roam, walking at
+a wall from the ground: Spidy's wall had him 0.23 s after the stick, and he
+walked up it at 6 m/s, 0.95 m off it. Not yet seen in a headset: the rings,
+the reach from a real wall walk, and how it all feels.
+
+**Earlier build (October 15, morning): the stick goes where you push on a wall,
+the duct keeps its roof, and the view turns about your eyes.** You, after the vent
+worked: "transition between crawl and standing is a bit awkward, in crawling is
+still see some of the body and in the vent im move really slow sometimes like im
+stuck or blocked by something and can clip through the roof sometimes". Your
+session (`game-vr-20261014-195702`) showed all four.
+
+- **Slow or stuck on a wall: the stick went the wrong way.** On the game's
+  crawl with the stick pushed, your median speed was 0.67 m/s against the
+  crawl's 2.6, and the game often moved you sideways when you pushed up. Spidy
+  laid the stick onto the wall in the wrong frame. I measured the game's own
+  rule on a building's face with its camera turned seven ways: the crawl takes
+  the stick along the game camera's look laid onto the wall, or along the
+  camera's up where the camera faces the wall too squarely for that, and right
+  is the wall's own right of that. Spidy now sends the stick in that frame.
+  Checked in the game on the same wall, eight directions per camera angle,
+  each sent both ways: the new rule went 29 degrees off on average at the
+  crawl's full speed; the old one 61 off, as far as 141 (backwards), and some
+  pushes crawled at 0.2-0.7 m/s. In the lift shaft and in a vent's shaft,
+  where the camera looks up the shaft beside you, the new rule sends "up" as
+  up; the old one sent it as a push to the side.
+- **Through the roof in the duct.** Part of the first mission's duct has a
+  roof the game gives no collision, so the ray that keeps your head under a
+  roof found nothing there and your head stood at your own height, out through
+  it (your eye snapshots at 56 s and 141 s). The game crawling you on a floor
+  now counts as a crawl too (`game_swing::Surface::floor`: its crawl flag, the
+  hero upright), and after 0.4 s of it your head goes no higher than a crouch,
+  a metre over the floor, whatever a ray finds - the game only crawls you on a
+  floor where you cannot stand. A crawl over a wall's top onto a roof stands
+  you up within 0.3 s and never reaches it.
+- **Some of the body while crawling.** In the duct the game's crawl laid your
+  legs out in front of you (your snapshot at 136 s): the body only planted its
+  feet on walls, and on the duct's floor it kept the game's crawl stance. It
+  now stands on the duct's floor as it stands on a wall, its fingers its own,
+  and under a roof that holds your head down its legs kneel - knees down,
+  shins back along the floor behind you - where a squat would have folded the
+  knees up in front of your eyes.
+- **The awkward turn between a wall and a floor.** Three things. Twice in
+  your vent the view turned onto a shaft's wall, snapped level for a frame and
+  turned again - a frame the game or the headset could not give (the gate's
+  `tracking`) reset the view to level. A break shorter than half a second now
+  keeps the view standing where it stood. The view used to turn about your
+  feet, swinging your eyes round an arc as high as you stand; it turns about
+  your eyes now, your eyes going straight to where they stand on the new
+  floor, the two ending together in the same sixth of a second. And at a
+  shaft's top the view stayed on the wall a third of a second after the game
+  had taken you over the lip, then jumped to you: the hold kept for the
+  game's turns now follows your feet, and only while you are at rest.
+- The session report (XrData 34) counts the frames play could not place and
+  why, the frames the game crawled you on a floor, held your head there and
+  knelt the body, and the game camera's look and up.
+
+Not yet seen in a headset: the view's turn, the duct's roof, the kneeling body,
+the stick on a shaft's wall in a vent.
+
+**Earlier build (October 14, evening): stop on any wall and the game holds you;
+push up it and you run.** You: "fixed nothing still body in front of me", "wall
+walking is the same functionality ingame wallrunning, wall standing is like wall
+crawling. there is no way it cant be fixed properly", "i dont want it to be lying
+at all", "I want the wall walking to feel like it and for me to be able to enter
+the vent".
+
+- **The body lying in front of you.** My last build handed the body the wall's
+  quarter turn twice on the game's crawl: once as the hero's own frame (the
+  crawl turns him onto the wall) and again as the view's tilt, so it lay along
+  the wall in front of you. On Spidy's own wall the same tilt counted as "in
+  the air" and left the legs in the game's pose. The body is now told the
+  surface you stand on - its up and a point on it, exactly the floor your view
+  stands on - and stands along it with both feet planted on it, on any wall,
+  whoever holds you there (`native_body` command 4, `body::Targets::floor`).
+  The new test (Spidy's wall: hero upright, you on the wall) fails on the old
+  code and passes now.
+- **Why the vent ignored you on Spidy's wall, found in the game.** The hero's
+  offer processor only takes offers of the kinds its mask allows: every kind on
+  the ground, `0x23` on the game's crawl, `0x2` in the air - and Spidy's wall is
+  the air to the game. The vent (kind `0x1`) also checks for the crawl itself.
+  Read live at the first mission's vent: on the crawl the vent was its best
+  offer; off it, the mask went to 0, then 0x2.
+- **Stop on Spidy's wall and the game's own crawl takes you, right there.** The
+  game has its own way onto a wall (its transition manager's crawl entry, the
+  one its wall grabs use). A quarter second after you come to rest on Spidy's
+  wall, Spidy asks it for the crawl at the floor your view stands on, holding
+  you until the game has begun, then letting go. Measured: the crawl had the
+  probe in 0.17 s at the same height, no drop (taken 1 of 1); the vent became
+  its best offer; Y took it into the duct, exactly where the walked-onto crawl
+  goes (-528.04, 92.0, -586.93). If the game doesn't begin within 0.4 s or you
+  drop half a metre, Spidy has you back and doesn't ask again until you move.
+- **Walking up a wall is the game's own wall run.** On the game's crawl,
+  pushing the stick up the wall now holds the game's RT for you: its wall run,
+  about 7 m/s up (52 to 58 m in 0.76 s, measured with Spidy's swing running and
+  staying out of it the whole way). Let go and the game stands you on its crawl
+  again at the new height. Across or down a wall you move at the crawl's own
+  speed (about 2.6 m/s). A wall you swing onto is still Spidy's, for fast
+  running, until you stop.
+- **No drops on the way.** Dead ends measured today and not shipped, each of
+  which dropped the probe or worse: the game's direct warp into its crawl
+  (held at once, then crashed the game's audio as soon as the crawl moved); the
+  game's own let-go of its crawl (pushes you 1.3 m off the wall for 0.35 s,
+  then you fall - nothing can hold that body); Spidy taking you back the
+  moment you let go of a run (fell 11 m); and taking the game's jump off the
+  crawl for its run (fell 43 m - the run now begins only from your stick up
+  the wall). The final binaries ran the whole thing end to end: jump off the
+  crawl (caught by Spidy's wall at once), rest (the crawl, no drop), up to the
+  vent, Y, into the duct.
+- **Your view through the switches.** Spidy's wall and the game's crawl now
+  put your floor on the same point of the wall, and the view keeps its wall
+  for up to 0.4 s while the game turns the hero between its states, so neither
+  hand-over moves or tilts you (your session had a 48 degree dip there).
+- Also: the swing and movement bridges start again after a stop (a second VR
+  session in one game process used to get no swinging at all), and the session
+  report records every hand-over (XrData 33: crawls asked, taken, declined,
+  frames of the game's run, frames the view held through a gap).
+
+Not yet seen in a headset: all of it.
+
+**Earlier build (October 14, later): no more out-of-bounds, and no crawl on your
+legs.** Your first headset session with the walk/swing rule found three things.
+
+- **"I then swung again and got oob completely."** My doing. Jumping off a
+  wall you had walked onto (the game's crawl holds your body right on the
+  wall's surface), Spidy's wall caught you on the same wall - but its ray
+  started inside the wall's surface and recorded the wall facing backwards:
+  normal (+0.71, 0, +0.71) on a wall facing (-0.71, 0, -0.71), your body
+  "0.5 m behind" it. Your body was fine; the view stands you out along that
+  normal, so it was placed through the wall, into the void. Spidy now refuses
+  any wall the body is behind (`Swing::joinWall`; the test fails without the
+  guard and passes with it).
+- **"With crawling animation playing."** On every one of 1,256 crawl frames
+  the body's legs fell back to the game's pose - the crawl. The torso, head and
+  arms were already yours; the legs were only "standing" if the game's own
+  feet were within a few cm of the floor, and the crawl's never are. On the
+  game's crawl the feet are now planted flat on the floor under the hips, the
+  game's legs ignored (`body::Targets::plant`). Tested on both test rigs, not
+  yet seen in a headset.
+- **"Swinging and attaching to wall from swing looked like wall walking but
+  vent didnt work."** As built: a wall you swing onto is Spidy's, and the game
+  registers nobody on it. Measured today, every way of handing you from
+  Spidy's wall to the game's crawl fails - held against the wall the game
+  never grasps you; pressed into it at 3 m/s it grasps for 0.5 s at the vent
+  and lets go, and on a plain wall doesn't grasp at all. So the vent needs a
+  wall you walked onto - or "Wall running" off, which makes every wall the
+  game's crawl (now with your view and a standing body).
+
+Also measured in that session: the game's crawl reads the stick 15.5 degrees
+off the axes Spidy lays into the wall, the same on every sample (agreement
+0.999 over 26). Left as is for now - one wall, one session.
+
+**Earlier build (October 14): walk onto a wall and the game holds you; swing
+onto one and Spidy does.** You: "the vent in the top is the target, there are
+similiar events in the game with vents outside. its not even prompting me to
+press anything in walking mode which means that its not registering me", and
+"solve it end to end with no regression".
+
+**What was wrong.** A wall Spidy holds you on is one the game calls the *air*,
+and the game registers nobody in the air: in every session on Spidy's wall at
+the first mission's vent the game raised no prompt at all. It can't be handed
+your body in midair either - the game counts its own fall from the moment you
+left the ground, right through Spidy's whole climb, and its first step of its
+own falls at **42 m/s** (measured at that vent: vertical speed -0.1 to -42.1 in
+one step). Every hand-over tried today went through that, which is why each one
+dropped you. And walking up into the vent's own opening breaks Spidy's wall,
+which is very likely your "wall walked to the vent and fell".
+
+**What changed.** Who holds you is decided where it costs nothing - on the
+ground - by how you got onto the wall, not by where you are:
+
+- **Walk onto a wall from the ground, and it is the game's own crawl.** Spidy
+  no longer jump-mounts it (`SwingConfig::mountFromGround`, off). The crawl is
+  the only hold the game calls standing, so every vent, door and prompt on that
+  wall works, anywhere in the city. Your view still turns so the wall is your
+  floor, your body still stands on it, and your head stops short of a vent's
+  roof - the work from this morning, which only ever applies on the crawl.
+- **Swing or fly onto a wall, and it is still Spidy's**, as fast as before.
+  That is where the game's own wall state used to freeze a swing for 2-3 s, so
+  it stays Spidy's.
+- **Nothing ever changes who holds you in midair.** The indoors rule, the
+  interact hand-over and every release from Spidy's wall are gone.
+
+**Leaving a wall you walked onto** needed two fixes to stay as quick as before:
+
+- A web from the game's crawl was refused: its "clear line from the body"
+  check started on the wall's own surface. It starts a body's width out now.
+- The takeoff's A alone does nothing on the game's crawl - every stick
+  direction only leaps you *along* the wall; B, the bumpers, the triggers and a
+  held A do nothing at all. Only the game's **RT + A** leaves it (in 0.09 s).
+  So any jump while the crawl holds you - yours or a web's takeoff - goes out
+  as RT + A, with RT already down from the moment a web holds. And the takeoff
+  counts you off once you are 12 cm clear *of the wall*, not 12 cm above where
+  you started.
+
+**Measured in the game, the whole path, with Spidy's swing running and walls
+on** (`tools/probe_vent_walk.py`, profile 3, twice): forward from the load
+point, up the 42 m shaft - **1,265 samples on the game's crawl, none on
+Spidy's wall, Spidy never owning the body** - the vent raised its
+`[BTN_Y] Enter`, Y took you into the duct. A web from the crawl 22 m up the
+shaft: Spidy swinging **0.16 s** after the web held, the same as a web from a
+ledge (0.17 s).
+
+**The trade-off, said plainly:** a wall you *walk* onto now climbs at the
+game's crawl speed, about 2.6-3.6 m/s, where Spidy's ran at 6. RT does not make
+the crawl run - it throws you off the wall. Swing onto the same wall and it is
+Spidy's speed as before.
+
+**Also fixed:** the world-ray bridge could not be started twice in one game
+(a second VR session in the same game got no rays); the headroom ray was cast
+along the wrong axis on Spidy's wall and crouched your head for 22 frames.
+
+313 core checks, 23 launcher checks, all six protocol suites pass. **Not yet
+played in a headset.**
+
+**Earlier build (October 13): the game's own prompts answer in VR.** You:
+"there is a repeated pattern of interaction bugs ... most of them mostly rb+lb
+or interaction button related during story events or random encounters. I feel
+like we're patching stuff but there must be a more systemic way."
+
+There was. These were never separate bugs.
+
+**What they were.** VR play could send nine of the pad's sixteen controls, and
+the game picks the one a moment asks for out of all of them. So every story
+beat or encounter that wanted one of the other seven stopped a player, and each
+was patched on its own after someone reported it: the right stick's click for
+the game's LB + RB on October 11 (a door of the first mission), that stick's
+pushes for its heal and its LT + RT on October 12 (that mission's heal and its
+vent). What play could not send at all, on Touch and Index: **the game's X, its
+L3, each bumper and each trigger on its own, and three ways of its D-pad.**
+Around 20 of the 83 open topics in #spidy-bugs and #spidy-help were that one
+hole - "Can't pull objects with LB + RB (Pico 4 Ultra)", "cant use Vents", "I
+can't beat it bc it says tap x repeat but tapping x opens the menu" (in play,
+VR's X is the game's Back), "SO MUCH controlls dont work", Air Launch, the Fisk
+turrets, the caged civilians, the pigeons. Players were guessing for each
+other: "Just click x because the things they want you to click is y to web
+strike. Or b."
+
+**What the game already tells us.** It names the button of every prompt and QTE
+it raises, through its own UI: `placeablePromptManager` (ShowPlaceablePrompt,
+HidePlaceablePrompt, SetPlaceablePromptProgress), `qteManager`
+(AddQTE(button, subtype, miscVal, miscValTwo), UpdateQTE, ClearQTE) and the
+world markers (POIInteractAvailable, UpdateInWorldPrompt). All of them pass the
+one call wrapper at 0x1d1cf30 that a VR session already hooks for the SPIDY VR
+tab, and their texts the localized lookup at 0x1749970 that it hooks too. The
+names sit in the same table as BotMoverManager, which the enemy scan already
+reads. So the vocabulary is the game's, not a list of moments:
+
+- **One table over the icon ids**, whose endings are the same in all nine
+  device families (X360IconMap, XOneIconMap, DualShockIconMap,
+  DualSenseIconMap, SteamDeckIconMap, SwitchProIconMap, GenericIconMap,
+  MkbIconMap, SteamIconMap), plus the letters the texts spell out. A
+  PlayStation family's X is the pad's A, and its Square the pad's X.
+- **Y sends whatever is asked.** While a prompt is live, the interact button
+  sends its buttons - combos and holds included - instead of the game's Y. One
+  control for every prompt in the game, present and future, in place of a
+  gesture a moment. A pull with both webs at the thing does the same, so the
+  gesture stays the first way in and the button is the fallback.
+- **The prompt reads in VR terms.** A text that spells its button out is
+  rewritten: "LB + RB (Hold) Throw" becomes "RIGHT STICK CLICK (Hold) Throw",
+  and where play has no control of its own the prompt says "Y". An icon id is
+  read but never rewritten - the ids sit inside the UI's markup, whose form is
+  still unknown, and a name changed in there would be markup the game cannot
+  resolve.
+- **The pad layer closes the hole by construction.** Clicking both thumbsticks
+  (free since October 12: neither stick's own press is half of the chord)
+  latches the whole controller - grips as LB and RB, triggers as LT and RT, X
+  as the game's X, the right stick as its D-pad. It never latches while a web
+  carries the player and lets go after 20 s of nothing pressed.
+- **A check over the whole pad, not the reported moments.** A test builds every
+  combination of the VR controls in both mappings and asserts that each of the
+  pad's 18 controls comes out of one of them; it also asserts that the nine are
+  the ones play alone never had, and that what Spidy tells a player matches
+  what the mapping sends. That test is what would have failed before a player
+  found the next gap.
+- **The session report counts the asks.** Its "prompts" section carries the
+  game's calls into Flash and the prompt interface's among them, prompts raised
+  and cleared, texts that named a button and texts rewritten, what it is asking
+  for now and last, the asks VR play could not have sent on its own, the
+  interact presses that carried one, and the pad layer's latches. The next
+  release's list comes from that instead of from whoever happens to post.
+- **Keyboard prompts are counted too.** "it says click f to decipher its only
+  giving me keyboard prompts" is the game showing the icons of the device it
+  last saw; those name no pad button, so they are counted rather than guessed
+  at.
+- **The whole vocabulary, not the [BTN_*] half of it.** The first pass read the
+  twelve `[BTN_*]` tokens. The exe keeps the rest of the alphabet in one place:
+  at image 0x387ae40, under the name "CineQTEShotController - Button Prompt
+  Location Handles", sit UNKNOWN, `[BTN_A]`, `[BTN_B]`, `[BTN_R2]`, `[BTN_R3]`,
+  `[BTN_L1]`, `[BTN_L2]`, `[BTN_L3]`, the four `[DPAD_*]` and `[MKB_CUSTOM00]`
+  to `[MKB_CUSTOM08]`; `[LS]` and `[RS]` stand beside it for
+  CineQTEShotControllerStickMotionAction. That is the cinematic QTE's own
+  table - the prompts of exactly the story beats and encounters you reported -
+  and three of its families were unreadable: a D-pad way, a stick the game asks
+  you to move, and a key. They are all read now, a stick to be moved carries no
+  way (the demand has its own bit for it) and `[LS]` is the player's own left
+  stick in VR while `[RS]` needs the pad layer. The exe also puts each token
+  beside the thing that raises it: `[BTN_X]` by PileOnJobHost and "Skirmish
+  Job" (the random encounters), `[BTN_Y]` by MrNegabig, `[BTN_R1]` by
+  ZipToGroundTarget, `[BTN_CANCEL]` by HeroStateDialog - which is why
+  `[BTN_CANCEL]` stays unmapped.
+- **The keyboard count was looking for the wrong word.** It tested a text for
+  "Mkb", the icon families' spelling. The token the game actually sends is
+  `[MKB_CUSTOM00]` and up, in capitals, so a keyboard prompt was counted only
+  when it came as an icon - and "it asks for F on the keyboard" would not have
+  shown in a report at all. A prompt now carries the fact itself
+  (`Demand::keyboard`), from either spelling.
+- **A probe can hand the controller back.** The virtual pad holds input slot 0,
+  and the game stops reading the keyboard once it has seen a pad press, so a
+  probe that pressed anything left the player unable to move until the game was
+  closed ("i cant control it"). `SpidyPadRelease` releases it. Fixing that
+  found a real bug beside it: `install()` skipped every module it had already
+  hooked and then called that a failure, so **the pad was dead for the whole of
+  a second VR session in one game process** - the first session's end
+  uninstalls it. Starting VR twice without restarting the game now works.
+
+**And then the vent itself, in the game.** Driven there with the pad through
+SELECT PROFILE into profile 3 and straight up the Fisk Tower elevator shaft,
+with no headset. The vent's prompt arrives as an argument of
+`POIInteractAvailable(5, 1, '')` / `POIInteractAvailable(5, 0, '[BTN_Y] Enter')`
+with `POISetButton` beside it, so it says `[BTN_Y]` and the reading gives 32768,
+the pad's Y - the same token that draws as **F** on a keyboard. Y works: it was
+consumed in the same millisecond it was sent. Then, standing still at the vent
+with the interact live, **A alone - no stick - and 63 ms later the game withdrew
+its own interact**. It never ignored the button: there was no interact left to
+press. Spidy's wall running drives the hero in the game's air state (which
+`probe_wall_run.py` asserts), so with walls on the interact is gone before the
+player presses anything, and no button of any kind can open the vent. Until the
+swing is taught to hand the player back for an interact, **Wall running off**
+is the answer at a vent. Details and the timelines: VALIDATION.md.
+
+**And the thing that closed your game, which was not a crash.** You: "Meet
+crashed on game load." The session report says otherwise, and says exactly what
+happened. The game ran 20 seconds, `game_exited` true and `error` null, the
+whole time on its own screen (`presentation: game_screen`, the gate never
+opened), and **`tracked` was 0 in all 414 frames: the headset never tracked
+once**, its head pose all zeros and both hands identity. Meanwhile
+`vr_buttons` shows the player's own Touch **B three times and A twice**, and
+`pad_buttons` shows each of them going out as the pad's `0x2000` and `0x1000` -
+the last A four frames before the end, followed in the game's own log by
+`[Save] Request save type 2` and the process ending. The title screen's **QUIT
+GAME** is two moves from the top. The game saved and quit, because buttons
+pressed blind while the headset was being put on were driving its menus.
+
+So nothing reaches the game until the headset has given a tracked head pose
+once (`game_pad::mappingFor`). Before that the player cannot see anything Spidy
+draws, so a press of theirs is a press at a screen they are not looking at;
+after that first pose the mapping is exactly what it always was, so a session
+that reaches the headset at all is unchanged.
+
+**The fix, in the end, was the player's: indoors the game keeps the walls.**
+You: "i also think that wall walking will need to be disabled inside vents, the
+camera was fine without it." That turns it from a rule about the press into a
+rule about the place, and that is what makes it safe - the walls are off before
+you are ever stuck to one, so there is nothing to let go of and nothing to drop
+you. Indoors the game's own crawl holds you, so its interacts work, its camera
+behaves, and wall running is untouched everywhere else.
+
+`spidy::Enclosure` reads the room from five of the world rays a session already
+casts - one up, four along the ground - and counts how many ways the player is
+closed in: a ceiling within 4 m, or surfaces within 4 m on opposite sides. Two
+of those three is indoors. A vent has all three, a lift shaft its two pairs, a
+corridor its sides and its ceiling; an alley with open sky has one, and a
+street, a rooftop or a building face none. A reading has to hold 0.4 s before
+the verdict follows it, so a doorway does not flap the walls, and the change
+waits for a frame where the ground or the game's own crawl has the player -
+never while the swing holds him on a wall of its own, which is the drop.
+
+There is no list of places in it. The next vent is already covered.
+
+Measured in the game on the way in to that vent (profile 3, the Fisk lobby and
+the shaft above it): **0 ways in the lobby** - nothing within 4 m, wall running
+stays on - then **2 ways in the shaft** (north 1.72 m, west 1.74 m) and **3 in
+the duct** (north 0.02 m, south 0.30 m, ceiling 0.88 m). The switch happens
+while the player walks on the floor, which is exactly the safe frame the rule
+waits for. **XrData is version 30, 960 bytes**, carrying `indoor_frames` and
+`walls_handed_to_game`.
+
+**The fix that did not work: the interact hands the player back.** Spidy cannot wait for the game
+to ask - while it holds the player the game is offering nothing, so there is no
+prompt to answer. So the press does it: while the player asks to interact on a
+wall of the swing's own and the game is offering nothing,
+`game_pad::WallHandover` turns the swing's walls off for 0.9 s.
+`Swing::allowWalls(false)` leaves the wall it holds, the game's own crawl takes
+him where he stands, its interact comes back and the button it names is already
+down. The walls go back on when the moment ends, however it went, and they are
+never turned on for a player who set wall running off.
+
+It cannot take anything away, because of when it fires: it needs a press of the
+interact, the swing's own wall under the player, and the game offering nothing -
+and that is exactly the case where the press does nothing at all today. Where
+the game is offering something the ordinary path already works and is left
+alone. A press that finds nothing costs its 0.9 s on the game's own crawl, and
+the walls come back by themselves.
+
+The report says whether it worked: **XrData is version 29, 952 bytes**, with
+`prompts.wall_handovers` (presses that handed him back) and
+`prompts.wall_handovers_offered` (those the game answered by offering an
+interact again). The second rising with the first is the vent opening.
+
+Measured: 302 core checks (7 new), 116 protocol checks, a clean Observer build.
+XrConfig stays at version 23 (option bit 20 leaves the prompts alone:
+`--no-prompt-help`); **XrData is version 28, 944 bytes**, so the runner and the
+DLLs must match. Run in the game on October 13, headless, on the backup laptop:
+`SpidyMenuStart` + `SpidyPromptsWatch` put the reading in with no headset and
+the game's UI calls came through it by name - PingPOIs, HideText(1, 1),
+ToggleInGameOverlays(0), Refresh - so the route and the call table are live.
+What a prompt's own text looks like at an interaction is still unproven: the
+vent was not reached (Continue loads profile 1, not the profile the vent is
+in), and the pad layer works either way.
+
+**October 13: no display driver error when a menu opens,
 and a Steam Frame player's word on 0.3.3.** You sent the Steam Frame topic of
 #spidy-bugs, where pokenate28 had answered 0.3.3's call for testers with two
 session reports.
@@ -169,6 +791,138 @@ driver's own profile on the hand the layout names.
 Frame here, and SteamVR answers the probe only with a headset connected.
 It needs a Frame player's word and their session log. This build is in
 `build\windows-ninja` only: not released, not in a play folder.
+
+**Earlier build (October 12, ninth build): what your first session with the
+eighth found.** You said, after the 21:53 session: "still strong stutters and
+freezes that werent there. grabbing the web with other arm still does the
+shooting sound and when moving hands while dual holding they switch grab
+position. also the web shooting pose turns almost immidiatly to a fist".
+
+- **Taking the other hand's web makes no shot's sound.** The take gave the
+  second hand a rope of the game's own, and the game makes a rope the way it
+  shoots a web, sound and all (that rope was the only thing a take did in the
+  game, so that is where I take the sound to come from; Spidy plays none).
+  Now one web is one rope, whoever holds it: taking hold makes none. The
+  piece of web between your two hands is drawn by Spidy, not by the game,
+  and hangs slack when your hands are closer than the web between them.
+- **The web no longer changes hands as you move them.** Which hand the web
+  came down to first was taken from where your wrists were, so it swapped
+  whenever one hand passed the other. And both hands' holds held you, each
+  from its own place, so moving one hand against the other moved you. Now it
+  is as on a rope: the hand that holds the web higher up carries you; the
+  lower hand holds the slack below it and moves nothing, wherever you put
+  it. Which is which changes only when a hand takes a new hold (or reels).
+  - Pull with the upper hand and you go up, as before. A yank of the upper
+    hand zips; a yank of the lower pulls on slack.
+  - Let go with the lower hand, take the web above the other, pull: hand
+    over hand, as before.
+  - Let go with the upper hand and the lower has the web where it is at
+    that moment: you do not drop the slack's length, and you are not jerked
+    up if that hand had wandered down the web (three cases in the test, all
+    within 3 cm).
+- **The web-shooting hand stays.** It was whole for 0.3 s and then closed
+  on the web. Now the hand is the shooting hand for as long as you hold the
+  web button: the web leaves your wrist and your fingers keep the trigger
+  down. Let go and it opens. A web ball shows it for half a second (was
+  0.3). A hand that takes the other hand's web closes into a fist on it
+  instead, and gets a softer pulse than a shot's. A fast hand with an enemy
+  marked or in reach is still a fist.
+- **The stutters and freezes.** The 21:53 session ran as the one before it:
+  on the Quest 3 at 120 pictures a second, so nothing I asked for was
+  tried yet. What its report and the ones before it add (numbers in
+  [VALIDATION.md](VALIDATION.md)):
+  - **Every smooth session yesterday evening was on the Quest Pro** (the
+    reports name the headset; 18:57 to 21:45). From 22:18 on, and all of
+    today, it is the Quest 3. The Quest Pro runs at 90, the Quest 3 is set
+    to 120, and at 120 the PC delivers about 70 unevenly. Same build either
+    side (21:45 on the Pro, 22:18 on the 3).
+  - **The freezes are the stream to the headset stopping for a tenth of a
+    second**, not the game: the game goes on drawing through each one, they
+    come while you stand still too, and they came with 8 GB of memory free
+    as with 0.3. On the Quest 3 since last night: 1.3 to 2.4 a minute. On
+    the Quest Pro: 0 to 0.5. On the Quest 3 yesterday afternoon: 0 to 0.6.
+    I do not know why the Quest 3's link got worse between yesterday
+    afternoon and last night; nothing in Spidy that I can find.
+  - So, on the Quest 3: in Virtual Desktop (in the headset) Settings >
+    Streaming, set the VR frame rate to 90. If the Quest Pro is still on
+    and on the same Wi-Fi, switch it off (a guess: two headsets on one
+    access point). Or play a session on the Quest Pro again. Any one of
+    these tells us more than another report at 120.
+- **Checked:** 293 core tests (one swapped: the rope bookkeeping for the
+  strand's drawing; one new: the bearing hand letting go; four rewritten),
+  the launcher's, 113 Python checks. **Not tried in the headset.**
+
+**Earlier build (October 12, eighth build): the web-shooting hand, and one
+web in both hands.** You said: "lets add hand poses like the real iconic ones
+from spiderman on web shootinh. also allow to dual hand the same strand of
+web."
+
+- **The web-shooting hand.** Until now a squeezed grip was a fist, and the
+  grip is what shoots: every web left a clenched hand. Now the hand that
+  shoots makes Spider-Man's hand: the two middle fingers pressed into the
+  palm, on the web shooter's trigger, the first finger, the little finger
+  and the thumb out. The two fingers come down as the web button goes down;
+  at the shot the pose is whole, and stays for 0.3 s whether the web held or
+  missed; then a hand whose web holds something closes on the strand, and
+  any other is what the grip says. A web ball makes the pose too. It works
+  the same with WEB BUTTON: TRIGGER.
+- **A punch is still a fist.** A fast hand closes as before. While it
+  shoots it stays the shooting hand, unless an enemy has the ring on him or
+  is within a fist's reach: then the fist wins.
+- **One web in both hands.** Put your free hand on the web the other hand
+  holds, within 16 cm of it, anywhere from that hand up toward where it
+  hangs, and squeeze the grip: the hand takes hold of that web and shoots
+  none. A light tick says the hand is there. What you can do with it:
+  - pull with either hand, and you go where you pull (with PHYSICAL WEBS on;
+    each hand holds the web where it took it);
+  - **climb it hand over hand**: let go with the lower hand, take the web
+    again above the other, pull, and so on. In the test a body went up 0.3 m
+    for each 0.3 m pull, twice in a row;
+  - let go with either hand and the other keeps the web;
+  - reel with either trigger.
+  The web is drawn as one strand: from where it hangs to the nearer hand,
+  and on to the other. A web zips once, whichever hand yanks it. With the
+  hand away from the web the grip shoots that hand's own web, as before
+  (0.4 m off in the test). A press on the web takes hold of it whatever the
+  hand points at, a prop or a thug too.
+- **Left alone:** a web that holds a prop or a thug is not taken this way.
+  Two hands on one target are two webs, as before.
+- **In the report:** `ropes.joins` counts the times a hand took the other
+  hand's web, and `ropes.shared` says whether both hold one at the end.
+- **Checked:** 292 core tests (nine new: taking hold, hand over hand, a hand
+  beside the web, one zip, the grab's press, the strand's drawing, the
+  hand's timing twice, the pose on Spider-Man's hand and on a hand of one
+  finger), the launcher's, 113 Python checks, and a picture of the pose on
+  his hand's joints ([BODY.md](BODY.md#the-web-shooting-hand-october-12)).
+  **Not tried in the headset, and not run in the game.** Worth watching:
+  whether the pressed fingers sit right on his glove, whether 16 cm takes
+  the web when you mean it and not when you shoot a second web with your
+  hands close together, and how the short piece of web between your hands
+  looks (the game draws it as it draws any web, so it may get an end piece
+  where it meets the other wrist).
+- **About "performance isnt great in the last run ... we didnt have the
+  drops yesterday, was silky smooth"** (the 21:09 session; no build is
+  involved, the numbers are in [VALIDATION.md](VALIDATION.md)):
+  - Not the network this time: the cable was up, Wi-Fi off, and the stream
+    held for 1.5 s in five minutes.
+  - **Yesterday evening the headset ran at 90 Hz, since 22:18 last night it
+    runs at 120 Hz.** At 90 Hz Spidy handed Virtual Desktop a picture for
+    every refresh, 11.1 ms apart, 65-80% of them on the dot and 1% late. At
+    120 Hz the PC does not make the 8.3 ms: about 70 pictures a second,
+    anywhere from 10 to 18 ms apart, 38-55% on the dot and one in eight
+    late. Same build either side of the change (21:45 and 22:18). Spidy asks
+    for no refresh rate; it is Virtual Desktop's VR frame rate. **Set it
+    back to 90 and tell me how it looks**: that is the one thing here I
+    could not check myself.
+  - The game's own frame rate did not change with the builds: on the roof
+    your morning sessions start from it was 54.5 to 57.3 pictures a second
+    in four builds from yesterday evening to this morning. It follows the
+    place: about 55 there, 48 where this afternoon's save starts, and 37 on
+    the 35 s swing 150-190 m above the city in the last run.
+  - One thing to know: Windows had 0.3 GB of memory left to promise at the
+    low point of that run (5.7 GB at this morning's). The game takes up to
+    14.7 GB and the Claude app held 8.9 GB. It cost no frames, but at 0 the
+    game dies.
 
 **Earlier build (October 12, seventh build): one enemy at a time, called
 blows that register, and KO!** You said, after the 15:42 session with the

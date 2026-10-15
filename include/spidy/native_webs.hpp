@@ -1,5 +1,7 @@
 #pragma once
 #include "math.hpp"
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 
 // The game's own web lines. Hero::HeroRopeManager (vtable 38b3df8) owns 16
@@ -15,16 +17,54 @@ struct Hand {
     // handle when asked, and a released rope's update still reads its target
     // position (6786c0 returns +67c, which SetRopeTargetPosition writes).
     // Until October 6 a let-go web's end stayed where the target had been.
+    // The two ropes are not the two hands' own: the caller says which web
+    // each draws and from which wrist (WebRopes). A rope the game makes
+    // sounds as a web shot, so a hand that takes hold of the other hand's web
+    // gets none.
     uint32_t attached{}, tracked{};
     int64_t attachedAt{}; // one attachment; a new value shoots a new web
     Vec3 anchor{}, wrist{};
+};
+// One web in both hands (WebRopes::upper): the rope `rope` names leaves the
+// wrist of the hand that holds the web nearer its end (its Hand's), and comes
+// to that wrist from the other hand's, `wrist`, hanging as `slack` metres more
+// rope than the straight line between the two would.
+struct Held {
+    uint32_t rope{}; // 1 + the index in Request::hands of that rope; 0: none
+    float slack{};
+    Vec3 wrist{};
 };
 // Wrists are world positions placed from `feet`. The game thread moves them
 // with the player to the simulation frame it is updating.
 struct Request {
     Vec3 feet{};
     Hand hands[2]{};
+    Held held{};
 };
+// The points the game's rope takes from the lower hand's wrist `from` to the
+// upper hand's `to` (both included), `count` of them, `slack` metres longer
+// than the straight line and bowing off it as a rope does: as far as a
+// parabola of that length bows (s = c + 8 d^2 / 3c), at most half a metre,
+// downward square to the line - sideways (world x) as the line stands
+// straight up - and with the hands together, half its length straight down.
+inline void heldPoints(Vec3 from, Vec3 to, float slack, int count, Vec3* out) {
+    if (count < 2 || !out)
+        return;
+    const Vec3 chord = to - from;
+    const float c = length(chord), extra = std::isfinite(slack) ? std::max(slack, 0.f) : 0.f;
+    const float sag = std::min(.5f, c > .01f ? std::sqrt(3 * c * extra / 8) : extra / 2);
+    const Vec3 down{0, -1, 0};
+    Vec3 bow = down;
+    if (c > .01f) {
+        const Vec3 along = chord / c, side{1, 0, 0};
+        bow = (down - along * dot(down, along)) + (side - along * dot(side, along)) * .05f;
+        bow = length(bow) > 1e-4f ? normalized(bow) : down;
+    }
+    for (int i = 0; i < count; ++i) {
+        const float s = static_cast<float>(i) / static_cast<float>(count - 1);
+        out[i] = from + chord * s + bow * (4 * sag * s * (1 - s));
+    }
+}
 enum State : uint32_t { off = 0, waiting = 1, active = 2, failed = 3 };
 struct Status {
     uint32_t state{}, live{}; // live: bit per hand with a game rope
@@ -42,6 +82,9 @@ void submit(const Request&, uint32_t leaseMs);
 Status status();
 // True while the game draws this hand's web, so the overlay must not.
 bool drawing(unsigned hand);
+// The game draws a web held in both hands from wrist to wrist (Request::held):
+// the overlay draws none of it.
+bool drawsHeld();
 // Hero position the newest hero rope update read, and how many updates have
 // read one. Ropes start from it; native eyes place the same frame from it.
 bool heroSample(uint64_t& samples, Vec3& position);
@@ -58,9 +101,9 @@ struct ProbeConfig {
     uint64_t base{}, record{};
 };
 struct ProbeCommand {
-    uint32_t magic = 0x5357424d, version = 1, bytes = sizeof(ProbeCommand), leaseMs{};
+    uint32_t magic = 0x5357424d, version = 2, bytes = sizeof(ProbeCommand), leaseMs{};
     Request request{};
 };
-static_assert(sizeof(Hand) == 40 && sizeof(Request) == 96 && sizeof(ProbeConfig) == 32 &&
-              sizeof(ProbeCommand) == 112);
+static_assert(sizeof(Hand) == 40 && sizeof(Held) == 20 && sizeof(Request) == 120 && sizeof(ProbeConfig) == 32 &&
+              sizeof(ProbeCommand) == 136);
 } // namespace spidy::native_webs

@@ -28,6 +28,11 @@ frame of travel behind the eyes: the monitor showed the player's back in a
 swing. `--modules DIR` takes spidy_stereo_probe.dll from another build (a
 play folder's), for a comparison.
 
+`--held 0.35` has the other hand hold the same web that far below the first
+hand (and 0.1 m to the side), `--held-slack` metres slack between them: the
+game's rope then comes to the first hand's wrist from the other's (a web in
+both hands, October 15), which the saved images show.
+
 Load a save, stand or perch somewhere with open space, and run this with the
 game window in the foreground. The game must be restarted before another run.
 """
@@ -94,11 +99,13 @@ def eye_command(serial, eyes, feet):
     return raw+struct.pack('<3fI', *feet, 1)
 
 
-def web_command(feet, wrist, target, attached=True):
-    """native_webs::ProbeCommand: the left hand holds one game web."""
-    raw = struct.pack('<4I3f4x', 0x5357424d, 1, 112, 200, *feet)
+def web_command(feet, wrist, target, attached=True, held=None, slack=0.):
+    """native_webs::ProbeCommand: the left hand holds one game web; with `held` (a wrist), the other hand holds
+    it too, below, `slack` metres slack between them."""
+    raw = struct.pack('<4I3f4x', 0x5357424d, 2, 136, 200, *feet)
     raw += struct.pack('<2Iq6f', int(attached), 1, 1, *target, *wrist)
-    return raw+struct.pack('<2Iq6f', 0, 0, 0, *([0.]*6))
+    raw += struct.pack('<2Iq6f', 0, 0, 0, *([0.]*6))
+    return raw+struct.pack('<If3f4x', 1 if held else 0, slack, *(held or (0., 0., 0.)))
 
 
 def swing_command(serial, origin, direction, grip, trigger, sample_seconds=.01):
@@ -177,6 +184,9 @@ def main():
                    help='13 also moves the game view to the eyes, as in a VR session')
     p.add_argument('--modules', type=pathlib.Path, default=ROOT/'build/windows-ninja',
                    help='folder with spidy_stereo_probe.dll')
+    p.add_argument('--held', type=float, default=0,
+                   help='metres below the web hand that the other hand holds the same web (0: it does not)')
+    p.add_argument('--held-slack', type=float, default=.15, help='metres slack between the two hands')
     p.add_argument('--output', type=pathlib.Path, default=ROOT/'reports/web-frames.json')
     a = p.parse_args()
     if not 1 <= a.speed <= 65 or not 0 <= a.gravity <= 30 or not 2 <= a.hold <= 10 or not 64 <= a.size <= 2048:
@@ -184,7 +194,8 @@ def main():
     game = Game(find_game())
     process = None
     stops = []  # (name, export) in the order to stop
-    result = dict(speed=a.speed, gravity=a.gravity, hold=a.hold, size=a.size, modules=str(a.modules))
+    result = dict(speed=a.speed, gravity=a.gravity, hold=a.hold, size=a.size, modules=str(a.modules),
+                  held=a.held, held_slack=a.held_slack)
     try:
         pe = PE(game.path.read_bytes())
         entries = {rva: pe.bytes(rva, 16) for rva in (*ENTRIES, *RENDER_MEMORY_HOOKS)}
@@ -320,7 +331,13 @@ def main():
                 code = call_with_payload(process, eyes_dll['SpidySetEyes'], eye_command(eye_serial, eyes, feet))
                 if code and code != 4003:
                     raise RuntimeError(f'Eye command: {code}')
-                invoke(eyes_dll['SpidyWebsSubmit'], web_command(feet, wrist, target), 'Game web')
+                if a.held > 0:
+                    right, down, _ = camera(heading)
+                    lower = add(add(wrist, scale(down, a.held)), scale(right, .1))
+                    invoke(eyes_dll['SpidyWebsSubmit'], web_command(feet, wrist, target, held=lower,
+                                                                    slack=a.held_slack), 'Game web')
+                else:
+                    invoke(eyes_dll['SpidyWebsSubmit'], web_command(feet, wrist, target), 'Game web')
                 frames = frame_snapshot(game, eyes_dll['SpidyStereoFrames'])
                 if frames and frames['rope_frames'] != rope_frames:
                     rope_frames = frames['rope_frames']

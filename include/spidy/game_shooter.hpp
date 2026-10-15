@@ -65,8 +65,17 @@ struct Hand {
     uint64_t shots{};      // fired by this hand
     uint64_t lastTarget{}; // the actor record its latest shot went to, 0 for none
 };
+// One of the player's gadgets (Data::gadgets): its weapon's id, which
+// gadget it is (spidy::Gadget, by its weapon's class), its place on the wheel
+// (0 the top, clockwise), and its charges and the most it holds (0: none to
+// count, the web shooter's).
+struct Owned {
+    uint16_t weapon{};
+    uint8_t kind{}, place{}, ammo{}, most{};
+    uint16_t pad{};
+};
 struct Data {
-    uint32_t magic = 0x53484f44, version = 2, bytes = sizeof(Data), status{};
+    uint32_t magic = 0x53484f44, version = 4, bytes = sizeof(Data), status{};
     int64_t sequence{};
     // Input samples seen; pulls that asked for a shot; shots the game fired;
     // requests dropped (no web shooter, no player, stale, refused); shots
@@ -85,8 +94,26 @@ struct Data {
     // thugs, the props they knocked, and the actor record the latest struck
     // (0: the world).
     uint64_t collisions{}, webbed{}, pushed{}, lastHit{};
+    // The player's gadgets (v3), read every half second on the main thread
+    // from the hero's weapon manager (HeroWeaponManagerLocal), which keeps a
+    // weapon loaded for every gadget the player owns: the manager, how many
+    // gadgets, why there are none (1 no player, 2 no weapon manager, 3 this
+    // game's code differs from the build Spidy reads, 4 no inventory), the
+    // weapon id the game has equipped (its slot 0, what its RB fires), and the
+    // gadgets themselves: those its own wheel offers.
+    // v4: the latest equip asked for (equipResult 0 done, 1 no player, 2 no
+    // inventory, 3 not one the player owns, 4 the game allows no equipping
+    // now, 5 a fault; equips: how many were asked for), the shots of the
+    // equipped gadget the free hand fired (not the web shooter's), and the
+    // pulls that found it without a charge.
+    uint64_t manager{};
+    uint32_t gadgetCount{}, gadgetError{};
+    uint16_t equipped{}, equipResult{};
+    uint32_t equips{};
+    Owned gadgets[8]{};
+    uint64_t gadgetShots{}, emptyPulls{};
 };
-static_assert(sizeof(Hand) == 16 && sizeof(Data) == 192);
+static_assert(sizeof(Hand) == 16 && sizeof(Owned) == 8 && sizeof(Data) == 296);
 // Starts the bot and gadget watches and the main-thread hooks.
 uint32_t start(uintptr_t base);
 uint32_t stop();
@@ -100,6 +127,11 @@ void update(float seconds, const Input&, uint32_t busy, uint64_t record, Vec3 fe
 // Input lost focus (a menu, the flat screen, a lost headset): a trigger
 // held through it is no pull when play resumes.
 void cancel();
+// The gadget wheel: `fire` has the free hand's trigger fire the gadget the
+// game has equipped, from the hand (the web shooter's ball when that is the
+// one, as before; off, always the ball); `equip`, a weapon id from
+// Data::gadgets, is equipped in the game at the next frame (0: none).
+void gadgetWheel(bool fire, uint16_t equip);
 Data data();
 // Wire formats: SpidyShooterStart's configuration, and SpidyShooterTest's
 // shot, which a probe fires from any point (hand 0 left, 1 right) toward an
@@ -113,5 +145,11 @@ struct Test {
     Vec3 origin{}, aimPoint{};
     uint64_t target{};
 };
-static_assert(sizeof(Config) == 24 && sizeof(Test) == 48);
+// SpidyShooterGadgets: game_shooter::gadgetWheel.
+struct GadgetCommand {
+    uint32_t magic = 0x53484f47, version = 1, bytes = sizeof(GadgetCommand), fire{};
+    uint16_t equip{}, pad{};
+    uint32_t pad2{};
+};
+static_assert(sizeof(Config) == 24 && sizeof(Test) == 48 && sizeof(GadgetCommand) == 24);
 } // namespace spidy::game_shooter

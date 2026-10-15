@@ -95,8 +95,10 @@ int main(int argc, char** argv) {
                     if (std::abs(turn) < .3f)
                         snapHeld = false;
                     const auto in = trackedSwingInput(f, rig);
-                    // A press aimed at a prop belongs to the grab, never to the swing.
-                    const auto forSwing = grab.claim(f.seconds, in, world, props, swing.body());
+                    // A press aimed at a prop belongs to the grab, never to the swing;
+                    // one with the hand on the other hand's web takes hold of that web.
+                    const auto forSwing = grab.claim(f.seconds, in, world, props, swing.body(),
+                                                     (swing.onStrand(0) ? 1u : 0u) | (swing.onStrand(1) ? 2u : 0u));
                     const Vec3 previous = swing.body().position;
                     swing.update(f.seconds, forSwing, world);
                     rig.origin += swing.body().position - previous;
@@ -142,6 +144,13 @@ int main(int argc, char** argv) {
                     for (const auto& p : props.props())
                         addProp(geometry, p);
                     const Vec3 viewer = haveHead ? lastHead.position : Vec3{};
+                    // One web in both hands is one strand: to the hand that holds it
+                    // nearer its end, and on from wrist to wrist.
+                    const Vec3 wrists[2] = {webWrist(rig.toWorld(f.hands[0].grip)),
+                                            webWrist(rig.toWorld(f.hands[1].grip))};
+                    const int upper = !swing.shared() || !f.hands[0].valid || !f.hands[1].valid ? -1
+                                      : swing.webs()[1].length < swing.webs()[0].length         ? 1
+                                                                                                : 0;
                     for (int i = 0; i < 2; ++i)
                         if (f.hands[i].valid) {
                             const auto hand = rig.toWorld(f.hands[i].grip);
@@ -161,6 +170,13 @@ int main(int argc, char** argv) {
                                 const float rope = target ? held.length : web.length;
                                 const bool taut = target ? held.taut : web.tension > 0;
                                 line.slack = taut ? 0.f : std::max(rope - length(line.end - line.start), 0.f);
+                                if (!target && upper >= 0 && upper != i) {
+                                    line.end = wrists[upper];
+                                    line.slack = std::max(web.length - swing.webs()[static_cast<size_t>(upper)].length -
+                                                              length(line.end - line.start),
+                                                          0.f);
+                                    line.splat = false;
+                                }
                                 line.seed = static_cast<float>(i) * 1.7f;
                                 // Both eyes share this geometry; Quest 3 lenses resolve
                                 // roughly one milliradian per recommended pixel.

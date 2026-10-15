@@ -1,7 +1,9 @@
 #pragma once
 #include "body_calibration.hpp"
+#include "gadget_wheel.hpp"
 #include "game_swing.hpp"
 #include "game_tracking.hpp"
+#include "offer_pointing.hpp"
 #include "presentation_gate.hpp"
 #include "web_visual.hpp"
 
@@ -12,13 +14,23 @@ struct NativeEyeFrame {
     std::array<TrackedEye, 2> trackingEyes;
     std::array<game_swing::WebState, 2> webs;
     std::array<WebTimeline::Hand, 2> webTimes{};
+    // The game rope that draws each hand's web (WebRopes; -1: none). One web
+    // in both hands: the hand its strand comes to first, the other hand's
+    // part running from wrist to wrist; -1 otherwise.
+    std::array<int, 2> webSlots{-1, -1};
+    int strandUpper = -1;
     // What each hand's grip press would do (game_swing::AimKind none while
     // the aim markers are off).
     std::array<game_swing::Aim, 2> aims{};
+    // The game's interaction each hand points at on Spidy's wall (handle 0:
+    // none), drawn instead of its aim marker.
+    std::array<offer_pointing::Pointed, 2> offers{};
     // The T-pose calibration's panel and controller rings (phase idle: none).
     body_calibration::View calibration{};
     // Slow motion: the image's recolouring and the focus meter (none at rest).
     SlowMotionView slow{};
+    // The gadget wheel, open while X is held (gadget_wheel.hpp).
+    GadgetWheelView gadgetWheel{};
     bool flatScreen{};
     // The game screen in stereo (eye command 3): the pair goes on the screen,
     // the left image for the left eye and the right one for the right.

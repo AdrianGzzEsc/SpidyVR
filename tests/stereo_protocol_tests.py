@@ -137,9 +137,13 @@ class StereoProtocolTests(unittest.TestCase):
         fov = struct.unpack_from('<4f', packet, 96)
         self.assertTrue(fov[0] < 0 < fov[1] and fov[2] < 0 < fov[3])
         packet = web_command((100., 50., -20.), wrist, target)
-        # native_webs::ProbeCommand: header 16, feet at 16, hands at 32 and 72 (attached, tracked, attachedAt, anchor, wrist).
-        self.assertEqual(len(packet), 112)
-        self.assertEqual(struct.unpack_from('<4I3f', packet), (0x5357424d, 1, 112, 200, 100, 50, -20))
+        # native_webs::ProbeCommand v2: header 16, feet at 16, hands at 32 and 72 (attached, tracked, attachedAt,
+        # anchor, wrist), the web held in both hands at 112 (rope, slack, the other wrist).
+        self.assertEqual(len(packet), 136)
+        self.assertEqual(struct.unpack_from('<4I3f', packet), (0x5357424d, 2, 136, 200, 100, 50, -20))
+        self.assertEqual(struct.unpack_from('<If3f', packet, 112), (0, 0, 0, 0, 0))
+        held = web_command((100., 50., -20.), wrist, target, held=(1., 2., 3.), slack=.25)
+        self.assertEqual(struct.unpack_from('<If3f', held, 112), (1, .25, 1, 2, 3))
         attached, tracked, attached_at, *points = struct.unpack_from('<2Iq6f', packet, 32)
         self.assertEqual((attached, tracked, attached_at), (1, 1, 1))
         for a, b in zip(points, (*target, *wrist)):

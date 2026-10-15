@@ -77,6 +77,96 @@ class WebTimeline {
 inline Vec3 webWrist(Pose hand) {
     return hand.position + hand.orientation.rotate({0, -.025f, .03f});
 }
+// Which of the game's two swing ropes draws which hand's web, and from which
+// wrist. The game makes a rope with the sound of a web shot, so a rope is
+// made for a web that was shot and never for a hand that takes hold of the
+// other hand's web (Swing::shared): that web's rope goes on drawing it, from
+// the wrist of the hand that holds it nearer its end, and still when the hand
+// that shot it has let go. The first build with a web in both hands gave the
+// second hand a rope of its own: "grabbing the web with other arm still does
+// the shooting sound". And it took the nearer hand by where the wrists were,
+// so the web changed hands as they moved ("they switch grab position"): the
+// nearer hand is the one with the shorter rope, which only a new hold or a
+// reel changes.
+class WebRopes {
+  public:
+    struct Hand {
+        bool attached{}; // a web to draw
+        bool taken{};    // it took hold of the other hand's web
+        bool shared{};   // both hands hold one web now
+        float length{};  // its rope to what the web hangs from
+        int64_t since{}; // when it attached: one web
+    };
+    struct Rope {
+        unsigned hands{}; // a bit per hand whose web it draws; 0: none
+        int64_t key{};    // one web: another value is another rope (native_webs' attachedAt)
+        int from = -1;    // the hand whose wrist it leaves
+        int last = -1;    // the hand whose web it drew last (a web let go of trails from it)
+    };
+    void update(const std::array<Hand, 2>& hands) {
+        // Hands that let go, or shot anew, leave their rope.
+        for (auto& rope : ropes_)
+            for (unsigned h = 0; h < 2; ++h)
+                if ((rope.hands >> h & 1) && (!hands[h].attached || hands[h].since != since_[h]))
+                    rope.hands &= ~(1u << h);
+        for (unsigned h = 0; h < 2; ++h)
+            since_[h] = hands[h].attached ? hands[h].since : 0;
+        // A hand with a web and no rope: one that took hold of the other
+        // hand's web is drawn by that web's rope; any other gets a rope of
+        // its own, the one of its side first. Shot webs first, so the web
+        // taken hold of has its rope by then.
+        for (const bool takers : {false, true})
+            for (unsigned h = 0; h < 2; ++h) {
+                const auto& hand = hands[h];
+                const bool taker = hand.taken && hand.shared && hands[1 - h].attached;
+                if (!hand.attached || slot(h) >= 0 || taker != takers)
+                    continue;
+                if (const int held = taker ? slot(1 - h) : -1; held >= 0) {
+                    ropes_[static_cast<size_t>(held)].hands |= 1u << h;
+                    continue;
+                }
+                auto& rope = !ropes_[h].hands ? ropes_[h] : ropes_[1 - h];
+                if (!rope.hands)
+                    rope = {1u << h, hand.since, static_cast<int>(h), static_cast<int>(h)};
+            }
+        // Each rope leaves the wrist of the hand nearer the web's end.
+        for (auto& rope : ropes_) {
+            if (!rope.hands)
+                rope.from = -1;
+            else if (rope.hands != 3)
+                rope.from = rope.last = rope.hands == 1 ? 0 : 1;
+            else if (rope.from < 0 || hands[static_cast<size_t>(1 - rope.from)].length <
+                                          hands[static_cast<size_t>(rope.from)].length - 1e-3f)
+                rope.from = rope.last = hands[1].length < hands[0].length ? 1 : 0;
+        }
+    }
+    const Rope& rope(unsigned slot) const {
+        return ropes_.at(slot);
+    }
+    // The rope that draws this hand's web; -1: none.
+    int slot(unsigned hand) const {
+        for (int s = 0; s < 2; ++s)
+            if (ropes_[static_cast<size_t>(s)].hands >> hand & 1)
+                return s;
+        return -1;
+    }
+    // One web in both hands: the hand that holds it nearer its end, where the
+    // strand comes to first; -1 otherwise.
+    int upper() const {
+        for (const auto& rope : ropes_)
+            if (rope.hands == 3)
+                return rope.from;
+        return -1;
+    }
+    void clear() {
+        ropes_ = {};
+        since_ = {};
+    }
+
+  private:
+    std::array<Rope, 2> ropes_{};
+    std::array<int64_t, 2> since_{};
+};
 // Aim markers: where a grip press would send a hand's web now, drawn over the
 // eye images facing the viewer, the same size on screen at any distance, with
 // soft edges and a soft dark shadow. Each hand has its own colour: the left

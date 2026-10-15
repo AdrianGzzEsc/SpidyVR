@@ -252,19 +252,37 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyRayStart(void* input) {
     AcquireSRWLockExclusive(&lifecycle);
     DWORD result{};
     do {
-        if (created) {
+        // Running already: as before, a second start is refused.
+        if (created && enabled) {
             result = 1000;
             break;
         }
-        if (!read(reinterpret_cast<uintptr_t>(input), &config, sizeof(config)) ||
-            config.magic != 0x53525943 || config.version != 1 || config.bytes != sizeof(config) ||
-            config.pid != GetCurrentProcessId() ||
-            config.base != reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr)) ||
-            !GetModuleHandleW(L"Spider-Man.exe") || (config.durationMs && config.durationMs < 500) ||
-            config.durationMs > 30000 || config.mask != 0x410) {
+        Config next{};
+        if (!read(reinterpret_cast<uintptr_t>(input), &next, sizeof(next)) ||
+            next.magic != 0x53525943 || next.version != 1 || next.bytes != sizeof(next) ||
+            next.pid != GetCurrentProcessId() ||
+            next.base != reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr)) ||
+            !GetModuleHandleW(L"Spider-Man.exe") || (next.durationMs && next.durationMs < 500) ||
+            next.durationMs > 30000 || next.mask != 0x410) {
             result = 1001;
             break;
         }
+        // Stopped earlier in this game process. MinHook still holds the hook,
+        // only switched off - SpidyRayStop never forgot it - so every start
+        // after the first answered 1000 and left the rays dead: a second VR
+        // session in one game, or a second probe. Switch it on again instead,
+        // as the pad does (game_pad::install).
+        if (created) {
+            config = next;
+            deadline = config.durationMs ? GetTickCount64() + config.durationMs : UINT64_MAX;
+            enabled = true;
+            if (const auto again = MH_EnableHook(hook); again != MH_OK && again != MH_ERROR_ENABLED) {
+                enabled = false;
+                result = 1300 + again;
+            }
+            break;
+        }
+        config = next;
         const uint8_t expected[] = {0x48, 0x89, 0x5c, 0x24, 0x08, 0x48, 0x89, 0x6c,
                                     0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18};
         uint8_t actual[sizeof(expected)]{};

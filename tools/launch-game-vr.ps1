@@ -24,6 +24,7 @@ param(
     [switch]$NoPunch,
     [switch]$NoWebShooter,
     [switch]$NoAimMarkers,
+    [switch]$NoPromptHelp,
     [switch]$NoCalibrationPrompt,
     [switch]$Flips,
     [switch]$TriggerWebs,
@@ -121,6 +122,15 @@ if($NoWebShooter) { $captureArgs+=@('--no-web-shooter'); Write-Host "Web shooter
 else {
     Write-Host "Press the $reel of a hand without a web to shoot the game's web balls where it points; a thug"
     Write-Host 'near that line takes it (add -NoWebShooter to turn it off).'
+}
+if($NoPromptHelp) {
+    $captureArgs+=@('--no-prompt-help')
+    Write-Host "Prompt help off: Spidy leaves the game's button prompts alone and the interact button is its Y."
+}
+else {
+    Write-Host 'Where the game asks for a button, the interact button (Y) sends whatever it asks for, and the'
+    Write-Host 'prompt names your VR control (add -NoPromptHelp to leave the prompts alone). Clicking both'
+    Write-Host "thumbsticks latches the whole pad: grips as the game's LB and RB, triggers as its LT and RT."
 }
 if($NoAimMarkers) {
     $captureArgs+=@('--no-aim-markers')

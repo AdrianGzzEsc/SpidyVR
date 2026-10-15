@@ -29,6 +29,37 @@ class SteamTests(unittest.TestCase):
             values={('HKEY_LOCAL_MACHINE','InstallPath'):str(steam.parent)}
             self.assertEqual(vr_launcher.steam_executable(lambda hive,key,name: values.get((hive,name))),steam)
 
+    def test_steam_has_the_game_in_any_of_its_libraries(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base=pathlib.Path(folder)
+            steam=base/'Steam/steam.exe'
+            (base/'Steam/steamapps').mkdir(parents=True)
+            steam.write_bytes(b'')
+            self.assertFalse(vr_launcher.steam_has_game(steam))
+            # Another library, written as Steam writes it: backslashes doubled.
+            library=base/'Games/SteamLibrary'
+            (library/'steamapps').mkdir(parents=True)
+            (base/'Steam/steamapps/libraryfolders.vdf').write_text(
+                '"libraryfolders"\n{\n\t"1"\n\t{\n\t\t"path"\t\t"'+str(library).replace('\\','\\\\')+
+                '"\n\t}\n}\n')
+            self.assertFalse(vr_launcher.steam_has_game(steam))
+            (library/f'steamapps/appmanifest_{vr_launcher.STEAM_APP_ID}.acf').write_text('"AppState"{}')
+            self.assertTrue(vr_launcher.steam_has_game(steam))
+
+    def test_the_epic_games_stores_copy_is_started_by_its_launchers_link(self):
+        with tempfile.TemporaryDirectory() as folder:
+            manifests=pathlib.Path(folder)
+            self.assertIsNone(vr_launcher.epic_launch(manifests/'none'))
+            (manifests/'a.item').write_text(json.dumps(dict(DisplayName='Another Game',CatalogNamespace='x',
+                                                            CatalogItemId='y',AppName='z')))
+            (manifests/'b.item').write_text('not json')
+            self.assertIsNone(vr_launcher.epic_launch(manifests))
+            (manifests/'c.item').write_text(json.dumps(dict(DisplayName="Marvel's Spider-Man Remastered",
+                                                            CatalogNamespace='ns',CatalogItemId='item',
+                                                            AppName='app',InstallLocation='D:/Epic/SpiderMan')))
+            self.assertEqual(vr_launcher.epic_launch(manifests),
+                             'com.epicgames.launcher://apps/ns%3Aitem%3Aapp?action=launch&silent=true')
+
     def test_no_steam_anywhere_is_none(self):
         with unittest.mock.patch.dict('os.environ',{'ProgramFiles(x86)':r'Z:\nowhere'}):
             self.assertIsNone(vr_launcher.steam_executable(lambda *_: None))

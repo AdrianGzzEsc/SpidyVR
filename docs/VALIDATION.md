@@ -1,6 +1,608 @@
-# Validation — 2026-10-12
+# Validation — 2026-10-15
 
-## Steam Frame controllers: a layout of their own — current build, not tried on a Steam Frame
+## The vent from where the player stands (noon build)
+
+The player's session (`dist\Spidy-0.3.4\reports\game-vr-20261015-111549.json`, the
+build below): on Spidy's wall up the lift shaft from 13 s to 38 s, feet at 90.3 m
+from 20 s (the vent's middle at 92.37); offers listed near him: **0** all
+session (XrData `most_seen`); the hooks in; 39 presses of Y on walls, 32 on
+Spidy's.
+
+The game's gather (855460), read from the exe: a sphere of 3.35 m about the
+hero's real transform, through the world's spatial index; an offer of a kind in
+the mask is listed when Offer::IsAvailableTo says yes, any other when its
+vtable +0x58 and 1e6e610 say yes on the real hero and IsAvailableTo says no.
+
+Measured on fresh games, the hero up the shaft on Spidy's wall from below
+(the game's crawl only to 85 m), feet at 90.12 - as in the session -
+(`tools/research_warp.py --use --climb 90.1`, the prompt reading on through
+`probe_vent.py watch`, the probe's steps noted in the game's prompt timeline):
+
+| run | Y after the game's pick | listed, reasons | spot found | the game's crawl | prompt raised | result |
+| --- | --- | --- | --- | --- | --- | --- |
+| use3 | same frame | vent, `0x4` | (-528.96, 91.27, -587.85) | 0.10 s | (not read) | stayed on the crawl; later presses did nothing until he walked out of reach and back |
+| use5 | 1.0 s | vent, `0x4` | the same | 0.10 s | 0.094 s after it | `[BTN_Y] Enter` 15 ms after Y; in the duct |
+| use6 | 0.3 s | vent, `0x4` | the same | 0.10 s | 0.094 s after it | `[BTN_Y] Enter` 16 ms after Y; in the duct |
+
+The spot is where the game's own crawl stands at that vent (to_vent's climb
+stops there): 1.1 m below its middle, 1.15 m up the wall from the hero.
+
+**Checked:** 324 core checks (the use's press waits 0.3 s after the pick and
+is made once more if the game keeps holding the offer; a spot answers only
+the range), all six protocol suites (XrData 36).
+
+## Spidy's walls everywhere; the game's interactions by pointing (late-morning build)
+
+Measured in the running game, without a headset: a fresh game per run, Steam
+shut first, the swing, the rays and the web shooter running as a VR session
+runs them (walls on). The headset's own half - the rings, the haptic tick, the
+press - is the unit-tested `offer_pointing`; the probe does what it does.
+
+**The fall out of the world, in the session** (`dist\Spidy-0.3.4\reports\game-vr-20261015-094756.json`,
+the morning build): from 46.9 s the game's crawl on the lift shaft's wall,
+normal (-0.71, 0, -0.71); at 54.76 s the game turning him off it (mover
+`0x80a6`, the swing not holding him); at 55.07 s Spidy's wall taken with normal
+**(+0.71, 0, +0.71)** - the same wall's face met from inside it - the body
+0.61 m behind it; then held on it up the shaft to 69 m, on the wrong side.
+Two guards now: no wall while the game holds the body in its own wall states
+(mover flag `0x80`), and for 1.5 s after its crawl no face turned against the
+crawl's wall and behind it (`Swing::supportSurface`).
+
+**A use at the first mission's vent** (`tools/research_warp.py --use --nudge 1.15`,
+profile 3: from the game's crawl at the vent, the walk on onto Spidy's wall,
+back up to the vent's height on it; a probe cannot walk Spidy's wall, so the
+offers' crawl pose was nudged 1.15 m up, to the vent). Twice, two fresh games,
+the second with the back-face guard in; both alike:
+
+| | time from the use | state |
+| --- | --- | --- |
+| on Spidy's wall | before | the vent among the offers gathered: reasons `0x0`, on; the game's own pick: none |
+| `SpidyOffersUse(vent)` | 0 | 0 (asked) |
+| the game's crawl under him (game_warp) | 0.10 s | wall 2, mover `0x80a6`; crawl `0x8001` at 0.18 s, feet on the posed point |
+| the game picks the vent (its best = the vent) | 0.19 s | |
+| the game's Y, 0.35 s | 0.20 s | its vent entry, mover `0x80a1` from 0.7 s |
+| inside, on the duct's floor crawl | 1.8 s | wall 3, mover `0x8001`, y 92.0 (screenshot: the duct) |
+
+**The duct, the swing running** (a scratch probe: the stick to the game's crawl
+and, as a session sends it, to the swing): 1,683 samples over 40 s - forward,
+right, forward again - **no Spidy wall, no ownership, no mount** in any; the
+floor crawl in all but the first.
+
+**Walking at a wall from the ground** (`tools/probe_wall_mount.py --skip-hand-over`,
+profile 1, a street wall): the stick at the wall at 9.83 s, Spidy's wall at
+**10.06 s**; up it 9.2 m at 6 m/s, 0.95 m off it, no game crawl. Passed.
+
+**Checked:** 324 core checks (new: walked onto a wall the swing's but not in a
+vent; the game's wall states take no wall; the crawl's wall not taken from
+behind; the crawl hands its wall over only to a walk; pointing at an offer; the
+interact's use of it), all six protocol suites (XrData 35).
+
+## The crawl's stick, the duct's roof, the body in a duct, the view's turn (morning build)
+
+From the headset session of October 14, 19:57
+(`dist\Spidy-0.3.4\reports\game-vr-20261014-195702.json`, the deployed build):
+
+| measured in the session | value |
+| --- | --- |
+| on the game's wall crawl, stick pushed | median **0.67 m/s** (crawl full speed 2.6), 482 of 852 samples under 1 m/s |
+| on the game's floor crawl (the duct), stick pushed | median **2.6 m/s**, 77 of 584 under 1 m/s |
+| CrawlStick, the turn from the way sent to the way taken | per 2 s window: -172 to 162 degrees; agreement 0.51 over the session |
+| the duct's roof over the feet | found 93.5 m (1.4 m of room) along most of it; **nothing within 3 m** around (-525, 92, -583), where the eye snapshots at 56 s and 141 s show the view out through the roof |
+| gate `tracking` (a frame the rig could not place) | 67.12 s and 94.01 s, each as the game turned the hero onto or off a vent shaft's wall: the view levelled and turned back 90 degrees in 0.2 s |
+| the game's crawl on a floor | mover `0x8001`, grounded, actor upright - 15, 7 and 32 s stretches in the ducts; 0.2-0.3 s at the top of a wall onto a roof |
+
+**The game's crawl takes its stick in its camera's frame laid onto the wall**
+(`tools/research_crawl_free.py`: a building's face in
+free roam, normal -z, the camera turned seven ways with the right stick, 56
+pushes of 1 s, 1087 moving samples):
+
+| rule (angle from the way the hero went, per sample) | mean | median | over 45 degrees |
+| --- | --- | --- | --- |
+| the camera's look laid onto the wall; its up where under 0.2 of the look lies along it (shipped) | **23.8** | 17.3 | 126 |
+| the camera's level look laid onto the wall (the rule replaced) | 41.8 | 21.5 | 355 |
+| the level axes turned onto the wall as the view is | 43.1 | 25.9 | 388 |
+| the camera's look and right laid onto the wall | 52.7 | 35.7 | 494 |
+| the stick's own direction on screen, onto the wall | 76.7 | 86.7 | 630 |
+
+On the lift shaft's wall the game's camera is locked looking up the shaft and
+every rule agrees (stick up went up, right went along the wall).
+
+Then the two rules side by side on the same face (`tools/research_crawl_verify.py`),
+each direction asked for along the wall's own axes and recomputed from the live
+camera each frame:
+
+| | new rule | old rule |
+| --- | --- | --- |
+| mean angle off the way asked | **29** | 61 |
+| worst | 90 (one push against something on the wall, 0.34 m/s) | 141 (backwards) |
+| mean speed, all pushes | 2.6 m/s but that one | down to 0.16 and 0.66 m/s |
+
+The camera turned to hug the wall (looking out from it) leaves both rules off
+by 30-70 degrees; in a session the game's camera is not steered on a wall.
+
+**Checked:** 320 core checks (four new: the crawl's stick in four measured
+camera frames, the view kept through frames play cannot place and levelled for
+a menu, the eyes' straight way onto a wall, the kneeling legs), all six
+protocol suites (XrData 34).
+
+# Validation — 2026-10-14
+
+## Stop on any wall and the game's own crawl takes you; up a wall, the game's own wall run
+
+Measured in the running game (profile 3, the first mission's lift shaft, a
+fresh game per build, Steam shut first) with the swing, the rays and the web
+shooter running as a VR session runs them (walls on). The rig is
+`research_vent_offer.py`, `research_warp.py` and `research_wallrun.py` in the
+session's scratchpad; the game's own offer state is read from its memory.
+
+**Why the game offers nothing on Spidy's wall.**
+
+| measured | value |
+| --- | --- |
+| the hero's offer processor (`Hero::HeroOfferProcessor`, mask at `+0x1c8`) | **0xffffffff** on the ground, **0x23** on the game's crawl, **0x2** on Spidy's wall (the game's air), 0 in between |
+| the vent's own offer (`VentOffer`, kind 0x1) | on the crawl: the processor's best offer, no reason against it; off it: reason **0x40**, its own entry check (`+0x128`) |
+
+**Onto the wall, the game's own way** (`game_warp`: the transition manager's
+`+0x360`, `HeroStateWallCrawlEnter`, asked on the main thread):
+
+| measured | value |
+| --- | --- |
+| at rest on Spidy's wall, 0.25 s | crawl asked once; the game began (`0x80a6`) 0.01 s later, its crawl (`0x8001`, standing) at **0.17 s** |
+| height through the hand-over | **90.26 -> 90.26 m**, no drop; offer mask back to 0x23 |
+| hand-overs | taken **1 of 1** in each of four fresh games, declined 0 |
+| then, on that crawl, up to the vent and Y | the vent the best offer; **into the duct** at (-528.04, 92.0, -586.93), as from a walked-onto crawl |
+| the jump off the crawl (RT + A) | caught by Spidy's wall at once, 1.0 m under the crawl, as before |
+
+**Up the wall, the game's own wall run** (its RT with the stick up, on its crawl):
+
+| measured | value |
+| --- | --- |
+| alone (nothing of Spidy's moving the player) | 9.1 m up in 1.6 s from the crawl, 5.8 m/s mean, 9 m/s peak; let go, its crawl again at the new height |
+| with the swing running | mover `0x80a1` (contact 2); **52 -> 58.4 m in 0.76 s**; the swing reported the game's hold and never owned the body; let go, `0x80a6` then the crawl (`0x8001`) at 60.94 m |
+| RT with the stick to the side | a jump off the wall, not a run - so only up the wall holds RT |
+
+**The dead ends, each measured and none shipped.**
+
+| tried | what happened |
+| --- | --- |
+| `WarpToWallCrawl` (straight to `HeroStateWallCrawlIdle`) | held at once, no drop - then the game crashed in its audio thread the moment the crawl moved (null at `+0x148`, `0x2fde47d`) |
+| the crawl's own let-go (`HeroStateWallCrawlToFall`) to walk on with Spidy | 0.35 s of the game pushing the hero 1.3 m off the wall, then a fall to the shaft's floor |
+| the swing taking the body when the stick let go of a run | stopped the game's turn back onto its crawl; an 11 m fall |
+| any `0x80` flag near the wall taken for a run | the RT + A jump shows it too; the swing let go, and he fell 43 m |
+
+## The vent, end to end: walked onto, a wall is the game's; nothing hands a player over in midair
+
+Everything below was measured in the running game, on profile 3 at the first
+mission's lift shaft, with a fresh game per run and Steam shut first. The rig:
+`probe_vent.py`/`probe_vent_walk.py` drive the virtual pad, the swing runs as a
+VR session runs it (walls on), and the game's own prompt calls are read where
+noted. The player's own three headset sessions of October 14 are the first rows.
+
+**Why the earlier fixes could not work - every hand-over from Spidy's wall.**
+
+| measured | value |
+| --- | --- |
+| headset, swing's wall to the vent | game's crawl in **0** of 905 / 494 / 503 swing samples; airborne (`native_contact` 2) in 834 / 364 / 407; **no prompt raised** in any |
+| where the swing took the wall vs where "indoors" fired | serial 1476 at y 47.9 (the shaft's floor) vs serial 3562 at y ~88 - 42 m later |
+| releases by switching walls off | `owned` stayed **1** through every metre of the fall: the swing went on flying the body, the game never got a step |
+| the hand-over's push into the wall | 3 frames in 3 tries - the wall's normal vanished the instant the walls went off - and 7.5 m drops |
+| held against the wall by the swing (0.9 -> **0.59 m**, the game's collision) | no crawl in 5 s, still or with the game's stick any way |
+| the body yielded to the game against its wall | its air state's vertical speed **-0.1 -> -42.1 m/s in one step**; a 43 m fall past the wall |
+| the swing walking up into the vent's opening | the wall flickered off and the swing's flight dropped him 43 m (very likely the player's "wall walked to the vent and fell") |
+
+The game counts its own fall from the time airborne, right through the swing's
+flight, and its first step of its own uses it: nothing can hand a player to it
+in midair. And the interact a vent raises is decided per interactable by a
+virtual call with the hero (`0x857687`, `call [rax+0x50]`, in the interaction
+update `0x857360` that raises `POIInteractAvailable` through `0x79ca40`), so
+there is no single "registered" flag to set either.
+
+**The fix - and what it measured.** A body on the ground no longer mounts a wall
+(`SwingConfig::mountFromGround` off): walked onto, the wall is the game's crawl.
+
+| run (profile 3, swing running, walls on) | result |
+| --- | --- |
+| forward from the load point, up the shaft | **1,265 / 1,263** samples on the game's crawl, **0** on the swing's wall, `owned` **0**, no jump asked for, no drop |
+| at the vent | the game raised `POIInteractAvailable(5, 0, '[BTN_Y] Enter')` |
+| the game's Y | into the duct: (-528.04, **92.0**, -586.93), inside it on screen |
+| both runs | identical |
+
+**Leaving a crawled wall** - so that walking onto walls costs no swing:
+
+| on the game's crawl, 22 m up the shaft | result |
+| --- | --- |
+| A with the stick none / back / left / right / back-left / forward | stays on the wall every time; the directions leap **along** it (back 1.2 m down, forward up) |
+| B, B back, A held 0.9 s, LB, RB, RT, LT | stays on the wall, no movement |
+| **RT + A** | **off the wall in 0.088 s** |
+| a web, before the shot fix | refused, 160 tries: its clear-line check started on the wall's own surface |
+| a web, the takeoff's A alone | held, then the takeoff timed out and retried |
+| a web, RT + A at once | first press ignored, the retry 0.6 s later left: **1.1 s** web to swing |
+| a web, RT held from the web's hold | first press: **0.46 s** |
+| a web, and the takeoff off once 12 cm clear of the wall | **0.16 s** web to swing (a web from a ledge: 0.17 s) |
+| the swing's own lease on a crawled body | `controlled` 0: the movement module is not in the crawl's path at all |
+| the crawl's climb | 2.6-3.6 m/s on the stick; RT with the stick throws him off the crawl instead |
+
+**Also measured.** The module accepts the swing's `walls` 0, 1, 2 and 3, and
+rejects 4 (`probe_walls_setting.py`) - 4 was the yield, removed. The prompt
+observer (`SpidyPromptsWatch`, probe-only: VR sessions leave it off) killed the
+game twice on profile 1's free roam, seconds after it was turned on; with it
+off the same run lives. The world-ray bridge answered 1000 to every start after
+a stop in one game process; it switches its hook back on now.
+
+**Checked:** 313 core checks, 23 launcher checks, all six protocol suites. The
+turned view, the standing body and the headroom on the crawl are unit-tested
+only. **Not yet played in a headset.**
+
+## Indoors the swing takes no new walls, which is why the vent now reaches the crawl
+
+The first build of October 14 fixed how the crawl looks and never ran: the
+headset session after it (`dist\Spidy-0.3.4\reports\game-vr-20261014-124656.json`)
+came back
+
+| | |
+| --- | --- |
+| `wall == 2`, the game's crawl | **0** of 905 swing samples |
+| `wall == 1`, the swing's own | 723, at its 0.9 m stand-off |
+| `native_contact` | **2 = airborne in 834 of 905** |
+| `prompts.raised` | **0** - the game offered no interact at all |
+| `indoor_frames` / `walls_handed_to_game` | 1914 / 3 |
+
+Wall running was on, so the swing took every wall and the game had the player
+airborne the whole climb; nothing that makes the crawl look right could run,
+because the crawl never held him. The indoors rule fired 1914 frames' worth and
+changed nothing, because its hand-over is guarded against the drop and the
+guard never lifts up a shaft.
+
+**The fix is a setting that cannot drop anybody.** `Swing::takeNewWalls(false)`
+- the `walls` setting's value 2 - keeps the wall the body is on and takes no
+other. Indoors that is all the rule needs: the player keeps what he is on until
+he leaves it himself (a jump, its top, a web), and the next wall is the game's
+own crawl. Letting go outright still means letting go, which is what 0 is for.
+
+Measured in the running game (`tools/probe_walls_setting.py`): the module takes
+`walls` 0, 1 and **2**, and rejects 3 with 2001. Unit-tested in the solver: the
+wall already held survives 60 steps of it, its normal unchanged; a body that
+flies into a new wall is left to the game; switching back on takes walls again;
+and `allowWalls(false)` still lets go, as it always did.
+
+That same session also caught a bug in this build's own headroom ray: it was
+cast along the actor's up, which is the world's up while the swing holds the
+player on a wall, so it found the shaft's ceiling **0.16 m** over his feet and
+crouched his head for 22 frames. It is cast along the surface the view actually
+stands on now, and a reading tighter than a crouch is not treated as a roof.
+
+## One wall, not two: the game's crawl holds it and Spidy gives it the view
+
+Two headset rounds on October 14, by the player, on the build before this one:
+wall running off on a plain wall and up the lift shaft of the first mission,
+then both again with wall running on.
+
+| | |
+| --- | --- |
+| the vent, crawl holding him | **opened** - "managed to get throught the vent" |
+| the camera, inside the vent | through its roof - "the camera clips through the top of it when inside" |
+| the shaft, wall running on | "the wallwalking worked only at some point, most was crawling" - the indoors rule handing the walls over, as built |
+| the body, either way | the game's crawl pose - "i dont want the crawling animation on legs or hands ever" |
+
+So the interaction was already answered, and by the crawl: it is the only hold
+the game itself calls standing on a wall, which is why its own interacts work
+there and why they cannot work on a wall of the swing's, where the game has the
+player airborne and takes its interact away 63 ms after he leaves a surface.
+What was left was that the crawl did not **look** like standing. Three things,
+each measured to a line of code:
+
+- **No view.** `SurfaceHold::crawl` and the whole of the rig's crawl path were
+  built and tested in October (`core_tests.cpp`, "game rig stands on the game's
+  wall crawl at once"), and `game_xr.cpp` passed it nothing: its own comment
+  said why - "the game takes the stick there in its own way, which is not
+  measured yet". So the one state whose interactions work on a wall was the one
+  state without the view that makes a wall a floor.
+- **Crawling legs.** `native_body.cpp` set the body's up to `toModel.rotate({0,
+  1, 0})` - the **world's** up, always. On a wall that puts the IK's ground
+  plane a quarter turn off the feet, so no foot is ever within `groundedFoot`
+  (0.3 m) of it, and `body_ik` leaves the legs to the game's pose by design.
+  The game's pose there is the crawl.
+- **Crawling fingers.** `Targets::Hand::fist` at 0 means "the game's fingers",
+  and an open hand is 0. The crawl splays them onto the wall; the player's
+  hands are where his controllers are, with nothing to splay onto.
+
+And the head: a ray from the feet along the surface the player stands on now
+says how much room is over him, and the head stops `headClearance` (0.2 m)
+under it, never closer to the feet than `leastHeadroom` (0.5 m) - a crouch,
+which is what a duct is. One rule for a vent, a duct, a low corridor and a
+wall, applied in the level frame so the surface turn carries it onto a wall's
+own normal.
+
+**What is still unmeasured, and now measures itself.** How the game's crawl
+reads the stick. The axes it is sent were the world's horizontal ones, which
+throw the whole of "up the wall" away; they are now the game camera's forward
+brought into the surface and the surface's own right, which is right if the
+crawl reads them in the camera's frame. Whether it does is what `CrawlStick`
+gathers: the turn from the direction sent to the direction taken, in the
+surface's own axes, as a circular mean.
+
+| `crawl.stick_agreement` | what it means | what to do |
+| --- | --- | --- |
+| near 1 | the crawl's frame is fixed against the surface | rotate the stick by `crawl.stick_turn_degrees` - one line |
+| near 0 | there is no fixed frame | the stick is the wrong channel: drive the mover, as the swing does on a wall of its own |
+
+Either answer ends it, out of one session. Three builds of guessing could not.
+
+**Checked:** 308 core checks, 23 launcher checks, all six protocol suites.
+`CrawlStick` against a fixed frame, no frame at all, a resting stick, a still
+body, a step into the wall and numbers that are not numbers; the rig's stick
+axes reconstructing the player's own turned intent exactly on the crawl and
+staying level on a wall of the swing's; the headroom cap at a metre, at 0.2 m,
+over the player's own head, at nothing and on a wall; the open hand landing on
+its own angles from three different game poses, leaving them alone at 0, and a
+fist closing over it. **Not yet run in a headset.**
+
+## "Crashed on game load" was the title screen being pressed blind
+
+The session (`dist\Spidy-0.3.4\reports\game-vr-20261013-210325.json`), read
+rather than guessed at:
+
+| | |
+| --- | --- |
+| `game_exited` / `error` | true / null — Spidy reported no failure |
+| `presentation` | `game_screen` for all 119 of its samples; `gate` never opened (`no_player`) |
+| `tracked` | **0**, in all 148 samples and in the final count of 414 frames |
+| `head` / `hands` | all zeros / identity — no pose ever arrived |
+| `vr_buttons` | `['b']` in 9 samples, `['a']` in 3 — the player's own Touch buttons |
+| `pad_buttons` | `0x2000` in those 9, `0x1000` in those 3 — each one passed to the game |
+| last press | frame 405, of 414 |
+| the game's own log | `[Save] Request save type 2` at 21:03:43, process gone at 21:03:46 |
+
+The game saved and quit, 20 seconds after it started: the title screen's QUIT
+GAME is two moves from the top, and the presses were made while the headset was
+being put on. Not a crash, and no dump was written because nothing faulted.
+
+The fix is `game_pad::mappingFor`: `Mapping::none` until the headset has given
+a tracked head pose once, whatever the screen and whatever the pad layer. Nine
+assertions cover it, including that every case after the first pose is what it
+was. It cannot regress a session that reaches the headset, because the gate
+opens on the first pose and never closes.
+
+## The rule never fired: `frame.seconds` is the frame, not a clock
+
+A whole session in the vent came back with **`indoor_frames: 0`**, while the
+player was on the swing's own wall for **786 of 838** swing samples and sent the
+game its Y **38** times (`pad_buttons` 0x8000). The reason is one line.
+
+`XrFrame::seconds` is the time **since the previous frame** - about 11 ms - and
+every rule here takes it that way and accumulates it; `game_pad::PadLayer` says
+so in as many words: "seconds: since the previous update", clamped to [0, .1].
+`Enclosure` and `WallHandover` were written taking it for a clock, so
+`now - since_` came out at about zero every frame and no reading could ever hold
+for the 400 ms the verdict waits. Both accumulate now, and their tests feed them
+frame lengths rather than timestamps.
+
+The counters are what found it, in one line of a report: the rays were right,
+the room was right, and the rule simply never decided.
+
+## Indoors the game keeps the walls - the rule, and the rooms it was read in
+
+`spidy::Enclosure`: five of the world rays a session already casts (one up,
+four along the ground, in the batch's free slots), and a count of how many ways
+the player is closed in - a ceiling within 4 m, or surfaces within 4 m on
+opposite sides. Two of three is indoors, held for 0.4 s before the verdict
+moves, and applied only on a frame where the swing does not have him on a wall
+of its own.
+
+**Read in the game, profile 3, walking from the Fisk lobby up into the vent**
+(`tools/probe_enclosure.py`, 30 readings):
+
+| Where | up | north | south | east | west | ways | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Fisk lobby (23 readings) | 5.0 | 5.0 | 5.0 | 4.8 | 5.0 | **0** | wall running stays on |
+| the shaft | 5.0 | 1.72 | 3.82 | 3.82 | 1.74 | **2** | indoors |
+| the shaft, turned | 5.0 | 3.96 | 1.00 | 1.00 | 3.96 | **2** | indoors |
+| inside the duct | 1.65 | 0.02 | 0.30 | 0.30 | 0.02 | **3** | indoors |
+| the duct, further | 0.88 | 0.02 | 0.29 | 0.29 | 0.02 | **3** | indoors |
+
+(5.0 is the ray's own reach: nothing found.) The lobby reading is the one that
+matters as much as the vent: a room can be indoors in the ordinary sense and
+still be nowhere near closed in, and there wall running is left alone.
+
+**The first build of this got the city wrong**, and the player found it in a
+sentence: "now i never stand on the wall". Two things in it read the open world
+as closed in, and both are measured now:
+
+- The rays started at the **feet**. On a wall the feet are on the surface, so
+  every ray started inside the building and came back at nothing. They start at
+  the **head**, which stands off the wall, in open air.
+- They counted **anything** they hit. A car, a crate or a passer-by is within
+  four metres on every street in the game. Only what the world is built of
+  counts now (`native_rays::fixedSurface`, the same test the swing uses to pick
+  a wall).
+
+Read again, both ways round:
+
+| Where | readings indoors |
+| --- | --- |
+| The city, walking the street past buildings (profile 1) | **0 of 30** - wall running untouched |
+| The Fisk lobby, then the shaft, then the duct (profile 3) | **20 of 30**, ways 2: north 3.74, south 2.10, east 2.11, west 3.76 |
+
+The second is the one the filter could have killed, and did not: a duct is built
+of the world, so it still closes the player in.
+
+Sixteen assertions cover the rule itself - the vent, the shaft, the corridor,
+the alley that must NOT count, the open city, a single wall, the settle on the
+way in and on the way out, a one-frame flap that must not take the walls back,
+and a clock that goes backwards.
+
+## The fix that did not work: the interact hands the player back
+
+`game_pad::WallHandover`, a rule with three conditions: the interact is
+pressed, the swing holds the player on a wall of its own
+(`game_swing::Surface::wall`), and the game is offering no interact. Then the
+swing's walls go off for 0.9 s (`Swing::allowWalls(false)`, which leaves the
+wall it holds), and go back on when the moment ends - on the timer, or as soon
+as the player lets go after a quarter second, or if the session's clock goes
+backwards or comes out as no number.
+
+**Why it cannot regress anything.** Those three conditions are exactly the case
+in which the press does nothing today: the game has withdrawn its interact, so
+there is nothing for any button to land on. Where the game IS offering
+something, `offered` is true and nothing is handed back - the ordinary path
+(the prompt's demand, the pad layer, the game's Y) is untouched. A player who
+set wall running off never reaches it either: the hand-over only runs when the
+settings last sent to the swing had walls on, and it puts back that value, so
+the setting cannot be turned on behind the player's back.
+
+| Checked | |
+| --- | --- |
+| Core checks | **302**, with a new one of 20 assertions over WallHandover: it fires on the press, lasts its moment, ends early when the button goes, needs a new press rather than a held one, never fires with an interact offered or off the swing's wall, counts the hand-overs and the ones the game answered, and puts the walls back for a time that went backwards or was no number |
+| Protocol checks | **116**, all six suites, including the cross-side guard that reads the C++ magic/version/`static_assert` size and compares it with what the tools demand — the test that catches the mismatch which killed three sessions earlier the same day |
+| XrData | **version 29, 952 bytes**: `wallHandovers` and `wallHandoversOffered` |
+| Build | clean Observer build |
+
+**Not measured in the game.** The hand-over end to end needs a VR session (the
+XR frame loop runs the rule), and the one step that could still surprise is
+whether the game's own crawl catches the player where he stands when the swing
+lets the wall go. It rests on the behaviour the October 10 work already
+measured for `--walls off`, which is the shipped `-NoWallRun` mode: with the
+swing not taking walls, the game's own wall state takes the player. Three
+headless attempts to see it directly failed for a reason of their own - the
+swing only takes a wall once it has the player (a jump and a web), the wall-run
+probe's reel lost him 34 m short at the save's load point, and the pad's walk
+does not move the player in free roam there - and the ray bridge allows one
+start per game launch, so each attempt costs a restart. The two new counters
+answer it in the first headset session instead: `wall_handovers` rising with
+`wall_handovers_offered` is the game taking him back and offering the vent
+again.
+
+**The crash.** The game left a dump at 20:45 (`tools/read_crash_dump.py` reads
+these now, without a debugger): **access violation reading address 0, inside
+`Spider-Man.exe` at +0x2fde47d**, in none of the six Spidy modules that were
+resident. No VR session was running, so none of this build's code was in play;
+it followed a probe whose web reel lost the player and left him stuck
+unsupported in mid-air for ten seconds.
+
+## The vent, in the game, measured: the game takes its own interact away
+
+You: "third profile is closest to the vent (you just need to run straight
+forward from load to get to it and it asks for f on keyboard)", then "try until
+you reach it stop giving up".
+
+Reached it, on the backup laptop, with no headset: `probe_menu_pad.py start`,
+then `probe_vent.py` drove the pad through SELECT PROFILE (three A presses,
+down, down, A) into **profile 3**, CONTINUE, and walked straight forward about
+23 seconds up the Fisk Tower elevator shaft to the vent the marker counts down
+to (40 m, 24 m, 0).
+
+**What the vent asks for.** Its prompt is not a text and not an icon id. It is
+an argument of the POI call:
+
+    POIInteractAvailable(5, 1, '')              the interact becomes available
+    POISetButton(5, 2.24094e+09)                the button, as a hash
+    POIInteractAvailable(5, 0, '[BTN_Y] Enter') the interact goes away, with its text
+
+So the vent says **`[BTN_Y] Enter`** — the markup token, read correctly:
+`prompts.demand` reads 32768, which is the pad's Y. On the keyboard the same
+token draws as **F**, which is what you saw. The reading works: `texts` went
+from 0 in every earlier session to 193, then 5527.
+
+**Y works.** Standing at the vent on the game's own wall crawl, the probe's Y
+was consumed in the same millisecond it was sent (`>> the probe's y` at 153188,
+`POIInteractAvailable(5, 0, '[BTN_Y] Enter')` at 153203), twice over, and
+Spider-Man went into the vent.
+
+**What takes it away.** Standing still at the vent for thirty seconds with the
+interact live, the probe pressed **A alone** — no stick, no drift:
+
+    54797  >> the probe's a
+    54860  POIInteractAvailable(5, 0, '[BTN_Y] Enter')
+
+**63 milliseconds after leaving the surface the game withdrew its own
+interact.** It does not ignore the button. There is no longer an interact to
+press, so no button can work — not Y, not the pad layer, not the prompt-driven
+press. It comes back only once he is on a surface in range again (measured:
+walking back raised `POIInteractAvailable(7, 1, '')`).
+
+**Why that is the vent bug.** Spidy's wall running drives the hero in the
+**game's air state** — that is how the swing moves him, and
+`probe_wall_run.py` asserts it (a step on the swing's wall that is not "the
+swing's in the air mode" fails the probe). So with walls on, at a vent, the
+game has already withdrawn the interact before the player presses anything.
+That is the whole of it, and it is not about buttons at all: every patch so far
+answered "which button", while the game had taken the interact away.
+
+It also predicts the rest of the family — every world interact reached while
+Spidy holds the player off the surface behaves the same.
+
+**The workaround that exists today:** **Wall running off** (the launcher's
+toggle, or `-NoWallRun`), added earlier the same day. The game's own wall crawl
+then holds him, and the interact stays. Measured in the same run: with the
+swing started but not owning the player (`owned: 0`, surface = the game's wall
+crawl), Y consumed the interact.
+
+**Not yet measured:** the interact with the swing actually owning the player on
+its own wall (`wall: 1`). `probe_vent_wall.py` starts the rays and the swing at
+the vent and walks the hero at the wall, but the swing never took it from the
+game's crawl there, so that last link rests on `probe_wall_run.py`'s own air
+mode check rather than on a reading at the vent.
+
+**Saves:** backed up before every run and compared after. Only `slot0-s.save`
+and `-userprefs.save` ever changed, both restored; profile 3's own save was
+never written. Display settings restored.
+
+## The game's own prompts answer in VR — current build, never run in the game
+
+The user: "there is a repeated pattern of interaction bugs that both i
+encoutered during sessions and are reported on discord most of them mostly
+rb+lb or interaction button related during story events or random encounters.
+I feel like we're patching stuff but there must be a more systemic way",
+then "build it fully".
+
+**What the hole was**, read from the code and from Discord (the bug, help and
+idea forums plus 400 chat messages, pulled read-only on October 13):
+
+| | |
+| --- | --- |
+| Controls `fromControllers` can send in `Mapping::gameplay` | Start, Back, A, B, Y, LB + RB together, D-pad down, LT + RT together, R3, and the Steam Frame's own View and D-pad |
+| Controls it can never send (Touch and Index) | the game's X, its L3, each bumper alone, each trigger alone, D-pad up, D-pad left, D-pad right — nine |
+| Why the game's X is missing even though punches work | punches call the damage system directly (`native_bodies::damage`), so no X ever goes to the pad; in play VR's X is the game's Back |
+| Why cutscenes were fine and story beats were not | `Mapping::menus` (the whole pad) is chosen whenever the game owns the screen; a beat or an encounter during gameplay gets the nine-control subset |
+| How each gap was found before | one player report at a time: the right stick's click for LB + RB on October 11 (a first-mission door), that stick's pushes for the heal and LT + RT on October 12 (that mission's heal and its vent) |
+| Open topics that are this one cause | about 20 of 83, among them "Can't pull objects with LB + RB (Pico 4 Ultra)", "cant use Vents", "tap x repeat but tapping x opens the menu", "SO MUCH controlls dont work", "Air Launch", "Sable-Turrets no grab with Web bug", "not being able to free Civillians in cage", "you can't collect coward's pigeons", "3.0 cant heal" |
+
+**Where the game names the button** (image offsets in the supported
+Spider-Man.exe, read from the file, no game running):
+
+| | |
+| --- | --- |
+| The prompt and QTE interface | `placeablePromptManager` with ShowPlaceablePrompt / HidePlaceablePrompt / SetPlaceablePromptProgress, `qteManager` with AddQTE(`button`, `subtype`, `miscVal`, `miscValTwo`) / UpdateQTE / ClearQTE, and POIInteractAvailable / UpdateInWorldPrompt |
+| Their movies | `ui/export/HUD/PlaceablePrompts.gfx`, `ui/export/HUD/QTEs.gfx` |
+| Where the names live | the same name table as `BotMoverManager` (0x3833a78) and `HoverMoverManager`, which the enemy scan already reads |
+| The call-name RVAs used | ShowPlaceablePrompt 0x3896ce8, HidePlaceablePrompt 0x3896cd0, SetPlaceablePromptProgress 0x3896d00, UpdateInWorldPrompt 0x3895ca0, POIInteractAvailable 0x38982c8, AddQTE 0x3896e5c, UpdateQTE 0x3896eb8, ClearQTE 0x3896e68 |
+| How those RVAs were checked | the same file-offset-to-RVA conversion gives `OpenOptions` = 0x389f4c0, which is `game_menu.cpp`'s own `openOptionsName` constant |
+| The icon vocabulary | 221 strings at 0x3a80300 and up: nine device families (X360IconMap, XOneIconMap, DualShockIconMap, DualSenseIconMap, SteamDeckIconMap, SwitchProIconMap, GenericIconMap, MkbIconMap, SteamIconMap) sharing one set of endings, plus `YUIIconMarkupConfig`, `MarkupText`, `IconMapping`, `Separator` |
+| Where the hooks come from | `game_menu` already hooks the call wrapper 0x1d1cf30 and the text lookup 0x1749970, and MinHook takes a target once, so it hands both on rather than this hooking them again (as the research exports do) |
+
+**Checked without the game:**
+
+| | |
+| --- | --- |
+| Every control of the pad can be sent in VR play | every combination of the VR controls (face buttons, both grips, both triggers, both stick clicks, the right stick's four ways, each flag the swing leaves — 17280 states a mapping) through `fromControllers`, against `prompt_buttons::controls()`: all 18 controls come out of the gameplay or the pad mapping, the nine are exactly the ones play alone cannot send, and `reachableInPlay` agrees with the mapping for each |
+| The pad layer | latches on the chord and not before `chordSeconds`, toggles once per chord (it must be let go of first), one stick alone never latches it, a web carrying the player ends it and spends the chord, 20 s with nothing pressed lets it go while a control in use keeps it |
+| The interact button carrying a prompt | the demand a press began with stands for that press even when the prompt ends or changes; a prompt that arrives while Y is already held (the hero walking up to a door) is taken; presses counted |
+| The icon ids | ids of all nine families, the Both / Outline / Small / Softpull endings, the PlayStation shapes (its X is the pad's A, its Square the pad's X), the stick ids, keyboard and mouse ids, gadgets, emoji, a Steam back grip, and "XBButtonAway" which is not XBButtonA |
+| A prompt text read and rewritten | "LB + RB (Hold) Throw" gives both bumpers and the hold and reads "RIGHT STICK CLICK (Hold) Throw"; "Tap LB" reads "Tap Y" (play has no control of its own for a single bumper); the PlayStation spelling, a vent's LT + RT, two spellings apart; an icon id in markup is read but never rewritten; a text naming no button is left alone; a full buffer writes nothing |
+| The session report | XrData 27 with the prompt fields packed: every counter parsed, `LB + RB (hold)` decoded, and the Python `reachable_in_play` and log line agree with the C++ for X, LB, LT, D-pad up, L3, LT + RT and the stick ways |
+| Nothing else broke | 300 core checks (5 new), 116 Python protocol checks (1 new), a clean Observer build with no new compiler warnings |
+
+**Not checked:** nothing in this build has run in the game. The PC is under
+the no-launch rule of October 10, so what a prompt's text actually looks like
+in play, whether the eight call names still match the game, and the feel of
+the pad layer in a headset are unproven. In a session report
+`prompts.invokes` rising while `prompts.calls` stays 0 says the call names are
+wrong; `prompts.texts` at 0 says no prompt text reached the lookup. The pad
+layer and the coverage it gives depend on neither. `--no-prompt-help`
+(XrConfig option bit 20) leaves the game's prompts alone if reading them ever
+misbehaves.
+
+## Steam Frame controllers: a layout of their own — previous build, not tried on a Steam Frame
 
 The user: "check if people with steam frame reported bugs on discord and fix
 them". Read from Discord on October 12 (the bug, help and idea forums, the
@@ -37,7 +639,134 @@ is not known either; where it does not, nothing changes for that session.
 The hands' pose on the Frame ("a bit janky", October 8, on 0.2.2) is
 untouched: no report from a Frame holds its poses.
 
-## One enemy at a time, called strikes, KO — preceding build, not tried in the headset
+## One rope for one web, the upper hand bears, the pose stays — current build, not tried in the headset
+
+The user, after the 21:53 session with the build below
+(`C:\Spidy-0.2.12\reports\game-vr-20261012-215357.json`, 165 s, `ropes.joins` 14):
+"still strong stutters and freezes that werent there. grabbing the web with
+other arm still does the shooting sound and when moving hands while dual
+holding they switch grab position. also the web shooting pose turns almost
+immidiatly to a fist".
+
+**Tests.** 293/293 core checks, the launcher's, 113 Python checks.
+
+| Check | Result |
+| --- | --- |
+| `WebRopes`: a web shot, then taken by the other hand 0.3 m nearer its end | one rope, the key of the shot; it leaves the taker's wrist; no second rope |
+| The same hands moved, no hold changed; then the first hand's rope reeled shorter | nothing changes hands; then the first hand is the nearer |
+| The hand that shot it lets go; it shoots anew; the held web is let go of | the rope stays, from the hand that has the web; the new web gets the other rope with its own key; the old rope ends and remembers its hand |
+| Two holds on one web seen in one frame | one rope |
+| `Swing`: of two hands on one web | the shorter rope bears (`bears()`); with one length for both (no PHYSICAL WEBS) both do |
+| The lower hand moved 0.3 m down the web | the body stays (within 2 cm) |
+| The lower hand's yank; the upper's; the upper's again | no zip; one; no more |
+| Hanging with weight, the upper hand lets go: the lower hand's hold 0.3 m of slack below, or moved 0.2 m further down, or 0.25 m up | the body within 3 cm of where it hung for the next half second, each time |
+| `HandPoser`: the web button held 5 s; half let go; let go | the pose whole throughout; still whole at 0.5; gone, and the fist with it, 0.5 s after |
+| A hand on the other hand's web, the button going down and held; the same with the trigger as the web button | a fist, no pose |
+| A web ball | the pose within 6 frames, whole at 0.43 s, gone at 0.77 s |
+
+Not run in the game, not tried in the headset. That the shot's sound came
+with the game's rope is inferred (the rope was all a take did in the game);
+whether it is gone needs the headset.
+
+**The session itself.** Still `display_period` 8.33 ms (120 Hz), 69.3
+pictures a second submitted, `xr_ms` end_frame 13.1 ms in the median, 7
+held rounds; `free_commit_mb` 4822 at the start and 300 at the lowest. The
+reports' `xr_runtime.headset`, and frames of 80 ms or more per minute of
+immersive play (the last 15 s of a session left out: the headset coming
+off), each a time-out in `xrEndFrame`:
+
+| Sessions | Headset | `display_period` | Freezes a minute | Lowest free commit |
+| --- | --- | --- | --- | --- |
+| Oct 11 12:42, 13:57, 15:24, 16:49 | Quest 3 | 8.33 ms | 0.0, 0.2, 0.6, 0.0 | 6-14 GB |
+| Oct 11 18:57, 20:23, 21:45 | Quest Pro | 11.1 ms | 0.0, 0.5, 0.3 (all three at 21:45 came with a jump of thousands of metres: a loading) | 3-4 GB |
+| Oct 11 22:18 | Quest 3 | 8.33 ms | 2.2 | 8.3 GB |
+| Oct 12 11:38, 14:06, 15:42 | Quest 3 | 8.33 ms | 1.3, 1.3, 1.3 | 5.7, 2.0, 2.6 GB |
+| Oct 12 16:46 | Quest 3 | 8.33 ms | 8.0 (stalls through its last half minute) | 2.3 GB |
+| Oct 12 16:51 | Quest 3 | 8.33 then 13.9 ms | 0.0 | 1.1 GB |
+| Oct 12 21:09, 21:53 | Quest 3 | 8.33 ms | 2.4, 1.7 | 0.3 GB |
+
+At each freeze of the 21:09 and 21:53 sessions the game delivered 21 to 49
+new pictures a second in the half second before and after (its usual rate),
+the player stood still at six of the fifteen, and `gpu_waiting` was 0 to 2.
+So the stream held, not the game; memory does not sort the sessions (22:18
+froze with 8 GB free); the headset does, and for the Quest 3 the evening of
+October 11 does. Why the Quest 3's sessions changed then is not found:
+Virtual Desktop's own log keeps one session and says nothing of it
+(`C:\ProgramData\Virtual Desktop\OpenXR.log`: runtime 1.0.10, streamer
+1.34.22, HEVC 10-bit, recommended 3072x3264).
+
+## The web-shooting hand; one web in both hands — preceding build, tried in the headset (21:53)
+
+The user, October 12, after the 21:09 session: "lets add hand poses like the
+real iconic ones from spiderman on web shootinh. also allow to dual hand the
+same strand of web." What each became is in [CHANGELOG.md](CHANGELOG.md).
+
+**Tests.** 292/292 core checks, nine of them new:
+
+| Check | Result |
+| --- | --- |
+| A press with the free hand 0.3 m up the other hand's web | takes hold (`EventKind::Join`, no attach, no shot); the two webs are one strand; its rope to that hand is 0.3 m shorter (19.1 of 19.4 m); the body does not move; one hand letting go leaves the web in the other. Without PHYSICAL WEBS the same, the rope as long as the first |
+| The upper hand pulled down 0.3 m, the lower let go, raised 0.3 m past the other, pressed, pulled down 0.3 m | the body 0.3 m up, then 0.6 m; the second hold's rope 18.8 m |
+| A hand 0.4 m beside the web, pressed | shoots a web of its own; with `strandReach` 0 a hand on the web does too |
+| Both hands on one web, each yanked in turn | one zip |
+| A press the swing keeps (`WebGrab::claim`'s `kept`) with a prop in the aim | catches nothing, then or while held; the next press does |
+| `SharedStrand` | the hand nearer the web's end is the first; hands 2 cm apart along it keep their places, 10 cm trade them; the farther hand's part ends on the nearer wrist |
+| `HandPoser`, 90 Hz | the button at 0.3: the pose at 0.46, the fist at 0.3; pressed with a web: the pose whole within 0.1 s and still at 0.25 s, gone at 0.55 s with the fist whole; let go: both gone in 0.5 s. A web ball: whole within 6 frames. A hand at 3 m/s: the pose whole; with an enemy marked: none. The trigger as the web button: a fist on the web |
+| The pose on Spider-Man's hand (`body::solve`, plain and mirrored frames; from an open hand, over a fist, and half way from the fist) | every finger joint within 0.01 rad of its angle; the two middle fingertips on the palm's side and back toward the wrist; the index and little fingers within 37 degrees of the hand's way; the thumb within 0.03 rad of 57 degrees out to its side, its bones their lengths and within 20 degrees of straight; the wrist on its controller |
+
+The launcher's tests and 113 Python checks in six suites (one new: the rope
+telemetry's version 2, with `joins` and `shared`).
+
+**Not run in the game, not tried in the headset.** The XR worker
+(game_xr.cpp) runs only with a headset: the tick, the pose's timing against
+the real buttons, and the strand's drawing by the game's own ropes
+(`native_webs`, the farther hand's rope aimed at the nearer wrist) are
+untested there. Whether a game rope a few centimetres long draws cleanly is
+not known. `tools/probe_game_body.py --phases rig,ik,eyes --shoots 0,1`
+(new option) would show the pose on the hero's mesh; I did not start the
+game for it tonight.
+
+## The 21:09 session's "drops": the headset at 120 Hz, not the build
+
+The user, after that session (`C:\Spidy-0.2.12\reports\game-vr-20261012-210952.json`,
+build `xr_hash` 40b0de4e, the same as at 16:46 and 16:51): "preformance isnt
+great in the last run, was better before (or is it network again)?", and
+then: "we didnt have the drops yesterday, was silky smooth".
+
+From the session reports of October 10 to 12 (29 with samples, in three
+play folders), immersive samples only:
+
+| Session | `display_period` | To the headset | `xr_ms` wait_frame / end_frame | Frames within 1 ms of the median | Over 16 ms |
+| --- | --- | --- | --- | --- | --- |
+| Oct 11 20:23 (78f8bdfa) | 11.1 ms (90 Hz) | 86.8 /s | 8.7 / 0.8 ms | 65% | 1.5% |
+| Oct 11 21:45 (6e77e5ba) | 11.1 ms | 88.5 /s | 9.7 / 0.8 ms | 80% | 1.0% |
+| Oct 11 22:18 (6e77e5ba) | 8.33 ms (120 Hz) | 70.5 /s | 0.0 / 13.1 ms | 45% | 11% |
+| Oct 12 11:38, 14:06, 15:42, 16:46 | 8.33 ms | 70-72 /s | 0.0 / 13 ms | 40-55% | 9-14% |
+| Oct 12 16:51 (40b0de4e) | 8.33, then 13.9 ms | 71.7 /s | 0.0 / 13.2 ms | 68% | 4% |
+| Oct 12 21:09 (40b0de4e) | 8.33 ms | 70.2 /s | 0.0 / 12.9 ms | 38% | 13-15% |
+
+- At 90 Hz `xrWaitFrame` paces the loop and `xrEndFrame` returns in under a
+  millisecond; at 120 Hz the wait returns at once and `xrEndFrame` takes 13
+  ms: the loop is always behind the display. The split is the same in light
+  and heavy scenes (`render_frame_mb` under 8 against 14 and over).
+- Network: cable up, no Wi-Fi, 15 held rounds (1.5 s) in the 21:09 session.
+- The game's own rate at one spot (the roof at -555, 165, -620, standing,
+  eyes at 50%): 54.5 and 55.2 at 90 Hz (78f8bdfa, 6e77e5ba), 56.5 and 57.3
+  at 120 Hz (6e77e5ba, 73056b18). No build changed it, nor did the mode.
+- It follows `render_frame_mb`: over stall-free 5 s windows, 48-55 a
+  second at 6-9 MB and 47-50 at 9-12 MB in each session since October 11
+  evening, whatever the build. The 21:09 session spent 35 s at 17-22 MB (a
+  swing 80-190 m up, x -16 to 274, z 954 to 1441): 34-39 a second.
+- `free_commit_mb`: 5163 at the start, 329 at the lowest (10136 and 5677 at
+  11:38). The game's log gives its own commit as 13.4-14.7 GB in both; the
+  rest is other programs (the Claude app held 8.9 GB two minutes after the
+  session).
+
+Not confirmed: a session at 90 Hz after this. Who set 120 Hz is not known;
+Spidy requests no refresh rate (`xr_session.cpp` only reads the runtime's
+period).
+
+## One enemy at a time, called strikes, KO — preceding build, run in the headset (16:46, 16:51, 21:09), no word on it yet
 
 The user, after a session with the build below (15:42 to 15:56,
 `C:\Spidy-0.2.12\reports\game-vr-20261012-154237.json`; he plays from

@@ -205,6 +205,48 @@ The live experiment updated these fields but did not prevent the post-lease
 vertical drop. This experiment is disabled by default. The swing controller
 instead keeps control of flight after web release and returns it on landing.
 
+## Rope points and gadgets (October 15, read from the code only)
+
+Static reading of this executable, never run: what to check in the game
+before relying on any of it.
+
+**A rope's points.** A rope slot (manager `+0x50 + slot * 0x7c8`) keeps its
+points at `+0x1c` (Vec3, stride 12, at most 128), their count at `+0x6ac`.
+Inside RopeManager::Update `676dd0`, `679dc0` rebuilds every attached rope's
+points from scratch each update: Start, Grip when it is not zero, then the
+hero's hand points (`95f9c0`, the hero rope manager's vtable `+0x78`, entry
+`48 8b c4 f3 0f 11 50 18 55 53 56 41 56 48 8d a8`, `void(mgr, rope, dt,
+int* count)`), then the line from the last of those to the anchor; `677f40`,
+still inside the update, copies the points into the tube and ribbon geometry
+with their bounds. Points written after the update are never drawn; written
+by the hand points, they are (native_webs' `handPoints`). The most points a
+rope type takes: int16 at `[rope + 8] + 0x28`. Creating a rope posts
+HeroRopeFiredEvent (`0xef6e3c2a`) at its first update (`+0x70c` bit 0x40):
+the shot's sound.
+
+**The player's gadgets.** The hero's HeroWeaponManagerLocal (TYPE static
+`0x6dd84e0`, vtable `0x38b59b8`) keeps a weapon loaded for every gadget the
+player owns: records at `+0x1a8 + i * 0x18` (weapon id at `+0x10`), their
+count at `+0x628`; eight slots of `0x28` bytes, slot `s`'s weapon id at
+`+0x6c + s * 0x28` - slot 0 the equipped gadget (what RB fires), slot 2 the
+built-in web shooter. A weapon by its id: `21633c0(manager, id)`. Gadget
+classes by vtable: WebShooter `391c950`, ImpactWeb `3919a80`, WebBomb
+`391bfc0`, ElectricWeb `3919110`, ProximityMine (Trip Mine) `391ace0`,
+ShockerBlast (Concussion Blast) `391b1a0`, SpiderDrone `391b658`,
+AirLauncher (Suspension Matrix, a guess) `39186a0`, WebBlast `391bb10`. All
+share the fire event (`+0x108` = `e3bd80`) and the charges: `+0x188` now
+(`e3b710`), `+0x190` most (`e3b790`), both `float(weapon, trigger)`; each has
+its own event fill at `+0x100`. Equipping: GameEquipInventory (TYPE
+`0x6e09180`) keeps the selected weapon id at `+0x11a`; the game's wheel
+calls `bbc2d0(inventory, guid, &request)` with the item's GUID and a request
+`{-1, 1, 0, 0, 0x6dacab4c}`, applied the next frame. Given a GUID the player
+does not own, that call creates the item: pass only GUIDs read from owned
+items. Firing: the game checks the manager (`+0x108` of its vtable), the
+weapon's readiness (`+0x2a0`) and charges (`+0x180`), and its fire handler
+consumes the charges itself for the usual fire modes. Spidy's game_shooter
+reads the gadget list (Data v3); equipping and firing from the hand wait for
+a run in the game.
+
 ## OpenXR
 
 Dependency: [Khronos OpenXR SDK 1.1.49](https://github.com/KhronosGroup/OpenXR-SDK/tree/977f6675bc0057d5a54ed290cb5c71c699b1c0ab),

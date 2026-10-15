@@ -14,7 +14,9 @@
 //
 // Every change is a rigid turn of a joint and everything under it about that
 // joint, a move of the whole pose, or a scale about a point, so skinning,
-// helper joints and joint scales keep what the game animated. Joint frames
+// helper joints and joint scales keep what the game animated - except under
+// the wrists: each hand is set back to its rest pose from the wrist and posed
+// from there, so nothing the game animates reaches the fingers. Joint frames
 // may be mirrored (left and right limbs often are): the solver never takes a
 // joint's orientation as a rotation, only where its frame sends a direction.
 // Model space is the character's: +y up, the feet at the origin.
@@ -99,6 +101,9 @@ struct Rig {
     // (out of the palm).
     Vec3 pelvisForward{}, pelvisUp{}, headForward{}, headUp{};
     std::array<Vec3, 2> handFingers{}, handPalm{};
+    // In each hand's frame too: across the palm, from the little finger's
+    // side to the thumb's (zero when the rest pose does not say).
+    std::array<Vec3, 2> handThumb{};
     // The axis each finger joint after the palm's bends about, in the frame
     // of the joint before it: a positive turn closes the finger toward the
     // palm. Per arm and finger, its first three such joints (zero where a
@@ -106,6 +111,15 @@ struct Rig {
     // closing it across the palm toward the little finger.
     std::array<std::vector<std::array<Vec3, 3>>, 2> fingerHinges{};
     std::array<std::array<Vec3, 2>, 2> thumbHinges{};
+    // Each joint under each hand (its fingers, its thumb and whatever else
+    // hangs from the wrist) as the rest pose holds it from the hand: where
+    // the hand's frame sends the joint's axes, and its place. What solve()
+    // sets the hand back to before it poses the fingers.
+    struct HandJoint {
+        int16_t joint{};
+        Vec3 axes[3]{}, at{};
+    };
+    std::array<std::vector<HandJoint>, 2> handRest{};
     // The point between the eyes from the head joint, along the head's
     // forward, up and left, in model units; its height above the feet.
     Vec3 eyesFromHead{};
@@ -115,6 +129,11 @@ struct Rig {
     // calibration (body_calibration.hpp) measures the player's arms from.
     std::array<Vec3, 2> shoulders{};
     std::array<float, 2> upperArm{}, forearm{}, thigh{}, shin{};
+    // Each foot as the rest pose stands on it: the character's forward and up
+    // in the foot's own frame, and the foot joint's height over the ground.
+    // What a planted foot (Targets::plant) is turned back to.
+    std::array<Vec3, 2> footForward{}, footUp{};
+    std::array<float, 2> ankleHeight{};
     bool ready{};
 };
 // Builds the per-joint subtrees and the rest-pose references from a rest pose
@@ -128,13 +147,17 @@ struct Targets {
     // In the air (swinging, falling): the legs keep the game's pose instead
     // of standing on the ground.
     bool airborne{};
-    // The world's up in model space: the model's own +y while the hero
-    // stands, the wall's normal while it crawls on one. The body always
-    // stands upright in the world, as the player does.
+    // The player's up in model space: the way he stands. The world's up on
+    // the ground; on a wall or a ceiling the view stands him on, that
+    // surface's normal, whatever the hero's own frame is doing there (turned
+    // onto it in the game's crawl, upright in the air Spidy's own wall holds
+    // him in). The body always stands along it, as the player does.
     Vec3 up{0, 1, 0};
     Vec3 eyes{};   // the point between the eyes
     Quat facing{}; // the headset: +x right, +y up, -z where it looks (OpenXR)
     struct Hand {
+        // Untracked, the arm stays where the hand was last tracked from the
+        // body, moving and turning with it.
         bool tracked{};
         // The controller's OpenXR grip pose: its point is at the palm of the
         // closed hand; +x is normal to the palm (to the right on both
@@ -142,14 +165,37 @@ struct Targets {
         // from the wrist out past the knuckles.
         Vec3 grip{};
         Quat orientation{};
-        // How far the hand is closed into a fist, 0 (the game's fingers) to 1.
+        // How far the hand is closed into a fist, 0 (this body's own open
+        // hand, Config::openBend) to 1.
         float fist{};
+        // How far it is in the web-shooting pose, 0 to 1, over the fist: the
+        // two middle fingers pressed into the palm, the first and the little
+        // one out, the thumb out to its side.
+        float shoot{};
     };
     std::array<Hand, 2> hands{}; // 0 the left controller, 1 the right
     // A flip's tilt of the player, model space (the identity while level):
     // the body stands as the player would level, then turns with them about
     // the eyes. Tilted, the legs keep the game's pose, as in the air.
     Quat tilt{};
+    // The game's legs are no stance here - its own wall crawl, splayed on
+    // the wall, or the air pose of the hero Spidy's own wall holds. Planted,
+    // the feet go flat on the floor (the plane through `floor`, square to
+    // `up`) under the hips, as the rest pose stands, and the body stands on
+    // them whatever the game's pose does. Without it the legs kept the
+    // crawl's shape under the upright hips, which is what the player saw on a
+    // crawled wall: "i dont want the crawling animation on legs or hands
+    // ever" (October 14).
+    bool plant{};
+    // A point on that floor, model space: the model's origin where the hero
+    // stands on it himself (the ground, the game's crawl), the surface under
+    // the player where Spidy holds the hero clear of it (its own wall).
+    Vec3 floor{};
+    // Planted under a roof the view holds the head below the player's own
+    // (a vent, a duct): the legs kneel, the knees down and the shins back
+    // along the floor behind him, where a squat folded them up in front of
+    // his eyes. Standing tall enough, kneeling is standing.
+    bool kneel{};
 };
 struct Config {
     // Where the wrist joint sits from the grip point of a right hand, in its
@@ -179,6 +225,21 @@ struct Config {
     // units) out from the middle bones of the first two fingers.
     float fistBend[3]{1.45f, 1.65f, 1.1f};
     float thumbBend = 1.1f, thumbBendMax = 1.4f, thumbRest = .016f;
+    // Shooting a web (Hand::shoot): of three fingers or more the first and
+    // the last stay out, each joint shootOut from the bone before it, and the
+    // others press into the palm, on the web shooter's trigger, each joint
+    // shootPress (knuckle, middle, tip, radians, about the finger's own
+    // hinge). The thumb's joints straighten to shootThumbBend and it points
+    // shootThumb from the fingers' way toward its own side, in the palm's
+    // plane.
+    float shootPress[3]{1.3f, 1.55f, .75f}, shootOut[3]{.05f, .08f, .05f};
+    float shootThumbBend = .1f, shootThumb = 1;
+    // The open hand, holding nothing, under the fist and the shooting pose:
+    // each finger joint past the palm sits this far from the bone before it
+    // (knuckle, middle, tip, radians), the thumb's first two joints
+    // openThumb. A hand at rest, barely curled.
+    float openBend[3]{.22f, .3f, .22f};
+    float openThumb = .18f;
     // Feet within this height of the ground in the game's pose stand on it:
     // the legs bend to keep them there. Higher, the legs keep the game's pose.
     float groundedFoot = .3f;
@@ -186,6 +247,9 @@ struct Config {
     // to this far from over them (leaning, a step in the room); further, the
     // feet follow by the rest, so the legs never trail far behind.
     float footReach = .15f;
+    // Kneeling (Targets::kneel), the knee's height over the floor at the
+    // body's own size: where the kneecap rests on it.
+    float kneeHeight = .07f;
     // Shrinks the head to a millimetre, so the eyes are not inside it.
     bool hideHead = true;
     // The hands take the controllers' orientation; false keeps the game's.
@@ -197,6 +261,14 @@ struct Config {
 struct State {
     float weight{}, yaw{};
     bool yawSet{};
+    // Each hand as last tracked: from the eyes in the body's frame (its
+    // forward, up and left), and its orientation in that frame.
+    struct Held {
+        bool set{};
+        Vec3 grip{};
+        Quat orientation{};
+    };
+    std::array<Held, 2> held{};
 };
 // Turns the body's yaw by `radians` about the up, at once: the player snap
 // turned (body and all), or the model turned under the body (the hero's

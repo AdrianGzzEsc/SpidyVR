@@ -813,7 +813,8 @@ bool game_grab::offering() {
 void game_grab::allow(bool on) {
     allowed = on;
 }
-Input game_grab::claim(float inputSeconds, const Input& in, const WorldQueries& world, const Body& player) {
+Input game_grab::claim(float inputSeconds, const Input& in, const WorldQueries& world, const Body& player,
+                       unsigned kept) {
     if (!offered)
         return in;
     if (!allowed) {
@@ -826,7 +827,7 @@ Input game_grab::claim(float inputSeconds, const Input& in, const WorldQueries& 
     if (inputSeconds > 0)
         watch.current(candidates);
     heroBody = player;
-    auto out = core.claim(inputSeconds, in, world, targets, player);
+    auto out = core.claim(inputSeconds, in, world, targets, player, kept);
     count(0);
     counted = core.events().size();
     return out;

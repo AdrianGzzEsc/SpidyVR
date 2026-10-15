@@ -222,7 +222,7 @@ void WebGrab::releaseAll() {
     }
 }
 Input WebGrab::claim(float seconds, const Input& in, const WorldQueries& world, const TargetQueries& targets,
-                     const Body& player) {
+                     const Body& player, unsigned kept) {
     Input swing = in;
     if (!std::isfinite(seconds) || seconds < 0 || seconds > .1f || !in.focused) {
         // A paused or unfocused game: nothing may stay attached across it.
@@ -270,7 +270,7 @@ Input WebGrab::claim(float seconds, const Input& in, const WorldQueries& world, 
                     h.owned = false;
                 if (g.phase != GrabPhase::None && !held)
                     letGo(i, targets, player, releasing[1 - i]);
-                if (g.phase == GrabPhase::None && shoot) {
+                if (g.phase == GrabPhase::None && shoot && !(kept >> i & 1)) {
                     if (const auto target = preview(hand.aim, world, targets)) {
                         g.phase = GrabPhase::Tethered;
                         g.target = target->id;

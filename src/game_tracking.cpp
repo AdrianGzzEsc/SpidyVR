@@ -239,24 +239,49 @@ void GameTrackingRig::reset() {
     flip_.reset();
 }
 GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameForward, bool gameplay,
-                                        Vec3 surfaceUp, bool airborne, const SurfaceHold& surface) {
+                                        Vec3 surfaceUp, bool airborne, const SurfaceHold& surface,
+                                        Vec3 gameUp) {
     GameMotionFrame out;
     out.swing.focused = false;
     pendingRecenter_ |= f.recentered;
+    // The game camera as it looks, for the crawl's stick (below); level for
+    // the rest. Looking straight up or down a shaft it has no level look, and
+    // the last one stands: it only aligned the tracking space at the start
+    // and lays the stick along the ground.
+    const Vec3 cameraForward = gameForward, cameraUp = gameUp;
     gameForward = horizontal(gameForward);
-    const bool active = gameplay && f.focused && f.valid && validTrackedPose(f.head) && finite(feet) &&
-                        length(gameForward) > .9f && std::isfinite(f.seconds) && f.seconds > 0 &&
-                        f.seconds <= .1f && f.predictedDisplayTime > lastTime_ &&
-                        validTrackedPose(f.eyes[0].pose) && validTrackedPose(f.eyes[1].pose) &&
-                        lens(f.eyes[0].fov) && lens(f.eyes[1].fov);
-    if (!active) {
-        // Menus, scenes and stutters find the player level.
+    const bool cameraLevel = length(gameForward) > .9f;
+    if (cameraLevel)
+        lastGameForward_ = gameForward;
+    else
+        gameForward = lastGameForward_;
+    out.inactive = (gameplay ? 0u : notPlaying) | (f.focused && f.valid ? 0u : unfocused) |
+                   (validTrackedPose(f.head) ? 0u : noHead) | (finite(feet) ? 0u : noFeet) |
+                   (cameraLevel || initialized_ ? 0u : noCamera) |
+                   (std::isfinite(f.seconds) && f.seconds > 0 && f.seconds <= .1f ? 0u : badFrameTime) |
+                   (f.predictedDisplayTime > lastTime_ ? 0u : staleDisplay);
+    if (!validTrackedPose(f.eyes[0].pose) || !validTrackedPose(f.eyes[1].pose) || !lens(f.eyes[0].fov) ||
+        !lens(f.eyes[1].fov))
+        out.inactive |= noEyes;
+    if (out.inactive) {
         wasActive_ = false;
-        flip_.reset();
-        rig_.tilt = {};
-        surfaceTurn_ = {};
-        surfaceShift_ = {};
-        standing_ = false;
+        // Menus and scenes find the player level, and so does a break as
+        // long as blipSeconds. A frame or a few that play could not place -
+        // a stutter, a display time the headset repeated, the game's camera
+        // as the crawl turns the hero onto a shaft's wall - keep the view
+        // standing where it stood: levelled there and turned back onto the
+        // wall a moment later, it swung a quarter turn and back within a
+        // fifth of a second, twice in one vent (October 14, 19:57).
+        const auto since = f.predictedDisplayTime - lastTime_;
+        const bool brief =
+            gameplay && lastTime_ && since < static_cast<std::int64_t>(blipSeconds * 1'000'000'000.f);
+        if (!brief) {
+            flip_.reset();
+            rig_.tilt = {};
+            surfaceTurn_ = {};
+            surfaceShift_ = {};
+            standing_ = false;
+        }
         return out;
     }
     const bool resumed = !wasActive_;
@@ -335,7 +360,7 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
         rig_.tilt = {};
     }
     // Standing on the surface: the tracking space turns onto it about the
-    // feet, each frame the short way from where its up is, so a corner's
+    // eyes, each frame the short way from where its up is, so a corner's
     // next face turns it on from the wall it is on; back level, what is left
     // is a turn about the vertical, which the tracking space keeps.
     const bool walks = handValid(f.hands[0]) && std::hypot(f.hands[0].stickX, f.hands[0].stickY) > .2f;
@@ -349,11 +374,20 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
         const float left = 2 * std::atan2(length({rest.x, rest.y, rest.z}), rest.w);
         const Vec3 shift = standing_ ? surface.anchor - feet : Vec3{};
         if (left > 1e-4f) {
+            // About the eyes, not the feet: the world turns round the player
+            // where he looks from, and his eyes go straight to where they
+            // stand on the new floor, as much of the way as the turn goes
+            // each frame, so the two end together. Turned about the feet,
+            // the eyes swung round an arc as high as they stand - two and a
+            // half metres in a sixth of a second, over the player's head.
             const float take = std::min(left, wallTurnRate * f.seconds);
+            const Vec3 eyes = rig_.toWorld(f.head).position + standOff_ + headDrop_ - feet;
+            const Vec3 from = surfaceShift_ + surfaceTurn_.rotate(eyes);
+            const Vec3 to = shift + (rest * surfaceTurn_).rotate(eyes);
             surfaceTurn_ = unit(Quat::around({rest.x, rest.y, rest.z}, take) * surfaceTurn_);
-            surfaceShift_ += (shift - surfaceShift_) * (take / left);
+            surfaceShift_ = from + (to - from) * (take / left) - surfaceTurn_.rotate(eyes);
         } else {
-            surfaceShift_ += (shift - surfaceShift_) * (1 - std::exp(-f.seconds / .05f));
+            surfaceShift_ += (shift - surfaceShift_) * (1 - std::exp(-f.seconds / surfaceGlideSeconds));
             if (!standing_ && (surfaceTurn_.x != 0 || surfaceTurn_.y != 0 || surfaceTurn_.z != 0)) {
                 const float heading = 2 * std::atan2(surfaceTurn_.y, surfaceTurn_.w);
                 rig_.origin = feet + Quat::yaw(heading).rotate(rig_.origin - feet);
@@ -383,7 +417,25 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     out.standOff = standOff_;
     if (onSurface)
         out.surfaceClearance = dot(unplacedHead + standOff_ - feet, away);
-    Rig placed{rig_.origin + standOff_, rig_.yaw, rig_.tilt, rig_.pivot};
+    // The head never goes through what is over the player: inside a vent or a
+    // duct one placed at his own eye height over the floor is out through the
+    // roof. Worked out here in the level frame, where up is the world's; the
+    // surface turn below carries it onto a wall's own normal, so a player
+    // standing on a wall is held off its roof by the same rule.
+    Vec3 drop{};
+    if (headroom_ > 0) {
+        const float height = dot(unplacedHead + standOff_ - feet, {0, 1, 0});
+        const float room = std::max(headroom_ - headClearance, leastHeadroom);
+        if (height > room)
+            drop.y = room - height;
+    }
+    headDrop_ += (drop - headDrop_) * (1 - std::exp(-f.seconds / standOffSeconds));
+    // Back to the player's own head once there is nothing left of it: an
+    // exponential never quite arrives, and two millimetres is not a drop.
+    if (drop.y == 0 && std::abs(headDrop_.y) < .002f)
+        headDrop_ = {};
+    out.headDrop = -headDrop_.y;
+    Rig placed{rig_.origin + standOff_ + headDrop_, rig_.yaw, rig_.tilt, rig_.pivot};
     const bool turned = surfaceTurn_.x != 0 || surfaceTurn_.y != 0 || surfaceTurn_.z != 0;
     if (turned || length(surfaceShift_) > 0) {
         // The level placement, turned about the feet and moved onto the
@@ -396,6 +448,9 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     }
     out.standing = standing_;
     out.viewTilt = std::acos(std::clamp(surfaceTurn_.rotate({0, 1, 0}).y, -1.f, 1.f));
+    out.standUp = surfaceTurn_.rotate({0, 1, 0});
+    out.floor = surfaceShift_;
+    out.flipTilt = rig_.tilt;
     out.active = true;
     out.releaseWebs = longBreak || pendingRecenter_ || buttonsChanged_;
     pendingRecenter_ = buttonsChanged_ = false;
@@ -430,9 +485,39 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     // Existing native input bridge uses these bits for W/A/S/D/Space, the
     // virtual Xbox controller the stick itself. Rotate head-relative movement
     // into the stock camera's horizontal axes.
-    const float forward = dot(levelMove, gameForward), right = dot(levelMove, cross(gameForward, {0, 1, 0}));
+    //
+    // Horizontal holds while the player stands on the ground: his intent is
+    // level and so are the axes. On the game's own crawl neither is, and the
+    // axes are the crawl's own: it takes its stick along its camera's look
+    // laid onto the surface - or, where the camera faces the surface too
+    // squarely for that (crawlLook), along the camera's up laid onto it - and
+    // the surface's own right of that. Measured in the game on a building's
+    // face with its camera turned seven ways (October 15): 24 degrees off on
+    // average. The level axes this replaces (the camera's level look laid
+    // onto the wall) were 42 off, and turned a push right round, 85 to 161
+    // degrees, wherever the camera stood beside the player on the wall - as
+    // it does in a vent's narrow shaft, where the player of October 14 pushed
+    // up it and crawled sideways and down (half his pushes there under a
+    // metre a second, against the crawl's 2.6). His intent goes onto the
+    // surface as the view stands him on it, or as it would if it did.
+    Vec3 ahead = gameForward, side = cross(gameForward, {0, 1, 0});
+    Vec3 move = levelMove;
+    if (surface.crawl && holds && finite(cameraForward) && finite(cameraUp)) {
+        const Vec3 look = cameraForward - held * dot(cameraForward, held);
+        const Vec3 top = cameraUp - held * dot(cameraUp, held);
+        const Vec3 along = length(look) > crawlLook ? look : top;
+        if (length(along) > 1e-3f) {
+            ahead = normalized(along);
+            side = cross(ahead, held);
+            const Vec3 meant = (standing_ ? surfaceTurn_ : arc({0, 1, 0}, held)).rotate(levelMove);
+            move = meant - held * dot(meant, held);
+        }
+    }
+    const float forward = dot(move, ahead), right = dot(move, side);
     out.walkRight = right;
     out.walkForward = forward;
+    out.walkForwardAxis = ahead;
+    out.walkRightAxis = side;
     if (forward > .3f)
         out.nativeKeys |= 1u << 0;
     if (right < -.3f)

@@ -82,8 +82,9 @@ bool offering();
 // next sample and every press swings; the watch keeps running. On by default.
 void allow(bool);
 // One input sample, in the swing's callback before the swing sees it.
-// Returns the input for the swing, without the grips a grab owns.
-Input claim(float inputSeconds, const Input&, const WorldQueries&, const Body& player);
+// Returns the input for the swing, without the grips a grab owns. `kept`: a
+// bit per hand whose press the swing keeps (WebGrab::claim).
+Input claim(float inputSeconds, const Input&, const WorldQueries&, const Body& player, unsigned kept = 0);
 // The swing's view of an input between grab ticks.
 Input forSwing(const Input&);
 // What a grip press aimed along `aim` would catch now, if anything: the pick

@@ -48,6 +48,22 @@ struct SwingConfig {
     // wallReach. A wall: fixed, its normal within wallSlope of level.
     bool walls = false;
     float wallClearance = .9f, wallReach = 1.5f, wallSlope = .5f;
+    // Held against the wall instead (Swing::hugWalls): the body's centre this
+    // far from it, inside the game's own capsule, so its collision does meet
+    // the wall - which is the point. That is what the game answers by sticking
+    // the body to the wall in its own crawl, the one hold it calls standing,
+    // and so the one whose vents, doors and prompts work on a wall. The swing
+    // keeps holding the body the whole time; nothing lets go of it.
+    // It rests within a tenth of a metre above this, as the usual hold does
+    // above its own clearance.
+    float hugClearance = .2f;
+    // Pressed into the wall (Swing::pressWalls): the body is driven into it at
+    // this speed and the wall's clearance is not kept, so the game's own
+    // collision meets it moving. That is what the game answers with its wall
+    // state - held there, its crawl a second later - on a swing that meets a
+    // wall (October 9 headset reports); a body only held against it at rest
+    // got nothing in five seconds (October 14).
+    float pressSpeed = 3;
     // Follow shallow facade steps and clear a sill before the native capsule
     // reaches it. Deeper setbacks still end the wall.
     float wallStep = .75f;
@@ -76,6 +92,16 @@ struct SwingConfig {
     // above the body too. In the air the stick takes a wall within mountReach
     // the same way, with no speed into it.
     float mountReach = 1.3f, mountSeconds = .1f, mountHold = .5f, mountHeight = 1.2f;
+    // A standing body the stick walks at a wall mounts it: the game's jump,
+    // then the swing's wall (mountWall). On by default since October 15, the
+    // player: "use our locomotion system only and override the games state to
+    // what we need". From October 14 a wall walked onto was the game's crawl,
+    // so that its vents and doors worked; the game's interactions now work on
+    // the swing's wall (game_offers), and the crawl, its wall run and the
+    // hand-overs between them and the swing - which felt bad and twice put a
+    // player out of the world - are gone from walls. allowMounts switches it
+    // off where the game crawls the player through a vent.
+    bool mountFromGround = true;
     // Physical webs: a web is a rope (the VR settings' PHYSICAL WEBS).
     // - It bends round the edge that comes between the body and its end
     //   instead of letting go there, round maxBends edges at most, and lies
@@ -93,6 +119,17 @@ struct SwingConfig {
     //   body that had walked on back by all of that once it left the ground.
     bool physical = false;
     float bendOut = .06f, bendClearance = .35f, bendRope = .5f, handHeight = .6f, maxHandSpeed = 8;
+    // One web in both hands: a grip press with the free hand within
+    // strandReach of the other hand's web (from that hand on, toward what it
+    // hangs from) takes hold of that web instead of shooting one. Each hand
+    // holds it where it took it, as slack there as the web was. The hand
+    // nearer the web's end along it (the shorter rope) bears the body, and
+    // pulls and zips it; the other holds the slack below and moves nothing,
+    // as on a real rope. When the bearing hand lets go, the other has the
+    // web where it now is: no drop, no snap. Let go with the lower hand and
+    // take the web again above the other: hand over hand. 0: every press
+    // shoots.
+    float strandReach = .16f;
 };
 // The edges one web bends round at most (SwingConfig::physical).
 constexpr int maxBends = 6;
@@ -154,6 +191,11 @@ struct Web {
     // The edges it bends round, from its end on; `anchor` is the last one.
     std::array<Bend, maxBends> bends{};
     int bent{};
+    // Which web this is: each shot makes a new one. A hand that takes hold of
+    // the other hand's web (SwingConfig::strandReach) holds the same one,
+    // `taken` and not shot by it.
+    std::uint32_t strand{};
+    bool taken{};
     // Where the web sticks.
     Vec3 end() const {
         return bent ? bends[0].from : anchor;
@@ -188,6 +230,7 @@ enum class EventKind {
     Wrap,     // a web bent round an edge
     Unwrap,   // it came off its last one
     Leap,     // a charged leap left the ground; strength: its charge
+    Join,     // a hand took hold of the other hand's web
 };
 struct Event {
     EventKind kind;
@@ -227,6 +270,81 @@ class Swing {
     // Whether a body in the air stays on the walls it comes into from now on
     // (SwingConfig's walls); off, it leaves the one it is on.
     void allowWalls(bool allowed);
+    // Whether it takes NEW walls from now on. Off it keeps the one it has and
+    // takes no other, so the next wall after this one is the game's - its own
+    // crawl, the only hold the game itself calls standing, and so the only one
+    // whose vents, doors and prompts work on a wall.
+    //
+    // This is what indoors asks for. Switching the walls off outright leaves
+    // the wall at once (allowWalls -> leaveWall), and the body is held 0.9 m
+    // clear of it, so that is a fall straight past it - measured twice in the
+    // headset, October 13 and 14, both times as a drop the player did not ask
+    // for. Taking no new ones drops nobody: he keeps what he is on until he
+    // leaves it himself, and the game has the next.
+    void takeNewWalls(bool allowed) {
+        newWalls_ = allowed;
+    }
+    bool takingNewWalls() const {
+        return newWalls_;
+    }
+    // Whether the wall the body is on holds it against itself (hugClearance)
+    // rather than wallClearance out. It still holds it: the body is drawn in
+    // at a walk, never let go of.
+    void hugWalls(bool on) {
+        hug_ = on;
+    }
+    bool huggingWalls() const {
+        return hug_;
+    }
+    // Whether the wall the body is on is pressed into (pressSpeed) rather than
+    // held off. The swing still holds the body: it does not leave the wall.
+    void pressWalls(bool on) {
+        press_ = on;
+    }
+    bool pressingWalls() const {
+        return press_;
+    }
+    // The surface the GAME holds the body on now - its own wall crawl - as its
+    // normal out of it and a point of its face; zero while it holds the body
+    // on none. A web's shot is checked for a clear line from the body to its
+    // anchor ("hands cannot shoot through a wall"), and on the game's crawl
+    // the body is on the wall itself, so that line began at its surface: a
+    // player who had walked up a wall could not swing off it (October 14, the
+    // first mission's shaft: no web held in 160 tries from the crawl). It
+    // begins wallClearance out, as it does from a wall of the swing's own.
+    //
+    // And for backSeconds after, no wall is taken whose face is turned
+    // against it and lies behind it: that is its own face met from inside it.
+    // Off the game's crawl the body is on the wall's surface, inside its
+    // collision, and a ray from there meets that face from behind, turned
+    // toward the body; taken, it held a player on the wrong side of the first
+    // mission's shaft until he fell out of the world (October 15,
+    // game-vr-20261015-094756 at 55 s: 0.6 m behind it). An outside corner's
+    // next face is never turned against the last one.
+    static constexpr float backSeconds = 1.5f;
+    void supportSurface(Vec3 normal, Vec3 point = {}) {
+        support_ = finite(normal) && length(normal) > .5f ? normalized(normal) : Vec3{};
+        if (length(support_) > .5f && finite(point) && length(point) > 0) {
+            back_ = {point, support_};
+            backLeft_ = backSeconds;
+        }
+    }
+    // Whether walking at a wall - or on along the game's own crawl - mounts
+    // the swing's wall from now on (with SwingConfig::mountFromGround). Off
+    // where the game crawls the player through a vent or a duct: a mount
+    // there is the game's jump inside a duct.
+    void allowMounts(bool allowed) {
+        mounts_ = allowed;
+    }
+    // Whether the game holds the body in one of its own wall states now (its
+    // crawl, its grasp, its run and the turns between them). No wall is taken
+    // from there but by the mount's jump: the body is on the wall's surface,
+    // inside its collision, and a ray from there meets the back of the wall,
+    // turned toward the body. Taken, it held a player behind the first
+    // mission's shaft until he fell out of the world (October 15).
+    void gameHoldsWall(bool holds) {
+        gameHolds_ = holds;
+    }
     // Whether webs are ropes from now on (SwingConfig::physical). Off, a web
     // that bends round an edge hangs from that edge as if it had stuck there.
     void allowPhysical(bool allowed);
@@ -273,6 +391,16 @@ class Swing {
     const std::array<Web, 2>& webs() const {
         return webs_;
     }
+    // Both hands hold one web (SwingConfig::strandReach).
+    bool shared() const {
+        return webs_[0].attached && webs_[1].attached && webs_[0].strand && webs_[0].strand == webs_[1].strand;
+    }
+    // Hand `hand` is free and on the other hand's web, as of the latest
+    // input: its grip press would take hold of that web, and shoot none.
+    bool onStrand(int hand) const;
+    // Hand `hand`'s web holds the body when taut: any web but the longer
+    // rope of two hands on one web.
+    bool bears(int hand) const;
     const SwingConfig& config() const {
         return config_;
     }
@@ -291,6 +419,9 @@ class Swing {
         // Physical webs: the hand from the body's centre, in the world, and
         // how fast it moved there in the latest input sample.
         Vec3 offset{}, rate{};
+        // The same place whatever the webs are, as the latest sample had it:
+        // where the hand takes hold of the other hand's web.
+        Vec3 reach{};
     };
     void inputs(float dt, const Input&, const WorldQueries&);
     void step(float dt, const Input&, const WorldQueries&, const World* collision);
@@ -340,6 +471,24 @@ class Swing {
     // Time the wall's ray has missed, time since a wall jump, and what is
     // left of the push over a wall's top edge, against crestNormal_.
     float wallLost_{}, sinceWallJump_ = 100, crest_{};
+    // Whether a wall the body comes into is taken (takeNewWalls). The wall it
+    // is already on is kept either way, corners of that wall included.
+    bool newWalls_ = true;
+    bool hug_{}, press_{};
+    // Mounts allowed (allowMounts); the game holds the body on a wall of its
+    // own (gameHoldsWall).
+    bool mounts_ = true, gameHolds_{};
+    Vec3 support_{};
+    // The game's crawl's surface as it last held the body there (a point of
+    // its face, its normal), and how long its back is still refused.
+    struct Face {
+        Vec3 point{}, normal{};
+    } back_{};
+    float backLeft_{};
+    // The clearance the wall holds the body at now.
+    float clearance() const {
+        return hug_ ? config_.hugClearance : config_.wallClearance;
+    }
     Vec3 crestNormal_{};
     // Rounding a corner onto the wall's next face: the way along that face,
     // and the time left to come in front of it.
@@ -354,5 +503,7 @@ class Swing {
     // The step the input sample in hand is for (a hand's rate is no faster
     // than its travel over that step).
     float stepSeconds_{};
+    // Webs shot so far (Web::strand).
+    std::uint32_t strands_{};
 };
 } // namespace spidy

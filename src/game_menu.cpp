@@ -9,6 +9,7 @@
 // same code, from items copied from the game's own, and adds it to the list;
 // its items name settings 0x200 and up, which only Spidy answers for.
 #include "spidy/game_menu.hpp"
+#include "spidy/game_prompts.hpp"
 #include <MinHook.h>
 #include <algorithm>
 #include <array>
@@ -18,10 +19,32 @@
 #include <iterator>
 #include <string_view>
 #include <type_traits>
+#include <intrin.h>
 #include <windows.h>
 using namespace spidy;
 using namespace spidy::game_menu;
 using vr_settings::Item;
+
+// A probe's record of the menus' Flash calls and callbacks (SpidyMenuTrace),
+// off in a session: what a menu sends Flash and what Flash answers, to find
+// the game's own menus by.
+struct MenuTraceEntry {
+    uint32_t kind{}, hash{}, count{}, pad{}; // kind 1 a call into Flash, 2 a callback from it
+    uint64_t ui{}, caller{}; // the code that called (its image offset)
+    char name[48]{};
+    uint32_t types[4]{};
+    uint64_t values[4]{};
+    char texts[4][24]{};
+};
+struct MenuTrace {
+    uint32_t magic = 0x54524d53, version = 1, bytes = sizeof(MenuTrace), on{};
+    uint32_t next{}, pad{};
+    MenuTraceEntry entries[256]{};
+};
+static_assert(sizeof(MenuTraceEntry) == 224 && sizeof(MenuTrace) == 24 + 256 * 224);
+extern "C" {
+__declspec(dllexport) MenuTrace SpidyMenuTraceData;
+}
 
 namespace {
 // The settings system; +0x20 its config, whose tabs are at +0x168 (0x40 bytes
@@ -31,6 +54,22 @@ constexpr uintptr_t settingsSystem = 0x5d96dd0;
 constexpr uintptr_t openOptions = 0x7dd9f0;
 // A tab's Flash object, rows and all: (out value, movie, tab) -> built.
 constexpr uintptr_t buildTab = 0x807740;
+// One item's row onto a Flash array, the tabs' rows (807740) and the pause
+// menu's first page alike: (array, movie, item, flag). The first page
+// (7dd7c0, the menu at the settings config's +0x128, its items at +0x158, as
+// many as +0x160 says) adds its items in a loop; this is where its call
+// returns to.
+constexpr uintptr_t addItem = 0x80a220, pageItemReturn = 0x7dd8ae, pageItems = 0x158;
+// The first page's own build (7dd7c0: its items, then Flash's Refresh), and
+// the callback Flash sends when A selects one of its items, with the item's
+// number (+8) - for VR VIEW, Spidy's setting number. The page shows its items
+// as buttons, so VR VIEW is one: A switches the view, and its name says what
+// A does next.
+constexpr uintptr_t pageRefresh = 0x7dd7c0;
+constexpr uint32_t pageSelectHash = 0xd0dbcfa5;
+constexpr unsigned char pageRefreshBytes[] = {0x48, 0x89, 0x5c, 0x24, 0x08, 0x48, 0x89, 0x74,
+                                              0x24, 0x10, 0x48, 0x89, 0x7c, 0x24, 0x18, 0x55};
+const char* const pageTitles[] = {"SWITCH TO GAME SCREEN", "SWITCH TO VR"};
 // The UI movie Flash objects are made in.
 constexpr uintptr_t uiMovie = 0x1d29690;
 // "OpenOptions", the literal openOptions passes; the hash Flash's
@@ -75,6 +114,7 @@ using TypeFn = int(__fastcall*)(void*, int);
 using ValueFn = float(__fastcall*)(void*, int);
 using ActiveFn = bool(__fastcall*)(void*, int);
 using SetFn = void(__fastcall*)(void*, int, float, bool, bool);
+using AddItemFn = bool(__fastcall*)(GfxValue*, void*, const void*, bool);
 using ResetFn = void(__fastcall*)(void*, int, bool);
 using TextFn = const char*(__fastcall*)(uint32_t, const char*);
 using HasTextFn = bool(__fastcall*)(uint32_t);
@@ -87,6 +127,7 @@ SetFn originalSet{};
 ResetFn originalReset{};
 TextFn originalText{};
 HasTextFn originalHasText{};
+AddItemFn originalAddItem{};
 
 uintptr_t imageBase{};
 SRWLOCK lock = SRWLOCK_INIT;
@@ -99,6 +140,14 @@ std::atomic<bool> hooked{}, created{};
 std::atomic<int> built{};
 alignas(16) unsigned char tab[tabBytes];
 alignas(16) unsigned char items[rowCount][itemBytes];
+// The tab's own items (the rows not on the first page), and the row that is.
+alignas(16) unsigned char tabItems[rowCount][itemBytes];
+size_t tabRows{};
+int pageRow = -1;
+std::atomic<uint64_t> pagesBuilt{};
+// The page's own build is this game's (checked at install): without it VR
+// VIEW stays off the page.
+bool pageReady{};
 alignas(16) unsigned char choices[rowCount][maxChoices][choiceBytes];
 
 // The tab's texts, by the hashes the game looks texts up with: the tab's
@@ -135,6 +184,8 @@ const Text* addText(const char* tag, const char* text) {
 }
 const Text *tabName{}, *tabHeading{};
 const Text *titles[rowCount]{}, *helps[rowCount]{};
+// The first page's button's name, which says what A does (pageTitles).
+Text* pageTitle{};
 const Text* choiceTexts[rowCount][maxChoices]{};
 void addTexts() {
     if (textCount)
@@ -146,6 +197,8 @@ void addTexts() {
         const auto& row = vr_settings::rows()[r];
         sprintf_s(tag, "SPIDY_VR_%zu", r);
         titles[r] = addText(tag, row.title);
+        if (row.page)
+            pageTitle = const_cast<Text*>(titles[r]);
         if (row.help) {
             sprintf_s(tag, "SPIDY_VR_%zu_HELP", r);
             helps[r] = addText(tag, row.help);
@@ -240,13 +293,21 @@ uint32_t buildItems() {
                 put<uint64_t>(c, 0x28, 0);
             }
         }
+        // The tab's rows, and the one for the first page.
+        tabRows = 0;
+        pageRow = -1;
+        for (size_t r = 0; r < rowCount; ++r)
+            if (vr_settings::rows()[r].page)
+                pageRow = static_cast<int>(r);
+            else
+                std::memcpy(tabItems[tabRows++], items[r], itemBytes);
         std::memcpy(tab, reinterpret_cast<const void*>(menu), tabBytes);
         put<uint32_t>(tab, 8, tabId);
         putText(tab, 0x10, tabName);
         putText(tab, 0x20, tabHeading);
-        put<uint64_t>(tab, 0x30, reinterpret_cast<uint64_t>(items));
-        put<uint32_t>(tab, 0x38, static_cast<uint32_t>(rowCount));
-        put<uint32_t>(tab, 0x3c, static_cast<uint32_t>(rowCount));
+        put<uint64_t>(tab, 0x30, reinterpret_cast<uint64_t>(tabItems));
+        put<uint32_t>(tab, 0x38, static_cast<uint32_t>(tabRows));
+        put<uint32_t>(tab, 0x3c, static_cast<uint32_t>(tabRows));
         return 0;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return 9501;
@@ -261,7 +322,8 @@ bool ready() {
     }
     return built == 1;
 }
-// The game's main thread is building the SPIDY VR tab.
+// The game's main thread is building the SPIDY VR tab (or VR VIEW on the
+// pause menu's first page).
 thread_local bool buildingTab{};
 // Adds the SPIDY VR tab, built by the game's own code, to the tabs the pause
 // menu's Settings hand to Flash.
@@ -289,6 +351,30 @@ void addTab(GfxValue& tabs) {
     }
 }
 
+// The pause menu's first page: under its first item (RESUME), VR VIEW, built
+// by the same code as the page's own rows and answered as the tab's are.
+bool __fastcall addItemHook(GfxValue* array, void* movie, const void* item, bool flag) {
+    const bool made = originalAddItem(array, movie, item, flag);
+    if (_ReturnAddress() != reinterpret_cast<void*>(imageBase + pageItemReturn) || !pageReady || !ready() ||
+        pageRow < 0 || !pageTitle)
+        return made;
+    AcquireSRWLockShared(&lock);
+    pageTitle->text = pageTitles[shown.flatScreen ? 1 : 0];
+    ReleaseSRWLockShared(&lock);
+    __try {
+        const auto config = get<uintptr_t>(imageBase + settingsSystem + 0x20);
+        if (!config || reinterpret_cast<uintptr_t>(item) != get<uintptr_t>(config + pageItems))
+            return made;
+        buildingTab = true;
+        if (originalAddItem(array, movie, items[pageRow], false))
+            ++pagesBuilt;
+        buildingTab = false;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        buildingTab = false;
+        failure = 9504;
+    }
+    return made;
+}
 // The row a setting number is, or -1 for the game's own settings.
 int rowOf(int setting) {
     const int r = setting - firstSetting;
@@ -309,19 +395,67 @@ void change(Item item, int index) {
         ++changesMade;
 }
 
+void trace(uint32_t kind, void* ui, uint32_t hash, const char* name, const GfxValue* args, uint32_t count,
+           void* caller) {
+    auto& t = SpidyMenuTraceData;
+    if (!t.on)
+        return;
+    auto& e = t.entries[static_cast<uint32_t>(InterlockedIncrement(reinterpret_cast<volatile LONG*>(&t.next)) - 1) %
+                        std::size(t.entries)];
+    e = {};
+    e.kind = kind;
+    e.hash = hash;
+    e.count = count;
+    e.ui = reinterpret_cast<uint64_t>(ui);
+    e.caller = reinterpret_cast<uint64_t>(caller) - imageBase;
+    __try {
+        if (name)
+            strncpy_s(e.name, name, _TRUNCATE);
+        for (uint32_t i = 0; args && i < count && i < 4; ++i) {
+            e.types[i] = args[i].type;
+            e.values[i] = args[i].data;
+            if ((args[i].type & typeMask) == 6) {
+                const char* s = (args[i].type & managedType) ? *reinterpret_cast<const char* const*>(args[i].data)
+                                                             : reinterpret_cast<const char*>(args[i].data);
+                if (s)
+                    strncpy_s(e.texts[i], s, _TRUNCATE);
+            }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
+}
 bool __fastcall invokeHook(void* ui, const char* name, GfxValue* args, uint32_t count, uint64_t a, float b,
                            uint32_t c, uint64_t d) {
+    trace(1, ui, 0, name, args, count, _ReturnAddress());
     if (name == reinterpret_cast<const char*>(imageBase + openOptionsName) && args && count >= 1 &&
         (args[0].type & typeMask) == arrayType && args[0].objects)
         addTab(args[0]);
+    // MinHook takes this target once, so the prompts are read from here
+    // rather than from a second hook of their own (game_prompts.hpp).
+    game_prompts::observeCall(imageBase, name, args, count);
     return originalInvoke(ui, name, args, count, a, b, c, d);
 }
 void __fastcall callbackHook(void* ui, uint32_t hash, GfxValue* args, uint32_t count) {
+    trace(2, ui, hash, nullptr, args, count, _ReturnAddress());
+    // A on VR VIEW, on the pause menu's first page: the other view, and the
+    // page built again to name the next one.
+    if (built == 1 && pageReady && pageRow >= 0 && hash == pageSelectHash && args && count >= 1 &&
+        ((args[0].type & typeMask) == intType || (args[0].type & typeMask) == intType + 1) &&
+        static_cast<uint32_t>(args[0].data) == static_cast<uint32_t>(firstSetting + pageRow)) {
+        AcquireSRWLockShared(&lock);
+        const bool screen = shown.flatScreen;
+        ReleaseSRWLockShared(&lock);
+        change(Item::view, screen ? 0 : 1);
+        reinterpret_cast<void(__fastcall*)(void*)>(imageBase + pageRefresh)(ui);
+        return;
+    }
     // Y RESET ALL on the SPIDY VR tab: the game's RESET ALL takes only its own tabs.
     if (built == 1 && args && count >= 1 && (args[0].type & typeMask) == intType &&
         static_cast<uint32_t>(args[0].data) == tabId && hash == get<uint32_t>(imageBase + resetAllHash)) {
+        // The tab's own rows: VR VIEW is on the first page, not in the tab.
         for (size_t r = 0; r < rowCount; ++r)
-            change(itemOf(static_cast<int>(r)), vr_settings::defaultChoice(itemOf(static_cast<int>(r))));
+            if (!vr_settings::rows()[r].page)
+                change(itemOf(static_cast<int>(r)), vr_settings::defaultChoice(itemOf(static_cast<int>(r))));
         // Built again, every tab shows its values, as after the game's own RESET ALL.
         reinterpret_cast<void(__fastcall*)(void*)>(imageBase + openOptions)(ui);
         return;
@@ -378,7 +512,9 @@ const char* __fastcall textHook(uint32_t hash, const char* fallback) {
     if (buildingTab)
         if (const char* text = textFor(hash))
             return text;
-    return originalText(hash, fallback);
+    // The same for the texts: a prompt's own names its buttons, and in VR it
+    // names what the player presses instead.
+    return game_prompts::observeText(originalText(hash, fallback));
 }
 bool __fastcall hasTextHook(uint32_t hash) {
     return (buildingTab && textFor(hash)) || originalHasText(hash);
@@ -415,6 +551,8 @@ const Hook hooks[] = {
      {0x48, 0x89, 0x5c, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10}, 10},
     {0x1749ae0, reinterpret_cast<void*>(&hasTextHook), reinterpret_cast<void**>(&originalHasText),
      {0x48, 0x83, 0xec, 0x28, 0x8b, 0xd1, 0x48, 0x8b, 0x0d}, 9},
+    {addItem, reinterpret_cast<void*>(&addItemHook), reinterpret_cast<void**>(&originalAddItem),
+     {0x48, 0x89, 0x5c, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10}, 10},
 };
 bool matches(uintptr_t at, const unsigned char* bytes, size_t count) {
     __try {
@@ -440,6 +578,7 @@ uint32_t game_menu::install(uintptr_t base) {
                 return 9301 + static_cast<uint32_t>(i);
         imageBase = base;
         addTexts();
+        pageReady = matches(base + pageRefresh, pageRefreshBytes, sizeof(pageRefreshBytes));
         auto status = MH_Initialize();
         if (status != MH_OK && status != MH_ERROR_ALREADY_INITIALIZED)
             return 9400 + status;
@@ -490,6 +629,7 @@ Telemetry game_menu::telemetry() {
     t.changes = changesMade;
     t.installed = hooked;
     t.status = failure;
+    t.pages = pagesBuilt;
     return t;
 }
 
@@ -498,7 +638,8 @@ namespace {
 // The settings as XrData reports them: flags 1 web grab, 2 punch, 4 body,
 // 8 webs in open air, 16 web shooter, 32 aim markers; 64 a T-pose
 // calibration wanted (CALIBRATE BODY: ON RESUME); 128 flips (experimental);
-// 256 the trigger webs (WEB BUTTON: TRIGGER); 512 STAND ON WALLS. hud: the HUD
+// 256 the trigger webs (WEB BUTTON: TRIGGER); 512 STAND ON WALLS; 1024 (in the
+// sample) VR VIEW: GAME SCREEN. hud: the HUD
 // row (0 off, 1-3); flipSpeed: FLIP SPEED, degrees a second.
 struct ProbeSettings {
     uint32_t magic = 0x554e4d53, version = 5, bytes = sizeof(ProbeSettings), flags{};
@@ -564,7 +705,8 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyMenuSample(void* output) {
     ReleaseSRWLockShared(&lock);
     s.flags = (v.webGrab ? 1u : 0u) | (v.punch ? 2u : 0u) | (v.body ? 4u : 0u) | (v.airWebs ? 8u : 0u) |
               (v.webShooter ? 16u : 0u) | (v.aimMarkers ? 32u : 0u) | (v.calibrate ? 64u : 0u) |
-              (v.flips ? 128u : 0u) | (v.triggerWebs ? 256u : 0u) | (v.standOnWalls ? 512u : 0u);
+              (v.flips ? 128u : 0u) | (v.triggerWebs ? 256u : 0u) | (v.standOnWalls ? 512u : 0u) |
+              (v.flatScreen ? 1024u : 0u);
     s.snapTurn = static_cast<uint32_t>(v.snapTurn);
     s.smoothTurn = static_cast<uint32_t>(v.smoothTurn);
     s.haptics = static_cast<uint32_t>(v.haptics);
@@ -580,6 +722,13 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyMenuSample(void* output) {
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return 9601;
     }
+    return 0;
+}
+// SpidyMenuTraceData from now (1, cleared first) or no more (0).
+extern "C" __declspec(dllexport) DWORD WINAPI SpidyMenuTrace(void* on) {
+    if (on)
+        SpidyMenuTraceData.next = 0;
+    SpidyMenuTraceData.on = on ? 1 : 0;
     return 0;
 }
 extern "C" __declspec(dllexport) DWORD WINAPI SpidyMenuStop(void*) {

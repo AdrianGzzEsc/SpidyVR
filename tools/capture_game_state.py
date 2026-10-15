@@ -14,7 +14,7 @@ import pathlib
 import struct
 import sys
 import time
-from inspect_game import EXPECTED_SHA256, VTABLES, FUNCTIONS
+from inspect_game import EXPECTED_SHA256, EXPECTED_VERSION, VTABLES, FUNCTIONS, file_version
 
 # Address fact independently checked by discover_render_types.py.
 LIVE_VTABLES = {**VTABLES, 'follow_camera': 0x38715C8}
@@ -110,8 +110,12 @@ class Game:
             size = w.DWORD(32768); path = c.create_unicode_buffer(size.value)
             if not query_path(self.handle, 0, path, c.byref(size)): raise c.WinError(c.get_last_error())
             self.path = pathlib.Path(path.value)
-            if hashlib.sha256(self.path.read_bytes()).hexdigest() != EXPECTED_SHA256:
-                raise RuntimeError('The running executable is not the supported Steam build.')
+            # Steam's file, or another copy of its version (the Epic Games Store's): Spidy's modules check the
+            # game's code wherever they use it, and refuse where it differs.
+            self.steam_build = hashlib.sha256(self.path.read_bytes()).hexdigest() == EXPECTED_SHA256
+            if not self.steam_build and file_version(self.path) != EXPECTED_VERSION:
+                raise RuntimeError(f'The running executable is not the supported game version '
+                                   f'({EXPECTED_VERSION}, Steam build 23986256).')
             snap = checked_snapshot(0x08 | 0x10, pid)
             try:
                 module = ModuleEntry(); module.size = c.sizeof(module)

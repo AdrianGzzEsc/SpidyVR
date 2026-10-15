@@ -53,7 +53,7 @@ Swing::Swing(SwingConfig c) : config_(c) {
         c.maxZipImpulse,    c.jumpSpeed,       c.pointLaunchWindow, c.zipLandingWindow, c.obstructionTime,
         c.anchorClearance,  c.wallStep,        c.wallCarry,       c.wallWalkSpeed,   c.wallAcceleration,   c.wallBrake,
         c.wallJumpOut,      c.wallJumpUp,      c.wallJumpPause,   c.wallGrace,          c.crestSeconds,
-        c.crestPush,        c.crestHop};
+        c.crestPush,        c.crestHop,        c.strandReach};
     for (float v : nonnegative)
         if (!std::isfinite(v) || v < 0)
             throw std::invalid_argument("Invalid swing configuration");
@@ -61,12 +61,14 @@ Swing::Swing(SwingConfig c) : config_(c) {
         throw std::invalid_argument("Invalid rope range or fixed timestep");
     if (!std::isfinite(c.wallReach) || c.wallReach < c.wallClearance || c.wallReach > 10 || c.wallSlope >= 1)
         throw std::invalid_argument("Invalid wall reach or slope");
+    if (!std::isfinite(c.hugClearance) || c.hugClearance < 0 || c.hugClearance > c.wallClearance)
+        throw std::invalid_argument("Invalid hug clearance");
     if (c.wallStep > 1)
         throw std::invalid_argument("Invalid wall step");
     if (!std::isfinite(c.mountReach) || c.mountReach < 0 || c.mountReach > 10 || !(c.mountSeconds >= 0) ||
         !(c.mountHold >= 0) || !std::isfinite(c.mountHeight))
         throw std::invalid_argument("Invalid wall mount");
-    if (!std::isfinite(c.handHeight) || c.bendRope > c.minRope)
+    if (!std::isfinite(c.handHeight) || c.bendRope > c.minRope || c.strandReach > 1)
         throw std::invalid_argument("Invalid physical web");
 }
 void Swing::allowPhysical(bool allowed) {
@@ -74,6 +76,25 @@ void Swing::allowPhysical(bool allowed) {
 }
 Vec3 Swing::hold(int i) const {
     return config_.physical ? webs_[i].anchor - hands_[i].offset : webs_[i].anchor;
+}
+bool Swing::onStrand(int i) const {
+    if (i < 0 || i > 1 || !(config_.strandReach > 0))
+        return false;
+    const int o = 1 - i;
+    const auto& held = webs_[o];
+    if (webs_[i].attached || !held.attached || !hands_[i].sample || !hands_[o].sample)
+        return false;
+    // The web from the hand that holds it to what it hangs from, and this
+    // hand from that one.
+    const Vec3 line = held.anchor - body_.position - hands_[o].reach, to = hands_[i].reach - hands_[o].reach;
+    const float span = dot(line, line);
+    const float along = span > 1e-6f ? std::clamp(dot(to, line) / span, 0.f, 1.f) : 0.f;
+    return length(to - line * along) <= config_.strandReach;
+}
+bool Swing::bears(int i) const {
+    if (i < 0 || i > 1 || !webs_[i].attached)
+        return false;
+    return !shared() || webs_[i].length <= webs_[1 - i].length + 1e-4f;
 }
 void Swing::payOut(Vec3 position, float slack) {
     if (!config_.physical || !finite(position) || !(slack >= 0))
@@ -192,6 +213,19 @@ void Swing::leaveWall() {
 }
 void Swing::joinWall(const RayHit& hit) {
     const Vec3 n = hit.normal;
+    // A wall the body is behind is the inside of one. Off the game's own
+    // crawl the body is on the wall's surface, inside its collision, and a ray
+    // from there meets a face turned back toward the body: taken, it held the
+    // player half a metre "behind" his own wall and stood his view 1.7 m out
+    // along that backward normal - through the wall, into the void (October
+    // 14, the first mission's shaft: normal (+0.71, 0, +0.71) on a wall facing
+    // (-0.71, 0, -0.71), distance -0.35 to -0.67, "got oob completely").
+    if (!finite(n) || dot(body_.position - hit.point, n) < -.05f)
+        return;
+    // Nor the face of the wall the game's crawl had the body on, met from
+    // behind it (supportSurface).
+    if (backLeft_ > 0 && dot(n, back_.normal) < -.5f && dot(hit.point - back_.point, back_.normal) < .05f)
+        return;
     const float into = -dot(body_.velocity, n);
     Vec3 along = body_.velocity + n * into;
     // Part of the speed into the wall goes on along it, the more the body
@@ -214,7 +248,7 @@ void Swing::joinWall(const RayHit& hit) {
 }
 void Swing::offerWall(const RayHit& wall) {
     const Vec3 n = normalized(wall.normal);
-    if (!config_.walls || !wall.fixed || !finite(wall.point) || length(n) < .5f ||
+    if (!config_.walls || !newWalls_ || !wall.fixed || !finite(wall.point) || length(n) < .5f ||
         std::abs(n.y) > config_.wallSlope)
         return;
     mountWall_ = {wall.point, n, wall.surface, true};
@@ -222,6 +256,7 @@ void Swing::offerWall(const RayHit& wall) {
 }
 void Swing::senseWall(float dt, const Input& in, const WorldQueries& world) {
     sinceWallJump_ += dt;
+    backLeft_ = std::max(0.f, backLeft_ - dt);
     const bool offered = offered_;
     offered_ = mounting_ = false;
     if (!config_.walls) {
@@ -258,15 +293,31 @@ void Swing::senseWall(float dt, const Input& in, const WorldQueries& world) {
         return hit;
     };
     if (offered) {
-        mountLeft_ = config_.mountHold;
+        if (!body_.grounded)
+            mountLeft_ = config_.mountHold;
         mountOffered_ = true;
     }
     if (body_.grounded) {
         leaveWall();
         crest_ = 0;
+        // No mounts (mountFromGround, allowMounts): the game's crawl offered
+        // to the swing is not taken from it, nor is a wall the stick walks
+        // the body at.
+        if (!config_.mountFromGround || !mounts_) {
+            mount_ = 0;
+            mountLeft_ = 0;
+            return;
+        }
+        // On the game's own crawl the player stays until he walks on: at rest
+        // there the game's interactions are its own, and one the player asked
+        // for (game_offers) put him there to run it. Nor is a move of the
+        // game's own off the wall taken from it - a vent's way in - only the
+        // jump the walk asks for, which ends on the wall as the walked mount's
+        // does, stick let go of meanwhile or not.
         if (offered) {
             mount_ = 0;
-            mounting_ = true;
+            mounting_ = finite(in.move) && length(in.move) >= .35f;
+            mountLeft_ = mounting_ ? config_.mountHold : std::max(0.f, mountLeft_ - dt);
             return;
         }
         auto wall = walkedAt(.7f);
@@ -289,7 +340,7 @@ void Swing::senseWall(float dt, const Input& in, const WorldQueries& world) {
         return;
     }
     mount_ = 0;
-    if (mountLeft_ > 0) {
+    if (mountLeft_ > 0 && mounts_) {
         // Off the ground by the mount's jump: onto its wall, up it at a walk
         // at most. Once more if the game stood the body again meanwhile.
         mountLeft_ -= dt;
@@ -302,6 +353,12 @@ void Swing::senseWall(float dt, const Input& in, const WorldQueries& world) {
             joinWall(mountWall_);
             return;
         }
+    }
+    // The game holds the body on a wall of its own: nothing is taken from
+    // there but by the mount's jump, above.
+    if (gameHolds_) {
+        leaveWall();
+        return;
     }
     if (wall_.on) {
         wall_.seconds += dt;
@@ -442,6 +499,13 @@ void Swing::senseWall(float dt, const Input& in, const WorldQueries& world) {
     // into it, and none off it: a fall down a facade, a jump beside one.
     if (!wall && (wall = walkedAt(.5f)))
         body_.velocity -= wall->normal * std::max(0.f, dot(body_.velocity, wall->normal));
+    // This path is how a wall carries on: the next face of a shaft, the wall
+    // past a gap, the one a climbing body is pushed at. Refusing it here
+    // dropped the player at the vent he was climbing to - the game's own crawl
+    // cannot catch a body held 0.9 m clear of the wall, so a refused wall is a
+    // fall (the player, October 14: "i went forward, wall walked to the vent
+    // and fell"). A climb is never interrupted; only STARTING one is refused
+    // when new walls are off, which offerWall does.
     if (wall)
         joinWall(*wall);
 }
@@ -473,23 +537,30 @@ void Swing::wallMotion(float dt, const Input& in) {
             along = along * (std::max(0.f, slower) / speed);
         }
     }
-    body_.velocity = limited(along + n * out, config_.maxSpeed);
+    body_.velocity = limited(along + n * (press_ ? -config_.pressSpeed : out), config_.maxSpeed);
 }
 void Swing::holdWall(float dt, float before, const World* collision) {
     const Vec3 n = wall_.normal;
     const float distance = dot(body_.position - wall_.point, n), out = dot(body_.velocity, n);
+    // Pressed: no clearance kept, nothing taken off the speed into the wall;
+    // the game's collision is what stops the body there.
+    if (press_) {
+        wall_.distance = distance;
+        return;
+    }
     // No nearer than the clearance; a body already inside it (the facade
     // stepped out, a corner) comes out at a walk. One the wall lets drift
     // off comes back slowly, unless something carries it away.
-    const float nearest = std::min(config_.wallClearance, before + 4 * dt);
+    const float held = clearance();
+    const float nearest = std::min(held, before + 4 * dt);
     float shift{};
     if (distance < nearest)
         shift = nearest - distance;
-    else if (distance > config_.wallClearance + .1f && out < .2f)
-        shift = -std::min(distance - config_.wallClearance, 2 * dt);
+    else if (distance > held + .1f && out < .2f)
+        shift = -std::min(distance - held, 2 * dt);
     if (shift != 0)
         move(body_.position + n * shift, collision);
-    if (out < 0 && distance + shift <= config_.wallClearance + 1e-3f)
+    if (out < 0 && distance + shift <= held + 1e-3f)
         body_.velocity -= n * out;
     wall_.distance = distance + shift;
 }
@@ -513,10 +584,17 @@ void Swing::reset(Body b) {
     sinceWallJump_ = 100;
     mount_ = mountLeft_ = 0;
     mounting_ = offered_ = mountOffered_ = false;
+    strands_ = 0;
 }
 void Swing::release(int i, EventKind reason) {
     if (webs_[i].attached)
         events_.push_back({reason, i, .2f});
+    // One web in both hands, and the hand that bore the body lets go: the
+    // other has the web where it now is. Its own hold was the slack below,
+    // as long or as short as that hand had moved since.
+    if (const int o = 1 - i; shared() && !bears(o))
+        webs_[o].length =
+            std::max(std::min(config_.minRope, webs_[o].length), length(hold(o) - body_.position));
     webs_[i] = {};
     hands_[i].zipUsed = false;
     hands_[i].reeling = false;
@@ -554,7 +632,7 @@ std::array<float, 2> Swing::reeled(std::array<float, 2> rates, float seconds) co
 }
 float Swing::follow(int i, Vec3 radial) const {
     const auto& other = webs_[1 - i];
-    if (!other.attached)
+    if (!bears(1 - i))
         return 1;
     const Vec3 delta = body_.position - hold(1 - i);
     const float dist = length(delta);
@@ -625,9 +703,13 @@ void Swing::inputs(float dt, const Input& in, const WorldQueries& world) {
         // The hand that holds the rope: where the grip is from the head,
         // turned into the world. It follows a jump of that turn (a snap turn)
         // no faster than a hand moves, and its rate is the arm's own motion.
+        const Quat turn = trackingTurn(in);
+        const Vec3 offset = turn.rotate(h.gripRelativeToHead) + Vec3{0, config_.handHeight, 0};
+        // On the other hand's web, as the samples before this one had both
+        // hands: a press takes hold of that web.
+        const bool onOther = onStrand(i);
+        s.reach = offset;
         if (config_.physical) {
-            const Quat turn = trackingTurn(in);
-            const Vec3 offset = turn.rotate(h.gripRelativeToHead) + Vec3{0, config_.handHeight, 0};
             const float over = std::max({dt, stepSeconds_, 1e-3f});
             if (s.sample) {
                 s.offset += limited(offset - s.offset, config_.maxHandSpeed * dt);
@@ -645,9 +727,28 @@ void Swing::inputs(float dt, const Input& in, const WorldQueries& world) {
         s.held = held;
         if (w.attached && (!held || (!w.airAnchor && !world.exists(w.surface))))
             release(i);
-        if (!w.attached && shoot) {
-            if (const auto fired = shot(h.aim, body_.position, world); fired.web) {
+        if (!w.attached && shoot && onOther && webs_[1 - i].attached) {
+            // One web in both hands. This hand holds it where it is, as slack
+            // there as the web is at the hand that had it; and a web zips
+            // once, whichever hand pulls.
+            const int o = 1 - i;
+            const float slack = std::max(0.f, webs_[o].length - length(hold(o) - body_.position));
+            w = webs_[o];
+            w.taken = true;
+            w.tension = 0;
+            w.length = std::max(std::min(config_.minRope, w.length), length(hold(i) - body_.position) + slack);
+            s.triggerReleased = false;
+            s.reeling = false;
+            s.zipUsed = hands_[o].zipUsed;
+            s.pullDistance = s.pullTime = s.obstructed = 0;
+            events_.push_back({EventKind::Join, i, .5f});
+        } else if (!w.attached && shoot) {
+            // From the body, stood off a surface the game holds it on.
+            const Vec3 from = length(support_) > .5f ? body_.position + support_ * config_.wallClearance
+                                                     : body_.position;
+            if (const auto fired = shot(h.aim, from, world); fired.web) {
                 w = *fired.web;
+                w.strand = ++strands_;
                 // To the hand that holds it.
                 w.length = std::max(config_.minRope, length(hold(i) - body_.position));
                 s.triggerReleased = false;
@@ -673,7 +774,7 @@ void Swing::inputs(float dt, const Input& in, const WorldQueries& world) {
             s.reeling = reel;
             // Motion must be both fast and deliberate within a short window.
             // Head-relative samples remove virtual movement and room-scale translation.
-            if (s.sample && !s.zipUsed) {
+            if (s.sample && !s.zipUsed && bears(i)) {
                 const Vec3 delta = trackingTurn(in).rotate(h.gripRelativeToHead - s.previous);
                 const float pull = -dot(delta, normalized(w.anchor - body_.position));
                 if (pull > 0) {
@@ -693,6 +794,8 @@ void Swing::inputs(float dt, const Input& in, const WorldQueries& world) {
                         zipSpeed_ = length(body_.velocity);
                         zipDirection_ = normalized(Vec3{body_.velocity.x, 0, body_.velocity.z});
                         s.zipUsed = true;
+                        if (shared())
+                            hands_[1 - i].zipUsed = true;
                         events_.push_back({EventKind::Zip, i, 1});
                     }
                 } else {
@@ -844,7 +947,8 @@ void Swing::step(float dt, const Input& in, const WorldQueries& world, const Wor
     // What each rope holds the body to: its anchor, or with physical webs
     // the point that keeps the hand on it.
     const Rope ropes[2] = {{hold(0), webs_[0].length}, {hold(1), webs_[1].length}};
-    if (webs_[0].attached && webs_[1].attached)
+    const bool bearing[2] = {bears(0), bears(1)};
+    if (bearing[0] && bearing[1])
         move(projectTwoWebs(body_.position, ropes[0], ropes[1]), collision);
 
     // Unilateral, tension-only constraints. Slack rope never pushes the player.
@@ -854,7 +958,7 @@ void Swing::step(float dt, const Input& in, const WorldQueries& world, const Wor
         for (int j = 0; j < 2; ++j) {
             const int i = (pass % 2) ? 1 - j : j;
             auto& w = webs_[i];
-            if (!w.attached)
+            if (!bearing[i])
                 continue;
             const Vec3 delta = body_.position - ropes[i].anchor;
             const float dist = length(delta);

@@ -62,8 +62,8 @@ coming. Questions, bugs, clips: come say hi on
 
 ## What you need
 
-- **Marvel's Spider-Man Remastered on Steam.** The Epic Games Store version is a
-  different build.
+- **Marvel's Spider-Man Remastered on Steam.** An Epic Games Store copy of the
+  same version is tried too, untested so far.
 - **A PC VR headset with an OpenXR runtime.** Played on Quest 3 with
   [Virtual Desktop](https://www.vrdesktop.net/) and with SteamVR (Steam Link);
   other SteamVR headsets and Quest Link should work.

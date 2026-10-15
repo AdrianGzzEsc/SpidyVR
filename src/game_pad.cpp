@@ -96,6 +96,17 @@ constexpr GetCapabilities capabilitiesHooks[] = {capabilitiesHook<0>, capabiliti
 uint32_t game_pad::install() {
     if (hooked)
         return 0;
+    // Released earlier - by the end of a VR session or by a probe handing the
+    // player his controller back. MinHook still holds the hooks; they are only
+    // switched off, and the loop below would skip every module it already took
+    // and call that a failure. So switch them on again instead.
+    if (targetCount) {
+        for (unsigned i = 0; i < targetCount; ++i)
+            if (const auto again = MH_EnableHook(targets[i]); again != MH_OK)
+                return 8300 + again;
+        hooked = true;
+        return 0;
+    }
     auto status = MH_Initialize();
     if (status != MH_OK && status != MH_ERROR_ALREADY_INITIALIZED)
         return 8100 + status;
@@ -173,6 +184,14 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyPadSubmit(void* input) {
     if (const auto code = install())
         return code;
     submit(c.state, c.leaseMs);
+    return 0;
+}
+// Hands the player's own controller back: the virtual pad holds input slot 0,
+// and once the game has seen it the game stops reading the keyboard, so a probe
+// that pressed anything leaves the player unable to move. Takes no input, is
+// safe before any press, and a later SpidyPadSubmit takes the pad again.
+extern "C" __declspec(dllexport) DWORD WINAPI SpidyPadRelease(void*) {
+    uninstall();
     return 0;
 }
 // Output: Telemetry.

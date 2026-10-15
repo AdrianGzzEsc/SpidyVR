@@ -317,7 +317,7 @@ std::wstring steamGame(const std::vector<std::wstring>& roots) {
     return {};
 }
 
-// The Epic Games Store build differs from the Steam build Spidy reads.
+// The Epic Games Store's copy: a file of its own, tried when its version is the supported one.
 std::wstring epicGame() {
     const std::wstring data = environment(L"ProgramData");
     std::error_code error;
@@ -542,10 +542,10 @@ Settings loadSettings() {
         else if (key == "air_webs") o.airWebs = number() != 0;
         else if (key == "flips") o.flips = number() != 0;
         else if (key == "trigger_webs") o.triggerWebs = number() != 0;
-        else if (key == "stand_on_walls") o.standOnWalls = number() != 0;
-        else if (key == "physical_webs") o.physicalWebs = number() != 0;
+        else if (key == "wall_run") o.wallRun = number() != 0;
         else if (key == "game_depth_of_field") o.gameDepthOfField = number() != 0;
         else if (key == "game_sharpening") o.gameSharpening = number() != 0;
+        // physical_webs (before October 15) is no longer read: webs are always physical.
         // eye_size (a square size, before October 8) is no longer read: 2048 x 2048 rendered one player's game
         // below the 2496 x 2688 their headset asked for, and it looked blurry.
         else if (key == "render_scale") o.renderScale = spidy::validRenderScale(number()) ? number() : 100;
@@ -602,7 +602,8 @@ void saveSettings(const Settings& settings) {
          << "\nsmall_window=" << o.smallWindow << "\nstock_monitor_view=" << o.stockMonitorView
          << "\naim_markers=" << o.aimMarkers << "\nair_webs=" << o.airWebs << "\nflips=" << o.flips
          << "\ntrigger_webs=" << o.triggerWebs << "\nstand_on_walls=" << o.standOnWalls
-         << "\nphysical_webs=" << o.physicalWebs << "\ngame_depth_of_field=" << o.gameDepthOfField
+         << "\nwall_run=" << o.wallRun
+         << "\ngame_depth_of_field=" << o.gameDepthOfField
          << "\ngame_sharpening=" << o.gameSharpening
          << "\nrender_scale=" << o.renderScale << "\nupscale=" << o.upscale
          << "\nmonitor_rate=" << o.monitorRate
@@ -731,7 +732,8 @@ void Scanner::run(Settings settings) {
         scan_.hashValue = hash.value_or("");
         scan_.build = !hash ? Build::unreadable
                       : scan.expectedHash.empty() || *hash == scan.expectedHash ? Build::supported
-                                                                                 : Build::unsupported;
+                      : !scan.gameVersion.empty() && scan.gameVersion == scan.expectedVersion ? Build::sameVersion
+                                                                                               : Build::unsupported;
     }
     std::lock_guard lock(mutex_);
     busy_ = false;

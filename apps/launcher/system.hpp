@@ -29,7 +29,9 @@ inline constexpr const wchar_t* kAutoRuntime = L"auto";
 std::string narrow(std::wstring_view text);
 std::wstring widen(std::string_view text);
 
-enum class Build { unknown, checking, supported, unsupported, unreadable };
+// sameVersion: not Steam's file, but the supported version of the game (the Epic Games Store's copy). Spidy
+// tries it: each of its modules checks the game's code where it works with it and refuses where it differs.
+enum class Build { unknown, checking, supported, sameVersion, unsupported, unreadable };
 
 struct Runtime {
     std::wstring manifest;

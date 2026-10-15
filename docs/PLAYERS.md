@@ -8,8 +8,9 @@ If you enjoy it, a tip on Ko-fi keeps the updates coming.
 
 WHAT YOU NEED
 -------------
-- Marvel's Spider-Man Remastered on Steam. Spidy works with the Steam version
-  only; the Epic Games Store version is a different build.
+- Marvel's Spider-Man Remastered on Steam. An Epic Games Store copy of the
+  same version is tried as well, but nobody has played Spidy on one yet: if
+  VR does not start on it, the session log says why, and we'd like to see it.
 - A PC VR headset and its OpenXR runtime. Spidy has been played on a Quest 3
   through Virtual Desktop (https://www.vrdesktop.net/) and through SteamVR
   (Steam Link). Other SteamVR headsets and Meta Quest Link should work too.
@@ -118,14 +119,24 @@ Swinging
   Pull a hand sharply ... zip toward the web's anchor
   Pull a hand in ........ the web is a rope in your hand: hanging from it,
                           you go where you pull it, as fast as you pull
+  Other hand on the web . put your free hand on the web you hold (within a
+  and squeeze its grip    hand's width of it, anywhere from the hand that
+                          holds it upward; it ticks when it is there) and
+                          squeeze: it takes hold of the same web, with no
+                          shot and no shot's sound. The hand that holds the
+                          web higher up carries you, as on a rope: pull with
+                          it and you go up; the lower hand holds the slack
+                          and moves nothing, wherever you move it. Let go
+                          with the lower one, take the web again above the
+                          other, pull: hand over hand you climb it. Either
+                          hand alone keeps the web when the other lets go,
+                          where it is, with no drop. Away from the web, the
+                          grip shoots that hand's own web as before
   A corner in the way ... the web bends round it and holds you from there;
                           swing back and it lies straight again. Round six
                           edges at most
   Walking with a web .... it pays out as you go, and holds you at its new
                           length when you step off an edge
-  PHYSICAL WEBS ......... switches those three off (Settings > SPIDY VR, or
-                          "Physical webs" in the launcher's options): a wall
-                          in the way then cuts the web off, as before
 
 Grabbing
   Grip aimed at a prop or thug ... catch it with your web
@@ -162,8 +173,19 @@ Your body and fists
                          and hands where your controllers are
   Punch a thug ......... a fist moving fast into him hits: see Fighting,
                          below
-  Squeeze a grip ....... closes that hand into a fist (it shoots a web too;
-                         with WEB BUTTON: TRIGGER, a web ball)
+  Shoot a web .......... the hand makes Spider-Man's web-shooting hand: the
+                         two middle fingers on the trigger in the palm, the
+                         first and little fingers and the thumb out. They
+                         come down as the web button goes down, and the hand
+                         stays so for as long as you hold the button: the
+                         web leaves your wrist, your fingers keep the
+                         trigger down. A web ball does it for half a second
+  Take the other hand's  that hand closes into a fist on the web
+  web
+  Squeeze a grip ....... otherwise closes that hand into a fist (the grip
+                         when the trigger is your web button), and so does a
+                         hand moving fast; with an enemy marked or within
+                         reach a fast hand is a fist even while it shoots
   T-pose, both triggers  calibrates your body (when the panel asks): his
                          height and arms become yours. B skips it
 
@@ -299,6 +321,21 @@ Moving
                          web ball from that pull
   Menu button .......... pause
   X .................... game menu (map, suits, skills)
+  Hold X ............... the gadget wheel, in front of that hand (the
+                         right one on a Steam Frame): move the hand toward
+                         a gadget to light it and let go of X to equip it.
+                         Your free hand's trigger then fires that gadget
+                         from your hand, as long as it has a charge. The
+                         web shooter at the top gives you web balls again.
+                         Back in the middle and let go: nothing changes
+  Click both sticks .... the pad layer: your controllers become the whole
+                         Xbox controller for a moment. Your grips are the
+                         game's LB and RB, your triggers its LT and RT, X
+                         is its X and the right stick its D-pad (the gadget
+                         wheel). Click both again to leave it, or just stop
+                         pressing anything for 20 seconds. Your webs are
+                         off while it is on, so it does not latch while a
+                         web is carrying you
   A, B and Y are the game's own A, B and Y: where the game shows one of
   them on screen, press that button. Your grips shoot webs, so they are
   not the game's LB and RB in VR: the right stick's click is both. The
@@ -306,9 +343,27 @@ Moving
   stick pushed down is the game's D-pad down, pushed up its LT + RT. A
   push counts from the stick at rest, straight down or up: turning, a
   diagonal and a quick flick do neither.
-  VR or a flat screen .. pause, Settings > SPIDY VR > VIEW: FLAT SCREEN shows
-                         the game on a screen in the headset, VR goes back.
-                         (Clicking both sticks no longer switches.)
+
+  WHEN THE GAME ASKS FOR A BUTTON
+  Where the game puts a button on screen - a door to tear off, a vent, a
+  tutorial, "tap X", a boss - Y does whatever it is asking for, whichever
+  button that is. You do not have to work out which VR control stands for
+  it: look at the thing and press Y. A pull with both webs does the same
+  where you can reach the thing with them.
+
+  Spidy also writes the VR control into the game's own prompt where the
+  prompt spells the button out, so "LB + RB (Hold) Throw" reads "RIGHT
+  STICK CLICK (Hold) Throw". Where there is no VR control of its own the
+  prompt says "Y".
+
+  The pad layer above is the way out if a moment still asks for something
+  none of this reaches.
+  The game as it is .... pause, SWITCH TO GAME SCREEN (under RESUME)
+                         plays the game as it is, on a 3D screen in the
+                         headset, the controllers an Xbox controller: hold
+                         the menu button for the map (Back), hold the left
+                         stick's click and push the right stick for the
+                         D-pad (down heals). Pause, SWITCH TO VR goes back.
 
 Steam Frame controllers (they have a gamepad's buttons, split between the
 hands; everything above is the same, with these buttons)
@@ -324,25 +379,38 @@ hands; everything above is the same, with these buttons)
   when these are in use. Versions up to 0.3.2 had no layout for them:
   SteamVR translated the Quest one, and B, X and Y all dodged.
 
-Walls
-  Walk at one .......... push the left stick straight at a wall beside you
-                         and you hop onto it and walk on up it. Falling
-                         past a wall, push at it and it takes you
-  Fly or jump into one . you stay on it, an arm's length off. At speed you
-                         run along it with the speed you had, and nothing
-                         pulls you down it; without the left stick or a web
-                         you slow down, stop and stay
-  Left stick ........... walks the wall where you look along it; pushed at
-                         the wall, up it. It steers a run, too
+Walls (every wall is Spidy's own; the game's crawl only takes you for a
+vent or a door you ask for, and inside vents and ducts)
+  Walk onto one ........ walk at a wall from the ground and you go up onto it
+  Swing or fly into one  you stay on it, an arm's length off. At speed you run
+                         along it with the speed you had, and nothing pulls
+                         you down it; without the left stick or a web you
+                         slow down and stop
+  Left stick ........... walks the wall where you look along it, and steers a
+                         run
   A .................... jumps off the wall, out and up
   A web ................ pulls you off the wall, or along it
   The wall's top ....... go up over it and you hop onto the roof; at a walk
                          you step round a corner onto the next wall
-  STAND ON WALLS ....... walking a wall or stopped on it, your view turns so
-                         that the wall is your floor, and turns back when you
-                         leave it. A run along a wall never turns it. Off
-                         (Settings > SPIDY VR, or "Stand on walls" in the
-                         launcher), you stay upright beside the wall
+  A vent or a door ..... point a hand at it. A turning ring round it, in that
+                         hand's colour, and a tick in the hand: you can use it
+                         from where you are, up to a couple of metres off. A
+                         faint ring: come closer. Press Y and the game's own
+                         crawl takes you to it on the wall for a moment and
+                         does it - into the vent, the door open. The stick
+                         waits until it has
+  In a vent or a duct .. the game crawls you through it, as in the plain game;
+                         stand up or jump out at its end and the walls are
+                         Spidy's again
+  Your view ............ walking a wall or stopped on it, your view turns so
+                         that the wall is your floor, about your eyes, and
+                         turns back when you leave it. A run along a wall
+                         never turns it. A vent's shafts turn it the same way
+  Your body ............ stands on the wall or a duct's floor: no crawl on the
+                         legs or the fingers. Under a low roof it kneels, its
+                         legs behind you
+  Low places ........... crawling a vent or a duct, your head stays a crouch's
+                         height over its floor, under the roof
 
 Slow motion (as in Blade & Sorcery)
   Click the left stick . the world slows to a third of its speed, easing in;
@@ -413,10 +481,11 @@ VR settings
   web; the other reels in and shoots web balls), switch the aim markers and
   webs holding in open air (a web that meets nothing within 100 m holds
   there; off, it misses) on or off, or step the
-  swing speed limit, your weight, PHYSICAL WEBS, snap turn, smooth turn,
-  controller vibration, the VIEW (VR or FLAT SCREEN; each session starts in
-  VR), the game screen's size, its 3D depth for cutscenes and the HUD's size
-  (OFF hides it in VR).
+  swing speed limit, your weight, snap turn, smooth turn,
+  controller vibration, the game screen's size, its 3D depth and the HUD's
+  size (OFF hides it in VR). Playing the game on its screen instead of VR is
+  on the pause menu itself: SWITCH TO GAME SCREEN, under RESUME (each session
+  starts in VR).
   Under EXPERIMENTAL, FLIPS (off until
   you switch it on) lets the left stick and A in the air flip you, and FLIP
   SPEED sets how fast. Changes apply at once. The
@@ -530,11 +599,10 @@ IF SOMETHING IS WRONG
   100%), up to 300%. Jumps and falls without a web are the game's own.
 - A web lets go at a corner, or does something odd as it bends round one:
   it bends round six edges at most, and lets go where it finds no edge to
-  bend round. Switch PHYSICAL WEBS off in Settings > SPIDY VR for webs as
-  before, and tell us where it happened.
+  bend round. Tell us where it happened.
 - Lowering your arm on a web moves you: with PHYSICAL WEBS the web's length
   is measured to your hand, so a taut web follows it. That is also how you
-  pull yourself along it. Off: PHYSICAL WEBS in Settings > SPIDY VR.
+  pull yourself along it.
 - A jump comes a moment late: on the ground Spidy waits to see whether you
   hold A for a charged leap, and jumps as you let go of a tap.
 - The game closed when you chose Quit in the pause menu (every time, up to
@@ -552,8 +620,8 @@ IF SOMETHING IS WRONG
   Spidy turns the game's sharpening and depth of field off for VR. "Game's
   sharpening" and "Game's depth of field" in the launcher's options keep
   yours.
-- Clicking both sticks no longer shows the flat screen: it is VIEW in
-  Settings > SPIDY VR now.
+- Clicking both sticks no longer shows the flat screen: it is SWITCH TO
+  GAME SCREEN in the pause menu now.
 - You would rather turn smoothly than in steps: SMOOTH TURN in Settings >
   SPIDY VR (or "Smooth turn" in the launcher's options). If it makes you
   uneasy, try a slower speed, or OFF for snap turning again.
@@ -564,13 +632,21 @@ IF SOMETHING IS WRONG
   depth: HIGH.
 - The HUD is too small, too large or in the way: HUD in Settings > SPIDY VR
   (or "HUD" in the launcher's options): SMALL, MEDIUM, LARGE, or OFF.
-- The game asks for LB + RB (a door you cannot get through, a grate) and
-  your webs do nothing to it: click the right stick. That is the game's
-  LB + RB in VR; your grips shoot your own webs there.
-- The game asks you to heal, or to press LT + RT (a vent, a point to zip
-  to), and nothing on the controllers does it: push the right stick
-  straight down to heal, straight up for LT + RT, and hold it a moment.
-  Versions up to 0.3.0 had no control for either.
+- The game asks for a button and nothing you press does it: press Y. Since
+  October 13 Y sends whatever the game is asking for, so one button answers
+  every prompt - the LB + RB door, the vent's LT + RT, the heal, "tap X",
+  the Shocker fight's throw. Pulling with both webs at the thing does the
+  same. If a moment still asks for something neither reaches, click both
+  thumbsticks for the pad layer, where your grips are the game's LB and RB,
+  your triggers its LT and RT, X its X and the right stick its D-pad; click
+  both again to leave it.
+  Up to 0.3.4 each of those moments needed its own VR control, and the ones
+  nobody had found yet stopped you: the game's X, its L3, a single bumper
+  or trigger, and three ways of its D-pad could not be sent at all.
+- A prompt shows keyboard keys ("click F to decipher") and no button works:
+  the game shows the icons of the device it last saw. Press something on
+  the controllers so it sees the pad again, then Y. If it keeps happening,
+  send the session's report: its "prompts" section counts those texts.
 - You fly at a thug you did not mean to strike: a web strike opens with a
   fist thrown out fast (2.6 m/s or more) toward an enemy within 10 m, about
   35 degrees to either side. Reaching for a web slowly, or pulling a hand
@@ -600,9 +676,18 @@ IF SOMETHING IS WRONG
   and hold the right stick's click until it is thrown. Being shot during the
   first second and a half stops the yank, as in the plain game: web both
   turrets first, or wait until they reload. The webbing lasts four seconds.
-- The view turning onto a wall makes you uneasy: switch STAND ON WALLS off in
-  Settings > SPIDY VR (or "Stand on walls" in the launcher's options). You
-  still stay on walls, upright beside them.
+- The view turning onto a wall makes you uneasy: it has no switch of its own
+  any more, because it is what makes a wall feel like a floor and it turns on
+  every wall, whoever holds you. "Wall running" off makes every wall the
+  game's own crawl, which is slower, but the view turns there too. Ask and the
+  switch comes back; until then a session started by hand takes
+  `--no-stand-on-walls` and stays upright.
+- A vent or a door on a wall does nothing: point a hand at it and press Y.
+  No ring round it means the game does not offer it from where you stand -
+  come closer; a faint ring means you nearly are. A ring and still nothing:
+  send the session's report, whose "offers" counts every press and how it
+  ended. (On a wall Spidy holds you, which the game counts as the air and
+  offers nothing in; the press hands you to its crawl for that one thing.)
 - A flip you did not mean, or flips make you uneasy: switch FLIPS off in
   Settings > SPIDY VR (or "Flips (experimental)" in the launcher's options).
   It is off unless you switched it on. Flips too fast or too slow: FLIP

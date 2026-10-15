@@ -1,4 +1,5 @@
 #pragma once
+#include "prompt_buttons.hpp"
 #include "tracking.hpp"
 #include <algorithm>
 #include <cmath>
@@ -35,6 +36,16 @@ enum Button : uint16_t {
     x = 0x4000,
     y = 0x8000,
 };
+// prompt_buttons holds a demand in these same bits (it must not include this
+// header: the pad is built on the vocabulary, not the other way round).
+static_assert(prompt_buttons::padDpadUp == dpadUp && prompt_buttons::padDpadDown == dpadDown &&
+              prompt_buttons::padDpadLeft == dpadLeft && prompt_buttons::padDpadRight == dpadRight &&
+              prompt_buttons::padStart == start && prompt_buttons::padBack == back &&
+              prompt_buttons::padLeftThumb == leftThumb && prompt_buttons::padRightThumb == rightThumb &&
+              prompt_buttons::padLeftShoulder == leftShoulder &&
+              prompt_buttons::padRightShoulder == rightShoulder &&
+              prompt_buttons::padA == a && prompt_buttons::padB == b && prompt_buttons::padX == x &&
+              prompt_buttons::padY == y);
 enum class Mapping {
     none,
     // VR gameplay: the controllers swing, walk and jump. The menu button
@@ -54,6 +65,11 @@ enum class Mapping {
     // The game screen: every control as on an Xbox controller. A, B, X and Y
     // sit where Xbox has them; grips are the bumpers.
     menus,
+    // The pad layer, latched in VR play (PadLayer): the whole controller, for
+    // the controls play has no room for. Like the game screen's, with the
+    // left stick still walking as the swing leaves it and the right stick the
+    // game's own, a decisive push of it the game's D-pad as well.
+    pad,
 };
 // Native walking and jumping in VR gameplay: the left stick in the game
 // camera's horizontal axes (-1..1) and the jump, both as the swing leaves
@@ -84,8 +100,17 @@ enum class Mapping {
 struct Walk {
     float right{}, forward{};
     bool jump{}, interact{}, dodge{}, pull{}, heal{}, zip{};
+    // The game's RT, alone: its parkour. With the jump on the game's own wall
+    // crawl it is the only way off the wall - A by itself, in any direction
+    // of the stick, only leaps the hero along it (October 14, measured: back,
+    // left, right, forward and none all kept him on the wall; B, the bumpers,
+    // either trigger and a held A did nothing; RT + A left it in 0.09 s).
+    bool parkour{};
     float look{}, lookUp{};
     bool scan{};
+    // What the game is asking for now, sent in place of the interact's Y
+    // (ContextPress). {}: nothing is, and interact is the game's Y as before.
+    prompt_buttons::Demand demand{};
 };
 // A held on the ground: a charged leap, Spidy's own. The game has one, its
 // Charge Jump ("Hold RT + A while running or standing to build up charge,
@@ -558,7 +583,10 @@ class PressOrigins {
     // `frame` with B, X and Y held only where they went down for `mapping`.
     XrFrame filtered(XrFrame frame, Mapping mapping) const {
         constexpr uint32_t face = buttonB | buttonX | buttonY;
-        const uint32_t kept = mapping == Mapping::gameplay ? play_ : mapping == Mapping::menus ? screen_ : 0;
+        // The pad layer is VR play: a press made there went down in play.
+        const uint32_t kept = mapping == Mapping::gameplay || mapping == Mapping::pad ? play_
+                              : mapping == Mapping::menus                            ? screen_
+                                                                                     : 0;
         frame.buttons = (frame.buttons & ~face) | (kept & face);
         return frame;
     }
@@ -566,6 +594,304 @@ class PressOrigins {
   private:
     uint32_t play_{}, screen_{};
 };
+// The whole pad, for the controls VR play has no room for.
+//
+// Play sends nine of the pad's sixteen controls, and the game picks the one a
+// moment wants out of all of them, so each story beat or encounter that asked
+// for another one stopped a player until it was patched on its own: the right
+// stick's click for the game's LB + RB on October 11 (a door of the first
+// mission), that stick's pushes for its heal and its LT + RT on October 12
+// (that mission's heal and its vent). The reports left over all read the same
+// way - "Can't pull objects with LB + RB", "cant use Vents", "it says tap x
+// repeat but tapping x opens the menu", Air Launch, the Fisk turrets - and
+// the game's X, its L3, each bumper and each trigger on its own and three
+// ways of its D-pad could not be sent at all.
+//
+// Clicking both thumbsticks together latches this layer, and every control of
+// the pad can be sent while it is on. The chord is free: neither stick's own
+// press has been half of clicking both since October 12 (PullPress,
+// slow_motion's StickPress both drop a chord), and a tap leaves the thumbs
+// free for the face buttons, which holding the chord would not. It never
+// latches while a web carries the player, and it lets go by itself after
+// idleSeconds of nothing pressed, so a player cannot be left in it.
+class PadLayer {
+  public:
+    static constexpr float chordSeconds = .12f, idleSeconds = 20;
+    // seconds: since the previous update. allowed: VR play with the player
+    // free of a web. left, right: each thumbstick's click. busy: a control of
+    // the layer is in use now (a button, a trigger, a grip, the right stick),
+    // which keeps it open.
+    bool update(float seconds, bool allowed, bool left, bool right, bool busy) {
+        const float dt = std::isfinite(seconds) ? std::clamp(seconds, 0.f, .1f) : 0.f;
+        const bool chord = left && right;
+        if (!allowed) {
+            latched_ = false;
+            held_ = 0;
+            // A chord held through this must be let go of first.
+            spent_ = chord;
+            return false;
+        }
+        if (!chord) {
+            held_ = 0;
+            spent_ = false;
+        } else if (!spent_) {
+            held_ += dt;
+            if (held_ >= chordSeconds) {
+                spent_ = true;
+                latched_ = !latched_;
+                idle_ = 0;
+                if (latched_)
+                    ++entries_;
+            }
+        }
+        if (latched_) {
+            idle_ = busy ? 0.f : idle_ + dt;
+            if (idle_ >= idleSeconds)
+                latched_ = false;
+        }
+        return latched_;
+    }
+    bool latched() const {
+        return latched_;
+    }
+    // The times the layer was latched on.
+    uint32_t entries() const {
+        return entries_;
+    }
+
+  private:
+    bool latched_{}, spent_{};
+    float held_{}, idle_{};
+    uint32_t entries_{};
+};
+// The game played on its own screen (the SPIDY VR tab's VIEW: GAME SCREEN):
+// every control as on an Xbox controller, as on the game screen
+// (Mapping::menus), and the two that no VR controller but the Steam Frame's
+// has. Back (the game's map) is the menu button held holdSeconds; a shorter
+// press is Start (pause), sent as it is let go. The D-pad (its down heals) is
+// the right thumbstick pushed decisively while the left one is clicked down,
+// which then turns no camera; a click of the left stick that pushed no D-pad
+// is the game's L3 as it is let go, and with the right stick's click held
+// too the two together (the game's L3 + R3). A press that began before the
+// game was played on its screen (a pause menu's Start) does nothing here
+// until it is let go.
+class ScreenControls {
+  public:
+    static constexpr float holdSeconds = .5f, tapSeconds = .1f, decisive = .7f;
+    // seconds: since the previous update. play: the game is played on its
+    // screen now. `s`, built for Mapping::menus from `frame`, is rewritten.
+    void apply(float seconds, bool play, const XrFrame& frame, State& s) {
+        const float dt = std::isfinite(seconds) ? std::clamp(seconds, 0.f, .1f) : 0.f;
+        const bool menu = (frame.buttons & buttonMenu) != 0;
+        const auto& right = frame.hands[1];
+        const bool click = frame.hands[0].stickClick;
+        startTap_ = std::max(0.f, startTap_ - dt);
+        thumbTap_ = std::max(0.f, thumbTap_ - dt);
+        if (!play) {
+            menuDown_ = clickDown_ = dpad_ = chord_ = false;
+            menuHeld_ = 0;
+            menuSpent_ = menu;
+            clickSpent_ = click;
+        } else {
+            s.buttons &= static_cast<uint16_t>(~start);
+            if (menu && !menuSpent_) {
+                menuDown_ = true;
+                menuHeld_ += dt;
+                if (menuHeld_ >= holdSeconds)
+                    s.buttons |= back;
+            } else if (!menu) {
+                if (menuDown_ && menuHeld_ < holdSeconds)
+                    startTap_ = tapSeconds;
+                menuDown_ = menuSpent_ = false;
+                menuHeld_ = 0;
+            }
+            if (click && !clickSpent_) {
+                clickDown_ = true;
+                s.buttons &= static_cast<uint16_t>(~leftThumb);
+                const float rx = right.valid && std::isfinite(right.stickX) ? right.stickX : 0.f;
+                const float ry = right.valid && std::isfinite(right.stickY) ? right.stickY : 0.f;
+                if (std::abs(rx) >= decisive && std::abs(rx) > std::abs(ry)) {
+                    s.buttons |= rx > 0 ? dpadRight : dpadLeft;
+                    dpad_ = true;
+                } else if (std::abs(ry) >= decisive) {
+                    s.buttons |= ry > 0 ? dpadUp : dpadDown;
+                    dpad_ = true;
+                }
+                if (right.stickClick) {
+                    s.buttons |= leftThumb;
+                    chord_ = true;
+                }
+                s.thumbRX = s.thumbRY = 0;
+            } else if (!click) {
+                if (clickDown_ && !dpad_ && !chord_)
+                    thumbTap_ = tapSeconds;
+                clickDown_ = dpad_ = chord_ = clickSpent_ = false;
+            }
+        }
+        // A tap let go of keeps its button down long enough for the game to
+        // read it, whatever comes next (a Start pauses: the game screen).
+        if (startTap_ > 0)
+            s.buttons |= start;
+        if (thumbTap_ > 0)
+            s.buttons |= leftThumb;
+    }
+
+  private:
+    bool menuDown_{}, menuSpent_{}, clickDown_{}, clickSpent_{}, dpad_{}, chord_{};
+    float menuHeld_{}, startTap_{}, thumbTap_{};
+};
+// The interact button, sending what the game is asking for.
+//
+// The game names the button of every prompt and QTE it raises, and Spidy
+// reads that name (game_prompts, prompt_buttons). In VR the player's Y
+// already means "do the thing in front of me", so while a prompt is live and
+// its button known, Y sends what the prompt asks for instead of the game's Y:
+// one control for every prompt the game has, in place of a gesture for each
+// moment someone reports. Without a prompt, or with one whose button could
+// not be read, Y is the game's Y exactly as before.
+//
+// A press keeps the demand it began with until it is let go, so a prompt that
+// ends under the player's thumb does not change the buttons being sent; a
+// press that starts before the prompt shows (Y held while InteractStep walks
+// the hero up to a door) takes the first demand that arrives.
+class ContextPress {
+  public:
+    // held: the player's Y, as InteractStep leaves it. demand: what the live
+    // prompt asks for, {} for none. Returns what to send, {} for nothing -
+    // the caller's own Y then stands.
+    prompt_buttons::Demand update(bool held, prompt_buttons::Demand demand) {
+        if (!held) {
+            sent_ = {};
+            return {};
+        }
+        if (!sent_.any() && demand.any()) {
+            sent_ = demand;
+            ++presses_;
+        }
+        return sent_;
+    }
+    // A demand is going out now.
+    bool sending() const {
+        return sent_.any();
+    }
+    // Presses that sent a prompt's demand rather than the game's Y.
+    uint32_t presses() const {
+        return presses_;
+    }
+
+  private:
+    prompt_buttons::Demand sent_{};
+    uint32_t presses_{};
+};
+// Handing the player back to the game for an interact.
+//
+// Measured in the game on October 13, at the closed vent of the first mission
+// (profile 3, straight up the Fisk Tower elevator shaft). The vent asks
+// through POIInteractAvailable(5, 1, '') and its text is "[BTN_Y] Enter", so
+// the demand reads as the pad's Y and the press lands: sent at 153188 ms,
+// taken at 153203. Then, standing still at it with the interact live, the
+// probe's A alone - no stick, no drift:
+//     54797  >> the probe's a
+//     54860  POIInteractAvailable(5, 0, '[BTN_Y] Enter')
+// The game took its own interact away 63 ms after the player left the
+// surface. It never ignored the button; there was no interact left to press.
+//
+// The swing's wall running drives the hero in the game's AIR state - that is
+// how it moves him, and probe_wall_run asserts exactly that - so while Spidy
+// holds a player on a wall the game offers nothing, and no button can reach
+// it: not the interact, not the pad layer, not the prompt's own demand. That
+// is "cant use Vents", and it was never about which button.
+//
+// So the press hands him back. While the player asks to interact on a wall of
+// the swing's own and the game is offering nothing, the walls go off for a
+// moment: Swing::allowWalls(false) leaves the wall it holds, the game's own
+// crawl takes him where he stands, its interact comes back, and the button it
+// names is already down. The walls come back when the moment ends, however it
+// went.
+//
+// Nothing else changes. The hand-over needs a press of the interact, the
+// swing's own wall under the player, and the game offering nothing - and in
+// exactly that case the press does nothing at all today, because there is
+// nothing to press. Where the game IS offering something the ordinary path
+// already works and is left alone.
+class WallHandover {
+  public:
+    // Long enough for the game to offer the interact again (it withdrew one in
+    // 63 ms) and for the press to land on it; short enough that a press at
+    // nothing costs a moment of the game's own crawl and no more.
+    static constexpr float window = .9f, least = .25f;
+    // `asking`: the interact is pressed (Walk::interact). `onOwnWall`: the
+    // swing holds the player on a wall of its own (game_swing::Surface::wall).
+    // `offered`: the game is already offering an interact. Returns whether the
+    // swing's walls go off this frame.
+    bool update(float seconds, bool asking, bool onOwnWall, bool offered) {
+        // Since the previous update, as every other rule here takes it, not a
+        // clock: see the note in Enclosure for what taking it for one cost.
+        const float dt = std::isfinite(seconds) ? std::clamp(seconds, 0.f, .1f) : 0.f;
+        const bool rising = asking && !asked_;
+        asked_ = asking;
+        if (handing_) {
+            heldFor_ += dt;
+            if (heldFor_ >= window || (!asking && heldFor_ >= least))
+                handing_ = false;
+        } else if (rising && onOwnWall && !offered) {
+            handing_ = true;
+            heldFor_ = 0;
+            offerSeen_ = false;
+            ++handovers_;
+        }
+        // The game offering something while the player is handed back is the
+        // hand-over having worked: its crawl took him and its interact came
+        // back, with the button already down. Counted once for each.
+        if (handing_ && offered && !offerSeen_) {
+            offerSeen_ = true;
+            ++offered_;
+        }
+        return handing_;
+    }
+    bool handing() const {
+        return handing_;
+    }
+    // Presses that handed the player back to the game.
+    uint32_t handovers() const {
+        return handovers_;
+    }
+    // Those of them the game then offered an interact in: the hand-over
+    // worked, and the two counts apart say whether it is worth its moment.
+    uint32_t offered() const {
+        return offered_;
+    }
+
+  private:
+    bool handing_{}, asked_{}, offerSeen_{};
+    float heldFor_{};
+    uint32_t handovers_{}, offered_{};
+};
+// What the pad serves the game this frame.
+//
+// `viewing`: the session has the headset and the focus. `headSeen`: it has
+// given a tracked head pose at least once. Until it has, nothing Spidy draws
+// has reached the player's eyes - the game's screen is not in the headset yet -
+// so a button they press is a button pressed blind, and it must not reach the
+// game.
+//
+// October 13 is why. A session ran 414 frames with `tracked` at 0, the headset
+// never tracking once while it was being put on; the player's Touch B went out
+// three times and his A twice, as the pad's B and A, into the title screen -
+// where QUIT GAME is two moves from the top. The game saved and closed, 20
+// seconds after it started ("Meet crashed on game load"). The report had it
+// exactly: `tracked` 0 in all 148 samples, `vr_buttons` ['b'] then ['a'],
+// `pad_buttons` 0x2000 then 0x1000, the last one four frames before the end.
+//
+// After that first tracked pose this is what it always was, so a session that
+// reaches the headset at all is unchanged.
+inline Mapping mappingFor(bool viewing, bool headSeen, bool gameScreen, bool padLatched) {
+    if (!viewing || !headSeen)
+        return Mapping::none;
+    if (gameScreen)
+        return Mapping::menus;
+    return padLatched ? Mapping::pad : Mapping::gameplay;
+}
 inline State fromControllers(const XrFrame& frame, Mapping mapping, const Walk& walk = {}) {
     State s;
     if (mapping == Mapping::none)
@@ -594,20 +920,41 @@ inline State fromControllers(const XrFrame& frame, Mapping mapping, const Walk& 
             s.buttons |= a;
         if (walk.dodge)
             s.buttons |= b;
-        if (walk.interact)
+        // What the game is asking for goes in place of the interact's Y (its
+        // own Y where that is what it asks); the game's Y does something else
+        // in a fight, so it does not go out beside it.
+        if (walk.demand.any()) {
+            s.buttons |= walk.demand.buttons;
+            if (walk.demand.leftTrigger)
+                s.leftTrigger = 255;
+            if (walk.demand.rightTrigger)
+                s.rightTrigger = 255;
+        } else if (walk.interact) {
             s.buttons |= y;
+        }
         if (walk.pull)
             s.buttons |= leftShoulder | rightShoulder;
         if (walk.heal)
             s.buttons |= dpadDown;
         if (walk.zip)
             s.leftTrigger = s.rightTrigger = 255;
+        if (walk.parkour)
+            s.rightTrigger = 255;
         if (walk.scan)
             s.buttons |= rightThumb;
         s.thumbLX = stick(walk.right);
         s.thumbLY = stick(walk.forward);
         s.thumbRX = stick(walk.look);
         s.thumbRY = stick(walk.lookUp);
+        // A stick a prompt asks to be pushed (a stick-motion QTE), where the
+        // player is not pushing it themselves: theirs goes first.
+        const auto asked = [&](int8_t way, int16_t own) {
+            return way && !own ? static_cast<int16_t>(way > 0 ? 32767 : -32767) : own;
+        };
+        s.thumbLX = asked(walk.demand.leftX, s.thumbLX);
+        s.thumbLY = asked(walk.demand.leftY, s.thumbLY);
+        s.thumbRX = asked(walk.demand.rightX, s.thumbRX);
+        s.thumbRY = asked(walk.demand.rightY, s.thumbRY);
         return s;
     }
     const auto trigger = [](float v) {
@@ -621,11 +968,30 @@ inline State fromControllers(const XrFrame& frame, Mapping mapping, const Walk& 
     s.thumbRY = stick(right.stickY);
     s.leftTrigger = trigger(left.trigger);
     s.rightTrigger = trigger(right.trigger);
+    // In the pad layer the left stick walks as the swing leaves it, and the
+    // right stick is the game's own with a decisive push of it the game's
+    // D-pad as well: no VR controller but the Steam Frame's has one, and the
+    // gadget wheel and some of the game's menus want it.
+    const bool padLayer = mapping == Mapping::pad;
+    if (padLayer) {
+        s.thumbLX = stick(walk.right);
+        s.thumbLY = stick(walk.forward);
+        constexpr float decisive = .7f;
+        const float rx = right.valid && std::isfinite(right.stickX) ? right.stickX : 0.f;
+        const float ry = right.valid && std::isfinite(right.stickY) ? right.stickY : 0.f;
+        if (std::abs(rx) >= decisive && std::abs(rx) > std::abs(ry))
+            s.buttons |= rx > 0 ? dpadRight : dpadLeft;
+        else if (std::abs(ry) >= decisive)
+            s.buttons |= ry > 0 ? dpadUp : dpadDown;
+    }
+    // Clicking both sticks is the layer's own chord (it lets go of the layer),
+    // so only one at a time is a thumb button there.
+    const bool chord = padLayer && left.stickClick && right.stickClick;
     const std::pair<bool, Button> pressed[] = {
         {(frame.buttons & buttonA) != 0, a}, {(frame.buttons & buttonB) != 0, b},
         {(frame.buttons & buttonX) != 0, x}, {(frame.buttons & buttonY) != 0, y},
         {left.squeeze > .6f, leftShoulder},  {right.squeeze > .6f, rightShoulder},
-        {left.stickClick, leftThumb},        {right.stickClick, rightThumb}};
+        {left.stickClick && !chord, leftThumb}, {right.stickClick && !chord, rightThumb}};
     for (const auto& [on, button] : pressed)
         if (on)
             s.buttons |= button;

@@ -181,6 +181,36 @@ def steam_executable(read=_registry_value):
     return next((path for path in candidates if path.is_file()),None)
 
 
+def epic_launch(manifests=None):
+    """The Epic Games Launcher's link that starts Spider-Man, from its install manifest; None when Epic has no
+    copy installed."""
+    import json
+    folder=pathlib.Path(manifests or pathlib.Path(os.environ.get('ProgramData',r'C:\ProgramData'))/
+                        'Epic/EpicGamesLauncher/Data/Manifests')
+    for item in sorted(folder.glob('*.item')) if folder.is_dir() else ():
+        try: manifest=json.loads(item.read_text(encoding='utf-8',errors='replace'))
+        except (OSError,ValueError): continue
+        if not isinstance(manifest,dict): continue
+        name=str(manifest.get('DisplayName',''))
+        if 'Spider-Man' not in name or 'Remastered' not in name: continue
+        parts=[str(manifest.get(key,'')) for key in ('CatalogNamespace','CatalogItemId','AppName')]
+        if all(parts):
+            return 'com.epicgames.launcher://apps/'+'%3A'.join(parts)+'?action=launch&silent=true'
+    return None
+
+
+def steam_has_game(steam):
+    """Steam has the game installed: its app manifest in one of Steam's libraries."""
+    import re
+    root=pathlib.Path(steam).parent
+    libraries=[root]
+    for vdf in (root/'steamapps/libraryfolders.vdf',root/'config/libraryfolders.vdf'):
+        try: text=vdf.read_text(encoding='utf-8',errors='replace')
+        except OSError: continue
+        libraries+=[pathlib.Path(p.replace('\\\\','\\')) for p in re.findall(r'"path"\s+"([^"]+)"',text)]
+    return any((library/f'steamapps/appmanifest_{STEAM_APP_ID}.acf').is_file() for library in libraries)
+
+
 def ready_player(game):
     LIVE_VTABLES['hero_mover']=0x38b2c98
     candidates=game.registered_candidates()
@@ -230,8 +260,18 @@ def wait_for_game(timeout=180,prepare=None,early=None,ready=None):
     except RuntimeError as error:
         if not str(error).startswith('Spider-Man is not running.'): raise
         pid=None
+    # Steam's copy is the one Spidy is made on; the Epic Games Store's is started when Steam has none.
+    epic=None
     if pid is None:
         steam=steam_executable()
+        if not (steam and steam_has_game(steam)): epic=epic_launch()
+    if epic:
+        if prepare: prepare()
+        os.startfile(epic)
+        print('Starting Spider-Man from the Epic Games Store. Select your save and Continue; VR will attach '
+              'automatically.' if ready is ready_player else 'Starting Spider-Man from the Epic Games Store.',
+              flush=True)
+    elif pid is None:
         if not steam: raise RuntimeError('Steam was not found. Start Spider-Man and run this launcher again.')
         # Before anything is changed or started: an administrator's Steam starts an administrator's game.
         if not elevated() and any(elevated(process) for process in process_ids('steam.exe')):

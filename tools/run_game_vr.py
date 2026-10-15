@@ -18,7 +18,7 @@ import _thread
 from collections import deque
 from capture_game_state import Game, find_game, open_process, close
 from bridge_game import ROOT, HOOKS, prepare, snapshot as bridge_snapshot
-from inspect_game import PE
+from inspect_game import PE, EXPECTED_VERSION
 from observe_game import call_remote, call_with_payload, modules
 from probe_stereo_gpu import MAX_EYE_SIZE, discover_queue, snapshot as gpu_snapshot, save_eye_images
 from probe_stereo import frame_snapshot, render_memory_snapshot, snapshot as stereo_snapshot
@@ -484,8 +484,7 @@ def start_settings(a):
                 swing_speed=round(a.swing_speed, 1), weight=a.weight,
                 snap_turn=a.snap_turn, smooth_turn=a.smooth_turn, haptics=a.haptics, screen_size=a.screen_size,
                 flips=a.flips, flip_speed=a.flip_speed, trigger_webs=a.trigger_webs, hud=a.hud,
-                stand_on_walls=not a.no_stand_on_walls, physical_webs=not a.no_physical_webs,
-                screen_depth=a.screen_depth, eye_height_mm=a.eye_height,
+                stand_on_walls=not a.no_stand_on_walls, screen_depth=a.screen_depth, eye_height_mm=a.eye_height,
                 arm_length_mm=a.arm_length, calibration_prompt=not a.no_calibration_prompt)
 
 
@@ -541,18 +540,85 @@ def controllers_line(controllers):
     return f"Controllers: the {' and '.join(sorted(names[kind] for kind in kinds))} layout."
 
 
+# A demand as prompt_buttons::pack lays it out: the pad's button bits, then each trigger, the hold, and
+# two bits an axis of each stick (0 no way, 1 back or left, 2 forward or right).
+PAD_BUTTONS = ((0x1, 'D-pad up'), (0x2, 'D-pad down'), (0x4, 'D-pad left'), (0x8, 'D-pad right'),
+               (0x10, 'Start'), (0x20, 'Back'), (0x40, 'L3'), (0x80, 'R3'), (0x100, 'LB'), (0x200, 'RB'),
+               (0x1000, 'A'), (0x2000, 'B'), (0x4000, 'X'), (0x8000, 'Y'))
+PAD_STICKS = ((19, 'left stick left', 'left stick right'), (21, 'left stick back', 'left stick forward'),
+              (23, 'right stick left', 'right stick right'), (25, 'right stick back', 'right stick forward'))
+# What VR play can send on its own, without the pad layer or the interact button carrying it
+# (prompt_buttons::reachableInPlay): each bumper and each trigger only with its pair.
+PLAY_BUTTONS = 0x1000 | 0x2000 | 0x8000 | 0x10 | 0x20 | 0x2 | 0x80 | 0x100 | 0x200
+
+
+def demand_name(word):
+    """What the game asked for, from a packed demand; None for nothing."""
+    if not word:
+        return None
+    names = [name for bit, name in PAD_BUTTONS if word & bit]
+    if word >> 16 & 1:
+        names.append('LT')
+    if word >> 17 & 1:
+        names.append('RT')
+    for shift, back, forward in PAD_STICKS:
+        way = word >> shift & 3
+        if way:
+            names.append(back if way == 1 else forward)
+    # A QTE that asks for a stick to be moved any way, and a prompt that named
+    # a key or a mouse button (prompt_buttons packs those in bits 27 to 29).
+    if word >> 27 & 1:
+        names.append('left stick (any way)')
+    if word >> 28 & 1:
+        names.append('right stick (any way)')
+    if word >> 29 & 1:
+        names.append('a key or a mouse button')
+    if not names:
+        return None
+    return ' + '.join(names) + (' (hold)' if word >> 18 & 1 else '')
+
+
+def reachable_in_play(word):
+    """Whether VR play sends that demand as it stands (prompt_buttons::reachableInPlay)."""
+    if not word:
+        return True
+    if word >> 23 & 15 or word >> 28 & 1:                 # the right stick turns the player in play
+        return False
+    if (word >> 16 & 1) != (word >> 17 & 1):              # a trigger reaches the game only with its pair
+        return False
+    shoulders = word & 0x300
+    if shoulders and shoulders != 0x300:
+        return False
+    return not word & 0xffff & ~PLAY_BUTTONS
+
+
+def prompts_line(word):
+    """What the session log says when the game asks a player for a button, or None for nothing."""
+    asked = demand_name(word)
+    if not asked:
+        return None
+    own = '' if reachable_in_play(word) else ' (VR play has no button of its own for it)'
+    return (f'The game is asking for {asked}{own}: the interact button sends it, and clicking both '
+            'thumbsticks latches the whole pad.')
+
+
 # The T-pose calibration's phases and what its panel asks for (body_calibration.hpp Phase, Hint).
 CALIBRATION_PHASES = {0: 'none', 1: 'waiting', 2: 'holding', 3: 'done'}
 CALIBRATION_HINTS = {0: None, 1: 'tracking', 2: 'stand_up', 3: 'arms_out', 4: 'straight', 5: 'look_ahead',
                      6: 'triggers', 7: 'still'}
 
 
+# Why the view rig could not place a frame of play (GameTrackingRig::Inactive bits).
+TRACKING_GAP_REASONS = ((1, 'not_playing'), (2, 'unfocused'), (4, 'no_head'), (8, 'no_feet'), (16, 'no_camera'),
+                        (32, 'frame_time'), (64, 'stale_display'), (128, 'no_eyes'))
+
+
 def snapshot(game, address):
     for _ in range(8):
-        raw = game.read(address, 856)
-        if len(raw) != 856:
+        raw = game.read(address, 1152)
+        if len(raw) != 1152:
             return None
-        if struct.unpack_from('<3I', raw) != (0x53585244, 26, 856):
+        if struct.unpack_from('<3I', raw) != (0x53585244, 36, 1152):
             raise RuntimeError('Game XR protocol mismatch')
         if struct.unpack_from('<Q', raw, 16)[0] & 1 or raw[16:24] != game.read(address+16, 8):
             continue
@@ -601,6 +667,103 @@ def snapshot(game, address):
         # The scans a trigger pulled at the temple began (the game's R3), and the Charge Jumps a held A
         # began (its RT + A).
         result.update(zip(('scans', 'charge_jumps'), struct.unpack_from('<2I', raw, 832)))
+        # What the game asked a player for, read through its own UI (game_prompts.hpp): its calls into
+        # Flash and the prompt and QTE interface's among them ('calls' at 0 while 'invokes' rises says the
+        # names no longer match the game), prompts raised and taken away, texts that named a button and
+        # texts rewritten for VR; what it is asking for now and the last thing it asked for, the asks VR
+        # play could not have sent on its own (what the interact button carries) and texts that came with
+        # the keyboard's icons, which name no pad button at all. Then the presses of the interact button
+        # that sent an ask instead of the game's Y, and the pad layer's latches.
+        invokes, calls, raised, cleared, texts, rewrites = struct.unpack_from('<6Q', raw, 856)
+        demand, last_demand, beyond_play, keyboard_texts = struct.unpack_from('<4I', raw, 904)
+        context_presses, pad_entries, pad_layer, wall_interacts = struct.unpack_from('<4I', raw, 920)
+        # What the controllers themselves sent, beside what reached the game: a button in neither was
+        # never pressed. ControllerButton bits, as xr_session gives them.
+        vr_now, vr_played = struct.unpack_from('<2I', raw, 936)
+        # Presses of the interact that handed the player back to the game's own wall crawl, because the
+        # swing held him on a wall of its own and the game was offering nothing (game_pad::WallHandover).
+        wall_handovers, handovers_offered = struct.unpack_from('<2I', raw, 944)
+        # The room around the player (Enclosure): frames the rule called him indoors, and the times the
+        # swing's walls were handed to the game because of it, which is what makes a vent's own
+        # interactions work.
+        indoor_frames, walls_to_game = struct.unpack_from('<2I', raw, 952)
+        # The game's own wall crawl, now that the view turns onto it as it does onto a wall of the swing's.
+        # Frames it held the player, and of those the frames the view had turned. Then what the game made of
+        # the stick there (CrawlStick): the mean turn from the way sent to the way taken, in the surface's own
+        # axes, how alike those turns were (near 1 a frame fixed against the surface, which the stick wants
+        # rotating by that turn; near 0 no fixed frame at all, and the mover wants driving instead) and the
+        # mean speed taken. The crawl is the only hold the game itself calls standing on a wall, so it is the
+        # only one whose interacts work there.
+        crawl_frames, crawl_stood, crawl_stick = struct.unpack_from('<3I', raw, 960)
+        crawl_turn, crawl_agreement, crawl_speed = struct.unpack_from('<3f', raw, 972)
+        # The head stopping short of the surface over the player (headroom): frames it was brought down, and
+        # the least room there ever was over his feet. Inside the vent it stood at the player's own eye
+        # height over its floor and so out through its roof.
+        head_dropped, = struct.unpack_from('<I', raw, 984)
+        headroom_least, = struct.unpack_from('<f', raw, 988)
+        # Handing him from the swing's own wall to the game's, indoors (WallToGame): tries, those the game
+        # answered by taking him - a vent that works - those it did not and the swing took the wall straight
+        # back, and the frames he was driven into the wall. `handed` against `recovered` is the whole answer
+        # to whether the game catches a player let go of at a wall.
+        wtg_tries, wtg_handed, wtg_recovered, wtg_push = struct.unpack_from('<4I', raw, 992)
+        result.update(wall_to_game=dict(tries=wtg_tries, handed=wtg_handed, recovered=wtg_recovered,
+                                        push_frames=wtg_push))
+        # The game's own crawl under the player at rest on the swing's wall (game_warp): crawls asked for,
+        # those its state machine took, refused, faulted, and how the hand-overs ended (the crawl took him,
+        # or the swing had him back); frames of the game's own wall run (its RT with the stick up the wall)
+        # and frames the view held its surface through a gap in the swing's reports.
+        (w_asked, w_applied, w_refused, w_faulted, w_taken, w_declined, w_run,
+         w_grace) = struct.unpack_from('<8I', raw, 1008)
+        result.update(warp=dict(asked=w_asked, applied=w_applied, refused=w_refused, faulted=w_faulted,
+                                taken=w_taken, declined=w_declined, game_run_frames=w_run,
+                                hold_grace_frames=w_grace))
+        # Frames of play the view rig could not place, and every reason seen (one shorter than half a second
+        # keeps the view standing where it stood); the game's crawl on a floor (a vent, a duct), the frames
+        # the head was held at the crawl's own height there, and the frames the body knelt under a held head;
+        # the game camera's look and up at the latest frame - the frame the game's crawl takes its stick in.
+        gap_frames, gap_reasons, floor_frames, cap_frames, kneel_frames = struct.unpack_from('<5I', raw, 1040)
+        camera_forward = struct.unpack_from('<3f', raw, 1064)
+        camera_up = struct.unpack_from('<3f', raw, 1076)
+        result.update(tracking_gaps=dict(frames=gap_frames,
+                                         reasons=[name for bit, name in TRACKING_GAP_REASONS if gap_reasons & bit]),
+                      floor_crawl=dict(frames=floor_frames, capped_frames=cap_frames, kneel_frames=kneel_frames),
+                      game_camera=dict(forward=[round(v, 3) for v in camera_forward],
+                                       up=[round(v, 3) for v in camera_up]))
+        # The game's interactions on Spidy's wall (game_offers, offer_pointing): frames a hand pointed at one the
+        # game would let the player use and at one to come closer to; presses of the interact that asked for a
+        # use, those the game refused at once, those that came to the game's interact and of those the ones the
+        # game had picked the offer for first, those given up (its crawl did not take him); the most offers it
+        # gathered near him at once.
+        # And whether its hooks went in (off, hooked, failed - with the reason: 9601 another game build).
+        (o_point, o_reach, o_asks, o_refused, o_presses, o_picked, o_failed,
+         o_seen) = struct.unpack_from('<8I', raw, 1088)
+        o_state, = struct.unpack_from('<I', raw, 1060)
+        # The module's own counts: updates run with the crawl's mask, offers checked against the crawl's pose,
+        # masked updates whose gather checked any offer and the most at once, spot searches and those that found
+        # one, and the offers near the player at the end.
+        (o_masked, o_posed, o_gathered, o_most, o_searches, o_spots, o_near,
+         o_retries) = struct.unpack_from('<8I', raw, 1120)
+        result.update(offers=dict(hooks={0: 'off', 1: 'hooked', 3: 'failed'}.get(o_state & 0xff, o_state & 0xff),
+                                  hook_error=o_state >> 8, point_frames=o_point, reach_frames=o_reach, asks=o_asks,
+                                  refused=o_refused, presses=o_presses, picked=o_picked, failed=o_failed,
+                                  most_seen=o_seen, masked_updates=o_masked, posed_checks=o_posed,
+                                  gathers=o_gathered, most_checked=o_most, spot_searches=o_searches,
+                                  spots_found=o_spots, near_now=o_near, press_retries=o_retries))
+        result.update(crawl=dict(frames=crawl_frames, stood=crawl_stood, stick_samples=crawl_stick,
+                                 stick_turn_degrees=round(math.degrees(crawl_turn), 1),
+                                 stick_agreement=round(crawl_agreement, 3),
+                                 stick_speed=round(crawl_speed, 2)),
+                      headroom=dict(dropped_frames=head_dropped, least=round(headroom_least, 2)))
+        result.update(vr_buttons=controller_buttons(vr_now), vr_buttons_played=controller_buttons(vr_played))
+        result.update(prompts=dict(invokes=invokes, calls=calls, raised=raised, cleared=cleared, texts=texts,
+                                   rewrites=rewrites, asking=demand_name(demand),
+                                   last_asked=demand_name(last_demand), beyond_play=beyond_play,
+                                   keyboard_texts=keyboard_texts, context_presses=context_presses,
+                                   pad_entries=pad_entries, pad_layer=bool(pad_layer),
+                                   wall_interacts=wall_interacts, wall_handovers=wall_handovers,
+                                   wall_handovers_offered=handovers_offered,
+                                   indoor_frames=indoor_frames, walls_handed_to_game=walls_to_game),
+                      prompt_demand=demand, prompt_last_demand=last_demand)
         # The layout the VR runtime uses for each hand's controller (left, right; None until it says), and
         # the layouts it took Spidy's controls for. A Steam Frame on 'touch' plays SteamVR's translation.
         left, right, layouts = struct.unpack_from('<3I', raw, 840)
@@ -636,7 +799,7 @@ def snapshot(game, address):
                                        smooth_turn=smooth_turn, haptics=haptics, screen_size=screen_size,
                                        flips=bool(flags & 32), flip_speed=flip_speed,
                                        trigger_webs=bool(flags & 64), hud=hud,
-                                       stand_on_walls=bool(flags & 128), physical_webs=bool(flags & 256),
+                                       stand_on_walls=bool(flags & 128),
                                        screen_depth=screen_depth,
                                        eye_height_mm=eye_height, arm_length_mm=arm_length,
                                        calibration_prompt=not calibration_flags & 1),
@@ -703,13 +866,14 @@ CUE_WAYS = ('none', 'left', 'right', 'up', 'down')
 
 def rope_snapshot(game, address):
     """Physical webs (game_swing::Ropes): the bends made round edges and taken off again, the webs cut off
-    because something stayed in the way, the steps a web paid out while the game walked the player, and each
-    hand's web now (its bends, the rope beyond the last and all of it, metres)."""
+    because something stayed in the way, the steps a web paid out while the game walked the player, each
+    hand's web now (its bends, the rope beyond the last and all of it, metres), the times a hand took hold of the
+    other hand's web, and whether both hold one now."""
     for _ in range(8):
-        raw = game.read(address, 80)
-        if len(raw) != 80:
+        raw = game.read(address, 96)
+        if len(raw) != 96:
             return None
-        if struct.unpack_from('<3I', raw) != (0x53575250, 1, 80):
+        if struct.unpack_from('<3I', raw) != (0x53575250, 2, 96):
             raise RuntimeError('Rope protocol mismatch')
         if struct.unpack_from('<Q', raw, 16)[0] & 1 or raw[16:24] != game.read(address+16, 8):
             continue
@@ -717,7 +881,8 @@ def rope_snapshot(game, address):
         return dict(physical=bool(struct.unpack_from('<I', raw, 12)[0]), wraps=wraps, unwraps=unwraps, cut=cut,
                     paid_out=paid_out, bends=list(struct.unpack_from('<2I', raw, 56)),
                     free_m=[round(x, 2) for x in struct.unpack_from('<2f', raw, 64)],
-                    whole_m=[round(x, 2) for x in struct.unpack_from('<2f', raw, 72)])
+                    whole_m=[round(x, 2) for x in struct.unpack_from('<2f', raw, 72)],
+                    joins=struct.unpack_from('<Q', raw, 80)[0], shared=bool(struct.unpack_from('<I', raw, 88)[0]))
     return None
 STRIKE_PHASES = ('idle', 'flying', 'hanging')
 
@@ -804,16 +969,35 @@ def punch_snapshot(game, address):
     return None
 
 
+GADGETS = ('none', 'web_shooter', 'impact_web', 'web_bomb', 'electric_web', 'trip_mine', 'concussion_blast',
+           'spider_drone', 'suspension_matrix', 'web_blossom')
+
+
+def gadgets_of(raw):
+    """The player's gadgets in game_shooter::Data (v4): the weapon manager, the equipped weapon's id, why none was
+    read, each gadget with its place on the wheel and its charges, the latest equip's result and how many were asked
+    for, the equipped gadget's shots from the hand, and the pulls that found it without a charge."""
+    manager, count, error, equipped, equip_result, equips = struct.unpack_from('<Q2I2HI', raw, 192)
+    owned = []
+    for i in range(min(count, 8)):
+        weapon, kind, place, ammo, most = struct.unpack_from('<H4B', raw, 216 + i * 8)
+        owned.append(dict(gadget=GADGETS[kind] if kind < len(GADGETS) else kind, weapon=weapon, place=place,
+                          ammo=ammo, most=most))
+    gadget_shots, empty_pulls = struct.unpack_from('<2Q', raw, 280)
+    return dict(weapon_manager=hex(manager), gadget_error=error, equipped=equipped, gadgets=owned,
+                equip_result=equip_result, equips=equips, gadget_shots=gadget_shots, empty_pulls=empty_pulls)
+
+
 def shooter_snapshot(game, address):
     """Web-shooter shots (game_shooter::Data): pulls that asked for a shot, shots the game fired and requests it
     dropped, those aimed at a thug and those whose target the game took, the hero's gadget, the main-thread frames
     the module saw, shots per hand, the latest shot, and what the shots struck (v2): shots that hit anything,
     webbing blows dealt to thugs, props knocked, and the latest actor hit (0x0: the world)."""
     for _ in range(8):
-        raw = game.read(address, 192)
-        if len(raw) != 192:
+        raw = game.read(address, 296)
+        if len(raw) != 296:
             return None
-        if struct.unpack_from('<3I', raw) != (0x53484f44, 2, 192):
+        if struct.unpack_from('<3I', raw) != (0x53484f44, 4, 296):
             raise RuntimeError('Shooter protocol mismatch')
         if struct.unpack_from('<Q', raw, 16)[0] & 1 or raw[16:24] != game.read(address+16, 8):
             continue
@@ -829,7 +1013,7 @@ def shooter_snapshot(game, address):
                     hands=hands, last_origin=[round(x, 3) for x in origin],
                     last_aim_point=[round(x, 3) for x in aim_point],
                     last_shot=hex(struct.unpack_from('<Q', raw, 152)[0]), collisions=collisions, webbed=webbed,
-                    pushed=pushed, last_hit=hex(last_hit))
+                    pushed=pushed, last_hit=hex(last_hit), **gadgets_of(raw))
     return None
 
 
@@ -1044,6 +1228,71 @@ def slow_motion_snapshot(game, address):
     return None
 
 
+# The prompt and QTE interface's eight names, in the order PromptData counts them.
+PROMPT_CALL_NAMES = ('ShowPlaceablePrompt', 'HidePlaceablePrompt', 'SetPlaceablePromptProgress',
+                     'UpdateInWorldPrompt', 'POIInteractAvailable', 'AddQTE', 'UpdateQTE', 'ClearQTE',
+                     'ShowText', 'HideText')
+
+
+# The VR controllers' own buttons (ControllerButton, tracking.hpp). On Touch, A and B are the right
+# controller's and X and Y the left one's, so a session where B arrives and Y never does says which hand.
+CONTROLLER_BUTTONS = ((1, 'a'), (2, 'b'), (4, 'x'), (8, 'y'), (16, 'menu'), (32, 'view'),
+                      (64, 'dpad_up'), (128, 'dpad_down'), (256, 'dpad_left'), (512, 'dpad_right'))
+
+
+def controller_buttons(bits):
+    """The names of the controller buttons in `bits`."""
+    return [name for bit, name in CONTROLLER_BUTTONS if bits & bit]
+
+
+def prompt_snapshot(game, address):
+    """What the game asked a player for (game_prompts.hpp PromptData v2): its calls into Flash and the prompt
+    and QTE interface's among them, prompts raised and taken away, texts that named a button and texts
+    rewritten for VR, what it is asking for now and last, the asks VR play could not have sent on its own,
+    and texts that came with the keyboard's icons.
+
+    Then the two lists that say where a prompt's button and text actually arrive, no prompt text having
+    reached the localized lookup on October 13: `recent`, the newest prompt calls with their arguments, and
+    `census`, every distinct name the game's UI called with how often and one example of its arguments."""
+    for _ in range(8):
+        raw = game.read(address, 12112)
+        if len(raw) != 12112:
+            return None
+        # A mismatch here is reported, never raised. Everything in this struct is
+        # diagnostics, and on October 13 raising it ended three sessions: the module
+        # still said version 1 while this reader wanted 2 (the census raised the size
+        # but not the version), so the loop died and the game dropped out of VR to
+        # the flat screen. Nothing a player is doing is worth that.
+        magic, version, size = struct.unpack_from('<3I', raw)
+        if (magic, version, size) != (0x53505244, 4, 12112):
+            return dict(protocol_mismatch=dict(magic=hex(magic), version=version, bytes=size,
+                                               wanted=dict(magic=hex(0x53505244), version=4, bytes=12112)))
+        if struct.unpack_from('<Q', raw, 16)[0] & 1 or raw[16:24] != game.read(address+16, 8):
+            continue
+        text_at = lambda at, size: raw[at:at+size].split(b'\0', 1)[0].decode('utf-8', 'replace')
+        result = dict(zip(('invokes', 'calls', 'raised', 'cleared', 'texts', 'rewrites'),
+                          struct.unpack_from('<6Q', raw, 24)))
+        demand, last_demand, beyond_play, keyboard_texts = struct.unpack_from('<4I', raw, 72)
+        result.update(asking=demand_name(demand), last_asked=demand_name(last_demand),
+                      beyond_play=beyond_play, keyboard_texts=keyboard_texts)
+        lines = struct.unpack_from('<I', raw, 88)[0]
+        counts = struct.unpack_from('<10I', raw, 96)
+        result['by_name'] = {name: n for name, n in zip(PROMPT_CALL_NAMES, counts) if n}
+        # One timeline: the game's prompt calls and this session's own presses, in order,
+        # each stamped with the milliseconds since the first of them ('>>' marks ours).
+        result['timeline'] = [t for t in (text_at(136+i*128, 128) for i in range(min(lines, 32))) if t]
+        names = struct.unpack_from('<I', raw, 4232)[0]
+        calls = struct.unpack_from('<48I', raw, 4240)
+        census = []
+        for i in range(min(names, 48)):
+            example = text_at(4432+i*160, 160)
+            if example:
+                census.append(dict(call=example, times=calls[i]))
+        result['census'] = sorted(census, key=lambda c: -c['times'])
+        return result
+    return None
+
+
 def hud_snapshot(game, address):
     """The HUD in VR (native_hud::Data v3): its panel in front of the head, where the lazy follow turned it, its
     texture at the window's size, its second movie (markers, subtitles, prompts) drawn on it, markers projected
@@ -1208,10 +1457,6 @@ def main():
     p.add_argument('--flip-speed', type=int, default=180,
                    help='How fast a flip turns you at full tilt of the left stick, in degrees a second (90..480; '
                         'default 180)')
-    p.add_argument('--no-physical-webs', action='store_true',
-                   help='Webs as before October 12: a wall that comes between you and a web cuts it off instead '
-                        'of bending it, its length is measured to your body, not your hand, and it keeps the '
-                        'length it was shot with while you walk')
     p.add_argument('--game-depth-of-field', action='store_true',
                    help="Keep the game's own Depth of Field setting; without it a session turns it off (in the "
                         'headset the blur is not where you look)')
@@ -1231,6 +1476,10 @@ def main():
     p.add_argument('--no-punch', action='store_true', help='Fists pass through thugs instead of punching them')
     p.add_argument('--no-web-shooter', action='store_true',
                    help="A free hand's trigger shoots nothing, instead of the game's web-shooter web balls")
+    p.add_argument('--no-prompt-help', action='store_true',
+                   help="Leave the game's own button prompts alone: Spidy neither reads which button they "
+                        'ask for nor names the VR control in them, and the interact button is the game\'s Y '
+                        'as before (the pad layer still gives the whole controller)')
     p.add_argument('--no-aim-markers', action='store_true',
                    help="Start with the aim markers (where each hand's web would land) hidden; AIM MARKERS in the "
                         "SPIDY VR tab shows them")
@@ -1374,6 +1623,11 @@ def session(a, startup):
         game = Game(find_game())
         render_memory_module(game.pid)
     startup.fields['game_pid'] = game.pid
+    startup.fields['steam_build'] = game.steam_build
+    if not game.steam_build:
+        print(f'This Spider-Man.exe is version {EXPECTED_VERSION} but not Steam\'s file (an Epic Games Store copy?). '
+              'Spidy tries it: should the game\'s code differ where Spidy works with it, VR stops with a code '
+              'to tell us.', flush=True)
     startup.stage = "looking for the game's graphics queue"
     process = bridge = xr = rays = None
     bridge_active = xr_active = False
@@ -1421,7 +1675,7 @@ def session(a, startup):
                                            'SpidyGpuData', 'SpidyXrTimingData', 'SpidyAppearanceData',
                                            'SpidyStereoFrames', 'SpidyXrSnapshot', 'SpidyStereoData',
                                            'SpidyBodyData', 'SpidySlowMotionData', 'SpidyHudData',
-                                           'SpidySteamData'))
+                                           'SpidySteamData', 'SpidyPromptData'))
         saved = vr_display.Registry().read(('ScreenSpaceReflections', 'RTReflections'))
         reflections, reflections_line = eye_reflections(saved.get('ScreenSpaceReflections'), a.no_eye_reflections,
                                                         saved.get('RTReflections', 0))
@@ -1439,7 +1693,7 @@ def session(a, startup):
                              (16384 if a.no_wall_run else 0) | (0x8000 if a.no_eye_antialiasing else 0) |
                              (0x10000 if a.game_monitor_view or game_view else 0) |
                              (0x20000 if a.own_shadows else 0) | (0 if reflections else 0x40000) |
-                             (0x80000 if a.no_physical_webs else 0)) + \
+                             (0x100000 if a.no_prompt_help else 0)) + \
             runtime_path(manifest) + struct.pack('<14I', a.snap_turn, a.haptics, a.screen_size, a.smooth_turn,
                                                  a.render_scale, a.weight, a.eye_height, a.arm_length, a.hud,
                                                  a.flip_speed, a.upscale, a.monitor_rate, a.screen_depth, 0)
@@ -1473,6 +1727,7 @@ def session(a, startup):
         slow_motion_samples = deque(maxlen=2000)
         # The HUD: the latest (native_hud::Data), for a report written after the game closed.
         hud_last = None
+        prompt_last = None
         eye_jobs = None
         timing = None
         render_memory = None
@@ -1480,6 +1735,7 @@ def session(a, startup):
         printed_ring = False
         previous = None
         printed_controllers = None
+        printed_prompt = 0
         printed_dimensions=False
         renewed=0
         stop_requested=False
@@ -1503,6 +1759,19 @@ def session(a, startup):
             if line:
                 print(line, flush=True)
 
+        def prompt_section(samples):
+            """The report's prompts section, from the two structs that carry it.
+
+            The census, the timeline and the game's own calls come from PromptData (`prompt_last`); the counters
+            the session keeps - the interact's presses on a wall, its hand-overs to the game, the pad layer -
+            ride XrData and reach here in the last sample. The report wants both, and only taking the first is
+            how the hand-over counters went missing from the October 13 session that was meant to measure them.
+            """
+            out = dict(prompt_last or {})
+            for key, value in ((samples[-1].get('prompts') if samples else None) or {}).items():
+                out.setdefault(key, value)
+            return out
+
         def session_report(**extra):
             """Everything sampled so far. It is written however the session ends."""
             return dict(pid=game.pid, eye_size=a.size, render_scale=a.render_scale, swing_speed=a.swing_speed,
@@ -1516,6 +1785,7 @@ def session(a, startup):
                         ropes=ropes, steam_guard=steam,
                         shooter=shooter, shooter_samples=list(shooter_samples),
                         slow_motion=slow_motion, slow_motion_samples=list(slow_motion_samples), hud=hud_last,
+                        prompts=prompt_section(list(samples)),
                         ray_samples=list(ray_samples), appearance=appearance, eye_jobs=eye_jobs,
                         render_memory=render_memory, timing=timing, network=links,
                         stream_stalls=stream_stalls(list(samples)),
@@ -1598,6 +1868,9 @@ def session(a, startup):
                         if any(slow[k] != (slow_motion or {}).get(k) for k in SLOW_MOTION_COUNTS):
                             slow_motion_samples.append(dict(slow, seconds=round(time.monotonic()-started, 3)))
                         slow_motion = slow
+                    # What the game asked for, and the census of the calls its UI
+                    # makes: kept for the report however the session ends.
+                    prompt_last = prompt_snapshot(game, xr['SpidyPromptData']) or prompt_last
                     hud = hud_snapshot(game, xr['SpidyHudData'])
                     if hud:
                         hud_last = hud
@@ -1690,6 +1963,14 @@ def session(a, startup):
                     if layout and layout != printed_controllers:
                         print(layout, flush=True)
                         printed_controllers = layout
+                    # And what the game asks for, each time it asks for something new: the moments that
+                    # used to stop a player are the ones where this names a button VR play never had.
+                    asked = sample.get('prompt_last_demand', 0)
+                    if asked and asked != printed_prompt:
+                        printed_prompt = asked
+                        line = prompts_line(asked)
+                        if line:
+                            print(line, flush=True)
                     state = (sample['status'], sample['message'])
                     if state != previous:
                         print(sample['message'], flush=True)
@@ -1749,6 +2030,7 @@ def session(a, startup):
             slow_motion_samples=list(slow_motion_samples),
             motion_samples=list(motion_samples), appearance=appearance_snapshot(game,xr['SpidyAppearanceData']),
             hud=hud_snapshot(game, xr['SpidyHudData']),
+            prompts=prompt_snapshot(game, xr['SpidyPromptData']),
             eye_jobs=frame_snapshot(game, xr['SpidyStereoFrames']) or eye_jobs,
             render_memory=final_render_memory or render_memory, render_stop=render_stop,
             free_commit_mb=dict(start=start_commit, lowest=lowest_commit),
