@@ -1,6 +1,6 @@
 # Builds dist\Spidy-<version>-win64.zip: the launcher, the game modules, the
 # Python tools a VR session runs, an embeddable Python, the notices, and the
-# starter for Linux (docs\LINUX.md).
+# starters for Linux (docs\LINUX.md).
 # Players extract it anywhere and start "Spidy Launcher.exe"; nothing else to install.
 param([switch]$KeepFolder)
 $ErrorActionPreference = 'Stop'
@@ -46,9 +46,11 @@ foreach ($folder in @('build\windows-ninja', 'tools', 'python', 'docs\licenses')
 Copy-Item -LiteralPath (Join-Path $bin 'spidy_launcher.exe') -Destination (Join-Path $stage 'Spidy Launcher.exe')
 foreach ($module in $modules) { Copy-Item -LiteralPath (Join-Path $bin $module) -Destination (Join-Path $stage 'build\windows-ninja') }
 foreach ($tool in $tools) { Copy-Item -LiteralPath (Join-Path $root "tools\$tool.py") -Destination (Join-Path $stage 'tools') }
-# The Linux starter with Unix line endings, whatever this checkout has: bash runs no script with Windows'.
-$starter = [IO.File]::ReadAllText((Join-Path $root 'tools\spidy-linux.sh')) -replace "`r`n", "`n"
-[IO.File]::WriteAllText((Join-Path $stage 'tools\spidy-linux.sh'), $starter, (New-Object Text.UTF8Encoding $false))
+# The Linux starters with Unix line endings, whatever this checkout has: bash runs no script with Windows'.
+foreach ($starter in @('spidy-linux.sh', 'spidy-steamvr.sh', 'spidy-wivrn.sh')) {
+    $text = [IO.File]::ReadAllText((Join-Path $root "tools\$starter")) -replace "`r`n", "`n"
+    [IO.File]::WriteAllText((Join-Path $stage "tools\$starter"), $text, (New-Object Text.UTF8Encoding $false))
+}
 Expand-Archive -LiteralPath $pythonZip -DestinationPath (Join-Path $stage 'python')
 # The embeddable Python ignores the script's folder; the tools import each other.
 Add-Content -LiteralPath (Join-Path $stage 'python\python312._pth') -Value '..\tools' -Encoding ascii
