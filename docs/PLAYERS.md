@@ -15,7 +15,8 @@ WHAT YOU NEED
   through Virtual Desktop (https://www.vrdesktop.net/) and through SteamVR
   (Steam Link). Other SteamVR headsets and Meta Quest Link should work too.
   The launcher finds the runtime your headset is connected to.
-- About 19 GB of memory Windows can give programs (RAM plus page file).
+- A gaming PC. It need not be new: players report good performance on lower
+  settings with PCs like a GTX 1080 and 16 GB of RAM.
 - Windows. On Linux, Spidy runs inside the game's Steam Proton session: that is
   experimental and has its own steps, in LINUX.md in this folder.
 
@@ -596,7 +597,8 @@ IF SOMETHING IS WRONG
   fewer pixels than your headset asks for), or your streaming quality in
   Virtual Desktop. On a laptop, plug it in and choose its highest
   performance mode. A lower "Monitor frame rate" helps a little more, most
-  if the game window is large.
+  if the game window is large. Lower the game's own graphics settings as
+  well: players report good frame rates on a GTX 1080 that way.
 - Blurry edges: set "Upscaling" in the launcher's options to High or Off,
   then raise "Render resolution" above 100%; try 125% first. Both cost
   frame rate and memory: 150% gave about 30% fewer frames on an RTX 5090.
