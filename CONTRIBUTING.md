@@ -82,8 +82,8 @@ Ilya asks three more, so players don't get confused:
 
 - **Give it its own name.** Don't present it as Spidy, as an official version
   or as an update.
-- **Support it yourself.** Bugs in a custom build don't go to Spidy's issues,
-  #spidy-bugs or #spidy-help: nobody can tell whose code caused them.
+- **Support it yourself.** Bugs in a custom build don't go to Spidy's issues
+  or #spidy-bugs: nobody can tell whose code caused them.
 - **On Spidy's Discord, custom builds live in #spidy-dev.** Talk and clips go
   there, and your code as a GitHub link. No zips or installers: the server's
   downloads come only from the official releases.

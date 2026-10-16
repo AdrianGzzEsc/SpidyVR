@@ -50,33 +50,45 @@ one **START VR** button.
 
 ## Features
 
-- **Physical web swinging.** Squeeze a grip to fire that hand's web where you
-  point, swing on it, reel in with the trigger, pull sharply to zip (or swap the
-  two: the trigger webs, the grip reels). Webs hold on buildings, the ground, or
-  open air.
-- **Web shooter.** The trigger of a hand without a web fires the game's own
-  web ball from your wrist, with aim assist on enemies. Three quick hits web an
-  enemy up.
+- **Physical web swinging.** Squeeze a grip to fire that hand's web from your
+  web shooter where you point, swing on it, reel in with the trigger, pull
+  sharply to zip (or swap the two: the trigger webs, the grip reels). Webs hold
+  on buildings, the ground, or open air, and bend round corners. Swing low and
+  you skim the street on a near miss. Take the web in your other hand and climb
+  it hand over hand.
+- **Web shooter and gadgets.** The trigger of a hand without a web fires the
+  game's own web ball from your wrist, with aim assist on enemies. Three quick
+  hits web an enemy up. Hold X and a wheel of your gadgets opens in front of
+  your hand; pick one and the trigger fires it.
 - **Grab and throw.** Web a prop or an enemy, reel or yank it in, swing it on
   the web and let go to throw it. Heavy things feel heavy. Pulled enemies fly
   flailing, and get hurt when they slam into walls, the ground or each other.
-- **Real punches.** A fast fist into an enemy lands the game's own melee hit,
-  harder the faster you swing.
+- **Punch across the room.** A fast fist into an enemy lands the game's own
+  melee hit, harder the faster you swing. Throw one at an enemy up to 10 m
+  away and you fly in and strike. Uppercut an enemy into the air and keep
+  fighting up there; blows in a row build to a finisher.
 - **Fights you read at a glance.** A ring marks the enemy your next punch goes
   to, and an arrow calls the blow: a hook, an uppercut or a blow down. A yellow
   arrow calls the finisher. Bursts, counts and **KO!** land where your blows do.
+- **Slow motion.** Click the left stick and the world slows to a third while
+  you keep full speed, for as long as the focus meter on your left wrist lasts.
+  Finishers and perfect dodges slow time by themselves.
 - **Walls are floors.** Walk at a wall, or fly or jump into it, and you stay on
   it: run along it, walk up it, jump off. Your view turns so the wall is your
-  floor.
+  floor. Point at a vent or a door and press Y to go through.
 - **You are Spider-Man.** Look down and see his body; his arms and hands
-  follow your controllers. A quick T-pose the first time sizes him to your
-  height and arm length.
+  follow your controllers, open, in a fist or in the web-shooting pose. A quick
+  T-pose the first time sizes him to your height and arm length.
+- **The game's prompts work in VR.** Wherever the game asks for a button, look
+  at the thing and press Y. A prompt that spells out a button names the VR
+  control instead.
 - **VR settings in the game's menu.** A SPIDY VR tab in the game's own
   Settings for aim markers, snap or smooth turning, vibration, swing speed,
   how heavy you swing, screen size, the HUD and more. Changes apply at once.
 - **Menus and cutscenes on a screen.** Cutscenes in 3D: the game draws
   them once for each eye. The Touch controllers work as an Xbox controller
-  there; VR resumes when play does.
+  there; VR resumes when play does. **SWITCH TO GAME SCREEN** in the pause
+  menu plays the game as it is on that screen, whenever you like.
 - **One launcher.** It checks the game, the headset and your PC, fixes what it
   can, starts VR with one button, and updates Spidy with one click.
 
@@ -91,8 +103,8 @@ one **START VR** button.
 
 - **Release news first.** Every release is announced in `#spidy-updates`,
   with a ping if you ask for one.
-- **Help and fixes.** Setup questions go to `#spidy-help`, bugs to
-  `#spidy-bugs`, and you can see what is already known and fixed.
+- **Help and fixes.** Setup questions and bugs both go to `#spidy-bugs`, one
+  forum for every problem, where you can see what is already known and fixed.
 - **A say in what comes next.** Post and vote in `#spidy-ideas`: standing on
   walls, the dodge button and the flip speed setting were all asked for there.
 - **Clips.** Show a swing in `#spidy-clips`, share your videos in
@@ -137,9 +149,11 @@ find the real download.
 - **Marvel's Spider-Man Remastered on Steam.** An Epic Games Store copy of the
   same version is tried too, untested so far.
 - **A PC VR headset with an OpenXR runtime.** Played on Quest 3 with
-  [Virtual Desktop](https://www.vrdesktop.net/) and with SteamVR (Steam Link);
-  other SteamVR headsets and Quest Link should work.
-- **About 19 GB of memory Windows can give programs** (RAM plus page file).
+  [Virtual Desktop](https://www.vrdesktop.net/) and with SteamVR (Steam Link),
+  and by players on a Steam Frame with its own button layout; other SteamVR
+  headsets and Quest Link should work.
+- **A gaming PC.** It need not be new: players report good performance on lower
+  settings with PCs like a GTX 1080 and 16 GB of RAM.
 - **Windows.** On Linux, Spidy runs inside the game's Steam Proton session: experimental, with its
   own steps in [docs/LINUX.md](docs/LINUX.md) (contributed by [sjrl2000](https://github.com/sjrl2000)).
 
@@ -181,34 +195,45 @@ Spidy changes nothing in the game's folder.
 
 ## Controls
 
+<p align="center">
+  <a href="docs/images/readme/controls-quest3.jpg"><img src="docs/images/readme/controls-quest3.jpg" alt="Spidy's controls on Quest 3 Touch Plus controllers. Left: Menu pauses; left stick walks and runs, click for slow motion; Y interacts, hold to step up to the thing; X opens the game menu, hold for the gadget wheel. Right: right stick turns, up and hold to zip to a point or into a vent, down and hold to heal, click to pull a door or grate; B dodges the way the left stick points; A jumps, hold on the ground for a charged leap. Both hands: trigger reels in, or shoots a web ball or your gadget with no web; grip shoots a web and swings, catches a prop or an enemy and throws it on release. With your hands: a sharp pull zips or yanks, a fast fist punches or flies you to an enemy up to 10 m off, a hand at your temple with the trigger scans, a free hand on the web with its grip climbs it, both sticks clicked give a whole gamepad." width="100%"></a>
+  <br>
+  <sub>Quest 3 Touch Plus shown; Quest 2 and Quest Pro controllers have the same buttons. Steam Frame buttons are in the <a href="docs/PLAYERS.md">players' guide</a>.</sub>
+</p>
+
 | Do this | With |
 |---|---|
 | Shoot a web, swing on it | Squeeze a **grip**; release to let go |
 | Reel in | **Trigger**, while that hand's web is attached |
 | Zip | Pull the hand sharply away from the anchor |
+| Climb a web | Put your free hand on the web you hold and squeeze its **grip**; let go with the lower hand, take the web higher up, pull |
 | Shoot a web ball | **Trigger** of a hand without a web |
-| Grab a prop or thug | Grip aimed at it; trigger reels it, a sharp pull yanks it, release throws it |
+| Gadgets | Hold **X**: a wheel of your gadgets opens in front of that hand. Move the hand to one and let go of **X**; the free hand's **trigger** then fires it. The web shooter at the top gives you web balls again |
+| Grab a prop or an enemy | Grip aimed at it; trigger reels it, a sharp pull yanks it, release throws it |
 | Webs on the trigger instead | Set **WEB BUTTON** to TRIGGER in VR settings (or *Web button* in the launcher): the trigger shoots and holds webs, the grip reels and shoots web balls |
-| Punch | A fast fist into a thug |
+| Punch | A fast fist into an enemy. Throw it at an enemy up to 10 m away and you fly in and strike |
+| Slow motion | Click the **left stick**; click again to end it. The ring on your left wrist shows the focus left |
 | Walk and run / jump | **Left stick** / **A** (from the ground, a wall or a perch; no web zip in the air). Hold **A** on the ground to charge a leap and let go: the longer you hold, the higher; with the left stick, forward too |
 | Scan (the game's R3) | Raise a hand to your temple and pull its **trigger** |
-| One enemy at a time | A ring marks the thug your next punch goes to: the one you look at. Hit him and the ring locks on until he is down (**KO!**); look squarely at another for a moment to change |
+| One enemy at a time | A ring marks the enemy your next punch goes to: the one you look at. Hit that enemy and the ring locks on until the enemy is down (**KO!**); look squarely at another for a moment to change |
 | Called blows | An arrow comes into the ring from the side your fist should come from: swing a hook from that side, an uppercut from below or a blow down from above, at arm's reach or from across the room. The yellow arrow into a jagged red ring calls the finisher |
 | Walls | Walk at one, or fly or jump into it, and you stay on it: at speed you run along it, then stop. **Left stick** walks it (pushed at the wall: up it), **A** jumps off, a web pulls you off. Walking it or stopped, your view turns so the wall is your floor (STAND ON WALLS in VR settings or the launcher) |
 | Flip (experimental, off by default: FLIPS and FLIP SPEED in VR settings or the launcher) | **Left stick** in the air: turns you over, as fast as you tilt it; let go to come back level. Tap **A** in the air: one flip toward where the stick points. Hold **A**: you stay turned while the stick rests |
 | Turn | **Right stick**: snap 30° (adjustable or off), or hold to turn smoothly with SMOOTH TURN on in VR settings |
 | Dodge (the game's B) | **B**, the way the **left stick** points; not while a web carries you |
-| Interact (the game's Y) | **Y**, looking at the thing from within about a metre of it; hold **Y** and you step up to what you look at until the game takes it |
+| Interact (the game's Y) | **Y**, looking at the thing from within about a metre of it; hold **Y** and you step up to what you look at until the game takes it. On a wall, point a hand at a vent or a door (a turning ring in that hand's colour) and press **Y** |
+| Any button the game asks for | Look at the thing and press **Y**, whichever button the prompt shows |
 | Pull a door or a grate (the game's LB + RB) | Click the **right stick**, or hold it; not while a web carries you |
 | Heal (the game's D-pad down) | Push the **right stick** straight down and hold it a moment |
 | Zip to a point, enter a vent (the game's LT + RT) | Push the **right stick** straight up and hold it; not while a web carries you |
 | Pause (VR settings: Settings > SPIDY VR) | **Menu** button |
 | Game menu (map, suits, skills) | **X** |
-| Switch between VR and a flat screen | Pause, **Settings > SPIDY VR > VIEW** |
+| The whole gamepad, for a moment | Click both sticks: the grips are the game's LB and RB, the triggers its LT and RT, the right stick its D-pad; your webs are off meanwhile. Click both again, or press nothing for 20 seconds, to leave |
+| Play the game as it is | Pause, **SWITCH TO GAME SCREEN** (under RESUME): the game on a 3D screen in the headset, the controllers an Xbox controller. **SWITCH TO VR** goes back |
 
 **Aim markers** show where each free hand's web would go, blue for the left
 hand and orange for the right: a ring holds, a dashed ring holds in open air,
-a red cross misses, a turning ring of three arcs catches a prop or thug.
+a red cross misses, a turning ring of three arcs catches a prop or an enemy.
 AIM MARKERS in VR settings (or *Aim markers* in the launcher) hides them.
 
 ## Troubleshooting
@@ -219,7 +244,7 @@ AIM MARKERS in VR settings (or *Aim markers* in the launcher) hides them.
 | The headset is not found | Connect it first, check the VR runtime in the launcher, press *Check*. |
 | "VR needs administrator rights" (0.2.9 and older: "[WinError 5] Access is denied", then "No loaded player within three minutes") | Steam or the game runs as administrator, and Windows keeps other programs out of such a game. Choose *Restart as administrator* when the launcher asks (older versions: right-click Spidy Launcher > *Run as administrator*), close the game, press **START VR**. If that changes nothing, allow the Spidy folder in your antivirus. |
 | The picture breaks up | Close the game and start it from the launcher, which gives it the render memory VR needs. |
-| Low frame rate | Set *Upscaling* in the launcher to Balanced or Performance, then lower *Render resolution* or the streaming quality in Virtual Desktop. On a laptop, plug it in and choose its highest performance mode. 90 Hz paces more evenly than 120 Hz. |
+| Low frame rate | Lower the game's own graphics settings (players get good frame rates on a GTX 1080 that way). Set *Upscaling* in the launcher to Balanced or Performance, then lower *Render resolution* or the streaming quality in Virtual Desktop. On a laptop, plug it in and choose its highest performance mode. 90 Hz paces more evenly than 120 Hz. |
 | Blurry edges | Set *Upscaling* in the launcher to High or Off, then raise *Render resolution* above 100% (try 125%); both cost frame rate and memory. |
 | Web balls fly when you meant to reel | The trigger (the grip with WEB BUTTON: TRIGGER) reels only while that hand's web is attached; on a hand without a web it shoots. |
 
