@@ -36,7 +36,7 @@ endfunction()
 add_library(spidy_core src/swing.cpp src/web_grab.cpp src/lab_world.cpp src/lab_props.cpp src/game_tracking.cpp
             src/web_visual.cpp src/body_ik.cpp src/punch.cpp src/shooter.cpp src/vr_settings.cpp
             src/body_calibration.cpp src/overlay_text.cpp src/slow_motion.cpp src/web_strike.cpp
-            src/impact_sound.cpp src/prompt_buttons.cpp src/gadget_wheel.cpp)
+            src/impact_sound.cpp src/prompt_buttons.cpp src/gadget_wheel.cpp src/phone.cpp)
 target_include_directories(spidy_core PUBLIC include)
 if(MSVC)
   target_compile_options(spidy_core PRIVATE /W4 /permissive-)
@@ -59,6 +59,8 @@ target_link_libraries(spidy_sim PRIVATE spidy_core)
 # Draws the combat marks over eye captures without a headset (tools/preview-marks.ps1).
 add_executable(spidy_mark_preview apps/mark_preview.cpp)
 target_link_libraries(spidy_mark_preview PRIVATE spidy_core)
+add_executable(spidy_phone_preview apps/phone_preview.cpp)
+target_link_libraries(spidy_phone_preview PRIVATE spidy_core)
 if(SPIDY_BUILD_OBSERVER)
   if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
     message(FATAL_ERROR "The game observer requires 64-bit Windows")
@@ -159,7 +161,8 @@ if(SPIDY_BUILD_XR)
   target_compile_definitions(spidy_openxr PUBLIC XR_USE_PLATFORM_WIN32 XR_USE_GRAPHICS_API_D3D12)
   if(SPIDY_BUILD_OBSERVER)
     target_sources(spidy_stereo_probe PRIVATE src/game_xr.cpp src/game_player.cpp src/game_pad.cpp
-                   src/game_menu.cpp src/game_time.cpp src/game_prompts.cpp src/game_steam.cpp)
+                   src/game_menu.cpp src/game_time.cpp src/game_prompts.cpp src/game_steam.cpp
+                   src/phone_music.cpp)
     target_link_libraries(spidy_stereo_probe PRIVATE spidy_openxr)
   endif()
   add_executable(spidy_xr_lab apps/xr_lab.cpp)

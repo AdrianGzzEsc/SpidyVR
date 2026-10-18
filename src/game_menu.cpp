@@ -143,7 +143,8 @@ alignas(16) unsigned char items[rowCount][itemBytes];
 // The tab's own items (the rows not on the first page), and the row that is.
 alignas(16) unsigned char tabItems[rowCount][itemBytes];
 size_t tabRows{};
-int pageRow = -1;
+// VR VIEW's row, and MY PHONE's under it (phone.hpp): both on the first page.
+int pageRow = -1, phoneRow = -1;
 std::atomic<uint64_t> pagesBuilt{};
 // The page's own build is this game's (checked at install): without it VR
 // VIEW stays off the page.
@@ -197,7 +198,7 @@ void addTexts() {
         const auto& row = vr_settings::rows()[r];
         sprintf_s(tag, "SPIDY_VR_%zu", r);
         titles[r] = addText(tag, row.title);
-        if (row.page)
+        if (row.page && row.item == Item::view)
             pageTitle = const_cast<Text*>(titles[r]);
         if (row.help) {
             sprintf_s(tag, "SPIDY_VR_%zu_HELP", r);
@@ -295,10 +296,10 @@ uint32_t buildItems() {
         }
         // The tab's rows, and the one for the first page.
         tabRows = 0;
-        pageRow = -1;
+        pageRow = phoneRow = -1;
         for (size_t r = 0; r < rowCount; ++r)
             if (vr_settings::rows()[r].page)
-                pageRow = static_cast<int>(r);
+                (vr_settings::rows()[r].item == Item::view ? pageRow : phoneRow) = static_cast<int>(r);
             else
                 std::memcpy(tabItems[tabRows++], items[r], itemBytes);
         std::memcpy(tab, reinterpret_cast<const void*>(menu), tabBytes);
@@ -368,6 +369,8 @@ bool __fastcall addItemHook(GfxValue* array, void* movie, const void* item, bool
         buildingTab = true;
         if (originalAddItem(array, movie, items[pageRow], false))
             ++pagesBuilt;
+        if (phoneRow >= 0)
+            originalAddItem(array, movie, items[phoneRow], false);
         buildingTab = false;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         buildingTab = false;
@@ -447,6 +450,14 @@ void __fastcall callbackHook(void* ui, uint32_t hash, GfxValue* args, uint32_t c
         ReleaseSRWLockShared(&lock);
         change(Item::view, screen ? 0 : 1);
         reinterpret_cast<void(__fastcall*)(void*)>(imageBase + pageRefresh)(ui);
+        return;
+    }
+    // A on MY PHONE: the phone opens once play resumes (the XR worker
+    // clears the request when it does).
+    if (built == 1 && pageReady && phoneRow >= 0 && hash == pageSelectHash && args && count >= 1 &&
+        ((args[0].type & typeMask) == intType || (args[0].type & typeMask) == intType + 1) &&
+        static_cast<uint32_t>(args[0].data) == static_cast<uint32_t>(firstSetting + phoneRow)) {
+        change(Item::phone, 1);
         return;
     }
     // Y RESET ALL on the SPIDY VR tab: the game's RESET ALL takes only its own tabs.

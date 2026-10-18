@@ -4,6 +4,7 @@
 #include "game_swing.hpp"
 #include "game_tracking.hpp"
 #include "offer_pointing.hpp"
+#include "phone.hpp"
 #include "presentation_gate.hpp"
 #include "web_visual.hpp"
 
@@ -31,6 +32,8 @@ struct NativeEyeFrame {
     SlowMotionView slow{};
     // The gadget wheel, open while X is held (gadget_wheel.hpp).
     GadgetWheelView gadgetWheel{};
+    // The phone, open from MY PHONE until B (phone.hpp).
+    PhoneView phone{};
     bool flatScreen{};
     // The game screen in stereo (eye command 3): the pair goes on the screen,
     // the left image for the left eye and the right one for the right.

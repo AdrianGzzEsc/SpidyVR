@@ -12,6 +12,7 @@
 #include "spidy/enclosure.hpp"
 #include "spidy/game_pad.hpp"
 #include "spidy/gadget_wheel.hpp"
+#include "spidy/phone.hpp"
 #include "spidy/controller_layout.hpp"
 #include "spidy/game_swing.hpp"
 #include "spidy/native_movement.hpp"
@@ -2354,6 +2355,113 @@ int main() {
             check(threw,"an invalid gravity accepted");
         }
         near(s.config().gravity,14.715f);
+    });
+    test("pocket draw: a grip squeezed at a back pocket, brought up in front, opens the phone there", [] {
+        const Pose head{{0,1.7f,0},{}};
+        const Pose pocket{{.2f,.9f,.1f},{}}, front{{.1f,1.25f,-.3f},{}}, hip{{.2f,.9f,-.2f},{}};
+        const bool tracked[2]{true,true};
+        const auto step=[&](PocketDraw& d,const Pose& right,float squeeze,float seconds=1.f/90,bool play=true){
+            const Pose grips[2]{Pose{{-.3f,1.f,0},{}},right};
+            const float squeezes[2]{0,squeeze};
+            return d.update(seconds,play,head,grips,tracked,squeezes);
+        };
+        PocketDraw d;
+        check(!step(d,pocket,1),"the squeeze at the pocket opened it at once");
+        check(d.hands()==2u,"the drawing grip is not the draw's: it would shoot a web");
+        check(step(d,front,1)&&d.draws()==1,"brought up in front, it did not open");
+        check(length(d.hand()-front.position)<1e-4f,"it did not open at the hand");
+        check(d.hands()==2u,"the grip was let go to the swing while still squeezed");
+        step(d,front,0);
+        check(d.hands()==0u,"let go of, the grip stayed the draw's");
+        // A squeeze in front of the hip is a web's, not a draw.
+        check(!step(d,hip,1)&&d.hands()==0u,"a squeeze at the front of the hip began a draw");
+        step(d,front,1);
+        check(d.draws()==1,"a web's squeeze brought up opened the phone");
+        step(d,front,0);
+        // Let go on the way, nothing opens.
+        step(d,pocket,1);
+        step(d,pocket,0);
+        check(!step(d,front,1)&&d.draws()==1,"a draw let go of on the way opened it");
+        step(d,front,0);
+        // Too slow, nothing opens.
+        step(d,pocket,1);
+        step(d,pocket,1,.1f);
+        for(int i=0;i<20;++i)step(d,pocket,1,.1f);
+        check(!step(d,front,1)&&d.draws()==1,"a draw slower than drawSeconds opened it");
+        step(d,front,0);
+        check(!step(d,pocket,1,1.f/90,false)&&d.hands()==0u,"outside VR play a draw began");
+        check(d.drewWith()==1,"the right hand's draw was not the right hand's");
+        const auto f=phoneFrameAt(head,front.position);
+        check(dot(f.out,normalized(head.position-f.centre))>.999f&&f.up.y>.5f&&std::abs(dot(f.up,f.out))<1e-4f,
+              "the held phone does not face the eyes with its top up");
+        check(length(f.centre-front.position)<.1f,"the held phone is not at the hand");
+    });
+    test("phone: home screen apps, MUSIC's buttons, GEAR's scroll; A, B, stick and triggers once per press", [] {
+        PhoneControls c;
+        c.reset();
+        // The press that opened it presses nothing until let go of.
+        check(!c.update(0,0,true,false).pressed,"the opening press pressed something");
+        auto e=c.update(0,0,false,false);
+        check(!e.pressed&&!e.x&&!e.y,"nothing happened, yet something stepped");
+        e=c.update(1,.2f,false,false);
+        check(e.x==1&&e.y==0,"right was not a step right");
+        check(!c.update(1,0,false,false).x,"a held stick kept stepping");
+        c.update(0,0,false,false);
+        e=c.update(.1f,-.9f,false,false);
+        check(e.y==-1&&e.x==0,"down was not a step down");
+        c.update(0,0,false,false);
+        check(c.update(0,0,true,false).pressed&&!c.update(0,0,true,false).pressed,"A pressed never, or twice held");
+        check(c.update(0,0,false,true).closed,"B did not count");
+        // The triggers: the left a step down, the right a step up, once per pull.
+        PhoneControls t;
+        t.reset();
+        check(t.update(0,0,false,false,1,1).volume==0,"a trigger held as it opened stepped the volume");
+        t.update(0,0,false,false,0,0);
+        check(t.update(0,0,false,false,1,0).volume==-1,"the left trigger did not step it down");
+        check(t.update(0,0,false,false,1,0).volume==0,"a held left trigger stepped it again");
+        t.update(0,0,false,false,0,0);
+        check(t.update(0,0,false,false,0,.9f).volume==1,"the right trigger did not step it up");
+        // The screens.
+        PhoneUi ui;
+        ui.reset();
+        using E=PhoneControls::Event;
+        const auto step=[&](E ev,int rows=0){return ui.update(ev,rows);};
+        check(ui.screen()==PhoneScreen::home&&ui.app()==0,"it did not open home, MUSIC picked");
+        step(E{0,-1});
+        check(ui.app()==1,"down did not pick MAP");
+        step(E{0,1});step(E{0,1});
+        check(ui.app()==2,"up from MUSIC did not wrap to GEAR");
+        step(E{0,0,true});
+        check(ui.screen()==PhoneScreen::gear,"A did not open GEAR");
+        step(E{0,-1},9);step(E{0,-1},9);step(E{0,-1},9);step(E{0,-1},9);
+        check(ui.gearTop()==9-PhoneUi::gearShown,"GEAR scrolled past its last row");
+        step(E{0,1},9);
+        check(ui.gearTop()==9-PhoneUi::gearShown-1,"up did not scroll GEAR back");
+        check(step(E{0,0,false,true})==PhoneAction::none&&ui.screen()==PhoneScreen::home,"B in an app did not go home");
+        step(E{0,1});step(E{0,1});
+        step(E{0,0,true});
+        check(ui.screen()==PhoneScreen::music&&ui.button()==PhoneButton::play,"MUSIC did not open on PLAY");
+        step(E{1});
+        check(step(E{0,0,true})==PhoneAction::next,"right then A did not press NEXT");
+        step(E{0,-1});
+        check(ui.button()==PhoneButton::autoplay&&step(E{0,0,true})==PhoneAction::autoplay,"down did not reach AUTOPLAY");
+        step(E{0,1});
+        check(ui.button()==PhoneButton::play,"up from AUTOPLAY did not go back to PLAY");
+        step(E{0,0,false,true});
+        check(step(E{0,0,false,true})==PhoneAction::close,"B at home did not put the phone away");
+        const std::string named=phoneSongName("C:\\Music\\my_song.mp3");
+        check(named=="my song","a song's name kept its folder, extension or underscore");
+        check(phoneSongName("\xE2\x99\xAB.mp3")=="SONG","a name of nothing drawable is not SONG");
+        PhoneView view;view.open=true;view.age=1;view.tracks=2;view.playing=true;
+        std::snprintf(view.song,sizeof view.song,"%s","HELLO");
+        view.gearCount=2;
+        std::snprintf(view.gear[0].name,sizeof view.gear[0].name,"%s","WEB BOMB");view.gear[0].most=4;view.gear[0].ammo=2;
+        for(const auto s:{PhoneScreen::home,PhoneScreen::music,PhoneScreen::map,PhoneScreen::gear}){
+            std::vector<Vertex> v;
+            view.screen=s;
+            appendPhone(v,view);
+            check(v.size()>300&&v.size()%3==0,"a screen drew nothing, or not in triangles");
+        }
     });
     test("sky anchors respect body occlusion and later world obstruction", [] {
         struct Occluded : TestWorld {
@@ -8607,8 +8715,11 @@ int main() {
               "the sections: webs, body, comfort, experimental");
         check(all[17].item == Item::flips && all[17].choices.empty() && std::strcmp(all[16].title, "EXPERIMENTAL") == 0,
               "the flips: a switch under EXPERIMENTAL");
-        check(all.size() == 19 && all[18].item == Item::flipSpeed && all[18].choices.size() == std::size(flipSpeeds),
-              "the flip speed under the flips, the last row");
+        check(all.size() == 20 && all[18].item == Item::flipSpeed && all[18].choices.size() == std::size(flipSpeeds),
+              "the flip speed under the flips, the tab's last row");
+        check(all[19].item == Item::phone && all[19].page && all[19].choices.empty() &&
+                  std::strcmp(all[19].title, "MY PHONE") == 0,
+              "MY PHONE: a button on the pause menu's first page");
         // The wall view has no row of its own any more: it turned only while
         // Spidy held the player on a wall, so it was never a choice of its own
         // and the launcher's one "Wall running" now carries both (the player,
@@ -8632,7 +8743,7 @@ int main() {
               "the view above the game screen's rows: VR, or GAME SCREEN");
         // VR VIEW is on the pause menu's first page, beside RESUME, and no other row is.
         for (const auto& row : all)
-            check(row.page == (row.item == Item::view), "a row on the wrong page");
+            check(row.page == (row.item == Item::view || row.item == Item::phone), "a row on the wrong page");
         check(all[1].item == Item::webButton && all[1].choices.size() == 2 &&
                   std::strcmp(all[1].choices[0], "GRIP") == 0 && std::strcmp(all[1].choices[1], "TRIGGER") == 0,
               "the web button first under WEBS: GRIP, or TRIGGER");
