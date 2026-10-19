@@ -40,6 +40,8 @@ Command command;
 Swing solver;
 InputSampleClock inputClock, grabInputClock;
 InputHold inputHold;
+// The game's own move out of the swing's flight, asked for (Command::asks).
+AirYield airYield;
 InFlightStep inFlight;
 SRWLOCK lifecycle = SRWLOCK_INIT, control = SRWLOCK_INIT, output = SRWLOCK_INIT, simulation = SRWLOCK_INIT;
 std::atomic<bool> enabled{};
@@ -654,8 +656,21 @@ void visit(const native_rays::QueryContext& world) {
     steppedView = (crawlHeld ? 1u : 0u) | (body.grounded ? 4u : 0u) | (length(crawl) > .5f ? 8u : 0u) |
                   (owned ? 16u : 0u) | (gameRun ? 32u : 0u) | (resting ? 64u : 0u) | (handing ? 128u : 0u);
     game_warp::observe(steppedView | (focused ? 2u : 0u), true);
+    // The game's own move the player asked for (its zip to a point, its web
+    // strike, a prompt's) once the game has begun it out of the swing's
+    // flight (AirYield): hands off, its webs and its wall let go - the move
+    // has its own - until it is done.
+    const bool yielding = airYield.update(tick, live && (c.asks & 1u), owned, !body.grounded,
+                                          (motion.moverFlags & 0x80u) != 0, motion.steps, motion.airEvents);
+    if (airYield.began()) {
+        solver.releaseAll();
+        solver.leaveWall();
+        game_punch::cancelStrike();
+        takeoffTransition.reset();
+        mountTakeoff.reset();
+    }
     // Nor does the swing take the body the game runs up its wall (gameRun).
-    const bool drive = !grasped && !handing && !gameRun &&
+    const bool drive = !grasped && !handing && !gameRun && !yielding &&
                        (striking || (collidable && !body.grounded && !transition.waiting &&
                                      (attached || owned || transition.resumed || wall.on)));
     if (drive) {

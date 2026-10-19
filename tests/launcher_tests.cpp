@@ -387,6 +387,18 @@ int main() {
         // tools/vr_launcher.py's NEEDS_ADMINISTRATOR_EXIT (tests/launcher_protocol_tests.py holds it to 5 too).
         check(kNeedsAdministratorExit == 5, "exit code");
     });
+    test("a game that already holds Spidy can be closed and VR started again", [] {
+        // tools/vr_launcher.py's CLOSE_GAME_EXIT (tests/launcher_protocol_tests.py holds it to 6 too).
+        check(kCloseGameExit == 6 && kCloseGameExit != kNeedsAdministratorExit, "exit code");
+        check(classifyLine("Spidy VR unavailable: Spider-Man is still running with an older Spidy build in it: it "
+                           "was open while Spidy was updated.") == LineKind::error,
+              "error line");
+        const SessionOptions options;
+        const auto plain = sessionArguments(options, L"r.json", L"", L"");
+        const auto closing = sessionArguments(options, L"r.json", L"", L"", true);
+        check(std::find(plain.begin(), plain.end(), L"--close-game") == plain.end(), "asked without the player");
+        check(closing.size() == plain.size() + 1 && closing.back() == L"--close-game", "the agreed close");
+    });
     test("runtime versions compare field by field", [] {
         check(parseVersion("14.44.35211.0") >= std::array<int, 4>{14, 40, 0, 0}, "newer");
         check(parseVersion("14.38.33135") < std::array<int, 4>{14, 40, 0, 0}, "older");

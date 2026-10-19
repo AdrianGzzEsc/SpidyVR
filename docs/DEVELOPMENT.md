@@ -239,9 +239,10 @@ of impact:
   test with automatic hook restoration. No headset is required.
 - `tools/preview-marks.ps1` (and `spidy_mark_preview`, `apps/mark_preview.cpp`):
   draws the combat marks over two eye captures of a VR session, or over a
-  plain backdrop, as PNG sheets of their states and poses. The overlay's own
-  vertices, one sample a pixel, at about the headset's pixel density. No
-  game and no headset.
+  plain backdrop, as PNG sheets of their states and poses, and the gadget
+  wheel over the near one (`near-wheel.png`: as it lands, at rest, as a
+  gadget lights). The overlay's own vertices, one sample a pixel, at about
+  the headset's pixel density. No game and no headset.
 - `tools/probe_game_grab.py`: webs the nearest throwable prop in sight from where
   the player stands, reels (or with `--yank` yanks) it in, carries it and throws
   it, in a freshly started game; `--watch SECONDS` watches it land and come to
@@ -266,6 +267,13 @@ of impact:
   starts, its direction and speed, where it ends), shoots the nearest bot
   within 40 m if there is one, stops and starts the shooter during play, and
   checks that nothing faulted and every hook entry is restored.
+- `tools/probe_sense.py`: Spider-Sense in a freshly started game: whether
+  the hero's dodge manager is found and the game's clock read, every warning
+  the game gives (attacker, answer, flags, how long) and the census of them;
+  `--provoke` punches the nearest enemy first so a fight starts, `--counter`
+  throws a scripted fist at each warning asking for a counter and reads the
+  counter, the break, the attacker's states and the player's health across
+  the blow. Writes `reports/sense-probe.json`.
 - `tools/probe_combat.py`: Spidy's web balls, fists and web pulls on the
   game's enemies, flying ones included. `--list` reads the game only: every
   bot as Spidy's scan sees it (the same RTTI rules: mover manager, traits,
@@ -566,11 +574,16 @@ door, a grate), under the same condition (`game_pad::PullPress`,
 `Walk::pull`): the grips shoot webs in VR and are no bumpers there. That
 stick pushed straight down is the game's D-pad down, its heal (the
 controllers have no D-pad), in the air too; pushed straight up it is the
-game's LT + RT together, its zip to a point and into a vent, except while a
-web carries you. A push counts from the stick at rest, at 0.75 or more and
-no more than 0.45 aside, after 0.15 s; turning, a diagonal and a flick push
-nothing (`game_pad::StickPush`, `Walk::heal` and `Walk::zip`; XrData `heals`
-and `zips`). Until October 12 neither had a control, and the first mission
+game's LT + RT together, its zip to a point and into a vent, while a web
+carries you too since October 18 (`game_swing::AirYield`). A push counts
+from the stick at rest, at 0.75 or more and no more than 0.45 aside, after
+0.15 s; turning, a diagonal and a flick push nothing (`game_pad::StickPush`,
+`Walk::heal` and `Walk::zip`; XrData `heals` and `zips`). Held on where the
+game has no point, LT alone is its aim mode, which slows its own time after
+about 0.6 s and snaps its aim to the points it can zip to: once its time
+has slowed, LT stays down alone and letting go of the stick presses RT
+again beside it for 0.2 s, the zip to the point the aim holds
+(`game_pad::ZipPress`, `Walk::aim`; XrData `zip_releases`). Until October 12 neither had a control, and the first mission
 stopped at its heal and its vent. Until
 October 11 B was the interact, Y the game menu and X switched the aim
 markers, which are a setting only now. Every other control stays with
@@ -678,6 +691,40 @@ thousandths. With a fixed shape two players' games ended as VR started
 the device removed after 30 eye pictures: `gpu.completed` is
 18446744073709551615 and `gpu.pairs` 0. What the game does to an eye's view
 with a fixed shape was not looked into.
+
+Since October 18 it also runs with NVIDIA Reflex off (`Graphics\ReflexMode`
+0, the choice counted from Off, where the game saved it). An RTX 4070 SUPER
+player's game (Reflex On + Boost, windowed on his third monitor at 165 Hz,
+Windows build 26300) lost its graphics device by the 19th eye picture in
+every session, on Virtual Desktop and SteamVR, on every preset, with the
+reason 0x887A002B (DXGI_ERROR_ACCESS_DENIED) in its log and the same
+`gpu.completed` all ones; its log lists the one card as two adapters, which
+no other game log kept here does. Reflex paces the game by its presents,
+and in VR play the stereo module holds back the presents beyond the
+monitor's rate (`native_gpu::holdPresent`, since October 11): the one session
+run here with Reflex on (October 10, Low Latency) predates that. Whether
+Reflex is the cause is not known. A session that ends with the game's log
+saying `Device removed detected` prints the code and what to try
+(`device_removed`, `device_lost_advice` in `tools/run_game_vr.py`; the
+report's `device_removed`), and every report lists the adapters the game
+listed (`game_adapters`). "Normal camera on the monitor" (`--stock-monitor-view`)
+is the launcher's way around everything VR play starts doing to the game's
+own view: it keeps that view rendering, so nothing rests it, draws the left
+eye over its window or holds back its presents.
+
+A game that already holds Spidy - VR ran in it, or another build's module is
+in it: it was open while Spidy was updated, or another Spidy folder started
+VR in it - is named before the headset is looked for (`restart_reason`,
+`other_build` in `tools/run_game_vr.py`, over `SESSION_MODULES`; `OtherBuild`
+from `bridge_game.prepare` if one appears later). The session ends with exit
+code 6 (`CLOSE_GAME_EXIT`, `GameNeedsRestart`), and the launcher offers to
+close the game and start VR again: the next session gets `--close-game`,
+posts `WM_CLOSE` to the game's windows (`vr_launcher.close_game`: its close
+button, never a kill, so it saves as it quits), waits for its process to end
+and 3 s for Steam, restores the other folder's saved game settings if
+another folder's build was in it, and starts the game as usual. Until
+October 18 the render memory module's warning said only "Different bridge
+build is resident", and the queue search went on for three minutes.
 
 Once the game's process is there, the session looks in its folder for
 another program's way into the game (`other_mods` in `tools/run_game_vr.py`):
@@ -1206,6 +1253,7 @@ still requires a running game or headset.
 | `src/body_calibration.cpp`, `src/overlay_text.cpp` | The T-pose calibration (the player's eye height and arm length, and its panel in the headset); the overlay's stroke font |
 | `src/punch.cpp`, `src/game_punch.cpp` | Punching: fists against characters, and the game's own melee damage for each punch |
 | `src/web_strike.cpp` | Fighting across the room: the web strike that flies the player to the thug a fist is thrown at, the flow's count and finisher, how each blow is delivered (melee, or the kinetic blow that sends him flying), and the hit stop; `game_punch.cpp` runs it and `game_swing.cpp` flies the player |
+| `src/spider_sense.cpp`, `src/game_sense.cpp` | Spider-Sense: the game's own warnings of an attack about to land, read from the hero's `HeroDodgeManager` (`game_sense`), what each asks for, the counter a fist thrown at the attacker makes and the blow after it (`spider_sense`); `game_punch.cpp` runs it, `game_xr.cpp` tingles and draws the marks (`web_visual.cpp`'s `appendSense`, `appendSenseSight`) |
 | `src/impact_sound.cpp` | The blows' sounds and a strike's rush, synthesized as WAVs in memory |
 | `src/shooter.cpp`, `src/game_shooter.cpp` | The web shooter: trigger pulls and their aim, and the game's own web-shooter shot fired from the hand |
 | `src/slow_motion.cpp`, `src/game_time.cpp` | Slow motion: the left stick's click, focus and the eased time scale; the game's own time system slowed to it (its look: `D3D12Renderer::Grade`, the meter in `web_visual.cpp`) |

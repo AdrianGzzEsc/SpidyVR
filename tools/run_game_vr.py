@@ -2,6 +2,7 @@
 import argparse
 import ctypes as c
 from ctypes import wintypes
+import hashlib
 import json
 import math
 import pathlib
@@ -17,7 +18,8 @@ import zlib
 import _thread
 from collections import deque
 from capture_game_state import Game, find_game, open_process, close
-from bridge_game import ROOT, HOOKS, prepare, snapshot as bridge_snapshot
+from bridge_game import (ROOT, HOOKS, prepare, snapshot as bridge_snapshot, GameNeedsRestart, other_build_text,
+                         spidy_folder, staged)
 from inspect_game import PE, EXPECTED_VERSION
 from observe_game import call_remote, call_with_payload, modules
 from probe_stereo_gpu import MAX_EYE_SIZE, discover_queue, snapshot as gpu_snapshot, save_eye_images
@@ -26,7 +28,8 @@ from probe_native_rays import snapshot as ray_snapshot
 from probe_game_swing import snapshot as swing_snapshot
 from probe_native_motion import snapshot as motion_snapshot
 from vr_launcher import (LauncherLock, alive, bring_to_front, wait_for_game, enlarge_render_memory, elevated,
-                         RENDER_MEMORY_HOOKS, NeedsAdministrator, NEEDS_ADMINISTRATOR_EXIT)
+                         RENDER_MEMORY_HOOKS, NeedsAdministrator, NEEDS_ADMINISTRATOR_EXIT, CLOSE_GAME_EXIT,
+                         close_game)
 import vr_display
 import xr_runtime
 
@@ -215,6 +218,45 @@ RAY_TRACING_OFF = ('Ray-Traced Reflections: off for VR. The eyes cannot have the
 # The console's line where a session put the player's Aspect Ratio at Auto (vr_display.SESSION has why).
 ASPECT_RATIO_AUTO = ("Aspect Ratio: Auto for VR. With a fixed shape chosen in the game's display settings, "
                      "players' games ended as VR started. Your setting returns when the game closes.")
+
+# The console's line where a session turned the player's NVIDIA Reflex off (vr_display.SESSION has why).
+REFLEX_OFF = ("NVIDIA Reflex: off for VR. The headset paces the game's frames, not the monitor, and one "
+              "player's game with it on lost its graphics device as VR started. Your setting returns when the "
+              'game closes.')
+
+
+def device_removed(log):
+    """The reason the game logged for losing its graphics device ('0x887A002B'), or None. Its own dialog
+    says only "A problem has occurred with your display driver" with the same number."""
+    found = re.search(r'Device removed detected \((0x[0-9A-Fa-f]{8})', log or '')
+    return '0x'+found.group(1)[2:].upper() if found else None
+
+
+def game_adapters(log):
+    """The graphics adapters the game listed at its start, in its order. The October 16 player whose
+    device was lost as VR began had his one RTX 4070 SUPER listed twice (adapters 0 and 1, NVIDIA's own
+    list naming one), which no game log kept here has."""
+    return re.findall(r'\[Render\]\s+Adapter \d+:\s*\n[^\n]*Description\s*:\s*([^\r\n]*?)\s*$', log or '', re.M)
+
+
+# What the reasons the game logs are (DXGI's names).
+DEVICE_REASONS = {'0x887A0005': 'DXGI_ERROR_DEVICE_REMOVED', '0x887A0006': 'DXGI_ERROR_DEVICE_HUNG',
+                  '0x887A0007': 'DXGI_ERROR_DEVICE_RESET', '0x887A0020': 'DXGI_ERROR_DRIVER_INTERNAL_ERROR',
+                  '0x887A002B': 'DXGI_ERROR_ACCESS_DENIED', '0x8007000E': 'E_OUTOFMEMORY'}
+
+
+def device_lost_advice(reason, play_frames):
+    """The console's lines after a session in which the game lost its graphics device (the game shows
+    "A problem has occurred with your display driver"). `play_frames`: frames of VR play before it (the
+    report's final `tracked`). Ray-Traced Reflections, a fixed Aspect Ratio, frame generation and NVIDIA
+    Reflex are off for VR already (vr_display.SESSION); what is left to try is what the player can change."""
+    name = DEVICE_REASONS.get(reason, 'unknown')
+    when = 'as VR play began' if play_frames is not None and play_frames < 300 else 'in VR'
+    return (f'The game lost its graphics device {when} ({reason}, {name}): that is its "problem has occurred '
+            'with your display driver" message. Try these one at a time, pressing START VR after each: '
+            'OPTIONS > Normal camera on the monitor: On; in the game\'s Display settings, Monitor: your main '
+            'display; the newest graphics driver. If it happens again, post the session report in #spidy-bugs '
+            'on Discord (press Reports, zip the three newest game-vr- files).')
 
 # Windows' own libraries, by name. A program loads a library from its own folder first, so a file with
 # one of these names beside Spider-Man.exe is neither Windows' nor the game's, whose folder holds none of
@@ -570,20 +612,27 @@ def pad_ignored(watch, sample, quiet=5):
 CONTROLLER_KINDS = {0: None, 1: 'touch', 2: 'index', 3: 'steam_frame', 4: 'runtime'}
 
 
-def controllers_line(controllers):
+# Under SteamVR a Quest's left menu button is SteamVR's own (its dashboard), and so is an Index controller's
+# system button: the game's pause comes from both thumbsticks held in (game_pad::PausePress).
+STEAMVR_PAUSE = (' SteamVR keeps the menu button for its own dashboard: to pause the game, hold both thumbsticks '
+                 'in for a moment.')
+
+
+def controllers_line(controllers, runtime=None):
     """What the session log says about the layout the VR runtime uses for the controllers in the
-    player's hands (left, right), or None while it has not said."""
+    player's hands (left, right), or None while it has not said. runtime: the VR runtime's name."""
     kinds = {kind for kind in controllers if kind}
     if not kinds:
         return None
     if kinds == {'steam_frame'}:
         return ("Controllers: Steam Frame, with their own layout: A, B, X and Y on the right are Spidy's A, B, X "
                 "and Y, Menu pauses, View opens the game menu and the D-pad is the game's (down heals).")
+    pause = STEAMVR_PAUSE if runtime == 'SteamVR' else ''
     if 'runtime' in kinds:
         return ("Controllers: the VR runtime uses a layout of its own for them, so Spidy's buttons may sit "
-                'elsewhere. Its controller settings show where.')
+                'elsewhere. Its controller settings show where.' + pause)
     names = {'touch': 'Touch', 'index': 'Index', 'steam_frame': 'Steam Frame'}
-    return f"Controllers: the {' and '.join(sorted(names[kind] for kind in kinds))} layout."
+    return f"Controllers: the {' and '.join(sorted(names[kind] for kind in kinds))} layout." + pause
 
 
 # A demand as prompt_buttons::pack lays it out: the pad's button bits, then each trigger, the hold, and
@@ -661,10 +710,10 @@ TRACKING_GAP_REASONS = ((1, 'not_playing'), (2, 'unfocused'), (4, 'no_head'), (8
 
 def snapshot(game, address):
     for _ in range(8):
-        raw = game.read(address, 1152)
-        if len(raw) != 1152:
+        raw = game.read(address, 1176)
+        if len(raw) != 1176:
             return None
-        if struct.unpack_from('<3I', raw) != (0x53585244, 36, 1152):
+        if struct.unpack_from('<3I', raw) != (0x53585244, 39, 1176):
             raise RuntimeError('Game XR protocol mismatch')
         if struct.unpack_from('<Q', raw, 16)[0] & 1 or raw[16:24] != game.read(address+16, 8):
             continue
@@ -703,8 +752,11 @@ def snapshot(game, address):
         interacts, aim_markers = struct.unpack_from('<2I', raw, 648)
         # The walks a held Y began: the player stepping up to what the game's Y is for.
         result.update(interact_steps=struct.unpack_from('<I', raw, 800)[0])
-        # Pushes of the right stick the game got as its D-pad down (heal) and as its LT + RT (the zip to a point).
+        # Pushes of the right stick the game got as its D-pad down (heal) and as its LT + RT (the zip to a point),
+        # with the zips sent as a hold of it was let go in the game's aim mode (ZipPress), counted again on their
+        # own in zip_releases: the press went out a second time, to the point the aim held.
         result.update(zip(('heals', 'zips'), struct.unpack_from('<2I', raw, 816)))
+        result.update(zip_releases=struct.unpack_from('<I', raw, 852)[0])
         # The game's own camera, which decides what its Y takes, against where the head looks: the angle between
         # them now in degrees (the head to the camera's right: more than 0; 0 while it is not steered), and the
         # times the virtual controller's right stick began to turn the camera there.
@@ -729,10 +781,9 @@ def snapshot(game, address):
         # Presses of the interact that handed the player back to the game's own wall crawl, because the
         # swing held him on a wall of its own and the game was offering nothing (game_pad::WallHandover).
         wall_handovers, handovers_offered = struct.unpack_from('<2I', raw, 944)
-        # The room around the player (Enclosure): frames the rule called him indoors, and the times the
-        # swing's walls were handed to the game because of it, which is what makes a vent's own
-        # interactions work.
-        indoor_frames, walls_to_game = struct.unpack_from('<2I', raw, 952)
+        # The eyes held out of what the world is built of (HeadClearance, version 37 in the slots of the
+        # room around the player): frames they were moved more than a centimetre, and the most they were.
+        head_push_frames, head_push_most_mm = struct.unpack_from('<2I', raw, 952)
         # The game's own wall crawl, now that the view turns onto it as it does onto a wall of the swing's.
         # Frames it held the player, and of those the frames the view had turned. Then what the game made of
         # the stick there (CrawlStick): the mean turn from the way sent to the way taken, in the surface's own
@@ -795,11 +846,18 @@ def snapshot(game, address):
                                   most_seen=o_seen, masked_updates=o_masked, posed_checks=o_posed,
                                   gathers=o_gathered, most_checked=o_most, spot_searches=o_searches,
                                   spots_found=o_spots, near_now=o_near, press_retries=o_retries))
+        # Spider-Sense in the headset (spider_sense.hpp): warnings that showed, frames that drew a mark over an
+        # attacker and in the sightline (one out of view), tingles sent to the controllers, marks a counter broke,
+        # and the game's dodge pressed while a warning stood (what a red mark asks for).
+        s_shown, s_frames, s_sight, s_tingles, s_broken, s_dodges = struct.unpack_from('<6I', raw, 1152)
+        result.update(sense_headset=dict(shown=s_shown, mark_frames=s_frames, sight_frames=s_sight,
+                                         tingles=s_tingles, broken=s_broken, dodges=s_dodges))
         result.update(crawl=dict(frames=crawl_frames, stood=crawl_stood, stick_samples=crawl_stick,
                                  stick_turn_degrees=round(math.degrees(crawl_turn), 1),
                                  stick_agreement=round(crawl_agreement, 3),
                                  stick_speed=round(crawl_speed, 2)),
-                      headroom=dict(dropped_frames=head_dropped, least=round(headroom_least, 2)))
+                      headroom=dict(dropped_frames=head_dropped, least=round(headroom_least, 2)),
+                      head_clearance=dict(pushed_frames=head_push_frames, most_m=head_push_most_mm / 1000))
         result.update(vr_buttons=controller_buttons(vr_now), vr_buttons_played=controller_buttons(vr_played))
         result.update(prompts=dict(invokes=invokes, calls=calls, raised=raised, cleared=cleared, texts=texts,
                                    rewrites=rewrites, asking=demand_name(demand),
@@ -807,8 +865,7 @@ def snapshot(game, address):
                                    keyboard_texts=keyboard_texts, context_presses=context_presses,
                                    pad_entries=pad_entries, pad_layer=bool(pad_layer),
                                    wall_interacts=wall_interacts, wall_handovers=wall_handovers,
-                                   wall_handovers_offered=handovers_offered,
-                                   indoor_frames=indoor_frames, walls_handed_to_game=walls_to_game),
+                                   wall_handovers_offered=handovers_offered),
                       prompt_demand=demand, prompt_last_demand=last_demand)
         # The layout the VR runtime uses for each hand's controller (left, right; None until it says), and
         # the layouts it took Spidy's controls for. A Steam Frame on 'touch' plays SteamVR's translation.
@@ -984,6 +1041,74 @@ def strike_snapshot(game, address):
     return None
 
 
+SENSE_ANSWERS = ('none', 'counter', 'dodge', 'jump')
+# BotAttackDodgeData's Properties, as the game's reflection table names the bits (spider_sense.hpp attack::).
+ATTACK_FLAGS = ('dodgeable', 'counterable', 'never_beaten', 'dodge_button', 'jump_button', 'dodge_left',
+                'dodge_right', 'dodge_away', 'dodge_toward', 'no_auto_camera', 'reversable', 'camera_on_jump',
+                'no_ranged_fx')
+
+
+def attack_flags(flags):
+    """An attack's flags by name; bits above the game's own thirteen as one number."""
+    names = [name for bit, name in enumerate(ATTACK_FLAGS) if flags >> bit & 1]
+    return names + ([hex(flags & ~0x1fff)] if flags & ~0x1fff else [])
+
+
+def sense_snapshot(game, address):
+    """Spider-Sense (game_sense::Data): the attacks the game warned the player of, read from the hero's own
+    HeroDodgeManager at each input sample. `read` of `samples` found the manager; `managers` counts a new one per
+    hero; `attacks` it holds now and `most_attacks` at once. `warnings` went off, `asked` by what they asked for
+    (counter, dodge, jump), `unknown` named no actor in play. Counters: `thrown` by a fist thrown at the
+    attacker, `landed` by a blow landing during his warning, `perfect` in its last fifth of a second;
+    `counter_blows` the blows after them, `breaks` the flinches sent as the fist went out. `standing` the warnings
+    now, soonest blow first; `census` what the game's warnings were made of (each set of flags, how often, and
+    the longest warning it gave, game seconds)."""
+    for _ in range(8):
+        raw = game.read(address, 632)
+        if len(raw) != 632:
+            return None
+        # Telemetry only: a mismatch is reported, never a reason to end the session (prompt_snapshot's rule).
+        if struct.unpack_from('<3I', raw) != (0x53534e53, 1, 632):
+            magic, version, size = struct.unpack_from('<3I', raw)
+            return dict(protocol_mismatch=dict(magic=hex(magic), version=version, bytes=size))
+        if struct.unpack_from('<Q', raw, 16)[0] & 1 or raw[16:24] != game.read(address+16, 8):
+            continue
+        samples, read, faults = struct.unpack_from('<3Q', raw, 24)
+        managers, most, attacks, count = struct.unpack_from('<4I', raw, 48)
+        manager, now = struct.unpack_from('<Qd', raw, 64)
+        warnings, *asked = struct.unpack_from('<5Q', raw, 80)
+        unknown, thrown, landed, perfect, blows, breaks, last = struct.unpack_from('<7Q', raw, 120)
+        last_point = struct.unpack_from('<3f', raw, 176)
+        last_left, last_hand = struct.unpack_from('<fI', raw, 188)
+        standing = []
+        for i in range(min(count, 6)):
+            at = 200+56*i
+            attacker, = struct.unpack_from('<Q', raw, at)
+            head = struct.unpack_from('<3f', raw, at+8)
+            to_impact, warned, flags, state = struct.unpack_from('<2f2I', raw, at+32)
+            answer, timed, countered = struct.unpack_from('<3B', raw, at+48)
+            left, = struct.unpack_from('<f', raw, at+52)
+            standing.append(dict(attacker=hex(attacker), head=[round(x, 2) for x in head],
+                                 to_impact=round(to_impact, 3) if timed else None, warned=round(warned, 3),
+                                 flags=attack_flags(flags), state=hex(state),
+                                 answer=SENSE_ANSWERS[answer] if answer < 4 else answer,
+                                 countered=bool(countered), left=round(left, 3)))
+        flags = struct.unpack_from('<8I', raw, 536)
+        counts = struct.unpack_from('<8I', raw, 568)
+        leads = struct.unpack_from('<8f', raw, 600)
+        census = [dict(flags=attack_flags(f), bits=hex(f), count=n, longest=round(lead, 3) if lead >= 0 else None)
+                  for f, n, lead in zip(flags, counts, leads) if n]
+        return dict(status=struct.unpack_from('<I', raw, 12)[0], samples=samples, read=read, faults=faults,
+                    managers=managers, most_attacks=most, attacks=attacks, manager=hex(manager),
+                    clock=round(now, 3), warnings=warnings, asked=dict(zip(SENSE_ANSWERS, asked)),
+                    unknown=unknown, thrown=thrown, landed=landed, perfect=perfect, counter_blows=blows,
+                    breaks=breaks, last_counter=hex(last), last_point=[round(x, 2) for x in last_point],
+                    last_left=round(last_left, 3) if last_left >= 0 else None,
+                    last_hand=('left', 'right', 'blow')[last_hand] if last_hand < 3 else last_hand,
+                    standing=standing, census=census)
+    return None
+
+
 def punch_snapshot(game, address):
     """Punches (game_punch::Data): landed per hand, the game's damage requests issued and dropped, the bots
     within reach of a fist, and the latest punch. unnamed: the issued requests (punches, web pulls and web
@@ -1016,7 +1141,7 @@ def punch_snapshot(game, address):
 
 
 GADGETS = ('none', 'web_shooter', 'impact_web', 'web_bomb', 'electric_web', 'trip_mine', 'concussion_blast',
-           'spider_drone', 'suspension_matrix', 'web_blossom')
+           'spider_drone', 'suspension_matrix', 'game_web_shooter')
 
 
 def gadgets_of(raw):
@@ -1392,6 +1517,8 @@ def wait_for_renderer(game, process, render_data, timeout=180, problems=None, te
         except TimeoutError as error:
             # A call into the game that never returned: asking again would leave another one waiting there.
             raise RuntimeError(f"The game did not answer Spidy's render probe: {error}") from error
+        except GameNeedsRestart:
+            raise  # another build's render probe in the game: asking for three minutes changes nothing
         except (OSError, RuntimeError) as error:
             # Startup can show no queue, or a second one, for a moment; a module list can fail meanwhile.
             problem = str(error)
@@ -1406,7 +1533,7 @@ def wait_for_renderer(game, process, render_data, timeout=180, problems=None, te
             time.sleep(.5)
     if not alive(game):
         raise RuntimeError('The game closed while starting.')
-    raise RuntimeError(f'No game graphics queue within {timeout:.0f} seconds: {problem}.')
+    raise RuntimeError(f'No game graphics queue within {timeout:.0f} seconds: {problem.rstrip(".")}.')
 
 
 def game_running():
@@ -1432,10 +1559,49 @@ def had_vr(pid, modules_of=modules):
         return False  # closing, or still being set up; the XR start refuses a second session anyway
 
 
+# The modules a session loads into the game, each staged in its folder under reports/ (bridge_game.prepare):
+# the render memory module first, as the game starts, then the render probe, the bridges and the XR module.
+SESSION_MODULES = (('spidy_render_memory.dll', 'render-memory-modules'), ('spidy_render_probe.dll', 'render-modules'),
+                   ('spidy_bridge.dll', 'bridge-modules'), ('spidy_ray_bridge.dll', 'ray-modules'),
+                   ('spidy_movement_bridge.dll', 'motion-modules'), (XR_MODULE, 'stereo-modules'))
+
+
+def other_build(pid, modules_of=modules, root=ROOT):
+    """Another Spidy build's module in the game process `pid`: (True, the Spidy folder it came from, None when
+    its path says none), or None when every Spidy module there is this folder's build. A game left running
+    while Spidy was updated, or one another Spidy folder put VR in, holds such a module until it exits, and
+    each of this build's then fails to go in (flardy, October 16: "Different bridge build is resident")."""
+    try:
+        loaded = {m['name'].lower(): m['path'] for m in modules_of(pid)}
+    except (OSError, RuntimeError):
+        return None  # closing, or still being set up
+    for name, staging in SESSION_MODULES:
+        if name not in loaded:
+            continue
+        try:
+            digest = hashlib.sha256((root/'build/windows-ninja'/name).read_bytes()).hexdigest()
+        except OSError:
+            digest = None
+        if digest is None or not staged(loaded[name], root/'reports'/staging, digest):
+            return True, spidy_folder(pathlib.Path(loaded[name]).resolve())
+    return None
+
+
+def restart_reason(pid, modules_of=modules):
+    """Why the running game `pid` cannot start VR until it is closed and started again (VR ran in it, or
+    another build's modules are in it), or None."""
+    found = other_build(pid, modules_of)
+    if found:
+        return other_build_text(found[1])
+    return VR_RAN if had_vr(pid, modules_of) else None
+
+
 def exit_code(error):
     """What a session that could not start tells the launcher's window: 2, or the code at which it offers to
-    start again as administrator."""
-    return NEEDS_ADMINISTRATOR_EXIT if isinstance(error, NeedsAdministrator) else 2
+    start again as administrator, or to close the game and start VR again."""
+    if isinstance(error, NeedsAdministrator):
+        return NEEDS_ADMINISTRATOR_EXIT
+    return CLOSE_GAME_EXIT if isinstance(error, GameNeedsRestart) else 2
 
 
 def settle_display(running):
@@ -1492,6 +1658,9 @@ def main():
                         'without it both use one set, fitted to a lens covering both (fewer render commands, '
                         'shadow edges a little softer)')
     p.add_argument('--auto-launch',action='store_true')
+    p.add_argument('--close-game', action='store_true',
+                   help='A running game that already holds Spidy (VR ran in it, or another build is in it) is '
+                        'closed as its close button does, then started again (the launcher asks the player first)')
     p.add_argument('--stop-after',type=float,default=0,help='End an untimed session after this many seconds for validation')
     p.add_argument('--capture-images', action='store_true',help='Enable diagnostic CPU eye readback (adds overhead)')
     p.add_argument('--overlay-webs', action='store_true',help="Draw Spidy's overlay webs instead of the game's web lines")
@@ -1608,8 +1777,27 @@ def session(a, startup):
     startup.stage = 'checking the running game'
     # An administrator's game is closed to a session without those rights (NeedsAdministrator).
     startup.fields['administrator'] = elevated()
-    if game_running() and had_vr(find_game()):
-        raise RuntimeError(VR_RAN)
+    if game_running():
+        pid = find_game()
+        reason = restart_reason(pid)
+        if reason and a.close_game:
+            # The launcher asked the player first (kCloseGameExit). A game started by another Spidy folder left
+            # the player's own display settings in that folder's backup: back they go before this one saves any.
+            startup.stage = 'closing the game'
+            found = other_build(pid)
+            print('Closing Spider-Man as its close button does (it saves as it quits)...', flush=True)
+            if not close_game(pid):
+                raise RuntimeError('Spider-Man did not close within 30 seconds. Quit it from its own menu, then press '
+                                   'START VR.')
+            print('Spider-Man closed.', flush=True)
+            elsewhere = found and found[1] and found[1].resolve() != ROOT
+            if elsewhere:
+                try:
+                    vr_display.restore(backup=found[1]/'reports'/vr_display.BACKUP.name)
+                except (OSError, RuntimeError, ValueError):
+                    pass  # that folder's own next session restores them
+        elif reason:
+            raise GameNeedsRestart(reason)
     startup.stage = 'finding the headset'
     manifest, runtime = preflight(a.xr_runtime)
     startup.fields['xr_runtime'] = runtime
@@ -1646,6 +1834,8 @@ def session(a, startup):
             print(RAY_TRACING_OFF, flush=True)
         if changed.get('ForcedAspectRatio'):
             print(ASPECT_RATIO_AUTO, flush=True)
+        if changed.get('ReflexMode'):
+            print(REFLEX_OFF, flush=True)
         kept = picture_kept(a)
         off = [text for name, text in (('depth_of_field', 'depth of field off'),
                                        ('sharpening', 'sharpening at its lowest')) if name not in kept]
@@ -1656,11 +1846,15 @@ def session(a, startup):
     render_module = {}
 
     def render_memory_module(pid):
-        # In time only in a game that has just started: it creates its render memory once.
+        # In time only in a game that has just started: it creates its render memory once. That is the graphics
+        # card's memory for each frame's drawing, not the PC's (a player with 32 GB read it so on October 16).
         try:
             render_module.update(enlarge_render_memory(pid))
+        except GameNeedsRestart:
+            raise
         except (OSError, RuntimeError) as error:
-            print(f'WARNING: render memory module unavailable ({error}).', flush=True)
+            print(f"WARNING: Spidy's module for the game's per-frame graphics memory is unavailable ({error}).",
+                  flush=True)
 
     # VR starts with the game: its intro, menus and loading show on a screen in the headset until
     # there is gameplay. The worker finds each player itself (a loaded save, a respawn, a character
@@ -1719,7 +1913,8 @@ def session(a, startup):
         rays, ray_hash = prepare(game.pid, process, ROOT/'build/windows-ninja/spidy_ray_bridge.dll',
             ROOT/'reports/ray-modules', ('SpidyRayStart', 'SpidyRaySubmit', 'SpidyRayStop',
                                        'SpidyRaySample', 'SpidyRayData', 'SpidySwingData', 'SpidyGrabData',
-                                       'SpidyPunchData', 'SpidyStrikeData', 'SpidyShooterData', 'SpidyRopeData'))
+                                       'SpidyPunchData', 'SpidyStrikeData', 'SpidyShooterData', 'SpidyRopeData',
+                                       'SpidySenseData'))
         # Imported here: probe_game_grab imports from this module.
         from probe_game_grab import grab_snapshot
         ray_module = next(m['base'] for m in modules(game.pid) if m['name'].lower() == 'spidy_ray_bridge.dll')
@@ -1757,7 +1952,7 @@ def session(a, startup):
         startup.stage = 'starting VR'
         code = call_with_payload(process, xr['SpidyXrStart'], config)
         if code:
-            raise RuntimeError(VR_RAN if code == 1000 else f'Game XR start: {code}')
+            raise GameNeedsRestart(VR_RAN) if code == 1000 else RuntimeError(f'Game XR start: {code}')
         xr_active = True
         started = time.monotonic()
         samples = deque(maxlen=12000)
@@ -1774,6 +1969,7 @@ def session(a, startup):
         body = punch = None
         punch_samples = deque(maxlen=2000)
         strikes, strike_samples = None, deque(maxlen=2000)
+        sense, sense_samples = None, deque(maxlen=2000)
         # Read while the game runs: a session that ends with the game has nothing to read them from.
         ropes = steam = None
         # The web shooter: the latest, and a sample when a shot is asked for, fired or dropped.
@@ -1839,6 +2035,7 @@ def session(a, startup):
                         swing_samples=list(swing_samples), motion_samples=list(motion_samples),
                         grab_samples=list(grab_samples), body=body, punch=punch,
                         punch_samples=list(punch_samples), strikes=strikes, strike_samples=list(strike_samples),
+                        sense=sense, sense_samples=list(sense_samples),
                         ropes=ropes, steam_guard=steam,
                         shooter=shooter, shooter_samples=list(shooter_samples),
                         slow_motion=slow_motion, slow_motion_samples=list(slow_motion_samples), hud=hud_last,
@@ -1850,14 +2047,31 @@ def session(a, startup):
                         eye_snapshots=list(eye_shots), eye_snapshot_folder=str(eye_folder) if eye_shots else None,
                         frame_rates=frame_rates(list(samples)), final=samples[-1] if samples else None, **extra)
 
+        lost_device = {}
+
         def write_report(result):
             nonlocal report_written
             a.output.parent.mkdir(parents=True, exist_ok=True)
             # Texture and video memory pressure and the game's own frame rate, minute by minute.
             copy, memory = keep_game_log(a.output)
             result.update(game_log=str(copy) if copy else None, game_memory=memory)
+            try:
+                log = copy.read_text(encoding='utf-8', errors='replace') if copy else ''
+            except OSError:
+                log = ''
+            reason = device_removed(log)
+            result['game_adapters'] = game_adapters(log)
+            if reason:
+                result['device_removed'] = reason
+                lost_device.update(reason=reason, frames=(result.get('final') or {}).get('tracked'))
             a.output.write_text(json.dumps(result, indent=2)+'\n')
             report_written = startup.reported = True
+
+        def tell_device_lost():
+            # Once, after the report that found it.
+            reason = lost_device.pop('reason', None)
+            if reason:
+                print(device_lost_advice(reason, lost_device.get('frames')), flush=True)
 
         def request_stop(_signal,_frame):
             nonlocal stop_requested
@@ -1911,6 +2125,16 @@ def session(a, startup):
                                          'passed_over')):
                             strike_samples.append(dict(fight, seconds=round(time.monotonic()-started, 3)))
                         strikes = fight
+                    senses = sense_snapshot(game, rays['SpidySenseData'])
+                    if senses and 'protocol_mismatch' in senses:
+                        sense = senses
+                    elif senses:
+                        # Warnings standing now; one row per warning gone off and per counter.
+                        sample['sense'] = dict(standing=len(senses['standing']), attacks=senses['attacks'])
+                        if any(senses[k] != (sense or {}).get(k)
+                               for k in ('warnings', 'thrown', 'landed', 'counter_blows', 'breaks', 'managers')):
+                            sense_samples.append(dict(senses, seconds=round(time.monotonic()-started, 3)))
+                        sense = senses
                     shots = shooter_snapshot(game, rays['SpidyShooterData'])
                     if shots:
                         sample['shooter'] = {k: shots[k] for k in ('status', 'fired', 'dropped', 'bots', 'collisions',
@@ -2016,7 +2240,7 @@ def session(a, startup):
                             while len(eye_shots) > EYE_SHOTS:
                                 remove_eye_files(eye_folder, eye_shots.popleft()['files'])
                     # Which layout the runtime uses for the controllers, once it says and when it changes.
-                    layout = controllers_line(sample['controllers'])
+                    layout = controllers_line(sample['controllers'], runtime.get('name'))
                     if layout and layout != printed_controllers:
                         print(layout, flush=True)
                         printed_controllers = layout
@@ -2055,11 +2279,13 @@ def session(a, startup):
                 print(f"The headset's picture stalled: the VR runtime held {stalls['rounds']} frames for a tenth "
                       f"of a second each ({stalls['seconds']} s in all). That is the stream to the headset, not "
                       'the game' + (': this PC was on Wi-Fi.' if links.get('wifi') else '.'), flush=True)
+            tell_device_lost()
             print(f'Game closed. Session report: {a.output.resolve()}',flush=True)
             return 0
         if loop_error is not None:
             write_report(session_report(game_exited=False, error=str(loop_error)))
             hand_over_settings(samples[-1] if samples else None)
+            tell_device_lost()
             print(f'Session report: {a.output.resolve()}',flush=True)
             raise loop_error
         xr_stop = call_remote(process, xr['SpidyXrStop'])
@@ -2079,6 +2305,7 @@ def session(a, startup):
             body=body_snapshot(game, xr['SpidyBodyData']) or body,
             punch=punch_snapshot(game, rays['SpidyPunchData']) or punch, punch_samples=list(punch_samples),
             strikes=strike_snapshot(game, rays['SpidyStrikeData']) or strikes, strike_samples=list(strike_samples),
+            sense=sense_snapshot(game, rays['SpidySenseData']) or sense, sense_samples=list(sense_samples),
             ropes=rope_snapshot(game, rays['SpidyRopeData']) or ropes,
             steam_guard=steam_snapshot(game, xr['SpidySteamData']) or steam,
             shooter=shooter_snapshot(game, rays['SpidyShooterData']) or shooter,
@@ -2122,6 +2349,7 @@ def session(a, startup):
             print(f"Render memory: two frames used at most {memory['worst_two_frames_mb']:.0f} of "
                   f"{memory['ring_mb']:.0f} MB; {memory['overflow_frames']} of {memory['frames']} frames "
                   'did not fit.', flush=True)
+        tell_device_lost()
         print(f"Test {'passed' if result['passed'] else 'failed'}; report: {a.output.resolve()}", flush=True)
         return 0 if result['passed'] else 1
     finally:

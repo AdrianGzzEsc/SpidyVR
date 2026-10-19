@@ -126,7 +126,11 @@ struct Command {
     Vec3 move{};
     float trackingYaw{};
     float sampleSeconds = 1.f / 90.f;
-    uint32_t reserved{};
+    // Bit 0: the player asks the game for a move of its own now - its LT + RT
+    // (a zip to a point), its Y (a web strike; a car's in a chase), a
+    // prompt's button - and the swing lets it have the hero once it takes
+    // him (AirYield). Zero until October 18, when it was `reserved`.
+    uint32_t asks{};
     uint64_t sampleTimeNs = 1;
     // Version 3: a flip's tilt of the tracking space (Input::tilt). Version 2
     // (commandBytesV2, the probes') ends before it: level.
@@ -306,7 +310,7 @@ inline bool valid(const Command& c) {
           (c.version == 4 && c.bytes == sizeof(c))) ||
         !std::isfinite(c.leap) || c.leap < 0 || c.leap > 1 || !finite(c.look) || length(c.look) > 1.01f ||
         !c.serial || c.focused > 1 || c.jump > 1 || c.leaseMs > 250 || (c.focused && !c.leaseMs) ||
-        !finite(c.move) || length(c.move) > 1.001f || !std::isfinite(c.trackingYaw) || c.reserved ||
+        !finite(c.move) || length(c.move) > 1.001f || !std::isfinite(c.trackingYaw) || c.asks > 1 ||
         !std::isfinite(c.sampleSeconds) || c.sampleSeconds <= 0 || c.sampleSeconds > .1f ||
         (c.focused && !c.sampleTimeNs) || !std::isfinite(tilt) || tilt < .99f || tilt > 1.01f)
         return false;
@@ -372,6 +376,73 @@ class InputHold {
     Command held_{};
     uint64_t heldMs_{};
     bool holding_{};
+};
+// The game's own move out of Spidy's flight, asked for (Command::asks): its
+// zip to a point (LT + RT), its web strike (Y; a car's in a chase among
+// them), a prompt's. "Is there anyway to web zip-to-point or web strike while
+// moving? ... this makes it hard to do things like the car chases" (October
+// 17): until October 18 both were held back while a web carried the player,
+// because handing him to the game in mid-flight dropped him at the game's
+// fall speed - and a hand-over before the game's move begins (a press it
+// refuses, no point in sight) would do the same.
+//
+// So the swing waits for the game to begin. Through Spidy's flight the hero
+// stays in the game's air states (its Jump and Fall), whose handler runs
+// about twice a mover step (native_movement's airEvents: never once missing
+// from a driven step in the sessions of October 15), and none of the game's
+// moves is one of them. Asked within askMs, and the handler quiet for
+// quietSteps steps (not in the game's wall grasp, which has a latch of its
+// own): the game has him, and the swing lets go - its webs too, the move has
+// its own - until he lands, the handler runs again (back in the game's air,
+// the move done), or yieldMs pass. A press the game does not take changes
+// nothing: the handler goes on, and so does the swing.
+class AirYield {
+  public:
+    static constexpr uint64_t askMs = 400, yieldMs = 3000, quietSteps = 2;
+    // nowMs: a clock in milliseconds. asked: the player asks now. owned: the
+    // swing has the hero. airborne: he is in the air. grasp: the game's wall
+    // grasp (mover flag 0x80). steps, airEvents: the player's mover steps and
+    // the game's air handler's calls so far. True while the swing must not
+    // drive.
+    bool update(uint64_t nowMs, bool asked, bool owned, bool airborne, bool grasp, uint64_t steps,
+                uint64_t airEvents) {
+        began_ = false;
+        if (!seen_ || airEvents != air_ || steps < airStep_) {
+            air_ = airEvents;
+            airStep_ = steps;
+            seen_ = true;
+        }
+        const bool quiet = steps >= airStep_ + quietSteps;
+        if (asked)
+            askedMs_ = nowMs;
+        const bool recent = askedMs_ && nowMs >= askedMs_ && nowMs - askedMs_ < askMs;
+        if (yielded_) {
+            yielded_ = airborne && quiet && nowMs >= since_ && nowMs - since_ < yieldMs;
+        } else if (owned && airborne && !grasp && quiet && recent) {
+            yielded_ = began_ = true;
+            since_ = nowMs;
+            ++yields_;
+        }
+        return yielded_;
+    }
+    bool yielded() const {
+        return yielded_;
+    }
+    // It let go in the last update (the swing drops its webs then).
+    bool began() const {
+        return began_;
+    }
+    uint32_t yields() const {
+        return yields_;
+    }
+    void reset() {
+        *this = {};
+    }
+
+  private:
+    uint64_t air_{}, airStep_{}, askedMs_{}, since_{};
+    uint32_t yields_{};
+    bool seen_{}, yielded_{}, began_{};
 };
 inline Input input(const Command& c) {
     Input out;

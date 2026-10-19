@@ -1,4 +1,5 @@
 #include "spidy/web_visual.hpp"
+#include "spidy/gadget_wheel.hpp"
 #include "spidy/overlay_text.hpp"
 #include <string>
 
@@ -743,6 +744,396 @@ void appendKnockout(std::vector<Vertex>& out, const KnockoutView& knockout, Vec3
     });
     print.layers(height * .06f, height * .1f, plate::red, land.hit ? height * plate::misprint : 0,
                  [&] { print.text(text, {width * -.5f, height * -.5f}, height, .2f, plate::yellow); });
+}
+namespace {
+// What a Spider-Sense warning asks for, as its plate.
+Vec3 senseColor(SenseAnswer answer) {
+    switch (answer) {
+    case SenseAnswer::Dodge:
+        return plate::red;
+    case SenseAnswer::Jump:
+        return plate::yellow;
+    default:
+        return plate::cyan;
+    }
+}
+// The comic's Spider-Sense lines about the mark's centre, `s` its size: five
+// jagged strokes fanned up and out from a point under them, the middle one
+// the longest, each kinked twice. `width` scales the strokes; `reach` how far
+// out they go.
+void senseLines(Print& print, float s, Vec3 color, float width = 1, float reach = 1) {
+    static constexpr float angles[5] = {-56, -28, 0, 28, 56};
+    const Flat from{0, -.62f * s};
+    for (int i = 0; i < 5; ++i) {
+        const float a = angles[i] * plate::degree;
+        const Flat way{std::sin(a), std::cos(a)}, across{way.y, -way.x};
+        const float r0 = .42f * s * reach, r1 = (i == 2 ? 1.18f : .98f) * s * reach, kink = .1f * s;
+        Flat p[4];
+        for (int k = 0; k < 4; ++k)
+            p[k] = from + way * (r0 + (r1 - r0) * static_cast<float>(k) / 3) +
+                   across * (k == 1 ? kink : k == 2 ? -kink : 0.f);
+        const float half = .062f * s * width;
+        print.line(p[0], p[1], half, color);
+        print.line(p[1], p[2], half, color, false);
+        print.line(p[2], p[3], half, color, false);
+    }
+}
+// The ring that closes on the blow, `left` 1..0 of the warning's time; in its
+// last notch a burst's edge, yellow: now.
+void senseRing(Print& print, float s, float left) {
+    if (left <= 1.f / 8 + 1e-4f) {
+        constexpr int strokes = 22;
+        const auto corner = [&](int i) {
+            const float angle = pi / 2 - 2 * pi * static_cast<float>(i) / strokes;
+            return Flat{std::cos(angle), std::sin(angle)} * (s * (i % 2 ? 1.16f : .98f));
+        };
+        for (int i = 0; i < strokes; ++i)
+            print.line(corner(i), corner(i + 1), .05f * s, plate::yellow, i == 0);
+        return;
+    }
+    print.ring({}, s * (1.02f + .55f * left), .035f * s, plate::paper);
+}
+// The held drawing's boil: three places, two poses each, once it has landed.
+struct SenseBoil {
+    float turn;
+    Flat shift;
+};
+SenseBoil senseBoil(int pose) {
+    static constexpr SenseBoil boils[3] = {{0, {}}, {-1.2f, {.02f, .03f}}, {1, {-.03f, -.02f}}};
+    return boils[pose < 3 ? 0 : (pose / 2) % 3];
+}
+// One Spider-Sense mark: its ring, its lines (a jump's under a chevron), or
+// as a counter breaks it.
+void senseMark(Print& print, SenseAnswer answer, float s, float left, bool timed, float age, float broken) {
+    const Vec3 color = senseColor(answer);
+    if (broken >= 0) {
+        switch (static_cast<int>(broken / plate::pose)) {
+        case 0:
+            print.place(1.2f, 0);
+            print.layers(.035f * s, 0, {}, plate::misprint * s, [&] { senseLines(print, s, plate::paper); });
+            break;
+        case 1:
+            print.place(1, 0);
+            print.layers(.025f * s, 0, {}, 0, [&] { senseLines(print, s, color, .5f, 1.6f); });
+            break;
+        default:
+            print.place(.6f, 0);
+            print.layers(.035f * s, 0, {}, 0, [&] { senseLines(print, s, color); });
+            break;
+        }
+        return;
+    }
+    const Landing land = landing(age);
+    // The ring stands still while the lines boil.
+    print.place(land.scale, land.turn);
+    if (timed)
+        print.layers(.03f * s, 0, {}, 0, [&] { senseRing(print, s, std::clamp(left, 0.f, 1.f)); });
+    const SenseBoil boil = senseBoil(static_cast<int>(age / plate::pose));
+    print.place(land.scale, land.turn + boil.turn * plate::degree, boil.shift * s);
+    print.layers(.035f * s, .055f * s, plate::ink, land.hit ? plate::misprint * s : 0, [&] {
+        senseLines(print, s, color);
+        if (answer == SenseAnswer::Jump) {
+            print.line({-.22f * s, .66f * s}, {0, .86f * s}, .06f * s, plate::paper);
+            print.line({0, .86f * s}, {.22f * s, .66f * s}, .06f * s, plate::paper, false);
+        }
+    });
+}
+bool senseShows(SenseAnswer answer, float age, float left, float broken, float pixelAngle) {
+    return answer != SenseAnswer::None && std::isfinite(age) && age >= 0 && std::isfinite(left) &&
+           std::isfinite(broken) && broken < SenseView::brokenSeconds && std::isfinite(pixelAngle) &&
+           pixelAngle > 0;
+}
+} // namespace
+void appendSense(std::vector<Vertex>& out, const SenseView& sense, Vec3 viewer, float pixelAngle) {
+    const float away = length(viewer - sense.point);
+    if (!finite(sense.point) || !finite(viewer) || !(away >= .3f && away <= 60) ||
+        !senseShows(sense.answer, sense.age, sense.left, sense.broken, pixelAngle))
+        return;
+    // An arm's length away the mark is a hand wide; farther off it keeps
+    // most of its size on screen (six degrees across). It stands clear over
+    // his head.
+    const float s = .055f * std::clamp(away / .9f, 1.4f, 9.f);
+    const Vec3 centre = sense.point + Vec3{0, .14f + .5f * s, 0};
+    const float distance = length(viewer - centre);
+    if (!(distance >= .15f))
+        return;
+    // Level and upright across the line of sight, as the bursts are.
+    const Vec3 view = (viewer - centre) / distance;
+    Vec3 right = cross(Vec3{0, 1, 0}, view);
+    right = length(right) > .1f ? normalized(right) : perpendicular(view);
+    const Vec3 up = cross(view, right);
+    Print print(out, centre, right, up, view, pixelAngle * distance);
+    senseMark(print, sense.answer, s, sense.left, sense.timed, sense.age, sense.broken);
+}
+void appendSenseSight(std::vector<Vertex>& out, const SenseSightView& view, Pose head, float pixelAngle,
+                      const SenseSightConfig& config) {
+    const float across = std::sqrt(view.sight.x * view.sight.x + view.sight.y * view.sight.y);
+    if (!view.sight.shown || !finite(head.position) || !(across > .5f && across < 2) ||
+        !senseShows(view.answer, view.age, view.left, view.broken, pixelAngle))
+        return;
+    const Quat q = head.orientation;
+    const Vec3 forward = q.rotate({0, 0, -1}), right = q.rotate({1, 0, 0}), up = q.rotate({0, 1, 0});
+    if (!finite(forward) || !finite(right) || !finite(up))
+        return;
+    const Vec3 way = (right * view.sight.x + up * view.sight.y) / across;
+    // A metre off, upright as the view is.
+    constexpr float distance = 1, s = .032f;
+    const auto at = [&](float angle) {
+        return head.position + (forward * std::cos(angle) + way * std::sin(angle)) * distance;
+    };
+    {
+        const Vec3 centre = at(config.angle), facing = normalized(head.position - centre);
+        const Vec3 r = normalized(cross(up, facing)), u = cross(facing, r);
+        Print print(out, centre, r, u, facing, pixelAngle * distance);
+        senseMark(print, view.answer, s, view.left, view.timed, view.age, view.broken);
+        if (view.broken < 0) {
+            // The arrowhead beyond the ring, pointing to him.
+            const float fx = dot(way, r), fy = dot(way, u), f = std::sqrt(fx * fx + fy * fy);
+            const Flat ahead{fx / std::max(f, 1e-4f), fy / std::max(f, 1e-4f)}, side{-ahead.y, ahead.x};
+            const Landing land = landing(view.age);
+            print.place(land.scale, 0);
+            print.layers(.035f * s, .055f * s, plate::ink, 0, [&] {
+                print.triangle(ahead * (1.95f * s) + side * (.5f * s), ahead * (2.75f * s),
+                               ahead * (1.95f * s) - side * (.5f * s), senseColor(view.answer));
+            });
+        }
+    }
+    if (view.broken >= 0)
+        return;
+    // The rim's lines: three, wavy, out toward him, boiling.
+    const Vec3 centre = at(config.rim), facing = normalized(head.position - centre);
+    const Vec3 radial = normalized(way - facing * dot(way, facing));
+    const Vec3 tangent = normalized(cross(radial, facing));
+    if (!finite(radial) || !finite(tangent))
+        return;
+    Print print(out, centre, tangent, radial, facing, pixelAngle * distance);
+    const SenseBoil boil = senseBoil(static_cast<int>(view.age / plate::pose));
+    const Landing land = landing(view.age);
+    print.place(land.scale, boil.turn * plate::degree, boil.shift * .02f);
+    const Vec3 color = senseColor(view.answer);
+    print.layers(.004f, .006f, plate::ink, 0, [&] {
+        for (int i = -1; i <= 1; ++i) {
+            const float tilt = static_cast<float>(i) * 14 * plate::degree;
+            const Flat dir{std::sin(tilt), std::cos(tilt)}, side{dir.y, -dir.x};
+            const Flat base{static_cast<float>(i) * .06f, -.04f};
+            Flat before = base;
+            for (int k = 1; k <= 6; ++k) {
+                const float t = static_cast<float>(k) / 6;
+                const Flat p = base + dir * (.085f * t) + side * (.009f * std::sin(t * 3 * pi));
+                print.line(before, p, .0055f, color, k == 1);
+                before = p;
+            }
+        }
+    });
+}
+namespace {
+// A gadget's picture on its badge, `s` the badge's radius, in strokes of
+// `color`: what the gadget does, as a sign painter would draw it.
+void gadgetPicture(Print& print, Gadget g, Flat at, float s, Vec3 color) {
+    const auto p = [&](float x, float y) { return Flat{at.x + x * s, at.y + y * s}; };
+    const auto round = [&](float r, float a) { return p(r * std::cos(a), r * std::sin(a)); };
+    const float h = .085f * s; // a stroke's half width
+    switch (g) {
+    case Gadget::webShooter:
+        // A web: six spokes and two rounds strung between them.
+        for (int k = 0; k < 6; ++k) {
+            const float a = pi / 2 + pi / 3 * static_cast<float>(k), b = a + pi / 3;
+            print.line(at, round(.68f, a), h * .7f, color);
+            print.line(round(.34f, a), round(.34f, b), h * .55f, color);
+            print.line(round(.62f, a), round(.62f, b), h * .55f, color);
+        }
+        break;
+    case Gadget::impactWeb:
+        // The burst of a web ball that lands hard.
+        print.star(at, .3f * s, .68f * s, 8, .4f, color);
+        break;
+    case Gadget::webBomb:
+        // A round bomb, its fuse alight.
+        print.disc(p(-.08f, -.12f), .42f * s, color);
+        print.line(p(.2f, .2f), p(.34f, .4f), h, color);
+        print.star(p(.4f, .48f), .06f * s, .18f * s, 6, 1.1f, color);
+        break;
+    case Gadget::electricWeb:
+        // A bolt.
+        print.line(p(.26f, .66f), p(-.18f, .06f), h * 1.4f, color);
+        print.line(p(-.18f, .06f), p(.18f, .06f), h * 1.4f, color, false);
+        print.line(p(.18f, .06f), p(-.26f, -.66f), h * 1.4f, color, false);
+        break;
+    case Gadget::tripMine:
+        // A mine on a wall, its line across to the next.
+        print.disc(p(-.36f, 0), .22f * s, color);
+        print.line(p(-.36f, 0), p(.56f, 0), h * .7f, color);
+        print.line(p(.56f, -.28f), p(.56f, .28f), h, color);
+        break;
+    case Gadget::concussionBlast:
+        // A blast of air, its rings going out from where it went off.
+        print.disc(p(-.44f, 0), .12f * s, color);
+        for (int k = 0; k < 3; ++k)
+            print.ring(p(-.44f, 0), (.34f + .22f * static_cast<float>(k)) * s, h * .75f, color, -.9f, .9f);
+        break;
+    case Gadget::spiderDrone: {
+        // A spider: its body, its head and eight legs.
+        print.disc(p(0, -.1f), .2f * s, color);
+        print.disc(p(0, .16f), .12f * s, color);
+        static constexpr Flat knees[4] = {{.3f, .24f}, {.36f, .1f}, {.36f, -.1f}, {.28f, -.26f}};
+        static constexpr Flat feet[4] = {{.44f, .52f}, {.62f, .16f}, {.6f, -.24f}, {.44f, -.56f}};
+        for (const float side : {-1.f, 1.f})
+            for (int k = 0; k < 4; ++k) {
+                const Flat knee = p(side * knees[k].x, knees[k].y), foot = p(side * feet[k].x, feet[k].y);
+                print.line(p(side * .1f, -.04f), knee, h * .5f, color);
+                print.line(knee, foot, h * .5f, color, false);
+            }
+        break;
+    }
+    case Gadget::suspensionMatrix:
+        // The field that lifts what it catches: an orb, two orbits crossing
+        // round it.
+        print.disc(at, .2f * s, color);
+        for (const float tilt : {.45f, -.45f}) {
+            constexpr int pieces = 18;
+            Flat from{};
+            for (int k = 0; k <= pieces; ++k) {
+                const float t = 2 * pi * static_cast<float>(k) / pieces;
+                const float x = .64f * std::cos(t), y = .24f * std::sin(t);
+                const Flat to =
+                    p(x * std::cos(tilt) - y * std::sin(tilt), x * std::sin(tilt) + y * std::cos(tilt));
+                if (k)
+                    print.line(from, to, h * .55f, color, k == 1);
+                from = to;
+            }
+        }
+        break;
+    default:
+        break;
+    }
+}
+} // namespace
+void appendGadgetWheel(std::vector<Vertex>& out, const GadgetWheelView& view, Vec3 viewer, float pixelAngle) {
+    const WheelFrame& f = view.frame;
+    const float distance = length(viewer - f.centre);
+    if (!view.open || !finite(f.centre) || !finite(f.right) || !finite(f.up) || !finite(f.out) ||
+        !finite(viewer) || !std::isfinite(pixelAngle) || pixelAngle <= 0 || !std::isfinite(view.age) ||
+        view.age < 0 || !(distance >= .05f && distance <= 5))
+        return;
+    // Sizes in metres in the wheel's plane: the places' ring, a badge, the lit
+    // one, a bead where a place is empty, a charge's pip.
+    constexpr float radius = .13f, badge = .03f, litBadge = .038f, bead = .006f, pip = .0042f;
+    const float px = pixelAngle * distance;
+    const int lit = view.lit >= 0 && view.lit < gadgetPlaces &&
+                            view.places[static_cast<size_t>(view.lit)] != Gadget::none
+                        ? view.lit
+                        : -1;
+    const auto place = [](int p, float r) {
+        return Flat{r * std::sin(gadgetPlaceAngle(p)), r * std::cos(gadgetPlaceAngle(p))};
+    };
+    const auto spent = [&](int p) {
+        return view.most[static_cast<size_t>(p)] && !view.ammo[static_cast<size_t>(p)];
+    };
+    // A badge's charges round its outer side, from `centre` (its own `s` the
+    // badge's radius): yellow left, grey spent; eight at most.
+    const auto charges = [&](Print& print, int p, Flat centre, float s) {
+        const int most = std::min<int>(view.most[static_cast<size_t>(p)], 8);
+        if (!most)
+            return;
+        const float outward = pi / 2 - gadgetPlaceAngle(p);
+        const float step =
+            std::min(21 * plate::degree, 160 * plate::degree / static_cast<float>(std::max(most - 1, 1)));
+        for (int k = 0; k < most; ++k) {
+            const float a = outward + step * (static_cast<float>(k) - .5f * static_cast<float>(most - 1));
+            const Flat at = centre + Flat{std::cos(a), std::sin(a)} * (s + .0105f);
+            if (k < view.ammo[static_cast<size_t>(p)])
+                print.disc(at, pip, plate::yellow);
+            else
+                print.disc(at, pip * .75f, mix(plate::paper, plate::ink, .5f));
+        }
+    };
+    // The wheel lands as the marks do, out of register on its first poses.
+    const Landing land = landing(view.age);
+    const float misprint = land.hit ? .006f : 0;
+    Print wheel(out, f.centre, f.right, f.up, f.out, px);
+    wheel.place(land.scale, land.turn);
+    // The ring the places are on, a bead where one is empty, and the middle
+    // while nothing is lit.
+    wheel.layers(.0022f, 0, {}, misprint, [&] {
+        wheel.ring({}, radius, .0016f, plate::paper);
+        for (int p = 0; p < gadgetPlaces; ++p)
+            if (view.places[static_cast<size_t>(p)] == Gadget::none)
+                wheel.disc(place(p, radius), bead, plate::paper);
+        if (lit < 0)
+            wheel.disc({}, bead, plate::paper);
+    });
+    // The badges but the lit one, keyed with a hard drop; their charges,
+    // keyed finer.
+    wheel.layers(.0028f, .0045f, plate::ink, misprint, [&] {
+        for (int p = 0; p < gadgetPlaces; ++p) {
+            if (view.places[static_cast<size_t>(p)] == Gadget::none || p == lit)
+                continue;
+            const Vec3 plateColor = spent(p) ? mix(plate::paper, plate::ink, .5f)
+                                    : p == view.equipped ? plate::yellow
+                                                         : plate::paper;
+            wheel.disc(place(p, radius), badge, plateColor);
+        }
+    });
+    wheel.layers(.0012f, .002f, plate::ink, misprint, [&] {
+        for (int p = 0; p < gadgetPlaces; ++p)
+            if (view.places[static_cast<size_t>(p)] != Gadget::none && p != lit)
+                charges(wheel, p, place(p, radius), badge);
+    });
+    for (int p = 0; p < gadgetPlaces; ++p)
+        if (view.places[static_cast<size_t>(p)] != Gadget::none && p != lit)
+            gadgetPicture(wheel, view.places[static_cast<size_t>(p)], place(p, radius), badge, plate::ink);
+    if (lit < 0)
+        return;
+    const Gadget chosen = view.places[static_cast<size_t>(lit)];
+    // The lit badge: red and larger. It snaps on each time another gadget
+    // lights - a pose wide and out of register, a pose short - and then
+    // boils, as a held drawing does: drawn in three places by turns, two
+    // poses each.
+    const float litFor = std::isfinite(view.litAge) ? std::max(view.litAge, 0.f) : 1.f;
+    const int pose = static_cast<int>(litFor / plate::pose);
+    const Landing pop = pose == 0 ? Landing{1.16f, -4 * plate::degree, true}
+                        : pose == 1 ? Landing{.95f, 2 * plate::degree, false}
+                                    : Landing{};
+    struct Boil {
+        float turn;
+        Flat shift;
+    };
+    static constexpr Boil boils[3] = {{0, {}}, {-.8f, {.015f, .022f}}, {.7f, {-.022f, -.015f}}};
+    const Boil& boil = boils[pose < 3 ? 0 : (pose / 2) % 3];
+    // Where the wheel's landing has its place.
+    const float c = std::cos(land.turn), s = std::sin(land.turn);
+    const Flat at = place(lit, radius);
+    const Vec3 centre =
+        f.centre + (f.right * (at.x * c - at.y * s) + f.up * (at.x * s + at.y * c)) * land.scale;
+    Print badgePrint(out, centre, f.right, f.up, f.out, px);
+    badgePrint.place(land.scale * pop.scale, land.turn + pop.turn + boil.turn * plate::degree,
+                     boil.shift * (litBadge * land.scale));
+    badgePrint.layers(.0034f, .0055f, plate::ink, pop.hit ? .006f : 0, [&] {
+        badgePrint.disc({}, litBadge, plate::red);
+        if (lit == view.equipped)
+            badgePrint.ring({}, litBadge + .0048f, .0024f, plate::yellow);
+    });
+    const float pipsFrom = litBadge + (lit == view.equipped ? .0065f : 0.f);
+    badgePrint.layers(.0012f, .002f, plate::ink, pop.hit ? .006f : 0,
+                      [&] { charges(badgePrint, lit, {}, pipsFrom); });
+    badgePrint.layers(.0016f, 0, {}, 0,
+                      [&] { gadgetPicture(badgePrint, chosen, {}, litBadge, plate::paper); });
+    // Its name in a yellow caption across the middle, leaning as its
+    // lettering does, snapping on with the badge.
+    const char* name = gadgetName(chosen);
+    const float height = fittedHeight(name, .0135f, .15f);
+    const float width = textWidth(name, height) + Print::lean * height;
+    const float halfWidth = width * .5f + .008f, halfHeight = height * .5f + .0075f;
+    const float slant = Print::lean * halfHeight;
+    Print caption(out, f.centre, f.right, f.up, f.out, px);
+    caption.place(land.scale * pop.scale, land.turn + pop.turn + 2 * plate::degree);
+    caption.layers(.003f, .0045f, plate::ink, pop.hit ? .005f : 0, [&] {
+        const Flat a{-halfWidth - slant, -halfHeight}, b{halfWidth - slant, -halfHeight},
+            d{halfWidth + slant, halfHeight}, e{-halfWidth + slant, halfHeight};
+        caption.triangle(a, b, d, plate::yellow);
+        caption.triangle(a, d, e, plate::yellow);
+    });
+    caption.text(name, {width * -.5f, height * -.5f}, height, .17f, plate::ink);
 }
 void AimMarkerMotion::reset() {
     *this = {};

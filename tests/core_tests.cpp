@@ -34,6 +34,7 @@
 #include "spidy/hand_pose.hpp"
 #include "spidy/impact_sound.hpp"
 #include "spidy/web_strike.hpp"
+#include "spidy/spider_sense.hpp"
 #include "spidy/prompt_buttons.hpp"
 #include "spidy/xr_layers.hpp"
 #include "spidy/offer_pointing.hpp"
@@ -74,6 +75,19 @@ class BotStateDeathAnimGame : public BotStateDeathAnim {};
 class BotStateRagdoll : public BotStateBase {};
 class BotStateRagdollGame : public BotStateRagdoll {};
 class BotStateWallStuck : public BotStateBase {};
+// The states in which something else moves a bot, as the game derives them.
+class BotStateAttachToActor : public Component {};
+class BotStateNull : public BotStateBase {};
+class BotStatePlayCinematic : public BotStateNull {};
+class BotStatePlayCinematicGame : public BotStatePlayCinematic {};
+class BotStatePlaySyncedAnimGuest : public BotStateBase {};
+class BotStatePlaySyncedAnimGuestGame : public BotStatePlaySyncedAnimGuest {};
+class BotStatePlaySyncedAnimHost : public BotStateBase {};
+class BotStateCarried : public BotStateBase {};
+class BotStateSlottedInteract : public Component {};
+class BotStateFrozen : public Component {};
+class BotStateRequestTakedownYank : public BotStateBase {};
+class BotStateFlung : public BotStateBase {};
 class EnemyTurret : public Component {};
 extern "C" char __ImageBase;
 #endif
@@ -1824,6 +1838,32 @@ int main() {
         check(after.active&&after.releaseWebs,"recenter event lost");
         for(int i=0;i<16;++i)near(after.head[i],before.head[i]);
     });
+    test("game rig puts the head back over the feet after a break, not after a stutter", [] {
+        constexpr std::int64_t ms=1'000'000;
+        GameTrackingRig rig;auto f=trackedFrame();const Vec3 feet{10,20,30};
+        f.predictedDisplayTime=1000*ms;
+        auto out=rig.update(f,feet,{0,0,-1},true);
+        near(out.headPose.position.x,10);
+        // A step in the room moves the head off the body, as it should.
+        f.predictedDisplayTime+=11*ms;f.head.position.x+=.4f;
+        out=rig.update(f,feet,{0,0,-1},true);
+        near(out.headPose.position.x,10.4f);
+        // A stutter (a frame the gate held shut) keeps it there.
+        f.predictedDisplayTime+=11*ms;rig.update(f,feet,{0,0,-1},false);
+        f.predictedDisplayTime+=100*ms;
+        out=rig.update(f,feet,{0,0,-1},true);
+        near(out.headPose.position.x,10.4f);
+        // Out of the play area and back, the headset unfocused for two seconds, 1.5 m walked meanwhile: the head
+        // is over the feet again, facing as it was, and goes on from there.
+        f.predictedDisplayTime+=11*ms;f.focused=false;rig.update(f,feet,{0,0,-1},true);
+        f.predictedDisplayTime+=2000*ms;f.focused=true;f.head.position.x+=1.5f;
+        out=rig.update(f,feet,{0,0,-1},true);
+        near(out.headPose.position.x,10);near(out.headPose.position.z,30);
+        near(length(out.headPose.orientation.rotate({0,0,-1})-Vec3{0,0,-1}),0,1e-4f);
+        f.predictedDisplayTime+=11*ms;f.head.position.x+=.1f;
+        out=rig.update(f,feet,{0,0,-1},true);
+        near(out.headPose.position.x,10.1f);
+    });
     test("game rig keeps the webs through a stutter but not a longer break", [] {
         constexpr std::int64_t ms=1'000'000;
         GameTrackingRig rig;auto f=trackedFrame();
@@ -2118,6 +2158,135 @@ int main() {
         near(out.headPose.position.x,10,.002f);near(out.headPose.position.y,21.7f,.002f);
         near(length(out.headPose.orientation.rotate({0,0,-1})-Vec3{0,0,-1}),0,.002f);
         near(length(out.swing.tilt.rotate({0,1,0})-Vec3{0,1,0}),0,.001f);
+    });
+    test("the eyes keep out of what the world is built of: at once, along it, and let go slowly", [] {
+        const float dt=1.f/90,nan=std::numeric_limits<float>::quiet_NaN();
+        const Vec3 body{0,1,.5f},wall{0,1.6f,0},out{0,0,1};
+        // A wall at z = 0 facing the player, the eyes 30 cm into it: out at once, margin off it.
+        HeadClearance h;
+        h.found({wall,out});
+        Vec3 push=h.update(dt,body,{0,1.6f,-.3f});
+        near(push.z,HeadClearance::margin+.3f,1e-4f);near(push.x,0);near(push.y,0);
+        // Sliding along it, the push stays square to it.
+        h.found({wall,out});
+        push=h.update(dt,body,{.4f,1.5f,-.3f});
+        near(push.z,HeadClearance::margin+.3f,1e-4f);near(push.x,0);near(push.y,0);
+        // The head coming back out: the push lets go, never so fast that the eyes go back in.
+        float last=push.z;
+        for(int i=0;i<60;++i){
+            h.found({wall,out});
+            push=h.update(dt,body,{0,1.6f,.05f});
+            check(.05f+push.z>=HeadClearance::margin-1e-4f,"the eyes went back into the wall");
+            check(push.z<=last+1e-5f,"the push grew as the head left the wall");
+            last=push.z;
+        }
+        near(push.z,HeadClearance::margin-.05f,.01f);
+        for(int i=0;i<90;++i){h.found({wall,out});push=h.update(dt,body,{0,1.6f,.6f});}
+        near(length(push),0,1e-3f);
+        check(h.pushedFrames()>0 && h.most()>.49f,"the push was not counted");
+        // An inside corner: out of both.
+        HeadClearance corner;
+        corner.found({{0,1.6f,0},{0,0,1}});corner.found({{0,1.6f,0},{1,0,0}});
+        push=corner.update(dt,{.5f,1,.5f},{-.1f,1.6f,-.1f});
+        near(push.x,HeadClearance::margin+.1f,1e-4f);near(push.z,HeadClearance::margin+.1f,1e-4f);
+        // A surface found far from the eyes pushes nothing (its plane goes on past where it was found); the wall
+        // that holds the player, found under his feet, reaches as far as his head.
+        HeadClearance far;
+        far.found({{0,-1,0},out});
+        check(length(far.update(dt,body,{0,1.6f,-.3f}))==0,"a far surface pushed the eyes");
+        HeadClearance held;
+        held.found({{0,-1,0},out},true);
+        near(held.update(dt,body,{0,1.6f,-.3f}).z,HeadClearance::margin+.3f,1e-4f);
+        // Round an outside corner the wall left behind is no wall: the body is behind its plane now, so it
+        // pushes nothing, where before the corner it held the eyes out of itself.
+        HeadClearance round;
+        const Vec3 wallA{0,1.6f,-.5f},alongA{1,0,0};
+        round.found({wallA,alongA});
+        near(round.update(dt,{.5f,1,-1},{-.1f,1.6f,-1}).x,HeadClearance::margin+.1f,1e-4f);
+        round.reset();
+        round.found({wallA,alongA});
+        check(length(round.update(dt,{-1,1,.5f},{-1,1.6f,.9f}))==0,"the wall behind the corner pushed the eyes");
+        // The wall that holds the player counts only while it holds him: given once, it holds the eyes off
+        // that frame, and the next the push only lets go.
+        HeadClearance once;
+        once.found({{0,1.6f,0},out},true);
+        const float first=once.update(dt,body,{0,1.6f,-.3f}).z;
+        const float next=once.update(dt,body,{0,1.6f,-.3f}).z;
+        check(first>.49f && next<first && next>0,"a wall no longer holding the player held the eyes off");
+        // One the rays no longer find goes after keepSeconds, and the push with it.
+        HeadClearance lost;
+        lost.found({wall,out});
+        for(int i=0;i<90;++i)push=lost.update(dt,body,{0,1.6f,-.3f});
+        near(length(push),0,.01f);
+        // Never behind the body's middle, along the way from it to the eyes.
+        HeadClearance deep;
+        deep.found({{0,1.6f,1.2f},out});
+        push=deep.update(dt,{0,1.6f,1.3f},{0,1.6f,0});
+        near(length(Vec3{0,1.6f,0}+push-Vec3{0,1.6f,1.3f}),0,1e-4f);
+        // Nothing for what is not a surface, or eyes that are no place.
+        HeadClearance bad;
+        bad.found({wall,{0,0,2}});bad.found({{nan,0,0},out});
+        check(length(bad.update(dt,body,{0,1.6f,-.3f}))==0,"a bad surface pushed");
+        bad.found({wall,out});
+        check(length(bad.update(dt,body,{nan,0,0}))==0,"eyes that are no place were pushed");
+    });
+    test("the head's rays go from the body to past the eyes, and from the eyes ahead, aside and up", [] {
+        HeadClearance h;
+        const Vec3 body{0,1,0},eyes{0,1.6f,-.3f};
+        h.found({{0,1.6f,-.2f},{0,0,1}});
+        const Vec3 push=h.update(1.f/90,body,eyes);
+        check(push.z>0,"the eyes were not pushed");
+        const auto rays=h.next({0,0,-1},{1,0,0},{0,1,0});
+        // From the body toward the eyes where the headset puts them, a margin past them: a push never hides
+        // the surface that asked for it.
+        near(length(rays[0].origin-body),0);
+        near(length(rays[0].direction-normalized(eyes-body)),0,1e-5f);
+        near(rays[0].distance,length(eyes-body)+HeadClearance::margin,1e-5f);
+        // The others from the eyes as pushed, each long enough to find what the eyes keep off.
+        for(unsigned i=1;i<HeadClearance::rays;++i){
+            near(length(rays[i].origin-(eyes+push)),0,1e-5f);
+            check(rays[i].distance>HeadClearance::margin,"a ray too short to find what the eyes keep off");
+        }
+        near(length(rays[1].direction-Vec3{0,0,-1}),0);near(length(rays[2].direction-Vec3{1,0,0}),0);
+        near(length(rays[3].direction-Vec3{-1,0,0}),0);near(length(rays[4].direction-Vec3{0,1,0}),0);
+    });
+    test("game rig keeps the eyes, the hands and the body out of the wall the player leans into", [] {
+        // The swing's wall, its normal +x, 0.9 m from the body's centre: its face at x = 9.1. A run along it
+        // (the upright view), the player leaning a metre toward it in the room.
+        GameTrackingRig rig;auto f=trackedFrame();const Vec3 feet{10,20,30},n{1,0,0};
+        const SurfaceHold wall{n,feet+Vec3{0,1,0}-n*.9f,12,false};
+        const auto play=[&](float seconds){
+            GameMotionFrame out;
+            for(int i=0;i<static_cast<int>(seconds*90+.5f);++i){
+                ++f.predictedDisplayTime;
+                rig.bodyCentre(wall.anchor+n*.5f);
+                rig.surfaceFound({wall.anchor,n},true);
+                out=rig.update(f,feet,{0,0,-1},true,{0,1,0},true,wall);
+            }
+            return out;
+        };
+        auto out=play(.2f);
+        near(out.headPose.position.x,10,.002f);near(length(out.headPush),0,1e-4f);
+        const float hand=out.hands[0].position.x;
+        f.head.position.x-=1;
+        for(auto& e:f.eyes)e.pose.position.x-=1;
+        out=play(.1f);
+        near(out.headPose.position.x,9.1f+HeadClearance::margin,.002f);
+        near(out.headPush.x,.3f,.002f);
+        near(out.hands[0].position.x,hand+out.headPush.x,.002f);
+        // Upright beside it again: the view comes back, not at once.
+        f.head.position.x+=1;
+        for(auto& e:f.eyes)e.pose.position.x+=1;
+        out=play(.05f);
+        check(out.headPush.x>.01f,"the push let go at once");
+        out=play(1.f);
+        near(length(out.headPush),0,.002f);near(out.headPose.position.x,10,.002f);
+        // Without a body point the eyes go where the headset puts them.
+        GameTrackingRig plain;auto g=trackedFrame();
+        g.head.position.x-=1;
+        for(auto& e:g.eyes)e.pose.position.x-=1;
+        const auto free=holdFor(plain,g,feet,wall,.2f);
+        near(length(free.headPush),0);
     });
     test("game rig turns the view as soon as the player walks the wall, not on a run the stick steers", [] {
         GameTrackingRig rig;auto f=trackedFrame();const Vec3 feet{10,20,30},n{1,0,0};
@@ -4102,6 +4271,45 @@ int main() {
         clock.reset();
         near(clock.consume(c),.01f);
     });
+    test("the swing lets the game have the hero for a move it was asked for, once the game has begun it", [] {
+        using game_swing::AirYield;
+        // The mover's steps and the game's air handler (Jump, Fall): twice a step through Spidy's flight.
+        uint64_t steps=100,air=200,now=1000;
+        AirYield y;
+        const auto step=[&](bool asked,bool airRuns,bool owned=true,bool airborne=true,bool grasp=false){
+            ++steps;now+=5;if(airRuns)air+=2;
+            return y.update(now,asked,owned,airborne,grasp,steps,air);
+        };
+        // Flight as usual, the player asking: the game took nothing, the swing goes on.
+        for(int i=0;i<20;++i)check(!step(true,true),"the swing let go of a hero the game had not taken");
+        // Asked, and the game's air handler quiet for two steps: the game's move has him.
+        check(!step(true,false),"one quiet step is the game's move already");
+        check(step(false,false)&&y.began()&&y.yields()==1,"the game's move did not take the hero");
+        check(step(false,false)&&!y.began(),"the hand-over began twice");
+        // Back in the game's air, the move done: the swing may have him again (a web of the player's).
+        check(!step(false,true),"the move's end kept the swing off");
+        // Landing ends it too, and so do yieldMs.
+        for(int i=0;i<3;++i)step(true,false);
+        check(y.yielded(),"no second hand-over");
+        check(!step(false,false,false,false),"landed, the swing still kept off");
+        for(int i=0;i<3;++i)step(true,false);
+        check(y.yielded() && y.yields()==3,"no third hand-over");
+        now+=AirYield::yieldMs;
+        check(!step(false,false),"the hand-over outlived yieldMs");
+        // Quiet steps without an ask, or with one older than askMs, are nobody's move of the game's: nothing.
+        AirYield late;
+        uint64_t s2=10,a2=20,t2=0;
+        late.update(t2,true,true,true,false,s2,a2);
+        t2+=AirYield::askMs+1;
+        for(int i=0;i<5;++i){++s2;t2+=5;check(!late.update(t2,false,true,true,false,s2,a2),"an old ask let go");}
+        AirYield unasked;
+        for(int i=0;i<5;++i){++s2;t2+=5;check(!unasked.update(t2,false,true,true,false,s2,a2),"no ask let go");}
+        // Nor in the game's wall grasp (its own latch), nor where the swing has no hero, nor on the ground.
+        AirYield other;
+        for(int i=0;i<5;++i){++s2;t2+=5;check(!other.update(t2,true,true,true,true,s2,a2),"the grasp let go");}
+        for(int i=0;i<5;++i){++s2;t2+=5;check(!other.update(t2,true,false,true,false,s2,a2),"nobody's hero let go");}
+        for(int i=0;i<5;++i){++s2;t2+=5;check(!other.update(t2,true,true,false,false,s2,a2),"the ground let go");}
+    });
     test("a stutter keeps the last focused input; a longer loss of it does not", [] {
         game_swing::InputHold hold;
         game_swing::Command c;c.serial=7;c.focused=1;c.hands[0].grip=1;
@@ -4594,6 +4802,217 @@ int main() {
         appendKnockout(none,{{std::numeric_limits<float>::quiet_NaN(),0,0},.1f},viewer,.0005f);
         appendKnockout(none,{viewer,.1f},viewer,.0005f);
         check(none.empty(),"a mark before its time, nowhere, or in the viewer's eye");
+    });
+    test("spider-sense asks what the game's flags allow: jump, a counter within a strike's reach, else a dodge", [] {
+        using namespace attack;
+        check(answerOf(dodgeable|counterable,3)==SenseAnswer::Counter,"a counterable punch is not countered");
+        check(answerOf(dodgeable|counterable,10.5f)==SenseAnswer::Dodge,"a counter beyond a strike's reach");
+        check(answerOf(dodgeable,2)==SenseAnswer::Dodge,"an attack no dodge interrupts asks for a counter");
+        check(answerOf(dodgeable|counterable|jumpButton,2)==SenseAnswer::Jump,"the jump's attack asks for no jump");
+        check(answerOf(counterable,std::numeric_limits<float>::quiet_NaN())==SenseAnswer::Dodge,"a counter nowhere");
+        // A warning stands until a tenth of a second after its blow; one with no time set for 1.2 s.
+        SenseThreat t{1,{},{},.3f,.2f,true,counterable};
+        check(standing(t),"a warning before its blow does not stand");
+        near(senseLeft(t),.625f);near(senseLeft(t,0),.6f,1e-4f);
+        t.toImpact=-.05f;check(standing(t)&&senseLeft(t)==0,"a blow on its way does not stand at none left");
+        t.toImpact=-.2f;check(!standing(t),"a warning long past its blow stands");
+        SenseThreat untimed{1,{},{},0,1,false,counterable};
+        check(standing(untimed)&&senseLeft(untimed)==1,"an untimed warning");
+        untimed.warned=1.3f;check(!standing(untimed),"an untimed warning that never ends");
+        check(!standing(SenseThreat{0,{},{},.3f,0,true,0}),"nobody's warning stands");
+        bool refused{};
+        try{SpiderSenseConfig c;c.aim=1;SpiderSense bad(c);}catch(const std::invalid_argument&){refused=true;}
+        check(refused,"a counter no fist can aim");
+    });
+    test("spider-sense counters a fist thrown at a warned attacker once, and his next blow is the counter's", [] {
+        const float dt=1.f/90;
+        const Vec3 head{0,1.65f,0},chest{0,1.2f,0};
+        const std::vector<SenseThreat> warned{{7,{0,1.75f,-3},{0,1,-3},.4f,.1f,true,attack::dodgeable|attack::counterable},
+                                              {8,{3,1.75f,-3},{3,1,-3},.4f,.1f,true,attack::dodgeable}};
+        // The right fist thrown from the shoulder at the first attacker's middle at 3.5 m/s.
+        const auto throwAt=[&](Vec3 at,float speed,Vec3 from={.2f,1.4f,-.35f}) {
+            std::array<SenseFist,2> fists{};
+            fists[1]={true,from,normalized(at-from)*speed};
+            return fists;
+        };
+        SpiderSense sense;
+        std::optional<SpiderSense::Counter> made;
+        int samples{};
+        for(;samples<10&&!made;++samples)made=sense.update(dt,warned,throwAt({0,1,-3},3.5f),head,chest);
+        check(made&&made->attacker==7&&made->hand==1,"a fist thrown at him is no counter");
+        check(samples>=3&&samples<=4,"a counter before the fist's sustain, or long after it");
+        near(made->left,.4f);check(!made->perfect,"a counter 0.4 s early is a perfect one");
+        check(sense.countered(7)&&!sense.countered(8),"the countered attacker");
+        // The same throw counts once.
+        for(int i=0;i<20;++i)check(!sense.update(dt,warned,throwAt({0,1,-3},3.5f),head,chest),"one throw, two counters");
+        // His next blow is the counter's, once.
+        std::optional<SpiderSense::Counter> again;
+        check(sense.blow(7,warned,chest,again)&&!again,"the blow after a counter is not its blow");
+        check(!sense.blow(7,warned,chest,again),"a counter with two blows");
+        // A dodge's attacker, a slow fist, one thrown away, a hand drawn back: none.
+        SpiderSense other;
+        for(int i=0;i<20;++i) {
+            check(!other.update(dt,warned,throwAt({3,1,-3},3.5f),head,chest),"a dodge's attacker countered");
+            check(!other.update(dt,warned,throwAt({0,1,-3},1.5f),head,chest),"a slow fist countered");
+            check(!other.update(dt,warned,throwAt({0,1,3},3.5f),head,chest),"a fist thrown away countered");
+            check(!other.update(dt,warned,throwAt({0,1,-3},3.5f,{.1f,1.5f,-.1f}),head,chest),"a hand at the chest");
+        }
+        // The last fifth of a second: a perfect counter.
+        SpiderSense late;
+        const std::vector<SenseThreat> soon{{7,{0,1.75f,-3},{0,1,-3},.15f,.5f,true,attack::counterable}};
+        std::optional<SpiderSense::Counter> perfect;
+        for(int i=0;i<10&&!perfect;++i)perfect=late.update(dt,soon,throwAt({0,1,-3},3),head,chest);
+        check(perfect&&perfect->perfect,"a counter in the warning's last fifth of a second is not perfect");
+        // A punch that lands while his warning stands counters him itself: its blow is the counter's.
+        SpiderSense landing;
+        landing.update(dt,warned,{},head,chest);
+        std::optional<SpiderSense::Counter> byBlow;
+        check(landing.blow(7,warned,chest,byBlow)&&byBlow&&byBlow->attacker==7&&byBlow->hand==-1,"a blow in his warning");
+        check(landing.countered(7)&&!landing.blow(7,warned,chest,byBlow),"a landed counter with a second blow");
+        // Nor the dodge's attacker, nor anyone after his warning: an ordinary blow.
+        check(!landing.blow(8,warned,chest,byBlow)&&!byBlow,"a blow at a dodge's attacker counters him");
+        std::vector<SenseThreat> past=warned;past[0].toImpact=-.5f;
+        SpiderSense after;
+        check(!after.blow(7,past,chest,byBlow),"a blow long after his attack counters it");
+        // A counter's blow waits 1.2 s at most; a warning gone and no blow coming is forgotten.
+        SpiderSense waits;
+        for(int i=0;i<10;++i)waits.update(dt,warned,throwAt({0,1,-3},3.5f),head,chest);
+        for(int i=0;i<120;++i)waits.update(dt,{},{},head,chest);
+        check(!waits.blow(7,{},chest,byBlow)&&!waits.countered(7),"a counter's blow two seconds on");
+    });
+    test("spider-sense's sightline: an attacker over 31 degrees off the look, kept to 26, on his side, behind too", [] {
+        const Pose head{{0,1.6f,0},{}};
+        const auto at=[&](float degrees,float up=0) {
+            const float r=degrees*3.14159265f/180;
+            return head.position+Vec3{std::sin(r),up,-std::cos(r)}*5.f;
+        };
+        SenseSight s=senseSight(head,at(10),{});
+        check(!s.shown,"an attacker in front shown in the sightline");
+        s=senseSight(head,at(40),s);
+        check(s.shown&&s.x>.99f&&std::abs(s.y)<.02f,"an attacker to the right is not at the sightline's right");
+        s=senseSight(head,at(28),s);check(s.shown,"the sightline's mark lets go too soon");
+        s=senseSight(head,at(20),s);check(!s.shown,"the sightline's mark stays");
+        s=senseSight(head,at(28),s);check(!s.shown,"the sightline's mark comes back too soon");
+        SenseSight left=senseSight(head,at(-70,.4f),{});
+        check(left.shown&&left.x<-.8f&&left.y>.2f,"an attacker up to the left");
+        // Behind: the side he was last on.
+        SenseSight behind=senseSight(head,at(-120),{});
+        behind=senseSight(head,at(180),behind);
+        check(behind.shown&&behind.x<-.99f,"behind, the mark changed sides");
+        SenseSight fresh=senseSight(head,at(179.5f),{});
+        check(fresh.shown&&fresh.x>.99f,"a new attacker straight behind, a little to the right");
+        check(!senseSight(head,head.position,{}).shown,"an attacker in the head");
+    });
+    test("spider-sense's mark is printed: the comic's lines in what to do, a ring closing on the blow, broken by a counter", [] {
+        const Vec3 viewer{0,1.6f,0},headTop{0,1.75f,-3};
+        const float pose=1.f/12;
+        const auto draw=[&](SenseAnswer a,float left,float age=.52f,float broken=-1,bool timed=true) {
+            std::vector<Vertex> out;
+            appendSense(out,{headTop,a,left,timed,age,broken},viewer,.0005f);
+            return out;
+        };
+        const Vec3 ink{.0033f,.0030f,.0070f},paper{.9301f,.9131f,.8550f},cyan{.0060f,.6724f,1},magenta{1,.0273f,.2918f},
+            yellow{1,.7529f,.0742f},red{.7682f,.0194f,.0284f};
+        const auto count=[](const std::vector<Vertex>& v,Vec3 plate) {
+            size_t n{};
+            for(const auto& x:v)n+=length(x.color-plate)<.01f;
+            return n;
+        };
+        // Its centre: clear over his head.
+        const auto centre=[&](const std::vector<Vertex>& v) {
+            Vec3 c{};
+            for(const auto& x:v)c+=x.position;
+            return c/static_cast<float>(std::max<size_t>(v.size(),1));
+        };
+        const auto widest=[&](const std::vector<Vertex>& v,Vec3 from) {
+            float r{};
+            for(const auto& x:v)r=std::max(r,length(x.position-from));
+            return r;
+        };
+        for(const auto& mark:{draw(SenseAnswer::Counter,1),draw(SenseAnswer::Dodge,.5f),draw(SenseAnswer::Jump,.125f),
+                              draw(SenseAnswer::Counter,1,.01f),draw(SenseAnswer::Counter,1,.5f,.1f)}) {
+            check(!mark.empty()&&mark.size()%3==0&&count(mark,ink)>0,"a mark without its keyline");
+            for(const auto& x:mark) {
+                check(finite(x.position)&&x.alpha>=0&&x.alpha<=1,"a bad vertex");
+                bool plate{};
+                for(const Vec3 c:{ink,paper,cyan,magenta,yellow,red})plate|=length(x.color-c)<.01f;
+                check(plate,"a colour that is none of the plates");
+            }
+        }
+        // What it asks for is its colour; the jump's chevron is paper.
+        check(count(draw(SenseAnswer::Counter,.5f),cyan)>0&&count(draw(SenseAnswer::Counter,.5f),red)==0,"a counter not cyan");
+        check(count(draw(SenseAnswer::Dodge,.5f),red)>0&&count(draw(SenseAnswer::Dodge,.5f),cyan)==0,"a dodge not red");
+        check(count(draw(SenseAnswer::Jump,.5f),yellow)>0,"a jump not yellow");
+        check(count(draw(SenseAnswer::Jump,.5f,.52f,-1,false),paper)>count(draw(SenseAnswer::Dodge,.5f,.52f,-1,false),paper),
+              "the jump's chevron");
+        const Vec3 middle=centre(draw(SenseAnswer::Counter,1,.52f,-1,false));
+        check(middle.y>headTop.y+.1f&&middle.y<headTop.y+.4f&&std::abs(middle.x)<.05f,"the mark is not over his head");
+        // The ring closes on the blow: wide with the warning's time all there, the lines alone at its end; its
+        // last notch a yellow burst's edge.
+        const float lines=widest(draw(SenseAnswer::Counter,1,.52f,-1,false),middle);
+        const float full=widest(draw(SenseAnswer::Counter,1),middle),half=widest(draw(SenseAnswer::Counter,.5f),middle);
+        check(full>lines*1.5f&&half<full*.9f&&half>lines,"the ring does not close on the blow");
+        check(count(draw(SenseAnswer::Counter,.125f),yellow)>0&&count(draw(SenseAnswer::Counter,.25f),yellow)==0,
+              "the last notch is not now");
+        // It pops in out of register, and leaves broken in three poses.
+        check(count(draw(SenseAnswer::Counter,1,pose*.5f),magenta)>0&&count(draw(SenseAnswer::Counter,1),magenta)==0,
+              "it does not land out of register");
+        check(count(draw(SenseAnswer::Counter,1,.5f,pose*.5f),magenta)>0,"a counter's break has no flash");
+        check(count(draw(SenseAnswer::Counter,1,.5f,pose*1.5f),cyan)>0&&!draw(SenseAnswer::Counter,1,.5f,pose*2.5f).empty(),
+              "the break's poses");
+        check(draw(SenseAnswer::Counter,1,.5f,pose*3.5f).empty(),"a broken mark stays");
+        // A few degrees across at any distance.
+        for(const float d:{1.5f,4.f,9.f}) {
+            std::vector<Vertex> out;
+            appendSense(out,{viewer+Vec3{0,.1f,-d},SenseAnswer::Counter,1,false,.52f,-1},viewer,.0005f);
+            const Vec3 c=centre(out);
+            const float degrees=2*std::atan(widest(out,c)/length(c-viewer))*180/3.14159265f;
+            check(degrees>4&&degrees<12,"the mark is too small or too big to read");
+        }
+        std::vector<Vertex> none;
+        appendSense(none,{headTop,SenseAnswer::None,1,true,.5f,-1},viewer,.0005f);
+        appendSense(none,{headTop,SenseAnswer::Counter,1,true,-.1f,-1},viewer,.0005f);
+        appendSense(none,{{std::numeric_limits<float>::quiet_NaN(),0,0},SenseAnswer::Counter,1,true,.5f,-1},viewer,.0005f);
+        appendSense(none,{viewer,SenseAnswer::Counter,1,true,.5f,-1},viewer,.0005f);
+        check(none.empty(),"a mark for nothing, before its time, nowhere, or in the viewer's eye");
+    });
+    test("spider-sense in the sightline: the mark at 21 degrees on his side with an arrowhead, lines at the rim", [] {
+        const Pose head{{0,1.6f,0},{}};
+        const Vec3 forward{0,0,-1};
+        const auto draw=[&](float x,float y,bool shown=true,float broken=-1) {
+            std::vector<Vertex> out;
+            SenseSightView view;
+            view.answer=SenseAnswer::Dodge;
+            view.sight={shown,x,y};
+            view.timed=true;
+            view.left=.5f;
+            view.age=.52f;
+            view.broken=broken;
+            appendSenseSight(out,view,head,.001f);
+            return out;
+        };
+        const Vec3 red{.7682f,.0194f,.0284f};
+        const auto off=[&](const Vertex& v){return std::acos(std::clamp(dot(normalized(v.position-head.position),forward),-1.f,1.f))*180/3.14159265f;};
+        const auto right=draw(1,0);
+        check(!right.empty(),"no sightline mark");
+        float least=180,most=0;
+        size_t reds{};
+        for(const auto& v:right) {
+            check(finite(v.position)&&v.position.x>0,"a sightline mark not to the right");
+            least=std::min(least,off(v));most=std::max(most,off(v));
+            near(length(v.position-head.position),1.f,.08f);
+            reds+=length(v.color-red)<.01f;
+        }
+        check(least>14&&least<21&&most>38&&most<45,"the mark and the rim's lines are not where the sightline is");
+        check(reds>0,"the dodge's red is missing");
+        bool up{};
+        for(const auto& v:draw(0,1))up|=v.position.y>head.position.y+.2f;
+        check(up,"an attacker above is not at the top of the view");
+        check(draw(1,0,false).empty()&&draw(0,0).empty(),"a sightline mark not shown, or nowhere");
+        // Broken: the mark's poses, no arrowhead or rim lines.
+        float brokenMost{};
+        for(const auto& v:draw(1,0,true,.01f))brokenMost=std::max(brokenMost,off(v));
+        check(brokenMost>0&&brokenMost<30,"a broken sightline mark kept its rim lines");
     });
     test("one enemy at a time: a look marks, a blow locks until he is down, and a square look at another moves it", [] {
         const Vec3 head{0,1.65f,0};
@@ -5123,7 +5542,8 @@ int main() {
             check(run(c,dt,f).buttons==dpadRight,"a push right is no D-pad right");
             check(run(c,dt,rest).buttons==0,"an L3 after the D-pad");
         }
-        // The left click alone is the game's L3 as it is let go; with the right stick's click, the two at once.
+        // The left click alone is the game's L3 as it is let go; with the right stick's click, the two together
+        // as both are let go, and nothing of either while they are down.
         {
             ScreenControls c;
             XrFrame f;f.hands[0].stickClick=true;
@@ -5131,8 +5551,18 @@ int main() {
             check(run(c,dt,rest).buttons==leftThumb,"a click of the left stick is no L3");
             run(c,.2f,rest);
             f.hands[1].stickClick=true;
-            check(run(c,dt,f).buttons==(leftThumb|rightThumb),"both clicks are not the game's L3 + R3");
-            check(run(c,dt,rest).buttons==0,"an L3 after both clicks");
+            check(!(run(c,.2f,f).buttons&(leftThumb|rightThumb)),"a thumb button went out with both sticks down");
+            XrFrame right;right.hands[1].stickClick=true;
+            check(!(run(c,dt,right).buttons&(leftThumb|rightThumb)),"the right click went on alone after the left");
+            check(run(c,dt,rest).buttons==(leftThumb|rightThumb),"both clicks are not the game's L3 + R3");
+            check(run(c,.2f,rest).buttons==0,"L3 + R3 stayed down");
+        }
+        // Both held on into the pause (PausePress has its Start): no L3 + R3 as they are let go.
+        {
+            ScreenControls c;
+            XrFrame f;f.hands[0].stickClick=f.hands[1].stickClick=true;
+            check(!(run(c,pauseHoldSeconds+.1f,f).buttons&(leftThumb|rightThumb)),"a thumb button under the pause");
+            check(run(c,dt,rest).buttons==0,"the pause's chord was L3 + R3 too");
         }
         // Not played on the screen (its menus, VR): as the game screen has it.
         {
@@ -5173,9 +5603,13 @@ int main() {
         check(w.lit()<0,"a gadget lit with the hand still");
         // To the player's right: the place there (2 of 8, a quarter turn clockwise from the top).
         check(run(w,.05f,true,hand+f.right*.08f,all).lit && w.lit()==2,"the hand to the right lit no gadget there");
+        // How long it has been lit, for its snap and its boil.
+        run(w,.1f,true,hand+f.right*.08f,all);
+        check(w.litAge()>.12f && w.litAge()<.16f,"the lit gadget's time is wrong");
         // Up and a little left: the top one; then back near the middle: none.
         run(w,.05f,true,hand+f.up*.09f-f.right*.01f,all);
         check(w.lit()==0,"the hand up lit no top gadget");
+        check(w.litAge()<.06f,"another gadget lit kept the last one's time");
         run(w,.05f,true,hand+f.up*.03f,all);
         check(w.lit()<0,"a gadget stayed lit with the hand back in the middle");
         // Let go there: nothing chosen.
@@ -5196,54 +5630,198 @@ int main() {
         check(!after.opened && !cut.open() && !run(cut,dt,false,hand,all).tap,"a press held through the end of play did something");
     });
     test("the gadget wheel draws its gadgets, names that the font has, and nothing while shut", [] {
-        for(int g=1;g<=static_cast<int>(Gadget::webBlossom);++g){
+        for(int g=1;g<=static_cast<int>(Gadget::gameWebShooter);++g){
             const char* name=gadgetName(static_cast<Gadget>(g));
             check(*name,"a gadget without a name");
             for(const char* c=name;*c;++c)check(*c==' '||drawable(*c),"a gadget's name has a letter the font lacks");
         }
+        const Vec3 viewer{0,1.6f,0};
+        const float pixel=.0007f; // a headset's, about
         GadgetWheelView view;
         std::vector<Vertex> v;
-        appendGadgetWheel(v,view);
+        appendGadgetWheel(v,view,viewer,pixel);
         check(v.empty(),"a shut wheel drew something");
         view.open=true;view.age=1;view.frame.centre={0,1.2f,-.4f};
         view.places[0]=Gadget::webShooter;view.places[2]=Gadget::impactWeb;view.most[2]=5;view.ammo[2]=3;
         view.lit=2;view.equipped=0;
-        appendGadgetWheel(v,view);
+        appendGadgetWheel(v,view,viewer,pixel);
         check(v.size()>300 && v.size()%3==0,"the wheel drew too little");
         for(const auto& vertex:v)
             check(length(vertex.position-view.frame.centre)<.3f,"the wheel drew outside itself");
+        // Nothing for a viewer or a pixel that is no number.
+        for(const float bad:{0.f,-1.f,std::numeric_limits<float>::quiet_NaN()}){
+            std::vector<Vertex> none;
+            appendGadgetWheel(none,view,viewer,bad);
+            appendGadgetWheel(none,view,{std::numeric_limits<float>::quiet_NaN(),0,0},pixel);
+            check(none.empty(),"a bad viewer or pixel drew a wheel");
+        }
     });
-    test("the pad layer: both stick clicks latch it, a web or idleness lets it go", [] {
+    test("the gadget wheel is printed: a picture for each gadget, the lit one red with its name, landing in "
+         "poses", [] {
+        const Vec3 viewer{0,1.6f,0};
+        const float pixel=.0007f;
+        // The style's plates (web_visual.cpp's).
+        const Vec3 red{.7682f,.0194f,.0284f},yellow{1.f,.7529f,.0742f},paper{.9301f,.9131f,.8550f},
+            ink{.0033f,.0030f,.0070f};
+        const auto is=[](Vec3 a,Vec3 b){return length(a-b)<2e-3f;};
+        GadgetWheelView base;
+        base.open=true;base.age=1;base.frame.centre={0,1.2f,-.4f};
+        base.places[0]=Gadget::webShooter;base.equipped=0;
+        const auto draw=[&](const GadgetWheelView& view){
+            std::vector<Vertex> v;
+            appendGadgetWheel(v,view,viewer,pixel);
+            return v;
+        };
+        // Each gadget's badge has its picture: more drawn than for a badge with none (the game's own web
+        // shooter, which the wheel never shows, has no picture).
+        auto bare=base;
+        bare.places[3]=Gadget::gameWebShooter;
+        const size_t badgeAlone=draw(bare).size();
+        for(int g=1;g<static_cast<int>(Gadget::gameWebShooter);++g){
+            auto with=base;
+            with.places[3]=static_cast<Gadget>(g);
+            check(draw(with).size()>badgeAlone+60,"a gadget has no picture on its badge");
+        }
+        // The lit one is red, larger, and its name is lettered in a yellow caption across the middle; with
+        // nothing lit the middle holds no caption.
+        auto full=base;
+        const Gadget all[]={Gadget::webShooter,Gadget::impactWeb,Gadget::webBomb,Gadget::electricWeb,
+                            Gadget::tripMine,Gadget::concussionBlast,Gadget::spiderDrone,
+                            Gadget::suspensionMatrix};
+        for(int p=0;p<gadgetPlaces;++p){
+            full.places[static_cast<size_t>(p)]=all[p];
+            full.most[static_cast<size_t>(p)]=p?4:0;
+            full.ammo[static_cast<size_t>(p)]=static_cast<uint8_t>(p==5?0:3);
+        }
+        const Vec3 place1=base.frame.centre+(base.frame.right*std::sin(gadgetPlaceAngle(1))+
+                                             base.frame.up*std::cos(gadgetPlaceAngle(1)))*.13f;
+        const auto reach=[&](const std::vector<Vertex>& v,Vec3 colour,Vec3 from){
+            float most=0;
+            for(const auto& x:v)
+                if(is(x.color,colour)&&x.alpha>.99f)most=std::max(most,length(x.position-from));
+            return most;
+        };
+        // Vertices of `colour` across the middle, inside the badges' ring (their nearest edge is 10 cm out).
+        const auto middle=[&](const std::vector<Vertex>& v,Vec3 colour){
+            size_t n=0;
+            for(const auto& x:v)n+=is(x.color,colour)&&length(x.position-base.frame.centre)<.09f;
+            return n;
+        };
+        auto shut=full;
+        shut.lit=-1;
+        const auto unlit=draw(shut);
+        check(middle(unlit,yellow)==0 && reach(unlit,red,place1)==0,
+              "with nothing lit, a caption or a red badge");
+        auto lit=full;
+        lit.lit=1;lit.litAge=1;
+        const auto chosen=draw(lit);
+        check(middle(chosen,yellow)>20,"the lit gadget's name has no yellow caption");
+        check(middle(chosen,ink)>300+middle(unlit,ink),"the caption has no lettering");
+        const float litRadius=reach(chosen,red,place1);
+        check(litRadius>.036f && litRadius<.042f,"the lit badge is not red and larger than the rest");
+        // The badge out of charges is grey, the equipped one yellow, the rest paper.
+        const Vec3 grey=paper+(ink-paper)*.5f;
+        const Vec3 place5=base.frame.centre+(base.frame.right*std::sin(gadgetPlaceAngle(5))+
+                                             base.frame.up*std::cos(gadgetPlaceAngle(5)))*.13f;
+        const Vec3 place0=base.frame.centre+base.frame.up*.13f;
+        check(reach(chosen,grey,place5)>.025f,"a badge out of charges is not grey");
+        check(reach(chosen,yellow,place0)>.025f,"the equipped badge is not yellow");
+        check(reach(chosen,paper,base.frame.centre)>.1f,"the other badges are not paper");
+        // It snaps on as it lights: a pose wide, a pose short, then at rest.
+        auto snapping=lit;
+        snapping.litAge=0;
+        check(reach(draw(snapping),red,place1)>litRadius*1.1f,"the lit badge did not snap on wide");
+        snapping.litAge=1.5f/12;
+        check(reach(draw(snapping),red,place1)<litRadius,
+              "the lit badge's second pose is not short of its size");
+        // The wheel lands as it opens: its first pose small, then past its size, then at rest.
+        auto opening=lit;
+        opening.age=0;
+        const auto extent=[&](const std::vector<Vertex>& v){
+            float most=0;
+            for(const auto& x:v)most=std::max(most,length(x.position-base.frame.centre));
+            return most;
+        };
+        const float rest=extent(chosen);
+        check(extent(draw(opening))<rest*.5f,"the wheel's first pose is not small");
+        opening.age=1.5f/12;
+        check(extent(draw(opening))>rest*1.08f,"the wheel's second pose is not past its size");
+        // All of it, as large as it gets (every place full of charges, landing out of register), stays
+        // within the overlay's room for a fight's printed marks.
+        auto most=lit;
+        most.age=0;most.litAge=0;
+        for(int p=1;p<gadgetPlaces;++p)most.most[static_cast<size_t>(p)]=most.ammo[static_cast<size_t>(p)]=8;
+        const auto heaviest=draw(most);
+        check(heaviest.size()<60000 && heaviest.size()%3==0,"the wheel draws too much");
+    });
+    test("the pad layer: a click of both sticks latches it as it is let go, a web or idleness lets it go", [] {
         using game_pad::PadLayer;
         const auto run=[](PadLayer& l,float seconds,bool allowed,bool left,bool right,bool busy=false){
             bool on=false;
             for(float t=0;t<seconds;t+=1.f/90)on=l.update(1.f/90,allowed,left,right,busy);
             return on;
         };
+        // A click: held chordSeconds, then let go.
+        const auto click=[&](PadLayer& l){run(l,PadLayer::chordSeconds+.05f,true,true,true);return run(l,1.f/90,true,false,false);};
         PadLayer layer;
         check(!run(layer,.3f,true,false,false),"latched with no chord");
-        check(!run(layer,.05f,true,true,true),"latched before chordSeconds");
-        check(run(layer,PadLayer::chordSeconds+.05f,true,true,true),"the chord did not latch the layer");
+        check(!run(layer,.05f,true,true,true) && !run(layer,1.f/90,true,false,false),"latched before chordSeconds");
+        check(!run(layer,PadLayer::chordSeconds+.05f,true,true,true),"latched under the thumbs");
+        check(run(layer,1.f/90,true,false,false),"the click did not latch the layer as it was let go");
         check(layer.entries()==1,"the entry was not counted");
-        // Held on, the chord toggles once: it must be let go of first.
-        check(run(layer,1.f,true,true,true),"the held chord let the layer go again");
         check(run(layer,.2f,true,false,false),"letting the chord go let the layer go");
-        check(!run(layer,PadLayer::chordSeconds+.05f,true,true,true),"the second chord did not let it go");
+        check(!click(layer),"the second click did not let it go");
         check(layer.entries()==1,"letting go counted as an entry");
+        // Held on into the pause (PausePress), the chord toggles nothing.
+        PadLayer paused;
+        check(!run(paused,game_pad::pauseHoldSeconds+.1f,true,true,true) && !run(paused,.2f,true,false,false),
+              "the pause's hold latched the layer");
+        check(paused.entries()==0,"the pause's hold counted as an entry");
         // One stick alone is no chord (it is the pull and the slow motion).
         PadLayer single;
         check(!run(single,1.f,true,false,true)&&!run(single,1.f,true,true,false),"one stick latched the layer");
         // A web carrying the player ends it, and the chord it was holding is spent.
         PadLayer carried;
-        check(run(carried,PadLayer::chordSeconds+.05f,true,true,true),"the chord did not latch");
+        check(click(carried),"the click did not latch");
+        run(carried,.1f,true,true,true);
         check(!carried.update(1.f/90,false,true,true,false),"a web did not end the layer");
-        check(!run(carried,1.f,true,true,true),"a chord held through a web latched it again");
+        check(!run(carried,.3f,true,true,true) && !run(carried,1.f/90,true,false,false),
+              "a chord held through a web latched it again");
         // Nothing pressed for idleSeconds and it lets go by itself; a press keeps it.
         PadLayer idle;
-        run(idle,PadLayer::chordSeconds+.05f,true,true,true);
+        click(idle);
         run(idle,.2f,true,false,false);
         check(run(idle,PadLayer::idleSeconds-1,true,false,false,true),"a busy layer let go");
         check(!run(idle,PadLayer::idleSeconds+1,true,false,false,false),"an idle layer did not let go");
+    });
+    test("both thumbsticks held in are the game's Start, once a hold, where the runtime keeps the menu button",
+         [] {
+        using game_pad::PausePress;
+        const float dt=1.f/90;
+        // `seconds` of updates: whether Start went out in any of them.
+        const auto run=[&](PausePress& p,float seconds,bool allowed,bool left,bool right){
+            bool start=false;
+            for(float t=0;t<seconds-1e-4f;t+=dt)start|=p.update(dt,allowed,left,right);
+            return start;
+        };
+        PausePress p;
+        // Under the hold nothing; at pauseHoldSeconds Start, for a tenth of a second, once.
+        check(!run(p,game_pad::pauseHoldSeconds-.05f,true,true,true),"Start before the hold");
+        check(run(p,.2f,true,true,true) && p.pauses()==1 && p.spent(),"the hold was no Start");
+        check(!run(p,1.f,true,true,true) && p.pauses()==1,"a hold held on paused again");
+        // Spent until both sticks are let go: one let go is not enough.
+        check(!run(p,.1f,true,true,false) && p.spent(),"one stick let go ended the hold");
+        check(!run(p,dt,true,false,false) && !p.spent(),"both let go did not end it");
+        check(run(p,game_pad::pauseHoldSeconds+.1f,true,true,true) && p.pauses()==2,"the next hold was no Start");
+        run(p,dt,true,false,false);
+        // A click of both (the pad layer's), one stick held (slow motion, the pull): no Start.
+        check(!run(p,.3f,true,true,true) && !run(p,dt,true,false,false),"a click of both paused");
+        check(!run(p,2.f,true,true,false) && !run(p,2.f,true,false,true),"one stick held paused");
+        // With the controllers driving nothing, nothing; a chord held through that must be let go first.
+        PausePress away;
+        check(!run(away,.2f,false,true,true) && !run(away,1.f,true,true,true),"a chord held into play paused");
+        run(away,dt,true,false,false);
+        check(run(away,game_pad::pauseHoldSeconds+.1f,true,true,true),"after letting go, a hold was no Start");
     });
     test("the interact button sends what the game asks for, and keeps it for the press", [] {
         using game_pad::ContextPress;
@@ -5961,12 +6539,111 @@ int main() {
         check(hold(screen, 0, -1) == Way::none, "a stick held into play healed");
         hold(screen, 0, 0, 1);
         check(hold(screen, 0, -1) == Way::down, "a new push after the screen did not heal");
+        // A push under way keeps through a moment out of play (a long frame) and goes on; a longer one spends it.
+        StickPush blip;
+        hold(blip, 0, -1, 8);
+        check(hold(blip, 0, -1, 10, false) == Way::none, "a heal went out out of play");
+        check(hold(blip, 0, -1, 10) == Way::down, "a moment out of play spent the heal");
+        hold(blip, 0, 0, 1);
+        hold(blip, 0, -1, 8);
+        check(hold(blip, 0, -1, 40, false) == Way::none && hold(blip, 0, -1) == Way::none,
+              "a push held through a long time out of play healed");
         // Bad readings and bad timing push nothing.
         StickPush broken;
         const float bad = std::numeric_limits<float>::quiet_NaN();
         check(hold(broken, bad, -1) == Way::none && hold(broken, 0, bad) == Way::none, "a bad stick reading pushed");
         for (int i = 0; i < 30; ++i)
             check(broken.update(bad, true, 0, -1) == Way::none, "a bad frame time pushed");
+    });
+    test("a zip held into the game's aim mode keeps its LT down alone and zips again as it is let go", [] {
+        using game_pad::ZipPress;
+        const float dt = .011f;
+        // Frames of the stick held up or not, the game's time slow or not; the keys of the last.
+        const auto run = [&](ZipPress& z, bool up, bool slow, int frames, bool play = true) {
+            ZipPress::Keys keys;
+            for (int i = 0; i < frames; ++i)
+                keys = z.update(dt, up, play, slow);
+            return keys;
+        };
+        // Frames of LT + RT, and of LT alone, while the stick is let go for `frames`.
+        const auto letGo = [&](ZipPress& z, int frames, int& zip, int& aim) {
+            zip = aim = 0;
+            for (int i = 0; i < frames; ++i) {
+                const auto keys = z.update(dt, false, true, true);
+                zip += keys.zip;
+                aim += keys.aim && !keys.zip;
+            }
+        };
+        // A push the game zips from at once (its time never slows): LT + RT for as long as it is held,
+        // nothing after.
+        ZipPress quick;
+        auto keys = run(quick, true, false, 90);
+        check(keys.zip && !keys.aim, "a held zip let its triggers go");
+        keys = run(quick, false, false, 30);
+        check(!keys.zip && !keys.aim && quick.releases() == 0 && quick.aims() == 0,
+              "letting go of a zip held in normal time zipped again");
+        // The game slows its time (its aim mode): LT + RT stay down pressSeconds from the push, then LT
+        // alone.
+        ZipPress aimed;
+        keys = run(aimed, true, true, 5);
+        check(keys.zip && !keys.aim, "the zip came up before the game had it pressSeconds");
+        keys = run(aimed, true, true, 40);
+        check(!keys.zip && keys.aim && aimed.aims() == 1, "the aim mode did not keep LT down alone");
+        // The game's time back to normal (its slow motion lasts 3 s at most) keeps the aim.
+        keys = run(aimed, true, false, 300);
+        check(!keys.zip && keys.aim, "the aim ended with the game's slow motion");
+        // Let go: LT + RT once more, for pressSeconds; then nothing.
+        int zip{}, aim{};
+        letGo(aimed, 90, zip, aim);
+        check(aimed.releases() == 1 && zip * dt >= ZipPress::pressSeconds - dt &&
+                  zip * dt <= ZipPress::pressSeconds + 2 * dt && aim == 0,
+              "letting go of the aim did not zip once");
+        // RT up only a moment as the stick is let go: the zip waits until it has been up gapSeconds, LT down.
+        ZipPress hurried;
+        keys = run(hurried, true, true, 1);
+        while (!keys.aim)
+            keys = hurried.update(dt, true, true, true);
+        letGo(hurried, 90, zip, aim);
+        check(hurried.releases() == 1 && zip > 0 && aim >= static_cast<int>(ZipPress::gapSeconds / dt) - 1,
+              "the zip let go of went out without RT up first");
+        // A hold let go before the game's time slowed is the zip it was.
+        ZipPress early;
+        run(early, true, false, 20);
+        run(early, false, true, 30);
+        check(early.releases() == 0 && early.aims() == 0,
+              "a zip let go in normal time aimed or zipped again");
+        // Out of play nothing goes out. An aim keeps through a moment of it; a longer time drops it, and
+        // letting go then sends nothing.
+        ZipPress blip;
+        run(blip, true, true, 40);
+        keys = run(blip, true, true, 5, false);
+        check(!keys.zip && !keys.aim, "keys went out out of play");
+        keys = run(blip, true, true, 1);
+        check(keys.aim && !keys.zip, "a moment out of play dropped the aim");
+        run(blip, true, true, 40, false);
+        letGo(blip, 60, zip, aim);
+        check(zip == 0 && blip.releases() == 0, "an aim dropped out of play zipped as the stick was let go");
+        // A press let go of goes no further once play ends.
+        ZipPress menu;
+        run(menu, true, true, 40);
+        menu.update(dt, false, true, true);
+        keys = run(menu, false, true, 3, false);
+        check(!keys.zip && run(menu, false, true, 30).zip == false, "a zip let go of went on into a menu");
+        // Bad frame times count no time: the zip never gives way to the aim.
+        ZipPress broken;
+        for (int i = 0; i < 60; ++i)
+            keys = broken.update(std::numeric_limits<float>::quiet_NaN(), true, true, true);
+        check(keys.zip && !keys.aim, "a bad frame time aimed");
+        // The aim is the game's LT alone; the zip its LT + RT.
+        game_pad::Walk walk;
+        walk.aim = true;
+        const auto alone = game_pad::fromControllers(XrFrame{}, game_pad::Mapping::gameplay, walk);
+        check(alone.leftTrigger == 255 && alone.rightTrigger == 0 && alone.buttons == 0,
+              "the aim is not LT alone");
+        walk.aim = false;
+        walk.zip = true;
+        const auto both = game_pad::fromControllers(XrFrame{}, game_pad::Mapping::gameplay, walk);
+        check(both.leftTrigger == 255 && both.rightTrigger == 255, "the zip is not LT + RT");
     });
     test("OpenXR Toolkit is switched off by the variable its own manifest names; other layers stay on", [] {
         using namespace xr_layers;
@@ -7415,6 +8092,10 @@ int main() {
                             const Vec3 tip=b.at(pose,fingers[i][4]),knuckle=b.at(pose,fingers[i][1]);
                             check(dot(tip-knuckle,palm)>.01f&&dot(tip-knuckle,along)<-.01f,"a fingertip is not in the fist");
                             if(i)check(dot(tip-b.at(pose,fingers[i-1][4]),across)>.005f,"the fingertips crossed");
+                            // Gathered: the tips no further apart than their knuckles, where the rest pose's spread
+                            // fanned them 1.8 times as far (October 18).
+                            if(i)check(length(tip-b.at(pose,fingers[i-1][4]))<
+                                           1.3f*length(knuckle-b.at(pose,fingers[i-1][1])),"the fist's fingers fan out");
                         }
                     }
                 }
@@ -7533,6 +8214,18 @@ int main() {
                     for(const size_t f:{size_t{1},size_t{2}})
                         check(dot(b.at(pose,fingers[f][4])-b.at(pose,fingers[f][1]),palm)>.01f&&
                               dot(b.at(pose,fingers[f][4])-b.at(pose,fingers[f][1]),along)<0,"a middle finger is not in the palm");
+                    // On the web shooter's button: as deep in the palm as a fist's tips, and side by side.
+                    {
+                        body::State fs;
+                        const auto made=solved(b,heroHandsOut(1),fs,c);
+                        for(const size_t f:{size_t{1},size_t{2}}){
+                            const float press=dot(b.at(pose,fingers[f][4])-b.at(pose,fingers[f][1]),palm);
+                            const float fistDepth=dot(b.at(made,fingers[f][4])-b.at(made,fingers[f][1]),heroPalm(b,made,side));
+                            check(press>.8f*fistDepth,"a pressing finger stops short of the palm");
+                        }
+                        check(length(b.at(pose,fingers[2][4])-b.at(pose,fingers[1][4]))<
+                                  1.3f*length(b.at(pose,fingers[2][1])-b.at(pose,fingers[1][1])),"the pressing fingers fan out");
+                    }
                     for(const size_t f:{size_t{0},size_t{3}})
                         check(dot(normalized(b.at(pose,fingers[f][4])-b.at(pose,fingers[f][1])),along)>.8f,"an outer finger is not out");
                     // The thumb straight, out to its own side in the palm's plane.
@@ -8534,14 +9227,14 @@ int main() {
         Shooter s;
         const Pose hand{{0, 1.5f, 0}, {}};
         auto shot = s.aim(1, hand, {}, world);
-        near(shot.origin.z, -.08f);
+        near(shot.origin.z, -ShooterConfig{}.muzzle);
         check(!shot.target && shot.surface && shot.hand == 1, "no thug: the wall");
         near(shot.aimPoint.z, -30.4f);
         near(shot.aimPoint.y, 1.5f);
         const float up = 1.5707964f;
         shot = s.aim(1, {{0, 1.5f, 0}, {std::sin(up / 2), 0, 0, std::cos(up / 2)}}, {}, world);
         check(!shot.surface && !shot.target, "the sky is open air");
-        near(shot.aimPoint.y, 1.5f + .08f + 60, .01f);
+        near(shot.aimPoint.y, 1.5f + ShooterConfig{}.muzzle + 60, .01f);
         // A thug 2.9 degrees off the line, one 14 degrees off, one nearly on it but behind the wall, one
         // behind the hand and one beyond the assist's range.
         const ShooterTarget near1{11, {1, 1.5f, -20}}, wide{12, {5, 1.5f, -20}}, walled{13, {-.5f, 1.5f, -40}},
@@ -9677,6 +10370,33 @@ int main() {
         // A civilian is up, to be hit by a fist that meets him, and nobody to fight.
         thug.traits = game_targets::civilian;
         check(game_targets::up(base, thug) && !game_targets::fighting(base, thug), "a civilian was someone to fight");
+        // Something else moves him: up, but not free to fight - a thug in a car's seat, one a cinematic plays,
+        // a hurt officer in another's synced animation. Each state by itself and by what the game derives from it.
+        thug.traits = game_targets::thug | game_targets::webbable;
+        thug.machine = reinterpret_cast<uint64_t>(machine.data());
+        thug.health = reinterpret_cast<uint64_t>(health.data());
+        put(health, 0x88, 70.f);
+        const std::unique_ptr<Component> seated(new BotStateAttachToActor), scene(new BotStatePlayCinematicGame),
+            nothing(new BotStateNull), guest(new BotStatePlaySyncedAnimGuestGame), carried(new BotStateCarried),
+            slotted(new BotStateSlottedInteract), frozen(new BotStateFrozen),
+            yanked(new BotStateRequestTakedownYank), host(new BotStatePlaySyncedAnimHost),
+            flung(new BotStateFlung);
+        for (const auto* moved : {seated.get(), scene.get(), nothing.get(), guest.get(), carried.get(), slotted.get(),
+                                  frozen.get(), yanked.get()}) {
+            state(moved);
+            check(game_targets::up(base, thug) && game_targets::held(base, thug) &&
+                      !game_targets::fighting(base, thug),
+                  "a thug something else moves was free to fight");
+        }
+        // His own AI moving him: hosting a synced animation (a mugger), flung by a web, aiming.
+        for (const auto* own : {host.get(), flung.get(), aiming.get()}) {
+            state(own);
+            check(!game_targets::held(base, thug) && game_targets::fighting(base, thug),
+                  "a thug his own AI moves was held");
+        }
+        // Waiting for his wave, with no state: neither held nor in the fight.
+        state(nullptr);
+        check(!game_targets::held(base, thug) && !game_targets::fighting(base, thug), "a waiting thug was held");
         // A device (a gun turret) stands while it has hit points; one without a health component counts as
         // standing. It is no bot: nobody to hit or to fight, whatever its hit points.
         game_targets::Candidate gun;

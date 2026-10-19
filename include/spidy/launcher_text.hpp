@@ -539,9 +539,12 @@ inline bool calibrated(const SessionOptions& options) {
 }
 
 // Arguments after the script for tools/run_game_vr.py, for an untimed session
-// that starts the game itself (or uses the one already running).
+// that starts the game itself (or uses the one already running). closeGame:
+// the player agreed to close a running game that already holds Spidy
+// (kCloseGameExit), and the session does that first.
 inline std::vector<std::wstring> sessionArguments(const SessionOptions& options, std::wstring_view report,
-                                                  std::wstring_view runtime, std::wstring_view stopEvent) {
+                                                  std::wstring_view runtime, std::wstring_view stopEvent,
+                                                  bool closeGame = false) {
     std::vector<std::wstring> args{L"--auto-launch", L"--seconds", L"0", L"--swing-speed",
                                    std::to_wstring(std::clamp(options.swingSpeed, 1, 65)), L"--output",
                                    std::wstring(report)};
@@ -601,6 +604,8 @@ inline std::vector<std::wstring> sessionArguments(const SessionOptions& options,
         args.emplace_back(L"--stop-event");
         args.emplace_back(stopEvent);
     }
+    if (closeGame)
+        args.emplace_back(L"--close-game");
     return args;
 }
 
@@ -695,6 +700,12 @@ inline LineKind classifyLine(std::string_view line) {
 // the session does not (NEEDS_ADMINISTRATOR_EXIT in tools/vr_launcher.py): the launcher offers to start
 // again as administrator.
 inline constexpr unsigned long kNeedsAdministratorExit = 5;
+
+// The exit code of a session that found the running game already holding Spidy: VR ran in it, or another
+// build's modules are in it (it was open while Spidy was updated, or another Spidy folder started VR in
+// it). A game process takes Spidy's modules once, so the launcher offers to close the game and start VR
+// again (CLOSE_GAME_EXIT in tools/vr_launcher.py; the session then gets --close-game).
+inline constexpr unsigned long kCloseGameExit = 6;
 
 // "14.44.35211.0" style versions, compared field by field.
 inline std::array<int, 4> parseVersion(std::string_view text) {
