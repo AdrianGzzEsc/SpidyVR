@@ -1882,7 +1882,7 @@ int main() {
             near(dot(out.headPose.position - wall.anchor, wall.normal), .3f, .01f);
         }
     });
-    test("wall running: looking around cannot reverse a held stick, including sideways and upside down", [] {
+    test("wall running: head yaw steers while pitch cannot reverse, including sideways and upside down", [] {
         for (float angle : {0.f, 1.5707963f, 3.14159265f}) {
             GameTrackingRig rig;
             rig.handClimb(true);
@@ -1902,14 +1902,16 @@ int main() {
             f.hands[0].stickY = 1;
             holdFor(rig, f, feet, wall, 1.f / 90);
             for (float pitch : {-.2f, -.4f, -.42f, -.7f, -1.4f, 0.f, .42f, 1.4f}) {
-                for (float yaw : {0.f, -.8f, .8f}) {
+                for (float yaw : {0.f, -.6f, .6f}) {
                     f.head.orientation = Quat::yaw(yaw) * Quat::around({1, 0, 0}, pitch);
                     const auto out = holdFor(rig, f, feet, wall, .03f);
-                    near(dot(out.swing.move, ahead), 1, .005f);
+                    const Vec3 expected = Quat::around(wall.normal, yaw).rotate(ahead);
+                    near(dot(out.swing.move, expected), 1, .005f);
                     near(dot(out.swing.move, wall.normal), 0, .005f);
                 }
             }
             f.hands[0].stickY = -1;
+            f.head.orientation = {};
             auto out = holdFor(rig, f, feet, wall, .1f);
             near(dot(out.swing.move, ahead), -1, .005f);
             f.hands[0].stickY = 0;
@@ -1918,7 +1920,7 @@ int main() {
             near(dot(out.swing.move, side), 1, .005f);
         }
     });
-    test("fixed wall-run axes follow corners and explicit turns while head pitch stays independent", [] {
+    test("wall-run yaw steering follows corners and explicit turns while head pitch stays independent", [] {
         GameTrackingRig rig;
         rig.handClimb(true);
         auto f = trackedFrame();
@@ -1932,13 +1934,36 @@ int main() {
         f.head.orientation = Quat::yaw(.7f) * Quat::around({1, 0, 0}, -.8f);
         wall = {{0, 0, -1}, {4.1f, 10, -20}, 0, false};
         out = holdFor(rig, f, feet, wall, .7f);
-        near(dot(out.swing.move, {1, 0, 0}), 1, .005f);
+        near(dot(out.swing.move, Quat::around(wall.normal, .7f).rotate({1, 0, 0})), 1, .005f);
         f.hands[1].stickX = 1;
         out = holdFor(rig, f, feet, wall, 1.f / 90);
-        const Vec3 turned = Quat::around(wall.normal, -.5235988f).rotate({1, 0, 0});
+        const Vec3 turned = Quat::around(wall.normal, .7f - .5235988f).rotate({1, 0, 0});
         near(dot(out.swing.move, turned), 1, .005f);
         out = holdFor(rig, f, feet, wall, .1f);
         near(dot(out.swing.move, turned), 1, .005f);
+    });
+    test("wall-run head yaw stays continuous through full turns and vertical head pitches", [] {
+        GameTrackingRig rig;
+        rig.handClimb(true);
+        auto f = trackedFrame();
+        for (auto& hand : f.hands) hand.squeeze = 0;
+        const Vec3 feet{0, 9, -4.1f};
+        const SurfaceHold wall{{0, 0, 1}, {0, 10, -5}, 0, false};
+        holdFor(rig, f, feet, wall, .7f);
+        f.hands[0].stickY = 1;
+        holdFor(rig, f, feet, wall, .2f);
+        for (int i = 0; i <= 180; ++i) {
+            const float yaw = static_cast<float>(i) * .04f;
+            f.head.orientation = Quat::yaw(yaw) * Quat::around({1, 0, 0}, -.65f);
+            const auto out = holdFor(rig, f, feet, wall, 1.f / 90);
+            near(dot(out.swing.move, Quat::around(wall.normal, yaw).rotate({0, 1, 0})), 1, .005f);
+        }
+        const float yaw = 7.2f;
+        for (float pitch : {-.8f, -1.4f, -1.56f, -1.7f, -2.f, -1.6f, -.42f, 0.f, 1.4f, 1.6f, 2.f, 0.f}) {
+            f.head.orientation = Quat::yaw(yaw) * Quat::around({1, 0, 0}, pitch);
+            const auto out = holdFor(rig, f, feet, wall, .03f);
+            near(dot(out.swing.move, Quat::around(wall.normal, yaw).rotate({0, 1, 0})), 1, .005f);
+        }
     });
     test("wall-running camera faces diagonal travel and preserves physical head movement", [] {
         GameTrackingRig rig;

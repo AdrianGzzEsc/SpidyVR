@@ -1,26 +1,29 @@
-# Spidy Wall Climb Preview 9 — custom build
+# Spidy Wall Climb Preview 10 — custom build
 
 This modified build of Ilya Mezerowsky's Spidy VR mod is based on upstream
 0.4.0, commit c747c184dd97acaddf0db47f1a32f30cebe0d974, merged with the
 working Preview 7 changes saved at e0fcb4c. Keep the whole
 extracted preview folder together.
 
-## Fixed in Preview 9
+## Head steering in Preview 10
 
-In Preview 8, wall running recalculated forward from the current headset
-orientation. A downward tilt could cross the camera-direction threshold
-and select the opposite direction along the wall, even with the stick held
-forward. This was a movement bug.
+Wall running follows left/right head turns again. While holding the stick
+forward, look left or right to steer along the wall. Up/down head tilt does
+not steer or reverse movement, including while you are turning sideways.
+This works upright, sideways and upside down after the controller-roll gesture.
 
-The run now keeps the forward/right axes captured when it starts. Looking
-up, down or sideways moves the view naturally without reversing or steering
-the held stick. Moving the stick backward or sideways still does what you
-ask. Corners carry these axes onto the next wall, and deliberate turning
-controls can turn them. Release the stick and start again to capture a new
-starting heading from your current view.
+Preview 8 could reverse movement when downward head tilt crossed a direction
+threshold. Preview 9 prevented that by also locking out left/right head
+steering. Preview 10 restores that steering while keeping the pitch fix.
 
-The earlier camera transition, gesture-driven body roll, corner carry, and
-the merged Spidy 0.4.0 features are retained.
+Near a straight-up/down head pose, the last reliable horizontal heading is
+kept until it can be measured again. Passing that vertical pitch does not
+count as a 180-degree head turn. Ordinary continuous left/right turns can
+still steer through a full turn.
+
+Joystick forward/back/strafe commands, deliberate turning controls, corner
+transport, the earlier wall-running camera transition, gesture-driven body
+roll, and all merged Spidy 0.4.0 features are retained.
 
 ## What is merged
 
@@ -37,7 +40,7 @@ frame remain removed.
 ## Start
 
 1. Close the game and any other Spidy session.
-2. Open **Spidy Wall Climb Preview 9.exe**, connect your headset, and start VR.
+2. Open **Spidy Wall Climb Preview 10.exe**, connect your headset, and start VR.
 3. Enable **Settings → SPIDY VR → EXPERIMENTAL → HAND WALL CLIMBING**.
    Enable it again after restarting VR; the switch lasts for the session.
 4. **WALL CAMERA DISTANCE** sets the close climbing view to 10, 15, 20, 25,
@@ -80,8 +83,8 @@ per second at 45 degrees. Return toward neutral to stop, or release either
 grip to lock the angle. Sideways and upside-down hand pulls still work.
 
 Push the left stick to wall run. The starting view and joystick direction
-choose the camera's heading once, when the run begins. Those movement axes
-stay fixed for the held stick regardless of head pitch or yaw. The earlier
+choose the camera's heading once, when the run begins. The running axes
+follow left/right head turns while ignoring up/down tilt. The earlier
 wall-as-floor camera transition is restored: its original up-to-wall turn,
 speed and placement calculation are used again. The extra camera steering
 introduced in Preview 6 has been removed. Changing stick direction during
@@ -126,7 +129,7 @@ No new original-game climbing animation cycle is integrated by this update.
 
 ## Validation
 
-Windows Release build: passed. Native core: **392/392** tests. Launcher:
+Windows Release build: passed. Native core: **393/393** tests. Launcher:
 **24/24** checks. Python protocols: **137/137** tests across six suites.
 The packaged runtime imports, source whitespace, and module/source copies
 are also checked during packaging.
@@ -141,10 +144,11 @@ merge tests cover independent phone/arcade/climb settings, climbing in both
 web styles and while changing styles, and head protection during rolled climbs.
 Upstream phone, music, sense/counter and rendering tests are retained.
 New regression coverage reproduces Preview 8's backward movement and verifies
-head-pitch/yaw independence upright, sideways and upside down, reverse/strafe
-stick commands, corner transport and deliberate turning controls.
+left/right yaw steering with pitch independence upright, sideways and upside
+down, reverse/strafe stick commands, corner transport, deliberate turns,
+continuous full head turns and pitches through vertical.
 
-**Preview 9 has not yet been played in the game or tested in a headset.**
+**Preview 10 has not yet been played in the game or tested in a headset.**
 Earlier previews were played by the user. Synthetic corner tests do not
 establish that every game building has suitable collision geometry.
 

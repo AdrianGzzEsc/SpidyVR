@@ -45,6 +45,20 @@ Quat unit(Quat q) {
     return n > 1e-6f && std::isfinite(n) ? Quat{q.x / n, q.y / n, q.z / n, q.w / n} : Quat{};
 }
 constexpr float pi = 3.14159265f;
+float wallRunHeadYaw(Quat head, float previous) {
+    const Vec3 forward = head.rotate({0, 0, -1});
+    // At vertical there is no reliable horizontal look direction. Keep the
+    // last heading; as pitch passes vertical, choose the continuous yaw
+    // rather than mistaking the flipped projection for a half turn.
+    if (std::hypot(forward.x, forward.z) < .15f)
+        return previous;
+    float change = std::remainder(std::atan2(-forward.x, -forward.z) - previous, 2 * pi);
+    if (change > pi / 2)
+        change -= pi;
+    else if (change < -pi / 2)
+        change += pi;
+    return previous + change;
+}
 /// The left stick as a flip's turn in the tracking space: the head goes the
 // way the stick points (from where the headset looks) and down. Its length is
 // how far the stick is tilted: 0 within the dead zone, 1 from stickFull.
@@ -401,6 +415,7 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
         const Vec3 along = look - held * dot(look, held);
         const Vec3 ahead = normalized(length(along) > .4f ? along : top - held * dot(top, held));
         runAhead_ = ahead;
+        runHeadYaw_ = wallRunHeadYaw(f.head.orientation, 0);
         const Vec3 side = normalized(cross(ahead, held));
         const Vec3 travel = normalized(ahead * f.hands[0].stickY + side * f.hands[0].stickX);
         const Quat floor = arc(surfaceTurn_.rotate({0, 1, 0}), held) * surfaceTurn_;
@@ -413,13 +428,13 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
         runYaw_ = rig_.yaw;
     }
     if (wallRun) {
-        // The held stick owns these axes. Head pitch/yaw only changes what
-        // the player sees; it cannot switch forward from crown to gaze.
-        // Corners transport the direction, and deliberate turning controls
-        // turn it about the wall's normal just as they turn the running view.
+        // Head yaw steers the held stick along the wall; pitch cannot switch
+        // its forward direction. Keep corner transport and explicit turns.
+        const float headYaw = wallRunHeadYaw(f.head.orientation, runHeadYaw_);
         runAhead_ = arc(runNormal_, held).rotate(runAhead_);
-        runAhead_ = Quat::around(held, rig_.yaw - runYaw_).rotate(runAhead_);
+        runAhead_ = Quat::around(held, rig_.yaw - runYaw_ + headYaw - runHeadYaw_).rotate(runAhead_);
         runAhead_ = normalized(runAhead_ - held * dot(runAhead_, held));
+        runHeadYaw_ = headYaw;
         runNormal_ = held;
         runYaw_ = rig_.yaw;
         wallRoll_.reset();
