@@ -3,7 +3,169 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 18, evening): Spider-Sense, and Arkham Shadow's
+**Latest build (October 19, third): full buildings half as far again.** You,
+after the second build in the headset: "can we increase the distance a
+bit?"
+
+- **The distance.** A far building draws its full model within 145 m of the
+  view that asks (the impostor queries' result `+88`, from `7a89170`, which
+  region changes rewrite; the game's lens of 65 degrees gets exactly that, a
+  narrower one more). The eyes now ask with 150% of it, 218 m
+  (`impostorQueries`, a hook on `16faf10` that raises the result for both
+  eyes while the left eye stands in; the game's own setting is left alone).
+  `--building-reach` (50-400%, default 150) sets it for a session, through
+  the module's new `SpidyImpostorReach`; the report's `eyes` has
+  `building_reach`.
+- **Measured, in the game without a headset** (your save, the eyes 40 m up,
+  `tools/probe_streaming.py --modes rest@100,rest@150,...`): fine detail 2.74
+  at 100%, 2.89 at 150%, 2.75 at 100% again; a tower beside the view went
+  from its card's painted windows to its model's. 200% and 300% added
+  nothing more from that spot. Frames a second with 3072 x 3264 eyes
+  (`tools/probe_vr_load.py`, phases `vr_r100` to `vr_r200` in one game):
+  64.4 at 100% (two runs, 65.7 and 63.0), 64.7 at 150%, 63.7 at 200%;
+  turning 73.2, 73.1, 73.6. Render commands 2 to 5% more, video memory 20 MB.
+- **Checked:** 357 core tests, all six protocol suites, the graphics test.
+  The module checks the queries' entry, their 145 m first write and their
+  last write of the distance; where any of it differs, no eye stands in.
+
+**Earlier build (October 19, second): far buildings light up again.** You,
+after the first build in the headset: "nope, I feel like its the culling or
+lod of some shader (windows, fake cube scenes etc). I did notice that
+entering menu refreshes it", with two pictures of the same view: the
+buildings in the middle distance dark slabs in one, full of lit windows in
+the other; then "we had a similiar looking problem in the past where vr
+camera would be offset from the culling controlling camera".
+
+- **The cause.** Far buildings are impostors: cards that stand in for the
+  model. Which of them draw their full model, with the lit windows and the
+  rooms behind them, the game decides for one view only, its active view
+  (`189daa0`: the view at ViewContextManager `+f8`, the game's own camera):
+  `ImpostorHQModelRegJob` (`16fb630`, `16fb750`) applies that view's wanted
+  state for each impostor, from its visibility queries (`16faf10`), and the
+  impostor submit job (`16f8afa`) marks it too. Since 0.2.12 that view does
+  not render while you play in VR (`restGameView`), so it submitted nothing
+  and no far building drew in full. A menu renders it again, which lit them
+  until it went back to rest. The eyes run the same impostor code but are
+  never the active view. This is the culling camera you remembered: the
+  game's view sits on your head since October 5, and still did the culling,
+  but stopped doing this part of it.
+- **What changed.** While the game's view rests, the left eye stands in for
+  it at exactly those five checks (`isActiveView`, a hook on `189daa0` that
+  answers yes for the left eye only when called from those five places).
+  One view only: the registration applies a view's wanted states over the
+  last ones, and two views would undo each other's every frame. When the
+  game's view renders (menus, cutscenes, the flat screen, Ray-Traced
+  Reflections on) it decides again, as before.
+- **Shown, in the game without a headset** (your save, the eyes 40 m up,
+  `tools/probe_streaming.py`, each in a fresh game): the game's view resting
+  gave the eyes dark buildings (fine detail 1.81), rendering gave lit ones
+  (2.21), and resting again went dark within seconds. Rendering it without
+  its impostor work (flag 0x100 masked out of the game's views, `609d708`)
+  stayed dark (1.81): the impostor work is the whole difference. Taking away
+  its stale occlusion, or giving the eyes that flag (they have it: 0x37ff),
+  changed nothing. With this build, resting: 2.19, every frame stood in for
+  (`impostor_frames`); the picture matches yours after a menu.
+- **Not covered: the right eye's outer edge.** The left eye's view decides,
+  so buildings only the right eye sees (its outer 10 degrees) can stay dark
+  until you look toward them. Covering both needs the left eye's impostor
+  queries built from the lens over both eyes (`189fea0`, `189b820`), not
+  done.
+- **Seen elsewhere, not changed:** the same active-view-only rule hides two
+  more things in VR. Pedestrians ask "drawn in any view" (`18a1890`), which
+  reads only the game's views (possibly kinxy0.0's "people just randomly
+  spawn"), and animated models get their joints updated only from the
+  game's view (model job `+342`, `1781df0`). About 15 other callers of
+  `189daa0` (shadows, post-processing, decals) were not looked at.
+- **Protocol:** `SpidyAppearanceData` stays version 6; its last field is
+  `impostor_frames` now (unused before). Deploy the whole package.
+- **Checked:** 357 core tests, all six protocol suites (`impostor_frames`
+  decoded), the graphics test. The module checks `189daa0` and the five calls
+  to it before hooking; where they differ, no eye stands in.
+
+**Earlier build (October 19): the city at the flat game's distances.** You,
+about a #spidy-bugs topic: "review and try to fix this (some other topics
+mention it imo)". The topic, "Building textures load late while swinging
+(pop-in)": Keith (Valve Index, RTX 4090, Spidy 0.3.6, Render resolution
+200%, Upscaling 75%, Texture Quality Very High) sees the buildings' textures
+come in only once he is close, and "Flat game does not have the issue. I can
+see far out into the city". HaNToP (RTX 4090, Very High) sees the same and
+says 0.2.11 looked sharper and loaded at once. In "Recording problem",
+kinxy0.0 (0.3.6, Quest Link): "my view distance is bad", "textures people
+just randomly spawn". In Keith's clip a row of buildings across the street
+gets its windows in one frame, a fifth of a second apart, as he swings at it.
+
+- **The cause.** The game judges every distance a model is drawn by against
+  a number it takes from the view's lens (`189e4b0`: 0.6745 over the tangent
+  of half its width, 1 for a 68-degree 16:9 lens): which detail level a model
+  draws, how far away it is drawn at all (people, props) and up to where its
+  textures are asked for (16 times its size times the number), and many other
+  systems read it too. The game's own camera, 65 degrees wide, has 1.06; a
+  headset eye, 98 degrees (Quest 3 through Virtual Desktop), had 0.59. So in
+  VR all of that happened at about half the distance it happens on the
+  monitor. The game's Level of Detail setting multiplies in on top, in both.
+- **And since 0.2.12** the eyes render their scene smaller and upscale it
+  (Upscaling, 67% by default): the game sizes a view's texture requests by
+  the pixels it renders, so the eyes asked for two thirds of the detail the
+  headset shows, half at Performance. 0.2.11 had no upscaling.
+- **Not the cause:** the game's own view not being rendered in VR (since
+  0.2.12). Rendering it again changed nothing the texture streamer was asked
+  for: its lens covers both eyes, so it asks for less than they do.
+- **What changed.** Each eye now gets the game's 68-degree lens's distances:
+  1.71 times its own for that Quest 3 eye, never less than its own, at most
+  three times (`matchDistances`, view `+1cc8`, which only cutscenes set).
+  Each eye's texture requests are sized for its image, not for the smaller
+  scene it renders (`setupModels` on the model job setup `1796d20`: 1.49
+  times at 67%), as upscalers are meant to have it. The game's Level of
+  Detail and Texture Quality settings apply as before. The report's
+  `appearance` has `eye_detail` and `texture_request_raise`;
+  `-EyeLensDistances` (`--eye-lens-distances`) is the old way.
+- **Protocol:** `SpidyAppearanceData` version 6 (360 bytes), read by
+  `run_game_vr.py`. Deploy the whole package.
+- **Measured, in the game without a headset** (this PC's RTX 4080 Laptop GPU,
+  your save, the eyes 120 m over the city flying 300 m back and forth at 25
+  m/s for three minutes, `tools/probe_streaming.py`, a fresh game each):
+  - the module gave each eye 1.7055 in every frame and raised 412,468 model
+    jobs' texture requests 1.49 times; held still at that spot, the streamer
+    was asked for 28% more textures and 33% more materials;
+  - Texture Quality High: the game's texture memory rose from 2,252 to 2,317
+    MB of its 3,000 (your own sessions on this PC: 2,028 to 2,755 MB);
+  - Texture Quality Very High, which Keith and HaNToP play at: the budget
+    (3,874 MB) held 3,803 to 3,813 MB without, and was full with (3,869 to
+    3,871). A lens like the game's own camera (65 by 39 degrees, 1920 x 1080,
+    no upscaling) on the same flight filled it too (3,870 to 3,872): at Very
+    High the flat game runs its budget full over the city as well, and what
+    stays loaded is what is asked for most. Without the change the eyes never
+    asked for anything beyond about half the flat game's distance, so that
+    went first, and came back as you got close;
+  - frames a second: 2% fewer at street level (64.2 to 62.9 looking ahead,
+    69.0 to 67.8 turning, `tools/probe_vr_load.py` in one game, the eyes'
+    multiplier set from outside between phases). The flights gave 4% (High,
+    68.7 to 66.0 a minute on average) and 5% (Very High, 67.7 to 64.3), but
+    each pair ran one after the other on a laptop that slows as it warms
+    (every run lost 5 to 10% from its first minute to its third), so that is
+    the most it costs, not what it costs.
+- **Left as it is: the budget.** A headset sees more of the city at once than
+  the monitor, so a full budget is spread over more textures than in the flat
+  game. The budget is the game's own (`TextureAllocUltra` and the rest, the
+  global at `7a793c0`), an account the streamer evicts by (`19b50b0`, free =
+  budget - the texture heap's use, `19b2d90`), not memory set aside: raising
+  it in VR on cards with video memory to spare looks possible, and is not
+  done here.
+- **Not shown: the picture.** Captured at the same moments of two flights,
+  with and without, the eye images hold the same detail (0.999), at night and
+  at half resolution, and an eye held still shows every building's windows
+  either way. Whether windows and people now come in as far out as on the
+  monitor needs a headset; Keith's clip is the one to compare with.
+- **Checked:** 357 core tests (new: the lens's number for the game's camera,
+  a Quest 3 eye, a lens wider than 16:9 and one with flag 2; the multiplier's
+  1.71, its floor of 1 and its cap of 3; the request size of 67% and 100%),
+  all six protocol suites (`appearance` version 6 decoded, the old size
+  refused), the graphics test. The module checks the code it relies on
+  (`1796d20`, its reads of `+1cc8`, `+1cc4`, `+448` to `+424` and its stores
+  to `+2fc` and `+300`, `189e4b0`'s and its two constants and 16:9) and keeps
+  the eye lenses' own distances where any of it differs.
+
+**Earlier build (October 18, evening): Spider-Sense, and Arkham Shadow's
 counter.** You: "design a vr version of the alert/spidey senses for combat
 (make it arkham shadow style)". The October 11 combat left out exactly this:
 "the counter (Spidy cannot tell yet when an attack is coming)". Now it can.

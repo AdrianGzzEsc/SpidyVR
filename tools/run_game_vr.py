@@ -1190,10 +1190,10 @@ def shooter_snapshot(game, address):
 
 def appearance_snapshot(game, address):
     for _ in range(8):
-        raw = game.read(address, 328)
-        if len(raw) != 328:
+        raw = game.read(address, 360)
+        if len(raw) != 360:
             return None
-        if struct.unpack_from('<3I', raw) != (0x53415044, 5, 328):
+        if struct.unpack_from('<3I', raw) != (0x53415044, 6, 360):
             raise RuntimeError('Native appearance protocol mismatch')
         if struct.unpack_from('<Q', raw, 16)[0] & 1 or raw[16:24] != game.read(address+16, 8):
             continue
@@ -1217,6 +1217,8 @@ def appearance_snapshot(game, address):
         web_start_last, web_start_max = struct.unpack_from('<2f', raw, 280)
         gap_frames, gap_last, gap_max, gap_sum = struct.unpack_from('<Q2fd', raw, 288)
         active_lag_frames, active_lag_last, active_lag_max = struct.unpack_from('<Q2f', raw, 312)
+        eye_scale, eye_detail, detail_frames, request_jobs, request_raise, impostor_frames = \
+            struct.unpack_from('<2f2QfI', raw, 328)
         return dict(hidden_avatar=[left, right], srgb_overlay=[srgb_left, srgb_right], player_actor=hex(actor),
                     hero_state=HERO_STATES.get(state, state), hero_handle=hex(handle), hero_flags=hex(flags),
                     native_hidden_frames=hidden_frames, native_hides=hides, native_restores=restores,
@@ -1241,7 +1243,17 @@ def appearance_snapshot(game, address):
                     web_hand_gap_frames=gap_frames, web_hand_gap_last_m=gap_last, web_hand_gap_max_m=gap_max,
                     web_hand_gap_mean_m=gap_sum/gap_frames if gap_frames else 0.0,
                     active_view_lag_frames=active_lag_frames, active_view_lag_last_m=active_lag_last,
-                    active_view_lag_max_m=active_lag_max)
+                    active_view_lag_max_m=active_lag_max,
+                    # The engine's distance scale for the left eye's lens (1 for its 68-degree lens) and the
+                    # multiplier the eyes got for it; 0 frames = the eyes kept their lenses' own distances.
+                    eye_distance_scale=round(eye_scale, 4), eye_detail=round(eye_detail, 4),
+                    eye_detail_frames=detail_frames,
+                    # Eye model jobs whose texture requests were sized for the eye's image rather than its
+                    # rendered scene, and how many times stronger the last one asked (1 / upscale).
+                    texture_request_jobs=request_jobs, texture_request_raise=round(request_raise, 4),
+                    # Frames the left eye chose which far buildings draw their full models (lit windows),
+                    # standing in for the game's own view while it does not render; 0 = the game's view did.
+                    impostor_frames=impostor_frames)
     return None
 
 
@@ -1657,6 +1669,15 @@ def main():
                    help="Each eye makes its own set of the sun's shadow maps, as builds before October 11 did; "
                         'without it both use one set, fitted to a lens covering both (fewer render commands, '
                         'shadow edges a little softer)')
+    p.add_argument('--building-reach', type=int, default=150,
+                   help="How far away the far buildings draw their full models (lit windows, the rooms behind them) "
+                        "in percent of the game's own distance, 145 m (50-400; default 150). More costs a little "
+                        'frame rate and video memory')
+    p.add_argument('--eye-lens-distances', action='store_true',
+                   help="The eyes keep the distances their own wide lenses give the game, as builds before "
+                        'October 19 did: models get their detail, people and props appear and textures sharpen '
+                        "at about half the distance the flat game has them, and an upscaled eye's textures are "
+                        'asked for at its smaller rendered size (about 2 percent more frames)')
     p.add_argument('--auto-launch',action='store_true')
     p.add_argument('--close-game', action='store_true',
                    help='A running game that already holds Spidy (VR ran in it, or another build is in it) is '
@@ -1747,6 +1768,8 @@ def main():
         p.error('Use a render scale of %d..%d%%, and not with --size' % RENDER_SCALES)
     if not UPSCALES[0] <= a.upscale <= UPSCALES[1]:
         p.error('Use an upscale of %d..%d%%' % UPSCALES)
+    if not 50 <= a.building_reach <= 400:
+        p.error('Use a building reach of 50..400% of the game\'s distance')
     if not MONITOR_RATES[0] <= a.monitor_rate <= MONITOR_RATES[1]:
         p.error('Use a monitor rate of %d..%d a second (0: every frame)' % MONITOR_RATES)
     if not 0 <= a.snap_turn <= 90 or not 0 <= a.smooth_turn <= 360 or not 0 <= a.haptics <= 100:
@@ -1927,7 +1950,7 @@ def session(a, startup):
                                            'SpidyGpuData', 'SpidyXrTimingData', 'SpidyAppearanceData',
                                            'SpidyStereoFrames', 'SpidyXrSnapshot', 'SpidyStereoData',
                                            'SpidyBodyData', 'SpidySlowMotionData', 'SpidyHudData',
-                                           'SpidySteamData', 'SpidyPromptData'))
+                                           'SpidySteamData', 'SpidyPromptData', 'SpidyImpostorReach'))
         saved = vr_display.Registry().read(('ScreenSpaceReflections', 'RTReflections'))
         reflections, reflections_line = eye_reflections(saved.get('ScreenSpaceReflections'), a.no_eye_reflections,
                                                         saved.get('RTReflections', 0))
@@ -1945,7 +1968,7 @@ def session(a, startup):
                              (16384 if a.no_wall_run else 0) | (0x8000 if a.no_eye_antialiasing else 0) |
                              (0x10000 if a.game_monitor_view or game_view else 0) |
                              (0x20000 if a.own_shadows else 0) | (0 if reflections else 0x40000) |
-                             (0x100000 if a.no_prompt_help else 0)) + \
+                             (0x100000 if a.no_prompt_help else 0) | (0x80000 if a.eye_lens_distances else 0)) + \
             runtime_path(manifest) + struct.pack('<14I', a.snap_turn, a.haptics, a.screen_size, a.smooth_turn,
                                                  a.render_scale, a.weight, a.eye_height, a.arm_length, a.hud,
                                                  a.flip_speed, a.upscale, a.monitor_rate, a.screen_depth, 0)
@@ -1954,6 +1977,9 @@ def session(a, startup):
         if code:
             raise GameNeedsRestart(VR_RAN) if code == 1000 else RuntimeError(f'Game XR start: {code}')
         xr_active = True
+        # The far buildings' full models, while the left eye chooses them for the game's resting view.
+        if call_remote(process, xr['SpidyImpostorReach'], a.building_reach):
+            print(f'WARNING: the building reach {a.building_reach}% was refused; the eyes keep 150%.', flush=True)
         started = time.monotonic()
         samples = deque(maxlen=12000)
         ray_samples = deque(maxlen=12000)
@@ -1999,12 +2025,15 @@ def session(a, startup):
 
         # How the eyes are rendered: upscaled from `upscale` percent of their size per side and anti-aliased
         # (or neither), whether the game renders a view of its own for the monitor as well, how often the
-        # monitor gets the left eye otherwise, and whether both eyes use one set of sun shadow maps.
+        # monitor gets the left eye otherwise, whether both eyes use one set of sun shadow maps, and whether
+        # they judge distances as the game's 68-degree lens does (appearance's eye_detail says by how much).
         eye_options = dict(upscale=100 if a.no_eye_antialiasing else a.upscale,
                            antialiased=not a.no_eye_antialiasing,
                            game_monitor_view=bool(a.game_monitor_view or a.stock_monitor_view or game_view),
                            monitor_rate=a.monitor_rate, shared_shadows=not a.own_shadows,
-                           reflections=reflections, ray_traced=game_view, render_size=None)
+                           reflections=reflections, ray_traced=game_view, game_distances=not a.eye_lens_distances,
+                           building_reach=a.building_reach,
+                           render_size=None)
 
         def hand_over_settings(sample):
             """Tell the launcher what the VR settings were left at, for the next session."""

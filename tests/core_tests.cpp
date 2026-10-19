@@ -548,6 +548,43 @@ int main() {
         m[0]=1;m[12]=std::numeric_limits<float>::quiet_NaN();
         check(!native_view::validPose(m),"accepted NaN");
     });
+    test("native distance scale is the engine's for the game camera and a headset eye", [] {
+        // Read from the game on October 19: its camera (65 x 39 degrees, 16:9) and a
+        // Quest 3 eye's asymmetric lens (98 x 96 degrees).
+        native_view::Descriptor game{},eye{};
+        game.values[0x410/4]=1.1345f;game.values[0x414/4]=.6882f;game.values[0x41c/4]=16.f/9;
+        eye.values[0x410/4]=1.7104f;eye.values[0x414/4]=1.6755f;eye.values[0x41c/4]=1.0544f;
+        near(native_view::distanceScale(game),1.0588f);
+        near(native_view::distanceScale(eye),.5863f);
+        // Wider than 16:9 it is judged across the height: the same height, the same scale.
+        auto wide=game;wide.values[0x41c/4]=2.37f;wide.values[0x410/4]=1.4f;
+        near(native_view::distanceScale(wide),1.0588f);
+        // Flag 2 at +438: the bare numerator.
+        auto bare=eye;const uint32_t flags=2;std::memcpy(&bare.values[0x438/4],&flags,4);
+        near(native_view::distanceScale(bare),.6745f);
+    });
+    test("eye detail gives a wide eye the engine's 68-degree distances and never less than its own", [] {
+        native_view::Descriptor eye{};
+        eye.values[0x410/4]=1.7104f;eye.values[0x41c/4]=1.0544f;
+        near(native_view::eyeDetail(eye),1.7056f);
+        near(native_view::distanceScale(eye)*native_view::eyeDetail(eye),1);
+        auto narrow=eye;narrow.values[0x410/4]=1.0472f; // 60 degrees: already further than 68 gives
+        near(native_view::eyeDetail(narrow),1);
+        auto widest=eye;widest.values[0x410/4]=2.6f; // 149 degrees: held at three times its own
+        near(native_view::eyeDetail(widest),3);
+        auto broken=eye;broken.values[0x410/4]=std::numeric_limits<float>::quiet_NaN();
+        near(native_view::eyeDetail(broken),1);
+        broken.values[0x410/4]=0;
+        near(native_view::eyeDetail(broken),1);
+    });
+    test("texture requests are sized as the engine sizes them for an image behind a lens", [] {
+        // An eye's 1352 x 1504 scene (67%) of its 2016 x 2240 image behind half tangents
+        // 1.171 and 1.1106, as read from the game.
+        near(native_view::requestScale(1352,1504,1.171f,1.1106f),677.1f,.1f);
+        near(native_view::requestScale(2016,2240,1.171f,1.1106f)/native_view::requestScale(1352,1504,1.171f,1.1106f),
+             2240.f/1504);
+        near(native_view::requestScale(2000,1000,1,1),1000); // the side with more pixels per tangent
+    });
     test("game rig uses one tracking sample for head hands and both eyes", [] {
         GameTrackingRig rig;auto f=trackedFrame();
         auto out=rig.update(f,{10,20,30},{0,0,-1},true);

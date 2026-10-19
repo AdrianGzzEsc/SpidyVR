@@ -34,6 +34,7 @@ param(
     [switch]$NoEyeAntialiasing,
     [switch]$GameMonitorView,
     [switch]$OwnShadows,
+    [switch]$EyeLensDistances,
     [switch]$NoEyeReflections,
     [switch]$StockMonitorView,
     [switch]$FullDesktopView,
@@ -172,6 +173,10 @@ if($NoEyeReflections) { $captureArgs+=@('--no-eye-reflections') }
 if($OwnShadows) {
     $captureArgs+=@('--own-shadows')
     Write-Host "Shadows: each eye makes its own sun shadow maps, as before October 11 (more work for the processor)."
+}
+if($EyeLensDistances) {
+    $captureArgs+=@('--eye-lens-distances')
+    Write-Host "Distances: the eyes' own wide lenses, as before October 19 (detail and textures load at about half the flat game's distance)."
 }
 if($FullDesktopView) {
     $captureArgs+=@('--full-desktop-view')

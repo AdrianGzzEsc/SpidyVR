@@ -659,6 +659,14 @@ IF SOMETHING IS WRONG
   frame rate and memory: 150% gave about 30% fewer frames on an RTX 5090.
   Press Check beside your headset to see the pixels per eye. Virtual
   Desktop's quality setting raises what 100% is.
+- Far buildings stay dark and get their lit windows (and the rooms behind
+  them) only once you are close, or right after a menu: until October 19
+  the game chose which far buildings to draw in full only for its own
+  camera's view, which Spidy does not render while you play in VR, so it
+  chose none. Your left eye chooses them now. The same day the eyes also got
+  the flat game's distances for detail, people and textures, which the
+  headset's wide lens had halved. If it still happens, send a session report
+  and say where you were.
 - The aim markers distract you: switch AIM MARKERS off in Settings > SPIDY VR
   (or "Aim markers" in the launcher's options).
 - Webs shot at the sky hold somewhere you can't see: switch "Webs hold in

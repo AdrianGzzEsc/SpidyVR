@@ -2824,8 +2824,11 @@ DWORD WINAPI run(void*) {
                         // Flag 32: the game's own view, on the head for that work, is not
                         // rendered as well; it cost as much as an eye and only the monitor
                         // showed it, which gets the left eye instead.
+                        // Flag 64 (options 0x80000, --eye-lens-distances): the eyes keep the
+                        // distances their own wide lenses give, about half the game's.
                         const uint32_t flags = ((config.options & 4) ? 5 : 13) | ((config.options & 16) ? 0 : 16) |
-                                               ((config.options & (4 | 0x10000)) ? 0 : 32);
+                                               ((config.options & (4 | 0x10000)) ? 0 : 32) |
+                                               ((config.options & 0x80000) ? 64 : 0);
                         // The eyes' scene at `upscale` percent of their size, with a
                         // jittered lens and the engine's temporal anti-aliasing (bits 1,
                         // 2, 4): taken when the views are made.

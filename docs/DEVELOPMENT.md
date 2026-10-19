@@ -840,6 +840,7 @@ reattaching after a stopped session or a rebuilt DLL.
 | `-MonitorRate 30` | How often the monitor gets your left eye in VR, pictures a second (1-240; 30 by default; 0 is every frame, as before October 11). The launcher's "Monitor frame rate" |
 | `-OwnShadows` | Each eye renders its own sun shadow maps, as before October 11; without it both use one set fitted to a lens covering both |
 | `-NoEyeReflections` | The eyes without the game's screen-space reflections, whatever its Screen Space Reflections setting (they follow it otherwise) |
+| `-EyeLensDistances` | The eyes judge detail, draw and texture distances by their own wide lenses, as before October 19: about half the flat game's distances (see [Graphics settings in VR](#graphics-settings-in-vr)) |
 | `-NoEyeOcclusion` | Turn off the eyes' occlusion culling, for comparison |
 | `-XrRuntime <manifest>` | Use this OpenXR runtime manifest instead of the one the headset is connected to |
 | `-AttachOnly` | Attach to a game that is already running instead of starting it |
@@ -898,10 +899,10 @@ session and writes them back after the game closes; see
 [Start Spider-Man in VR](#start-spider-man-in-vr).
 
 The two eyes are extra native scene views. They inherit the game's own quality
-settings, including textures, shadows, level of detail, crowds, ambient
-occlusion, and motion blur strength; not its ray-traced reflections, nor its
-anti-aliasing and upscaling, which Spidy sets for them. For each eye, Spidy
-sets only:
+settings, including textures, shadows, the Level of Detail setting, crowds,
+ambient occlusion, and motion blur strength; not its ray-traced reflections,
+its anti-aliasing and upscaling, nor the distances it judges detail by, which
+Spidy sets for them. For each eye, Spidy sets only:
 
 - the runtime-recommended resolution (3072 x 3264 in the latest session) times
   the render scale for the eye's image, and private scene buffers at the
@@ -949,7 +950,32 @@ sets only:
   eye then keeps its own exposure and the right eye takes the left's;
 - the HUD's sRGB overlay setup pass, which the game skips for secondary views;
 - avatar visibility while immersive VR is active (this also hides the avatar
-  and its shadow on the monitor).
+  and its shadow on the monitor);
+- the distances the game judges models by (since October 19). The engine
+  scales every such distance by a number each view's scene submit takes from
+  the view's lens (`189e4b0` puts it on view `+1cc4`: 0.6745 over the tangent
+  of half the lens's width, or 0.3794 over that of half its height for a lens
+  wider than 16:9), times view `+1cc8`, which only cutscenes set. It decides
+  which detail level a model draws (`17930b0`), how far away a model is drawn
+  at all (`1792b90`, `1796c40`, which also apply the Level of Detail setting)
+  and up to where its textures are asked for (16 times its size times the
+  scale, `17993e7`); many other systems read the same product. The game's
+  65-degree camera has 1.06, an eye's 98-degree lens 0.59: in VR, windows came
+  onto buildings, people onto the street and textures into focus at about half
+  the distance the flat game has them. Each eye's `+1cc8` now brings its
+  number to 1, the engine's own 68-degree lens (`matchDistances` in
+  `src/stereo_probe.cpp`, `native_view::eyeDetail`: 1.71 for that eye, never
+  below 1, at most 3). An eye's model jobs also ask for textures as strongly
+  as for its image, not for the smaller scene the upscale renders
+  (`setupModels` on the job setup `1796d20`: job `+2fc` is half the pixels per
+  unit of lens tangent, from the view's rendered size, `+448` and `+44c`; 1.49
+  times at 67%), as upscalers are meant to have it; what a job leaves out as
+  too small to see (`+300`) stays at the rendered size. The session report's
+  `appearance` has `eye_detail` and `texture_request_raise`;
+  `-EyeLensDistances` (views option 64) is the old way, and
+  `tools/probe_streaming.py` reads the texture streamer's requests (the
+  `TextureStream` at `621b4e0`) and the game's own texture memory lines to
+  compare the two.
 
 While immersive, Spidy also moves the game's own camera view, the one on the
 monitor, to your tracked head with a lens covering both eyes. The game does some
@@ -970,6 +996,33 @@ cut to the window's shape about its middle (`mirrorEye` in
 `src/native_eye_gpu.cpp`, drawn over the back buffer in the Present hook).
 The view renders again the moment a game screen is wanted, in flat mode, and
 when the session stops; `-GameMonitorView` keeps it rendering throughout.
+
+Some of what a resting view no longer does was done for everyone. Far
+buildings are impostors, cards standing in for the model, and which of them
+draw their full model, with the lit windows and the rooms behind them, the
+game decides for its active view alone (`189daa0`: the view at
+ViewContextManager `+f8`): `ImpostorHQModelRegJob` (`16fb630`, `16fb750`)
+applies that view's wanted state per impostor from its visibility queries
+(`16faf10`, in each view's scene submit), and the impostor submit job marks
+it (`16f8afa`). Resting, the game's view submits nothing, so until October
+19's second build every building beyond the nearest stayed a dark card in VR
+and lit up only while a menu rendered that view. Since then, while it rests,
+the left eye stands in for it at those five checks (`isActiveView`: a hook on
+`189daa0` that answers yes for the left eye from those five return addresses
+only), and the session report's `appearance.impostor_frames` counts the
+frames it did. Only one view may: the registration applies a view's wanted
+states over the previous ones. How far away a building draws its full model
+is what the view's queries carry in their result (`+88`): 145 m in the game
+(`7a89170`, which region changes rewrite), more for a lens narrower than 65
+degrees. While the left eye stands in, both eyes' results get 150% of it,
+218 m (`impostorQueries`, a hook on `16faf10`; `SpidyImpostorReach`, and
+`--building-reach` for a session, set 50-400%); on October 19 that cost
+nothing measurable at 3072 x 3264 eyes, and 200% about 1%. The right eye's outer edge, which the left
+eye does not see, is not covered. Other active-view-only work still stops
+while the view rests: pedestrians ask "drawn in any view" (`18a1890`, the
+game's views' drawn bytes at `+1b80`), animated models get their joints
+updated only from the game's view (model job `+342`), and `189daa0` has about
+15 other callers (shadows, post-processing, decals).
 
 Since October 13 that left eye is the one the headset showed. The XR worker
 draws Spidy's own things (gloves and webs, the aim markers, the combat marks,

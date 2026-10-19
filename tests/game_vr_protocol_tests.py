@@ -42,8 +42,8 @@ class Reader:
 
 class ProtocolTests(unittest.TestCase):
     def test_appearance_decodes_each_eye_and_rejects_torn_reads(self):
-        raw = bytearray(328)
-        struct.pack_into('<4I6Q', raw, 0, 0x53415044, 5, 328, 1, 6, 11, 12, 21, 22, 0x123456789)
+        raw = bytearray(360)
+        struct.pack_into('<4I6Q', raw, 0, 0x53415044, 6, 360, 1, 6, 11, 12, 21, 22, 0x123456789)
         struct.pack_into('<2f', raw, 280, -1, -1)
         struct.pack_into('<3Q2I4Q2f2I2Q2fd', raw, 64, 300, 2, 1, 0x4000002a, 0x120,
                          3, 4, 0xabc0, 0xdef0, .25, 1.5, 0x5000001, 0x100, 40, 2, .5, 1.25, 10.0)
@@ -67,6 +67,14 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual((result['web_start_error_m'], result['web_start_error_max_m']), (None, None))
         self.assertEqual((result['web_hand_gap_frames'], result['web_hand_gap_mean_m']), (0, 0.0))
         self.assertEqual(result['active_view_lag_frames'], 0)
+        self.assertEqual((result['eye_detail_frames'], result['texture_request_jobs'], result['impostor_frames']),
+                         (0, 0, 0))
+        struct.pack_into('<2f2QfI', raw, 328, .5863, 1.7056, 900, 1800, 1.5, 850)
+        result = appearance_snapshot(Reader(raw, struct.pack('<Q', 6)), 0)
+        self.assertEqual((result['eye_distance_scale'], result['eye_detail'], result['eye_detail_frames']),
+                         (.5863, 1.7056, 900))
+        self.assertEqual((result['texture_request_jobs'], result['texture_request_raise']), (1800, 1.5))
+        self.assertEqual(result['impostor_frames'], 850)
         struct.pack_into('<2I4Q', raw, 176, 2, 2, 5, 4, 1, 900)
         struct.pack_into('<2Q5f', raw, 216, 120, 3, -1, 1, -.5, 2, 3.5)
         result = appearance_snapshot(Reader(raw, struct.pack('<Q', 6)), 0)
@@ -1033,7 +1041,7 @@ class ProtocolTests(unittest.TestCase):
                                      (movement_snapshot, 0x534d5044, 57408),
                                      (motion_snapshot, 0x534d5644, 176), (ray_snapshot, 0x53525944, 784),
                                      (swing_snapshot,0x53574441,272),(timing_snapshot,0x5358544d,344),
-                                     (appearance_snapshot,0x53415044,328),(eye_snapshot,0x53455353,112),
+                                     (appearance_snapshot,0x53415044,360),(eye_snapshot,0x53455353,112),
                                      (grab_snapshot,0x53475244,368),(body_snapshot,0x53424453,144),
                                      (punch_snapshot,0x53505544,168),(shooter_snapshot,0x53484f44,296),
                                      (strike_snapshot,0x53535452,328)):
