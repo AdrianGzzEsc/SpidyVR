@@ -119,7 +119,7 @@ struct Hand {
     float trigger{}, grip{};
 };
 struct Command {
-    uint32_t magic = 0x5357434d, version = 4, bytes = sizeof(Command), focused{};
+    uint32_t magic = 0x5357434d, version = 7, bytes = sizeof(Command), focused{};
     uint64_t serial{};
     uint32_t leaseMs = 100, jump{};
     Hand hands[2];
@@ -136,8 +136,13 @@ struct Command {
     // (commandBytesV3) ends before them.
     float leap{};
     Vec3 look{};
+    // Version 5: actual grip poses/buttons, independent of WEB BUTTON.
+    Vec3 wallPositions[2]{};
+    float wallGrips[2]{};
+    Vec3 climbDirection{}; // version 6: gaze-relative pulls, along the wall
+    uint32_t wallRotate{}; // version 7: uses version 6's trailing padding
 };
-constexpr uint32_t commandBytesV2 = 168, commandBytesV3 = 184;
+constexpr uint32_t commandBytesV2 = 168, commandBytesV3 = 184, commandBytesV4 = 200, commandBytesV5 = 232;
 // attached: 0 none, else bits: 1 a web; 2 both hands hold it (Swing::shared:
 // the other hand's web is the same one); 4 this hand took hold of it and did
 // not shoot it (Web::taken; it stays when the other hand lets go).
@@ -177,7 +182,10 @@ struct Data {
     float wallDistance{};
     uint32_t walls{}, wallJumps{}, mount{};
 };
-static_assert(sizeof(Config) == 64 && sizeof(Hand) == 52 && sizeof(Command) == 200 &&
+static_assert(sizeof(Config) == 64 && sizeof(Hand) == 52 && sizeof(Command) == 248 &&
+              offsetof(Command, climbDirection) == commandBytesV5 &&
+              offsetof(Command, wallRotate) == 244 &&
+              offsetof(Command, wallPositions) == commandBytesV4 &&
               offsetof(Command, tilt) == commandBytesV2 && offsetof(Command, leap) == commandBytesV3);
 // SpidySwingSettings: what the VR settings (the SPIDY VR tab in the game's
 // Settings) change during play.
@@ -201,15 +209,17 @@ static_assert(sizeof(Config) == 64 && sizeof(Hand) == 52 && sizeof(Command) == 2
 // 12. Version 4 (settingsBytesV4) ends before it and leaves the webs as they
 // are.
 struct Settings {
-    uint32_t magic = 0x53575354, version = 5, bytes = sizeof(Settings), grab = 1;
+    uint32_t magic = 0x53575354, version = 6, bytes = sizeof(Settings), grab = 1;
     float maxSpeed = 32;
     uint32_t airWebs = 1;
     float gravity = 6;
     uint32_t walls = 1;
     uint32_t physical = 1;
+    uint32_t handClimb{};
 };
-constexpr uint32_t settingsBytesV3 = 28, settingsBytesV4 = 32;
-static_assert(sizeof(Settings) == 36 && offsetof(Settings, walls) == settingsBytesV3 &&
+constexpr uint32_t settingsBytesV3 = 28, settingsBytesV4 = 32, settingsBytesV5 = 36;
+static_assert(sizeof(Settings) == 40 && offsetof(Settings, handClimb) == settingsBytesV5 &&
+              offsetof(Settings, walls) == settingsBytesV3 &&
               offsetof(Settings, physical) == settingsBytesV4);
 // Physical webs (SpidyRopeData): what the ropes did, for the session report.
 struct Ropes {
@@ -229,6 +239,31 @@ struct Ropes {
     uint32_t shared{}, reserved{};
 };
 static_assert(sizeof(Ropes) == 96);
+// Separate telemetry keeps existing swing/probe packets compatible.
+struct ClimbData {
+    uint32_t magic = 0x53434c44, version = 1, bytes = sizeof(ClimbData), status{};
+    int64_t sequence{};
+    uint64_t contacts[2]{};
+    uint32_t hands{}, reserved{};
+};
+static_assert(sizeof(ClimbData) == 48);
+// Contact counters survive an attachment released between headset samples.
+class ClimbPulses {
+  public:
+    unsigned update(const ClimbData& data, bool active) {
+        if (!data.status)
+            return 0;
+        unsigned pulses{};
+        for (unsigned i = 0; i < 2; ++i) {
+            if (active && data.status && data.contacts[i] > seen_[i])
+                pulses |= 1u << i;
+            seen_[i] = data.contacts[i];
+        }
+        return pulses;
+    }
+  private:
+    uint64_t seen_[2]{};
+};
 // The edges each hand's web bends round (SpidySwingBends), for drawing it
 // round them to where it sticks. Data's webs end at the nearest edge, the
 // one the swing holds the body from, and the game's rope drawn to it jumped
@@ -260,6 +295,16 @@ inline Bends::Hand edgesOf(const Web& w) {
 constexpr float motionSpeedLimit = 65;
 // The most gravity a swing takes, m/s^2: every weight the VR settings offer.
 constexpr float maxGravity = 30;
+inline bool validSettings(const Settings& s) {
+    return s.magic == 0x53575354 &&
+        ((s.version == 3 && s.bytes == settingsBytesV3) ||
+         (s.version == 4 && s.bytes == settingsBytesV4) ||
+         (s.version == 5 && s.bytes == settingsBytesV5) ||
+         (s.version == 6 && s.bytes == sizeof(Settings))) &&
+        s.grab <= 1 && std::isfinite(s.maxSpeed) && s.maxSpeed > 0 && s.maxSpeed <= motionSpeedLimit &&
+        s.airWebs <= 1 && std::isfinite(s.gravity) && s.gravity >= 0 && s.gravity <= maxGravity &&
+        s.walls <= 4 && s.physical <= 1 && s.handClimb <= 1;
+}
 static_assert(sizeof(WebState) == 28 && sizeof(Data) == 272 && offsetof(Data, wall) == 240);
 // The player is in the air: Spidy's own flight, or the game's jump or fall,
 // where the mover is unsupported and in its airborne mode (collision flags
@@ -303,7 +348,8 @@ inline bool valid(const Command& c) {
     const float tilt = t.x * t.x + t.y * t.y + t.z * t.z + t.w * t.w;
     if (c.magic != 0x5357434d ||
         !((c.version == 2 && c.bytes == commandBytesV2) || (c.version == 3 && c.bytes == commandBytesV3) ||
-          (c.version == 4 && c.bytes == sizeof(c))) ||
+          (c.version == 4 && c.bytes == commandBytesV4) || (c.version == 5 && c.bytes == commandBytesV5) ||
+          ((c.version == 6 || c.version == 7) && c.bytes == sizeof(c))) ||
         !std::isfinite(c.leap) || c.leap < 0 || c.leap > 1 || !finite(c.look) || length(c.look) > 1.01f ||
         !c.serial || c.focused > 1 || c.jump > 1 || c.leaseMs > 250 || (c.focused && !c.leaseMs) ||
         !finite(c.move) || length(c.move) > 1.001f || !std::isfinite(c.trackingYaw) || c.reserved ||
@@ -318,7 +364,13 @@ inline bool valid(const Command& c) {
             h.trigger < 0 || h.trigger > 1 || h.grip < 0 || h.grip > 1)
             return false;
     }
-    return true;
+    if (c.version >= 5)
+        for (unsigned i = 0; i < 2; ++i)
+            if (!finite(c.wallPositions[i]) || !std::isfinite(c.wallGrips[i]) ||
+                c.wallGrips[i] < 0 || c.wallGrips[i] > 1)
+                return false;
+    return finite(c.climbDirection) && length(c.climbDirection) <= 1.01f &&
+           (c.version < 7 || c.wallRotate <= 1);
 }
 class InputSampleClock {
   public:
@@ -379,6 +431,10 @@ inline Input input(const Command& c) {
     out.jump = c.jump != 0;
     out.move = c.move;
     out.trackingYaw = c.trackingYaw;
+    if (c.version >= 6)
+        out.climbDirection = c.climbDirection;
+    if (c.version >= 7)
+        out.wallRotate = c.wallRotate != 0;
     const float n =
         std::sqrt(c.tilt.x * c.tilt.x + c.tilt.y * c.tilt.y + c.tilt.z * c.tilt.z + c.tilt.w * c.tilt.w);
     if (c.version >= 3 && n > .5f)
@@ -390,6 +446,11 @@ inline Input input(const Command& c) {
     for (unsigned i = 0; i < 2; ++i)
         out.hands[i] = {c.hands[i].aim, c.hands[i].relative, c.hands[i].tracked != 0, c.hands[i].trigger,
                         c.hands[i].grip};
+    if (c.version >= 5)
+        for (unsigned i = 0; i < 2; ++i) {
+            out.hands[i].wallPosition = c.wallPositions[i];
+            out.hands[i].wallGrip = c.wallGrips[i];
+        }
     return out;
 }
 } // namespace spidy::game_swing

@@ -20,6 +20,7 @@ __declspec(dllexport) Data SpidySwingData;
 __declspec(dllexport) AimData SpidyAimData;
 // Physical webs' telemetry (Ropes); odd `sequence` while it changes.
 __declspec(dllexport) Ropes SpidyRopeData;
+__declspec(dllexport) ClimbData SpidyClimbData;
 }
 namespace {
 // Each hand's web's edges (Bends, SpidySwingBends), written with Data.
@@ -273,7 +274,14 @@ void visit(const native_rays::QueryContext& world) {
         coasting = false;
     else
         coast();
-    const auto in = focused ? input(c) : Input{};
+    auto in = focused ? input(c) : Input{};
+    unsigned wallHands{};
+    for (unsigned i = 0; i < 2; ++i)
+        if (focused && (in.wallRotate || solver.wallHand(i, in, world))) {
+            wallHands |= 1u << i;
+            // Reserve the physical grip before web shots, target grabs and punches.
+            in.hands[i].grip = in.hands[i].trigger = 0;
+        }
     game_warp::observe(steppedView | (focused ? 2u : 0u), false);
     // The player for picks, throws and aim previews: where it stands, and its
     // speed when moving.
@@ -312,7 +320,7 @@ void visit(const native_rays::QueryContext& world) {
             for (unsigned i = 0; i < 2; ++i) {
                 const bool carried = solver.webs()[i].attached && (owned || !motion.grounded);
                 fighter.swinging |= carried;
-                if (grab.hands[i].phase || carried)
+                if (grab.hands[i].phase || carried || (wallHands & (1u << i)))
                     fighter.busy |= 1u << i;
                 if (grab.hands[i].phase && grab.hands[i].kind == static_cast<uint32_t>(game_targets::Kind::bot))
                     fighter.holds[i] = grab.hands[i].target;
@@ -353,7 +361,8 @@ void visit(const native_rays::QueryContext& world) {
                 const auto grab = game_grab::data();
                 uint32_t busy{};
                 for (unsigned i = 0; i < 2; ++i)
-                    if (grab.hands[i].phase || solver.webs()[i].attached)
+                    if (grab.hands[i].phase || solver.webs()[i].attached ||
+                        (solver.climbingHands() & (1u << i)))
                         busy |= 1u << i;
                 game_shooter::update(seconds, in, busy, config.record, feet, world);
             }
@@ -690,6 +699,13 @@ void visit(const native_rays::QueryContext& world) {
         auto& r = SpidyRopeData;
         InterlockedIncrement64(&r.sequence);
         r.physical = solver.config().physical;
+        InterlockedIncrement64(&SpidyClimbData.sequence);
+        SpidyClimbData.status = 1;
+        SpidyClimbData.hands = solver.climbingHands();
+        for (const auto& event : solver.events())
+            if (event.kind == EventKind::WallGrip && event.hand >= 0 && event.hand < 2)
+                ++SpidyClimbData.contacts[event.hand];
+        InterlockedIncrement64(&SpidyClimbData.sequence);
         r.paidOut += paid;
         for (auto event : solver.events()) {
             r.wraps += event.kind == EventKind::Wrap;
@@ -898,13 +914,9 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingSettings(void* input) {
     Settings s;
     uint32_t header[3]{};
     if (!copy(header, input, sizeof(header)) ||
-        (header[2] != settingsBytesV3 && header[2] != settingsBytesV4 && header[2] != sizeof(s)) ||
-        !copy(&s, input, header[2]) || s.magic != 0x53575354 ||
-        !((s.version == 3 && s.bytes == settingsBytesV3) || (s.version == 4 && s.bytes == settingsBytesV4) ||
-          (s.version == 5 && s.bytes == sizeof(s))) ||
-        s.grab > 1 || !std::isfinite(s.maxSpeed) || s.maxSpeed <= 0 || s.maxSpeed > motionSpeedLimit ||
-        s.airWebs > 1 || !std::isfinite(s.gravity) || s.gravity < 0 || s.gravity > maxGravity || s.walls > 4 ||
-        s.physical > 1)
+        (header[2] != settingsBytesV3 && header[2] != settingsBytesV4 &&
+         header[2] != settingsBytesV5 && header[2] != sizeof(s)) ||
+        !copy(&s, input, header[2]) || !validSettings(s))
         return 2001;
     AcquireSRWLockExclusive(&lifecycle);
     DWORD result{};
@@ -935,6 +947,8 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingSettings(void* input) {
         }
         if (s.version >= 5)
             solver.allowPhysical(s.physical != 0);
+        if (s.version >= 6)
+            solver.allowHandClimb(s.handClimb != 0);
         // A swing started without the grab (-NoWebGrab) offers it from now on.
         if (s.grab && !game_grab::offering() && driveMotion && sampleDriven) {
             config.grabKinds = game_grab::movableKinds;
@@ -952,7 +966,8 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingSubmit(void* input) {
     Command c;
     uint32_t header[3]{};
     if (!copy(header, input, sizeof(header)) ||
-        (header[2] != commandBytesV2 && header[2] != commandBytesV3 && header[2] != sizeof(c)) ||
+        (header[2] != commandBytesV2 && header[2] != commandBytesV3 &&
+         header[2] != commandBytesV4 && header[2] != commandBytesV5 && header[2] != sizeof(c)) ||
         !copy(&c, input, header[2]) || !valid(c))
         return 2001;
     AcquireSRWLockExclusive(&control);
@@ -980,6 +995,18 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingSample(void* out) {
         sample.takeoffPhase = sample.takeoffAttempts = 0;
         for (auto& web : sample.webs)
             web = {};
+    }
+    ReleaseSRWLockShared(&control);
+    return copy(out, &sample, sizeof(sample)) ? 0 : 2201;
+}
+extern "C" __declspec(dllexport) DWORD WINAPI SpidyClimbSample(void* out) {
+    AcquireSRWLockShared(&control);
+    AcquireSRWLockShared(&output);
+    auto sample = SpidyClimbData;
+    ReleaseSRWLockShared(&output);
+    if (!enabled || GetTickCount64() >= deadline || GetTickCount64() >= inputDeadline || !command.focused) {
+        sample.status = 0;
+        sample.hands = 0;
     }
     ReleaseSRWLockShared(&control);
     return copy(out, &sample, sizeof(sample)) ? 0 : 2201;

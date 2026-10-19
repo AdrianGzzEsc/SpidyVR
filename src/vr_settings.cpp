@@ -25,6 +25,9 @@ constexpr const char* hudChoices[] = {"OFF", "SMALL", "MEDIUM", "LARGE"};
 constexpr const char* flipSpeedChoices[] = {"90\xC2\xB0/S",  "120\xC2\xB0/S", "150\xC2\xB0/S", "180\xC2\xB0/S",
                                             "240\xC2\xB0/S", "300\xC2\xB0/S", "360\xC2\xB0/S", "480\xC2\xB0/S"};
 constexpr const char* depthChoices[] = {"OFF", "LOW", "MEDIUM", "HIGH"};
+constexpr const char* wallDistanceChoices[] = {"10 CM", "15 CM", "20 CM", "25 CM", "30 CM",
+                                             "40 CM", "50 CM", "60 CM", "75 CM", "100 CM"};
+static_assert(std::size(wallDistanceChoices) == std::size(wallDistances));
 constexpr int screenSizes[] = {0, 1, 2};
 constexpr int hudSizes[] = {0, 1, 2, 3};
 constexpr int depthSteps[] = {0, 1, 2, 3};
@@ -55,6 +58,8 @@ std::span<const int> steps(Item item) {
         return flipSpeeds;
     case Item::screenDepth:
         return depthSteps;
+    case Item::wallDistance:
+        return wallDistances;
     default:
         return {};
     }
@@ -79,6 +84,8 @@ float numberOf(Item item, const Values& v) {
         return static_cast<float>(v.flipSpeed);
     case Item::screenDepth:
         return static_cast<float>(v.screenDepth);
+    case Item::wallDistance:
+        return static_cast<float>(v.wallDistance);
     default:
         return 0;
     }
@@ -98,6 +105,8 @@ template <class V> auto switchOf(Item item, V& v) -> decltype(&v.aimMarkers) {
         return &v.triggerWebs;
     case Item::standOnWalls:
         return &v.standOnWalls;
+    case Item::handClimb:
+        return &v.handClimb;
     case Item::view:
         return &v.flatScreen;
     default:
@@ -116,11 +125,12 @@ Values sanitized(Values v) {
     v.hud = std::clamp(v.hud, 0, 3);
     v.flipSpeed = std::clamp(v.flipSpeed, 90, 480);
     v.screenDepth = std::clamp(v.screenDepth, 0, 3);
+    v.wallDistance = std::clamp(v.wallDistance, 10, 100);
     return v;
 }
-const std::array<Row, 19>& rows() {
+const std::array<Row, 21>& rows() {
     // The help fits the game's description column beside the rows.
-    static const std::array<Row, 19> all{{
+    static const std::array<Row, 21> all{{
         {Item::none, "WEBS", nullptr, {}},
         {Item::webButton, "WEB BUTTON",
          "Which button shoots and holds a web; the other reels in and shoots web balls.", webButtonChoices},
@@ -152,6 +162,10 @@ const std::array<Row, 19>& rows() {
         {Item::flips, "FLIPS", "In the air the left stick turns you over; tap A for one flip, hold A to stay.", {}},
         {Item::flipSpeed, "FLIP SPEED", "How fast a flip turns you over, at full tilt of the left stick.",
          flipSpeedChoices},
+        {Item::handClimb, "HAND WALL CLIMBING",
+         "Grip and pull. Left stick: run and reset roll. A: jump off.", {}},
+        {Item::wallDistance, "WALL CAMERA DISTANCE",
+         "How close your eyes sit to the wall while hand climbing. Applies on resume.", wallDistanceChoices},
     }};
     return all;
 }
@@ -207,6 +221,9 @@ bool choose(Item item, int index, Values& v) {
         break;
     case Item::screenDepth:
         v.screenDepth = s[index];
+        break;
+    case Item::wallDistance:
+        v.wallDistance = s[index];
         break;
     default:
         return false;

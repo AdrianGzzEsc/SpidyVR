@@ -466,7 +466,7 @@ std::string fileVersion(const std::wstring& path, std::array<int, 4>& fields) {
 
 std::wstring settingsPath() {
     const std::wstring appData = knownFolder(FOLDERID_RoamingAppData);
-    return appData.empty() ? std::wstring() : (fs::path(appData) / L"Spidy" / L"launcher.ini").wstring();
+    return appData.empty() ? std::wstring() : (fs::path(appData) / L"SpidyWallClimbPreview" / L"launcher.ini").wstring();
 }
 
 bool signedByMicrosoft(const std::wstring& file) {

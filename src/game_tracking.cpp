@@ -228,8 +228,8 @@ Input trackedSwingInput(const XrFrame& f, const Rig& rig, bool triggerWebs) {
     return input;
 }
 void GameTrackingRig::reset() {
-    const float snap = snap_, smooth = smooth_;
-    const bool flips = flips_, triggerWebs = triggerWebs_, standOnWalls = standOnWalls_;
+    const float snap = snap_, smooth = smooth_, wallDistance = wallDistance_;
+    const bool flips = flips_, triggerWebs = triggerWebs_, standOnWalls = standOnWalls_, handClimb = handClimb_;
     const FlipMotion flip = flip_;
     *this = {};
     snap_ = snap;
@@ -237,6 +237,8 @@ void GameTrackingRig::reset() {
     flips_ = flips;
     triggerWebs_ = triggerWebs;
     standOnWalls_ = standOnWalls;
+    handClimb_ = handClimb;
+    wallDistance_ = wallDistance;
     flip_ = flip;
     flip_.reset();
 }
@@ -266,6 +268,7 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
         !lens(f.eyes[1].fov))
         out.inactive |= noEyes;
     if (out.inactive) {
+        wallRoll_.suspend();
         wasActive_ = false;
         // Menus and scenes find the player level, and so does a break as
         // long as blipSeconds. A frame or a few that play could not place -
@@ -283,6 +286,8 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
             surfaceTurn_ = {};
             surfaceShift_ = {};
             standing_ = false;
+            climbNormal_ = {};
+            wallRunning_ = false;
         }
         return out;
     }
@@ -304,6 +309,9 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
         rig_.origin += travel;
         lastHead_.position += travel;
         if (pendingRecenter_) {
+            wallRoll_.reset();
+            climbNormal_ = {};
+            wallRunning_ = false;
             // A recenter ends a flip: level, the head kept where it was.
             flip_.reset();
             rig_.tilt = {};
@@ -366,9 +374,54 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     // next face turns it on from the wall it is on; back level, what is left
     // is a turn about the vertical, which the tracking space keeps.
     const bool walks = handValid(f.hands[0]) && std::hypot(f.hands[0].stickX, f.hands[0].stickY) > .2f;
-    if (!holds || !standOnWalls_)
+    const bool wallRun = handClimb_ && holds && walks && !f.jump;
+    if (wallRun && !wallRunning_) {
+        // Capture the direction visible BEFORE the wall-floor transition
+        // resets the roll. Holding up from upside down must keep going down.
+        runView_ = length(climbNormal_) > .5f ? climbView_ : rig_.toWorld(f.head).orientation;
+        runHead_ = f.head.orientation;
+        runNormal_ = held;
+        // Set only the entry heading. The existing up-to-wall turn below
+        // keeps its original axis, speed and placement path after this.
+        const Vec3 look = runView_.rotate({0, 0, -1}), top = runView_.rotate({0, 1, 0});
+        const Vec3 along = look - held * dot(look, held);
+        const Vec3 ahead = normalized(length(along) > .4f ? along : top - held * dot(top, held));
+        const Vec3 side = normalized(cross(ahead, held));
+        const Vec3 travel = normalized(ahead * f.hands[0].stickY + side * f.hands[0].stickX);
+        const Quat floor = arc(surfaceTurn_.rotate({0, 1, 0}), held) * surfaceTurn_;
+        const Vec3 level = horizontal(floor.conjugate().rotate(travel));
+        const Vec3 tracked = horizontal(f.head.orientation.rotate({0, 0, -1}));
+        if (length(level) > .5f && length(tracked) > .5f) {
+            const float yaw = std::atan2(-level.x, -level.z) - std::atan2(-tracked.x, -tracked.z);
+            rig_.turn(std::remainder(yaw - rig_.yaw, 2 * pi), f.head.position);
+        }
+        runYaw_ = rig_.yaw;
+    }
+    if (wallRun) {
+        runView_ = unit(arc(runNormal_, held) * Quat::yaw(rig_.yaw - runYaw_) * runView_);
+        runNormal_ = held;
+        runYaw_ = rig_.yaw;
+        wallRoll_.reset();
+    }
+    wallRunning_ = wallRun;
+    if (handClimb_ && holds && std::abs(held.y) < .5f) {
+        const Vec3 face = normalized(Vec3{held.x, 0, held.z});
+        if (!wallRun && length(climbNormal_) > .5f) {
+            // Carry the climbing view around a building's side without an
+            // instantaneous quarter-turn or the wall-floor standing view.
+            const float remaining = std::atan2(cross(climbNormal_, face).y, dot(climbNormal_, face));
+            const float step = std::clamp(remaining, -4.f * f.seconds, 4.f * f.seconds);
+            rig_.turn(step, f.head.position);
+            climbNormal_ = Quat::yaw(step).rotate(climbNormal_);
+        } else {
+            climbNormal_ = face;
+        }
+    } else {
+        climbNormal_ = {};
+    }
+    if (!holds || !standOnWalls_ || (handClimb_ && !walks))
         standing_ = false;
-    else if (surface.crawl ||
+    else if (handClimb_ || surface.crawl ||
              (std::isfinite(surface.speed) && surface.speed < (walks ? wallStrideSpeed : wallStandSpeed)))
         standing_ = true;
     {
@@ -402,7 +455,14 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     }
     const Vec3 unplacedHead = rig_.toWorld(f.head).position;
     Vec3 target{};
-    if (onSurface && !standing_) {
+    if (handClimb_ && !standing_ && holds && std::abs(held.y) < .5f) {
+        // Keep the horizon upright and crouch beside the facade, hands within
+        // touching distance. This shifts the tracking space, never the collider.
+        const Vec3 alongUp = normalized(Vec3{0, 1, 0} - held * held.y);
+        const float lower = std::clamp(f.head.position.y - .9f, 0.f, .7f);
+        target = held * (wallDistance_ - dot(unplacedHead - surface.anchor, held)) - alongUp * lower;
+        surfaceDepth_ = 0;
+    } else if (onSurface && !standing_) {
         const float height = dot(unplacedHead - feet, away);
         surfaceSeconds_ = onSurface_ ? surfaceSeconds_ + f.seconds : 0.f;
         const float wanted =
@@ -448,6 +508,19 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
         placed.tilt = unit(yaw.conjugate() * surfaceTurn_ * yaw * rig_.tilt);
         placed.pivot = {};
     }
+    if (!holds || f.jump)
+        wallRoll_.reset();
+    const bool rollAllowed = handClimb_ && holds && !standing_ && !walks && !f.jump && std::abs(held.y) < .5f;
+    const float rollAngle = wallRoll_.update(rollAllowed, f);
+    if (rollAllowed) {
+        const Pose before = placed.toWorld(f.head);
+        const Quat roll = Quat::around(length(climbNormal_) > .5f ? -climbNormal_ : -held, rollAngle);
+        const Quat yaw = Quat::yaw(placed.yaw);
+        placed.tilt = unit(yaw.conjugate() * roll * yaw * placed.tilt);
+        placed.origin += before.position - placed.toWorld(f.head).position;
+        out.wallRoll = rollAngle;
+        out.wallRotate = wallRoll_.engaged();
+    }
     out.standing = standing_;
     out.viewTilt = std::acos(std::clamp(surfaceTurn_.rotate({0, 1, 0}).y, -1.f, 1.f));
     out.standUp = surfaceTurn_.rotate({0, 1, 0});
@@ -467,12 +540,25 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     const Vec3 levelMove = out.swing.move;
     if (turned)
         out.swing.move = surfaceTurn_.rotate(levelMove);
+    if (wallRun) {
+        // Keep these axes for the held stick, including physical head turns,
+        // and transport them onto the next face at a corner. The camera's
+        // transition into wall running cannot reverse the command mid-push.
+        const Quat view = runView_ * runHead_.conjugate() * f.head.orientation;
+        const Vec3 look = view.rotate({0, 0, -1}), top = view.rotate({0, 1, 0});
+        const Vec3 along = look - held * dot(look, held);
+        const Vec3 ahead = normalized(length(along) > .4f ? along : top - held * dot(top, held));
+        const Vec3 side = normalized(cross(ahead, held));
+        out.swing.move = limited(ahead * f.hands[0].stickY + side * f.hands[0].stickX, 1);
+    }
     if (out.releaseWebs)
         for (auto& hand : out.swing.hands)
             hand.tracked = false;
     const auto head = placed.toWorld(f.head);
     out.head = worldPose(head);
     out.headPose = head;
+    if (handClimb_ && holds && !wallRun)
+        climbView_ = head.orientation;
     for (unsigned i = 0; i < 2; ++i) {
         out.eyes[i] = worldPose(placed.toWorld(f.eyes[i].pose));
         out.fovs[i] = f.eyes[i].fov;

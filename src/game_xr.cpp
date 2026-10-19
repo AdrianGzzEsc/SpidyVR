@@ -418,6 +418,7 @@ BridgeCall startSwing{}, submitSwing{}, sampleSwing{}, stopSwing{}, retargetSwin
 // Each web's edges (game_swing::Bends): optional, without it a web round an
 // edge is drawn to that edge.
 BridgeCall sampleBends{};
+BridgeCall sampleClimb{};
 BridgeCall startPunch{}, samplePunch{}, stopPunch{}, swingSettings{}, sampleStrike{};
 BridgeCall startShooter{}, sampleShooter{}, stopShooter{}, wheelShooter{};
 // The game's own crawl under the player (game_warp, in the same module):
@@ -790,6 +791,8 @@ DWORD WINAPI run(void*) {
         }
         game_swing::Data swingState;
         game_swing::Bends swingBends;
+        game_swing::ClimbData climbState;
+        game_swing::ClimbPulses climbPulses;
         // What each hand's web holds, when it caught a thug instead of a wall.
         game_grab::Data grabState;
         uint32_t grabPhases[2]{};
@@ -991,6 +994,8 @@ DWORD WINAPI run(void*) {
             rig.flipSpeed(static_cast<float>(values.flipSpeed) * 3.14159265f / 180);
             rig.triggerWebs(values.triggerWebs);
             rig.standOnWalls(values.standOnWalls);
+            rig.handClimb(values.handClimb);
+            rig.wallDistance(static_cast<float>(values.wallDistance) / 100.f);
             native_hud::setSize(values.hud);
             if (swingStarted && swingSettings) {
                 game_swing::Settings s;
@@ -999,6 +1004,7 @@ DWORD WINAPI run(void*) {
                 s.airWebs = values.airWebs;
                 s.gravity = vr_settings::gravity(values.weight);
                 s.walls = !(config.options & 16384);
+                s.handClimb = values.handClimb;
                 sentSwingSettings = s;
                 swingSettingsSent = true;
                 // A hand-over owns the walls while it lasts; the player's own
@@ -1625,6 +1631,9 @@ DWORD WINAPI run(void*) {
                     }
                     if (swingStarted) {
                         game_swing::Command input;
+                        // Pulls use tracked hand motion again; gaze changes no movement.
+                        input.climbDirection = {};
+                        input.wallRotate = motion.wallRotate;
                         input.serial = ++serial;
                         input.focused = motion.active && !flatScreen && controlsVisible;
                         input.sampleTimeNs = frame.predictedDisplayTime > 0 ? frame.predictedDisplayTime : 1;
@@ -1644,9 +1653,18 @@ DWORD WINAPI run(void*) {
                             const auto& hand = motion.swing.hands[i];
                             input.hands[i] = {hand.aim, hand.gripRelativeToHead, hand.tracked, hand.trigger,
                                               hand.grip};
+                            input.wallPositions[i] = motion.grips[i].position;
+                            input.wallGrips[i] = hand.tracked ? frame.hands[i].squeeze : 0.f;
                         }
                         check(submitSwing(&input), "Tracked swing input");
                         check(sampleSwing(&swingState), "Native swing feedback");
+                        if (!sampleClimb || sampleClimb(&climbState) || climbState.magic != 0x53434c44 ||
+                            climbState.version != 1 || climbState.bytes != sizeof(climbState))
+                            climbState = {};
+                        const unsigned wallPulses = climbPulses.update(climbState, input.focused && values.handClimb);
+                        for (unsigned i = 0; i < 2; ++i)
+                            if (wallPulses & (1u << i))
+                                runtime.haptic(i, .45f, .045f);
                         if (!sampleBends || sampleBends(&swingBends))
                             swingBends = {};
                         // Nothing here changes who holds the player on a wall
@@ -2641,6 +2659,8 @@ DWORD WINAPI run(void*) {
                             gripsSeen[i] = tracked;
                             HandPoseInput doing;
                             doing.tracked = tracked;
+                            doing.wallContact = motion.active && !flatScreen && values.handClimb && climbState.status &&
+                                                (climbState.hands & (1u << i));
                             doing.web = motion.swing.hands[i].grip;
                             doing.squeeze = hand.squeeze;
                             doing.speed = speed;
@@ -2660,7 +2680,7 @@ DWORD WINAPI run(void*) {
                         // A flip's tilt in world axes: the body turns with the player.
                         // Standing on a surface, the body already stands along it:
                         // only a flip's own turns it further (none on a wall).
-                        if (const Quat tilt = motion.standing ? motion.flipTilt : motion.swing.tilt;
+                        if (const Quat tilt = motion.bodyTilt();
                             tilt.x != 0 || tilt.y != 0 || tilt.z != 0) {
                             const Quat yaw = Quat::yaw(motion.swing.trackingYaw);
                             pose.tilt = yaw * tilt * yaw.conjugate();
@@ -3315,6 +3335,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyXrStart(void* input) {
     submitSwing = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidySwingSubmit"));
     sampleSwing = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidySwingSample"));
     sampleBends = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidySwingBends"));
+    sampleClimb = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidyClimbSample"));
     rayResults = reinterpret_cast<const native_rays::Data*>(GetProcAddress(rays, "SpidyRayData"));
     stopSwing = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidySwingStop"));
     retargetSwing = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidySwingRetarget"));
