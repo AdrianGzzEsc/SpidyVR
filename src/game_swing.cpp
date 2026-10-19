@@ -90,6 +90,8 @@ int64_t strikeQpc{};
 // command; the latest was made at aimMadeMs.
 std::atomic<uint64_t> aimDeadline{};
 uint64_t aimSerial{}, aimMadeMs{};
+// The hands whose motion lands no blow (Settings::noBlows).
+std::atomic<uint32_t> noBlows{};
 bool copy(void* destination, const void* source, size_t bytes) {
     __try {
         if (reinterpret_cast<uintptr_t>(source) < 0x10000 ||
@@ -309,6 +311,7 @@ void visit(const native_rays::QueryContext& world) {
             fighter.record = config.record;
             fighter.feet = at;
             fighter.grounded = motion.grounded != 0;
+            fighter.busy = noBlows.load(std::memory_order_relaxed);
             for (unsigned i = 0; i < 2; ++i) {
                 const bool carried = solver.webs()[i].attached && (owned || !motion.grounded);
                 fighter.swinging |= carried;
@@ -898,10 +901,12 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingSettings(void* input) {
     Settings s;
     uint32_t header[3]{};
     if (!copy(header, input, sizeof(header)) ||
-        (header[2] != settingsBytesV3 && header[2] != settingsBytesV4 && header[2] != sizeof(s)) ||
+        (header[2] != settingsBytesV3 && header[2] != settingsBytesV4 && header[2] != settingsBytesV5 &&
+         header[2] != sizeof(s)) ||
         !copy(&s, input, header[2]) || s.magic != 0x53575354 ||
         !((s.version == 3 && s.bytes == settingsBytesV3) || (s.version == 4 && s.bytes == settingsBytesV4) ||
-          (s.version == 5 && s.bytes == sizeof(s))) ||
+          (s.version == 5 && s.bytes == settingsBytesV5) || (s.version == 6 && s.bytes == sizeof(s))) ||
+        s.noBlows > 3 ||
         s.grab > 1 || !std::isfinite(s.maxSpeed) || s.maxSpeed <= 0 || s.maxSpeed > motionSpeedLimit ||
         s.airWebs > 1 || !std::isfinite(s.gravity) || s.gravity < 0 || s.gravity > maxGravity || s.walls > 4 ||
         s.physical > 1)
@@ -935,6 +940,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingSettings(void* input) {
         }
         if (s.version >= 5)
             solver.allowPhysical(s.physical != 0);
+        noBlows = s.version >= 6 ? s.noBlows : 0u;
         // A swing started without the grab (-NoWebGrab) offers it from now on.
         if (s.grab && !game_grab::offering() && driveMotion && sampleDriven) {
             config.grabKinds = game_grab::movableKinds;

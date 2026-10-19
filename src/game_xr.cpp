@@ -665,25 +665,33 @@ DWORD WINAPI run(void*) {
         GadgetWheel gadgetWheel;
         game_shooter::Data listed{};
         bool gadgetFire{};
-        // The phone (phone.hpp): open from MY PHONE until B, live while VR
-        // shows play; a press that put it away stays its own until let go of.
-        PhoneControls phoneControls;
-        PhoneUi phoneUi;
-        int phoneGearRows{};
-        PhoneMusic phoneMusic;
-        bool phoneOpen{}, phoneLive{}, phoneSwallow{};
-        // The phone drawn from a back pocket (PocketDraw): opens at the hand.
+        // The gadgets in the wheel's places, the web shooter's at the top, and
+        // the place equipped (the web shooter's while the free hand's trigger
+        // fires web balls): the wheel's, and the phone's GEAR in its order.
+        const auto wheelPlaces = [&](GadgetWheelView& view) {
+            view.places[0] = Gadget::webShooter;
+            view.equipped = 0;
+            for (uint32_t g = 0; g < std::min(listed.gadgetCount, 8u); ++g) {
+                const auto& o = listed.gadgets[g];
+                if (!o.kind || o.place >= gadgetPlaces)
+                    continue;
+                view.places[o.place] = static_cast<Gadget>(o.kind);
+                view.ammo[o.place] = o.ammo;
+                view.most[o.place] = o.most;
+                if (gadgetFire && o.weapon == listed.equipped)
+                    view.equipped = o.place;
+            }
+        };
+        // The phone (phone.hpp): open from MY PHONE or a back-pocket draw
+        // until B, live while VR shows play; its music plays on with it away,
+        // on a thread of its own (phone_music.hpp). phoneShown: what its
+        // screen shows, the newest, which every image draws. phoneBlows: the
+        // swing was last told the phone has the hands (Settings::noBlows).
+        Phone phone;
         PocketDraw pocketDraw;
-        bool phoneDrawn{};
-        // The hand holding the phone: the one that drew it, else the left.
-        int phoneHand{};
-        // The newest head and holding hand (tracking space), for drawing the
-        // phone where the hand is as each image goes out.
-        Pose phoneHeldHead{};
-        Vec3 phoneHeldGrip{};
-        bool phoneHeldValid{};
-        WheelFrame phonePlace{};
-        float phoneAge{};
+        PhoneMusic phoneMusic;
+        PhoneView phoneShown;
+        bool phoneBlows{};
         float menuTap{};
         // The game played on its screen (VIEW: GAME SCREEN): Back and the
         // D-pad, which the VR controllers lack, besides the Xbox controller's.
@@ -774,8 +782,6 @@ DWORD WINAPI run(void*) {
         values.flipSpeed = static_cast<int>(config.flipSpeed);
         values.screenDepth = static_cast<int>(config.screenDepth);
         values = vr_settings::sanitized(values);
-        phoneMusic.autoplay = values.phoneAutoplay;
-        phoneMusic.setVolume(values.phoneVolume);
         game_menu::publish(values);
         uint32_t settingChanges{};
         // aims are each hand's latest preview.
@@ -1006,6 +1012,30 @@ DWORD WINAPI run(void*) {
         };
         // Puts the settings into effect: at once, or when the module they
         // belong to starts (each start reads `values`).
+        // What the swing is told during play: the settings, a hand-over's
+        // walls, and the phone's hands, which land no blow while it is out.
+        auto sendSwingSettings = [&] {
+            if (!swingStarted || !swingSettings)
+                return;
+            game_swing::Settings s;
+            s.grab = values.webGrab && sampleGrab;
+            s.maxSpeed = values.swingSpeed;
+            s.airWebs = values.airWebs;
+            s.gravity = vr_settings::gravity(values.weight);
+            s.walls = !(config.options & 16384);
+            sentSwingSettings = s;
+            swingSettingsSent = true;
+            // A hand-over owns the walls while it lasts; the player's own
+            // setting is kept above and goes back when it ends.
+            if (wallsHandedBack)
+                s.walls = 0;
+            phoneBlows = phone.live();
+            s.noBlows = phoneBlows ? 3u : 0u;
+            if (const auto code = swingSettings(&s)) {
+                const auto text = "VR settings: the swing did not take them (" + std::to_string(code) + ")";
+                message(3, 0, text.c_str());
+            }
+        };
         auto applySettings = [&] {
             runtime.hapticStrength(static_cast<float>(values.haptics) / 100);
             rig.snapTurn(static_cast<float>(values.snapTurn) * 3.14159265f / 180);
@@ -1015,24 +1045,7 @@ DWORD WINAPI run(void*) {
             rig.triggerWebs(values.triggerWebs);
             rig.standOnWalls(values.standOnWalls);
             native_hud::setSize(values.hud);
-            if (swingStarted && swingSettings) {
-                game_swing::Settings s;
-                s.grab = values.webGrab && sampleGrab;
-                s.maxSpeed = values.swingSpeed;
-                s.airWebs = values.airWebs;
-                s.gravity = vr_settings::gravity(values.weight);
-                s.walls = !(config.options & 16384);
-                sentSwingSettings = s;
-                swingSettingsSent = true;
-                // A hand-over owns the walls while it lasts; the player's own
-                // setting is kept above and goes back when it ends.
-                if (wallsHandedBack)
-                    s.walls = 0;
-                if (const auto code = swingSettings(&s)) {
-                    const auto text = "VR settings: the swing did not take them (" + std::to_string(code) + ")";
-                    message(3, 0, text.c_str());
-                }
-            }
+            sendSwingSettings();
             if (swingStarted && startPunch && samplePunch) {
                 if (values.punch && !punchStarted) {
                     game_punch::Config punch;
@@ -1101,6 +1114,8 @@ DWORD WINAPI run(void*) {
             // The tracking space aligns with the new body's camera again.
             rig.reset();
             history.clear();
+            // A MY PHONE pressed before the main menu or a load opens nothing.
+            phone.cancel();
         };
         while (!stopRequested && (!nativeDeadline || GetTickCount64() < nativeDeadline)) {
             if (!config.durationMs && GetTickCount64() >= keepAliveDeadline)
@@ -1135,26 +1150,20 @@ DWORD WINAPI run(void*) {
             const bool active = runtime.frameStereo(
                 [&](const XrFrame& trackedFrame) {
                     XrFrame frame = trackedFrame;
-                    // The phone has the controllers while it is live: the stick
-                    // picks a button, A presses it, B puts the phone away, and
-                    // nothing reaches the swing or the game.
-                    if (phoneLive) {
-                        const auto& h = frame.hands;
-                        // Either stick: the one pushed further.
-                        const unsigned stickHand =
-                            std::hypot(h[0].stickX, h[0].stickY) > std::hypot(h[1].stickX, h[1].stickY) ? 0 : 1;
-                        const auto e = phoneControls.update(h[stickHand].stickX, h[stickHand].stickY,
-                                                            frame.jump || (frame.buttons & buttonA) != 0,
-                                                            (frame.buttons & buttonB) != 0, h[0].trigger, h[1].trigger);
+                    // The phone takes its controls first (Phone::take, PhoneHold):
+                    // while it is live the stick picks a button, A presses it, B
+                    // puts it away and the triggers step the volume, and none of
+                    // its controls reaches the swing or the game.
+                    {
+                        const auto use = phone.take(frame, phoneShown.gearCount);
+                        const auto& e = use.controls;
                         if (e.x || e.y)
-                            runtime.haptic(stickHand, .08f);
+                            runtime.haptic(use.stick, .08f);
                         if (e.volume) {
-                            phoneMusic.setVolume(phoneMusic.volume() + e.volume * phoneVolumeStep);
-                            values.phoneVolume = phoneMusic.volume();
+                            phoneMusic.setVolume(phoneMusic.status().volume + e.volume * phoneVolumeStep);
                             runtime.haptic(e.volume < 0 ? 0 : 1, .1f);
                         }
-                        const auto action = phoneUi.update(e, phoneGearRows);
-                        switch (action) {
+                        switch (use.action) {
                         case PhoneAction::previous:
                             phoneMusic.previous();
                             break;
@@ -1165,30 +1174,18 @@ DWORD WINAPI run(void*) {
                             phoneMusic.next();
                             break;
                         case PhoneAction::autoplay:
-                            phoneMusic.autoplay = values.phoneAutoplay = !phoneMusic.autoplay;
+                            phoneMusic.setAutoplay(!phoneMusic.status().autoplay);
                             break;
                         case PhoneAction::none:
                         case PhoneAction::close:
                             break;
                         }
-                        if (e.pressed || (e.closed && action != PhoneAction::close))
+                        if (e.pressed || (e.closed && use.action != PhoneAction::close))
                             runtime.haptic(1, .2f);
-                        if (action == PhoneAction::close) {
-                            phoneOpen = phoneLive = false;
-                            phoneSwallow = true;
+                        if (use.action == PhoneAction::close) {
                             runtime.haptic(1, .15f);
+                            message(3, 0, "Phone away - each control is the game's again once let go of");
                         }
-                    }
-                    phoneMusic.poll(frame.seconds);
-                    if (phoneSwallow && !frame.jump && !(frame.buttons & (buttonA | buttonB)))
-                        phoneSwallow = false;
-                    if (phoneLive || phoneSwallow) {
-                        for (auto& hand : frame.hands) {
-                            hand.trigger = hand.squeeze = hand.stickX = hand.stickY = 0;
-                            hand.stickClick = false;
-                        }
-                        frame.jump = false;
-                        frame.buttons &= buttonMenu;
                     }
                     uint64_t changes{};
                     if (const auto found = players.current(changes); changes != playerChanges) {
@@ -1243,17 +1240,20 @@ DWORD WINAPI run(void*) {
                     XrFrame controller = frame;
                     // The T-pose calibration has A as it has the other buttons.
                     controller.jump = frame.jump && !jumpFromScreen && !calibrationInput;
+                    // Each hand's grip pose, and whether the headset has it; and
+                    // whether the hand gestures play VR: gameplay in the headset,
+                    // the controllers no calibration's.
+                    const Pose grips[2]{frame.hands[0].grip, frame.hands[1].grip};
+                    const bool gripsTracked[2]{frame.hands[0].valid && validTrackedPose(frame.hands[0].grip),
+                                               frame.hands[1].valid && validTrackedPose(frame.hands[1].grip)};
+                    const bool gesturesPlay = viewing && gameplay && !flatScreen && !calibrationInput &&
+                                              validTrackedPose(frame.head);
                     // A trigger pulled with its hand at the temple is the game's
                     // scan, and no web ball or reel meanwhile.
                     {
-                        const Pose grips[2]{frame.hands[0].grip, frame.hands[1].grip};
-                        const bool tracked[2]{frame.hands[0].valid && validTrackedPose(frame.hands[0].grip),
-                                              frame.hands[1].valid && validTrackedPose(frame.hands[1].grip)};
                         const float triggers[2]{frame.hands[0].trigger, frame.hands[1].trigger};
-                        templePress.update(frame.seconds,
-                                           viewing && gameplay && !flatScreen && !calibrationInput &&
-                                               validTrackedPose(frame.head),
-                                           frame.head, grips, tracked, triggers);
+                        templePress.update(frame.seconds, gesturesPlay, frame.head, grips, gripsTracked,
+                                           triggers);
                         for (unsigned i = 0; i < 2; ++i)
                             if (templePress.hands() & (1u << i))
                                 controller.hands[i].trigger = 0;
@@ -1262,14 +1262,18 @@ DWORD WINAPI run(void*) {
                             runtime.haptic(0, .3f);
                             runtime.haptic(1, .3f);
                         }
-                        // A grip squeezed at a back pocket draws the phone, and
-                        // shoots no web until it is let go.
+                    }
+                    // A grip squeezed at a back pocket draws the phone, and shoots
+                    // no web until it is let go. Not with the phone out, nor in the
+                    // pad layer, where the grips are the game's bumpers (October
+                    // 19: a draw sent the game LB or RB until the phone came out).
+                    int phoneDrawnWith = -1;
+                    {
                         const float squeezes[2]{frame.hands[0].squeeze, frame.hands[1].squeeze};
-                        if (pocketDraw.update(frame.seconds,
-                                              viewing && gameplay && !flatScreen && !calibrationInput && !phoneOpen &&
-                                                  validTrackedPose(frame.head),
-                                              frame.head, grips, tracked, squeezes))
-                            phoneDrawn = true;
+                        const bool drawPlay = gesturesPlay && !phone.open() && !padLayer.latched();
+                        if (pocketDraw.update(frame.seconds, drawPlay, frame.head, grips, gripsTracked,
+                                              squeezes))
+                            phoneDrawnWith = pocketDraw.drewWith();
                         for (unsigned i = 0; i < 2; ++i)
                             if (pocketDraw.hands() & (1u << i))
                                 controller.hands[i].squeeze = 0;
@@ -1441,9 +1445,10 @@ DWORD WINAPI run(void*) {
                         mapping == game_pad::Mapping::gameplay || mapping == game_pad::Mapping::pad;
                     origins.update(frame.buttons, inPlay);
                     // What the controllers themselves sent, beside what reached the
-                    // game: a button missing from both was never pressed.
+                    // game: a button missing from both was never pressed. The
+                    // phone's presses are the controllers' too.
                     if (inPlay)
-                        vrButtonsPlayed |= frame.buttons;
+                        vrButtonsPlayed |= trackedFrame.buttons;
                     // The prompts are read wherever the game's UI builds one - it
                     // looks their texts up while it owns the screen - and rewritten
                     // only in VR play, where the game's own button names are wrong.
@@ -1576,40 +1581,34 @@ DWORD WINAPI run(void*) {
                             runtime.haptic(1, .15f);
                         }
                     }
-                    // MY PHONE, picked in the pause menu: the phone opens in front
-                    // of the player once VR shows play again.
-                    // Or drawn from a back pocket: it opens at the hand.
-                    if ((values.phone || phoneDrawn) && immersive && calibration.phase() == CalibrationPhase::idle &&
-                        (phoneDrawn || nowMs - immersiveSince >= 300)) {
-                        values.phone = false; // the menu's request is spent
-                        if (!phoneOpen) {
-                            phoneOpen = true;
-                            phoneAge = 0;
-                            phoneControls.reset();
-                            phoneUi.reset();
-                            phoneHand = phoneDrawn ? pocketDraw.drewWith() : 0;
-                            phonePlace = phoneDrawn ? phoneFrameAt(frame.head, pocketDraw.hand()) : phoneFrame(frame.head);
-                            phoneMusic.load(phoneMusicFolder());
+                    // The phone. MY PHONE, pressed in the pause menu, opens it in
+                    // front of the player once VR has shown play for a moment; the
+                    // game screen or the main menu coming first drops the request
+                    // (October 19: it opened in the next VR play, however much
+                    // later). A back-pocket draw opens it in the hand. It is live
+                    // while VR shows play and no calibration has the controllers,
+                    // which it leaves to a calibration (October 19: one begun under
+                    // it could be neither finished nor skipped).
+                    if (game_menu::takePhone())
+                        phone.ask();
+                    if (values.flatScreen || !player.hero)
+                        phone.cancel();
+                    {
+                        const bool phonePlay = immersive && calibration.phase() == CalibrationPhase::idle;
+                        const float played =
+                            immersiveSince ? static_cast<float>(nowMs - immersiveSince) / 1000 : 0.f;
+                        if (phone.update(frame.seconds, phonePlay, played, frame.head, grips, gripsTracked,
+                                         phoneDrawnWith, pocketDraw.hand())) {
+                            phoneMusic.load();
                             runtime.haptic(0, .2f);
                             runtime.haptic(1, .2f);
+                            message(3, 0, "Phone out - the stick, A, B and the triggers are the phone's "
+                                          "until B puts it away");
                         }
                     }
-                    phoneDrawn = false;
-                    if (phoneOpen) {
-                        phoneAge += frame.seconds;
-                        // It stays in the hand holding it until B; a hand the
-                        // headset loses leaves it where it last was.
-                        const auto& holding = frame.hands[static_cast<size_t>(phoneHand)];
-                        phoneHeldValid = holding.valid && validTrackedPose(holding.grip) && validTrackedPose(frame.head);
-                        if (phoneHeldValid) {
-                            phonePlace = phoneFrameAt(frame.head, holding.grip.position);
-                            phoneHeldHead = frame.head;
-                            phoneHeldGrip = holding.grip.position;
-                        }
-                    } else {
-                        phoneHeldValid = false;
-                    }
-                    phoneLive = phoneOpen && immersive;
+                    // While it is out its hands land no blow (Settings::noBlows).
+                    if (phone.live() != phoneBlows)
+                        sendSwingSettings();
                     if (calibrationInput && calibration.phase() == CalibrationPhase::idle) {
                         bool held = (frame.buttons & buttonB) || frame.jump;
                         for (const auto& hand : frame.hands)
@@ -2543,7 +2542,7 @@ DWORD WINAPI run(void*) {
                             d.cameraUp[i] = camera[4 + i];
                         }
 
-                        d.vrButtons = frame.buttons;
+                        d.vrButtons = trackedFrame.buttons;
                         d.vrButtonsPlayed = vrButtonsPlayed;
                         auto& p = SpidyPromptData;
                         InterlockedIncrement64(&p.sequence);
@@ -2831,54 +2830,40 @@ DWORD WINAPI run(void*) {
                         view.lit = gadgetWheel.lit();
                         view.frame = {compose(toWorld, Pose{f.centre, {}}).position, toWorld.orientation.rotate(f.right),
                                       toWorld.orientation.rotate(f.up), toWorld.orientation.rotate(f.out)};
-                        view.places[0] = Gadget::webShooter;
-                        view.equipped = 0;
-                        for (uint32_t g = 0; g < std::min(listed.gadgetCount, 8u); ++g) {
-                            const auto& o = listed.gadgets[g];
-                            if (!o.kind || o.place >= gadgetPlaces)
-                                continue;
-                            view.places[o.place] = static_cast<Gadget>(o.kind);
-                            view.ammo[o.place] = o.ammo;
-                            view.most[o.place] = o.most;
-                            if (gadgetFire && o.weapon == listed.equipped)
-                                view.equipped = o.place;
-                        }
+                        wheelPlaces(view);
                     }
-                    if (phoneLive) {
-                        // The phone, from tracking space into this frame's world.
-                        const Pose toWorld = compose(motion.headPose, inverse(frame.head));
-                        auto& view = saved.phone;
-                        view.open = true;
-                        view.age = phoneAge;
-                        view.screen = phoneUi.screen();
-                        view.app = phoneUi.app();
-                        view.lit = phoneUi.button();
-                        // GEAR: the gadgets the gadget wheel has, in its order.
+                    if (phone.live()) {
+                        // The phone: this image's way from tracking space into its
+                        // world, and the screen as it is now, which every image
+                        // shows (phoneShown).
+                        saved.phone = {true, compose(motion.headPose, inverse(frame.head))};
+                        auto& view = phoneShown;
+                        view.screen = phone.ui().screen();
+                        view.app = phone.ui().app();
+                        view.lit = phone.ui().button();
+                        // GEAR: the gadget wheel's places in its order, the web
+                        // shooter's first, and the one equipped as the wheel has it.
+                        GadgetWheelView wheel;
+                        wheelPlaces(wheel);
                         view.gearCount = 0;
-                        for (uint32_t g = 0; g < std::min(listed.gadgetCount, 8u); ++g) {
-                            const auto& o = listed.gadgets[g];
-                            if (!o.kind)
+                        for (int p = 0; p < gadgetPlaces; ++p) {
+                            if (wheel.places[p] == Gadget::none)
                                 continue;
                             auto& row = view.gear[view.gearCount++];
-                            strncpy_s(row.name, gadgetName(static_cast<Gadget>(o.kind)), _TRUNCATE);
-                            row.ammo = o.ammo;
-                            row.most = o.most;
-                            row.equipped = gadgetFire && o.weapon == listed.equipped;
+                            strncpy_s(row.name, gadgetName(wheel.places[p]), _TRUNCATE);
+                            row.ammo = wheel.ammo[p];
+                            row.most = wheel.most[p];
+                            row.equipped = wheel.equipped == p;
                         }
-                        phoneGearRows = view.gearCount;
-                        view.gearTop = phoneUi.gearTop();
-                        view.playing = phoneMusic.playing();
-                        view.autoplay = phoneMusic.autoplay;
-                        view.track = phoneMusic.track();
-                        view.tracks = phoneMusic.tracks();
-                        view.volume = phoneMusic.volume();
-                        strncpy_s(view.song, phoneMusic.name().c_str(), _TRUNCATE);
-                        view.frame = {compose(toWorld, Pose{phonePlace.centre, {}}).position,
-                                      toWorld.orientation.rotate(phonePlace.right),
-                                      toWorld.orientation.rotate(phonePlace.up),
-                                      toWorld.orientation.rotate(phonePlace.out)};
-                        view.toWorld = toWorld;
-                        view.hand = phoneHand;
+                        view.gearTop = phone.ui().gearTop();
+                        const auto music = phoneMusic.status();
+                        view.playing = music.playing;
+                        view.autoplay = music.autoplay;
+                        view.failed = music.failed;
+                        view.track = music.track;
+                        view.tracks = music.tracks;
+                        view.volume = music.volume;
+                        strncpy_s(view.song, music.song, _TRUNCATE);
                     }
                     for (unsigned i = 0; i < 2; ++i) {
                         saved.webs[i] = swingState.webs[i];
@@ -3220,20 +3205,18 @@ DWORD WINAPI run(void*) {
                             view.frame.centre += travel;
                             appendGadgetWheel(vertices, view);
                         }
-                        // The phone, moved with the player to this image as the wheel is.
+                        // The phone where it is now - in the hand, where the hand is
+                        // now - through this image's own way into its world, and
+                        // moved with the player to this image as the wheel is.
                         if (!saved->flatScreen && saved->phone.open) {
-                            auto view = saved->phone;
-                            // In the hand as it is now, through this image's own
-                            // tracking-to-world, so it keeps up with the hand.
-                            if (view.hand >= 0 && phoneOpen) {
-                                if (phoneHeldValid) {
-                                    const auto f = phoneFrameAt(phoneHeldHead, phoneHeldGrip);
-                                    const Quat turn = view.toWorld.orientation;
-                                    view.frame = {compose(view.toWorld, Pose{f.centre, {}}).position, turn.rotate(f.right),
-                                                  turn.rotate(f.up), turn.rotate(f.out)};
-                                }
-                            }
-                            view.frame.centre += travel;
+                            auto view = phoneShown;
+                            const Pose& toWorld = saved->phone.toWorld;
+                            const auto& f = phone.place();
+                            view.open = true;
+                            view.age = phone.age();
+                            const Quat turn = toWorld.orientation;
+                            view.frame = {compose(toWorld, Pose{f.centre, {}}).position + travel,
+                                          turn.rotate(f.right), turn.rotate(f.up), turn.rotate(f.out)};
                             appendPhone(vertices, view);
                         }
                         std::array<D3D12Renderer::ViewTarget, 2> overlayViews;

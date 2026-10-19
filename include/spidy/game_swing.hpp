@@ -199,18 +199,24 @@ static_assert(sizeof(Config) == 64 && sizeof(Hand) == 52 && sizeof(Command) == 2
 // physical: webs are ropes (SwingConfig::physical: they bend round edges,
 // are held by the hand and pay out on the ground); off, as before October
 // 12. Version 4 (settingsBytesV4) ends before it and leaves the webs as they
-// are.
+// are. Version 6, noBlows: the hands (bit 0 the left, 1 the right) whose
+// motion lands no blow, no punch and no web strike, as a hand whose web
+// carries the player lands none: both while the phone is out (phone.hpp,
+// October 19: a hand swung near a thug with the phone out punched him).
+// Version 5 (settingsBytesV5) ends before it: both hands fight.
 struct Settings {
-    uint32_t magic = 0x53575354, version = 5, bytes = sizeof(Settings), grab = 1;
+    uint32_t magic = 0x53575354, version = 6, bytes = sizeof(Settings), grab = 1;
     float maxSpeed = 32;
     uint32_t airWebs = 1;
     float gravity = 6;
     uint32_t walls = 1;
     uint32_t physical = 1;
+    uint32_t noBlows{};
 };
-constexpr uint32_t settingsBytesV3 = 28, settingsBytesV4 = 32;
-static_assert(sizeof(Settings) == 36 && offsetof(Settings, walls) == settingsBytesV3 &&
-              offsetof(Settings, physical) == settingsBytesV4);
+constexpr uint32_t settingsBytesV3 = 28, settingsBytesV4 = 32, settingsBytesV5 = 36;
+static_assert(sizeof(Settings) == 40 && offsetof(Settings, walls) == settingsBytesV3 &&
+              offsetof(Settings, physical) == settingsBytesV4 &&
+              offsetof(Settings, noBlows) == settingsBytesV5);
 // Physical webs (SpidyRopeData): what the ropes did, for the session report.
 struct Ropes {
     uint32_t magic = 0x53575250, version = 2, bytes = sizeof(Ropes), physical{};

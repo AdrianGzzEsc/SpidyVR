@@ -134,6 +134,8 @@ SRWLOCK lock = SRWLOCK_INIT;
 vr_settings::Values shown;
 uint32_t pending{}; // bits 1 << Item changed in the tab and not taken yet
 std::atomic<uint64_t> tabsBuilt{}, changesMade{};
+// MY PHONE pressed and not taken yet (takePhone).
+std::atomic<bool> phoneAsked{};
 std::atomic<uint32_t> failure{};
 std::atomic<bool> hooked{}, created{};
 // The tab and its items: 0 not built yet, 1 ready, 2 cannot be built.
@@ -294,14 +296,18 @@ uint32_t buildItems() {
                 put<uint64_t>(c, 0x28, 0);
             }
         }
-        // The tab's rows, and the one for the first page.
+        // The tab's rows, and the ones for the first page, each by its item.
         tabRows = 0;
         pageRow = phoneRow = -1;
-        for (size_t r = 0; r < rowCount; ++r)
-            if (vr_settings::rows()[r].page)
-                (vr_settings::rows()[r].item == Item::view ? pageRow : phoneRow) = static_cast<int>(r);
-            else
+        for (size_t r = 0; r < rowCount; ++r) {
+            const auto& row = vr_settings::rows()[r];
+            if (!row.page)
                 std::memcpy(tabItems[tabRows++], items[r], itemBytes);
+            else if (row.item == Item::view)
+                pageRow = static_cast<int>(r);
+            else if (row.item == Item::phone)
+                phoneRow = static_cast<int>(r);
+        }
         std::memcpy(tab, reinterpret_cast<const void*>(menu), tabBytes);
         put<uint32_t>(tab, 8, tabId);
         putText(tab, 0x10, tabName);
@@ -440,25 +446,24 @@ bool __fastcall invokeHook(void* ui, const char* name, GfxValue* args, uint32_t 
 }
 void __fastcall callbackHook(void* ui, uint32_t hash, GfxValue* args, uint32_t count) {
     trace(2, ui, hash, nullptr, args, count, _ReturnAddress());
-    // A on VR VIEW, on the pause menu's first page: the other view, and the
-    // page built again to name the next one.
-    if (built == 1 && pageReady && pageRow >= 0 && hash == pageSelectHash && args && count >= 1 &&
-        ((args[0].type & typeMask) == intType || (args[0].type & typeMask) == intType + 1) &&
-        static_cast<uint32_t>(args[0].data) == static_cast<uint32_t>(firstSetting + pageRow)) {
-        AcquireSRWLockShared(&lock);
-        const bool screen = shown.flatScreen;
-        ReleaseSRWLockShared(&lock);
-        change(Item::view, screen ? 0 : 1);
-        reinterpret_cast<void(__fastcall*)(void*)>(imageBase + pageRefresh)(ui);
-        return;
-    }
-    // A on MY PHONE: the phone opens once play resumes (the XR worker
-    // clears the request when it does).
-    if (built == 1 && pageReady && phoneRow >= 0 && hash == pageSelectHash && args && count >= 1 &&
-        ((args[0].type & typeMask) == intType || (args[0].type & typeMask) == intType + 1) &&
-        static_cast<uint32_t>(args[0].data) == static_cast<uint32_t>(firstSetting + phoneRow)) {
-        change(Item::phone, 1);
-        return;
+    // A on a row of Spidy's on the pause menu's first page. VR VIEW: the
+    // other view, and the page built again to name the next one. MY PHONE:
+    // the phone, once play resumes in VR (takePhone).
+    if (built == 1 && pageReady && hash == pageSelectHash && args && count >= 1 &&
+        ((args[0].type & typeMask) == intType || (args[0].type & typeMask) == intType + 1)) {
+        const int r = rowOf(static_cast<int>(static_cast<uint32_t>(args[0].data)));
+        if (r >= 0 && (r == pageRow || r == phoneRow)) {
+            AcquireSRWLockShared(&lock);
+            const bool screen = shown.flatScreen;
+            ReleaseSRWLockShared(&lock);
+            if (r == pageRow) {
+                change(Item::view, screen ? 0 : 1);
+                reinterpret_cast<void(__fastcall*)(void*)>(imageBase + pageRefresh)(ui);
+            } else if (!screen) {
+                phoneAsked = true;
+            }
+            return;
+        }
     }
     // Y RESET ALL on the SPIDY VR tab: the game's RESET ALL takes only its own tabs.
     if (built == 1 && args && count >= 1 && (args[0].type & typeMask) == intType &&
@@ -624,6 +629,9 @@ void game_menu::publish(const vr_settings::Values& values) {
     // A change from the tab not taken yet stays as the tab left it.
     shown = pending ? copyItems(shown, values, pending) : values;
     ReleaseSRWLockExclusive(&lock);
+}
+bool game_menu::takePhone() {
+    return phoneAsked.exchange(false);
 }
 bool game_menu::take(vr_settings::Values& values) {
     AcquireSRWLockExclusive(&lock);

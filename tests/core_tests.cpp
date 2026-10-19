@@ -2358,12 +2358,15 @@ int main() {
     });
     test("pocket draw: a grip squeezed at a back pocket, brought up in front, opens the phone there", [] {
         const Pose head{{0,1.7f,0},{}};
-        const Pose pocket{{.2f,.9f,.1f},{}}, front{{.1f,1.25f,-.3f},{}}, hip{{.2f,.9f,-.2f},{}};
-        const bool tracked[2]{true,true};
-        const auto step=[&](PocketDraw& d,const Pose& right,float squeeze,float seconds=1.f/90,bool play=true){
+        // A back pocket 20 cm behind the eyes; a hand hanging at the side, about 8 cm.
+        const Pose pocket{{.2f,.9f,.2f},{}}, front{{.1f,1.25f,-.3f},{}}, hip{{.2f,.9f,-.2f},{}},
+            side{{.25f,.95f,.08f},{}};
+        bool tracked[2]{true,true};
+        const auto step=[&](PocketDraw& d,const Pose& right,float squeeze,float seconds=1.f/90,bool play=true,
+                            const Pose* eyes=nullptr){
             const Pose grips[2]{Pose{{-.3f,1.f,0},{}},right};
             const float squeezes[2]{0,squeeze};
-            return d.update(seconds,play,head,grips,tracked,squeezes);
+            return d.update(seconds,play,eyes?*eyes:head,grips,tracked,squeezes);
         };
         PocketDraw d;
         check(!step(d,pocket,1),"the squeeze at the pocket opened it at once");
@@ -2373,11 +2376,21 @@ int main() {
         check(d.hands()==2u,"the grip was let go to the swing while still squeezed");
         step(d,front,0);
         check(d.hands()==0u,"let go of, the grip stayed the draw's");
-        // A squeeze in front of the hip is a web's, not a draw.
+        // A squeeze in front of the hip, or with the arm hanging at the side, is a web's, not a draw.
         check(!step(d,hip,1)&&d.hands()==0u,"a squeeze at the front of the hip began a draw");
         step(d,front,1);
         check(d.draws()==1,"a web's squeeze brought up opened the phone");
         step(d,front,0);
+        check(!step(d,side,1)&&d.hands()==0u,"a squeeze with the arm hanging at the side began a draw");
+        step(d,side,0);
+        // Nor with the head turned 30 degrees the other way for a moment: the
+        // pocket is the body's, which a glance does not turn.
+        const Pose glance{{0,1.7f,0},Quat::yaw(.52f)};
+        for(int i=0;i<30;++i)step(d,side,0,1.f/90,true,&glance);
+        check(!step(d,side,1,1.f/90,true,&glance)&&d.hands()==0u,"a glance over the shoulder made a pocket of the side");
+        step(d,side,0,1.f/90,true,&glance);
+        for(int i=0;i<300;++i)step(d,side,0);
+        check(std::abs(d.yaw())<.05f,"the body did not turn back with the head");
         // Let go on the way, nothing opens.
         step(d,pocket,1);
         step(d,pocket,0);
@@ -2385,21 +2398,124 @@ int main() {
         step(d,front,0);
         // Too slow, nothing opens.
         step(d,pocket,1);
-        step(d,pocket,1,.1f);
         for(int i=0;i<20;++i)step(d,pocket,1,.1f);
         check(!step(d,front,1)&&d.draws()==1,"a draw slower than drawSeconds opened it");
         step(d,front,0);
         check(!step(d,pocket,1,1.f/90,false)&&d.hands()==0u,"outside VR play a draw began");
+        step(d,pocket,0);
+        // A hand the headset loses behind the back keeps its grip the draw's, and the draw goes on.
+        step(d,pocket,1);
+        tracked[1]=false;
+        for(int i=0;i<20;++i)step(d,Pose{},1);
+        check(d.hands()==2u,"a hand lost behind the back let go of its grip");
+        tracked[1]=true;
+        check(step(d,front,1)&&d.draws()==2,"a draw through a hand lost behind the back did not open the phone");
+        step(d,front,0);
+        // A press with the hand just lost begins a draw where it was last seen.
+        step(d,pocket,0);
+        tracked[1]=false;
+        check(!step(d,Pose{},1)&&d.hands()==2u,"a press with the hand lost at the pocket began no draw");
+        tracked[1]=true;
+        check(step(d,front,1)&&d.draws()==3,"a draw begun with the hand lost did not open the phone");
+        step(d,front,0);
+        // A game hitch on the way (a moment out of play) does not end a draw.
+        step(d,pocket,1);
+        step(d,pocket,1,1.f/90,false);
+        step(d,pocket,1,1.f/90,false);
+        check(step(d,front,1)&&d.draws()==4,"a hitch on the way ended the draw");
+        step(d,front,0);
         check(d.drewWith()==1,"the right hand's draw was not the right hand's");
         const auto f=phoneFrameAt(head,front.position);
         check(dot(f.out,normalized(head.position-f.centre))>.999f&&f.up.y>.5f&&std::abs(dot(f.up,f.out))<1e-4f,
               "the held phone does not face the eyes with its top up");
+        check(dot(f.right,cross(f.up,f.out))>.999f&&f.right.x>.5f,
+              "the held phone's right is not the viewer's right: it would show its back");
         check(length(f.centre-front.position)<.1f,"the held phone is not at the hand");
+    });
+    test("phone hold: a control changes hands only once let go of, so nothing sees a press nobody made", [] {
+        PhoneHold hold;
+        XrFrame f, mine;
+        const auto at=[&](bool live,uint32_t buttons,float rightGrip=0,bool jump=false){
+            f=XrFrame{};
+            f.buttons=buttons;
+            f.jump=jump;
+            f.hands[1].squeeze=rightGrip;
+            hold.update(live,f,mine);
+        };
+        // A web held as the phone comes out keeps holding until let go of; then the phone has the grip.
+        at(false,0,1);
+        at(true,0,1);
+        check(f.hands[1].squeeze==1&&mine.hands[1].squeeze==0,"the grip holding a web was taken as the phone came out");
+        check(hold.any(),"the phone did not take the controls let go of");
+        at(true,0,0);
+        at(true,0,1);
+        check(f.hands[1].squeeze==0&&mine.hands[1].squeeze==1,"a grip squeezed with the phone out reached the game");
+        // The B that puts the phone away stays the phone's until let go of, and so does a grip held meanwhile.
+        at(true,buttonB,1);
+        at(false,buttonB,1);
+        check(!(f.buttons&buttonB)&&f.hands[1].squeeze==0,"the B that put the phone away, or a grip held, reached the game");
+        at(false,0,0);
+        check(!hold.any(),"let go of, the controls did not go back to the game");
+        at(false,buttonB,1);
+        check((f.buttons&buttonB)&&f.hands[1].squeeze==1,"the game did not get its controls back");
+        // A B held from the pause menu back into play stays the game's: the phone sees none.
+        at(true,buttonB);
+        check((f.buttons&buttonB)&&!(mine.buttons&buttonB),"a B held into the phone's play was the phone's");
+        // The menu button is always the game's; A is the frame's jump too.
+        at(true,buttonMenu);
+        check((f.buttons&buttonMenu)!=0,"the phone took the menu button");
+        at(true,buttonA,0,true);
+        check(!f.jump&&!(f.buttons&buttonA)&&mine.jump&&(mine.buttons&buttonA),"A was not the phone's, jump and all");
+    });
+    test("phone: MY PHONE opens it in front once VR shows play, a draw in the hand; B puts it away", [] {
+        Phone p;
+        const Pose head{{0,1.7f,0},{}};
+        Pose grips[2]{Pose{{-.2f,1.1f,-.3f},{}},Pose{{.2f,1.1f,-.3f},{}}};
+        bool tracked[2]{true,true};
+        const float frame=1.f/90;
+        p.ask();
+        check(!p.update(frame,false,0,head,grips,tracked)&&!p.open(),"MY PHONE opened the phone outside VR play");
+        check(!p.update(frame,true,.1f,head,grips,tracked)&&!p.open(),"MY PHONE opened it before play had shown a moment");
+        check(p.update(frame,true,Phone::askedPlay,head,grips,tracked)&&p.open()&&p.live()&&p.hand()<0&&!p.asked(),
+              "MY PHONE did not open it in front of the player");
+        const Vec3 ahead=phoneFrame(head).centre;
+        check(length(p.place().centre-ahead)<1e-4f,"MY PHONE's phone is not in front of the player");
+        grips[0].position.x=-.5f;
+        p.update(frame,true,1,head,grips,tracked);
+        check(length(p.place().centre-ahead)<1e-4f,"MY PHONE's phone followed a hand");
+        // Out of play (a pause, a calibration) it is open but not live; back in play, live.
+        p.update(frame,false,0,head,grips,tracked);
+        check(p.open()&&!p.live(),"out of play the phone stayed live");
+        p.update(frame,true,1,head,grips,tracked);
+        check(p.live(),"back in play the phone was not live");
+        // B on the home screen puts it away, and the game never sees that B.
+        XrFrame f;
+        p.take(f,0);
+        f=XrFrame{};
+        f.buttons=buttonB;
+        check(p.take(f,0).action==PhoneAction::close&&!p.open()&&!p.live(),"B on the home screen did not put it away");
+        check(!(f.buttons&buttonB),"the B that put the phone away reached the game");
+        // A request dropped opens nothing.
+        p.ask();
+        p.cancel();
+        check(!p.update(frame,true,1,head,grips,tracked)&&!p.open(),"a dropped MY PHONE opened the phone");
+        // Drawn from a pocket it opens in the drawing hand and follows it; a hand lost leaves it where it was.
+        check(p.update(frame,true,1,head,grips,tracked,1,grips[1].position)&&p.hand()==1,
+              "a draw did not open the phone in its hand");
+        grips[1].position={.25f,1.2f,-.35f};
+        p.update(frame,true,1,head,grips,tracked);
+        const Vec3 held=p.place().centre;
+        check(length(held-phoneFrameAt(head,grips[1].position).centre)<1e-4f,"the drawn phone did not follow its hand");
+        tracked[1]=false;
+        grips[1].position={};
+        p.update(frame,true,1,head,grips,tracked);
+        check(length(p.place().centre-held)<1e-4f,"a hand the headset lost carried the phone off");
     });
     test("phone: home screen apps, MUSIC's buttons, GEAR's scroll; A, B, stick and triggers once per press", [] {
         PhoneControls c;
+        // Each opening counts everything as held: the press that opened it presses nothing until let go of.
+        c.update(0,0,false,false);
         c.reset();
-        // The press that opened it presses nothing until let go of.
         check(!c.update(0,0,true,false).pressed,"the opening press pressed something");
         auto e=c.update(0,0,false,false);
         check(!e.pressed&&!e.x&&!e.y,"nothing happened, yet something stepped");
@@ -2412,10 +2528,15 @@ int main() {
         c.update(0,0,false,false);
         check(c.update(0,0,true,false).pressed&&!c.update(0,0,true,false).pressed,"A pressed never, or twice held");
         check(c.update(0,0,false,true).closed,"B did not count");
-        // The triggers: the left a step down, the right a step up, once per pull.
+        // The triggers: the left a step down, the right a step up, once per pull; each held
+        // as the phone opens counts nothing.
         PhoneControls t;
+        t.update(0,0,false,false,0,0);
         t.reset();
-        check(t.update(0,0,false,false,1,1).volume==0,"a trigger held as it opened stepped the volume");
+        check(t.update(0,0,false,false,1,0).volume==0,"a left trigger held as it opened stepped the volume");
+        t.update(0,0,false,false,0,0);
+        t.reset();
+        check(t.update(0,0,false,false,0,1).volume==0,"a right trigger held as it opened stepped the volume");
         t.update(0,0,false,false,0,0);
         check(t.update(0,0,false,false,1,0).volume==-1,"the left trigger did not step it down");
         check(t.update(0,0,false,false,1,0).volume==0,"a held left trigger stepped it again");
@@ -2449,19 +2570,49 @@ int main() {
         check(ui.button()==PhoneButton::play,"up from AUTOPLAY did not go back to PLAY");
         step(E{0,0,false,true});
         check(step(E{0,0,false,true})==PhoneAction::close,"B at home did not put the phone away");
-        const std::string named=phoneSongName("C:\\Music\\my_song.mp3");
-        check(named=="my song","a song's name kept its folder, extension or underscore");
-        check(phoneSongName("\xE2\x99\xAB.mp3")=="SONG","a name of nothing drawable is not SONG");
-        PhoneView view;view.open=true;view.age=1;view.tracks=2;view.playing=true;
-        std::snprintf(view.song,sizeof view.song,"%s","HELLO");
-        view.gearCount=2;
-        std::snprintf(view.gear[0].name,sizeof view.gear[0].name,"%s","WEB BOMB");view.gear[0].most=4;view.gear[0].ammo=2;
-        for(const auto s:{PhoneScreen::home,PhoneScreen::music,PhoneScreen::map,PhoneScreen::gear}){
-            std::vector<Vertex> v;
-            view.screen=s;
-            appendPhone(v,view);
-            check(v.size()>300&&v.size()%3==0,"a screen drew nothing, or not in triangles");
-        }
+        // The songs' names: the font's letters, accents taken off, and TRACK and its number for none.
+        check(phoneSongName("C:\\Music\\my_song.mp3",0)=="my song","a song's name kept its folder, extension or underscore");
+        check(phoneSongName("Beyonc\xC3\xA9 - Halo.mp3",0)=="Beyonce - Halo","an accented letter was not its letter");
+        check(phoneSongName("Beyonce\xCC\x81.mp3",0)=="Beyonce","a name in NFD kept its accent");
+        check(phoneSongName("Stra\xC3\x9F" "e.mp3",0)=="Strasse"&&phoneSongName("\xC5\x92uvre.wav",0)=="OEuvre",
+              "a joined letter was not spelt out");
+        check(phoneSongName("\xD7\xA9\xD7\x99\xD7\xA8.mp3",2)=="TRACK 3"&&phoneSongName("\xE2\x99\xAB.mp3",0)=="TRACK 1",
+              "a name of nothing drawable is not TRACK and its number");
+        // Each screen draws what it has to show: the same screen showing something else draws otherwise.
+        PhoneView view;
+        view.open=true;
+        view.age=1;
+        const auto drawn=[&](PhoneScreen s,auto&& change){
+            PhoneView v=view;
+            v.screen=s;
+            change(v);
+            std::vector<Vertex> out;
+            appendPhone(out,v);
+            check(out.size()%3==0,"a screen not in triangles");
+            return out.size();
+        };
+        const auto nothing=[](PhoneView&){};
+        const auto songs=[](PhoneView& v){
+            v.tracks=2;
+            std::snprintf(v.song,sizeof v.song,"%s","HELLO");
+        };
+        const auto longer=[&](PhoneView& v){
+            songs(v);
+            std::snprintf(v.song,sizeof v.song,"%s","HELLO AGAIN");
+        };
+        check(drawn(PhoneScreen::home,songs)!=drawn(PhoneScreen::home,longer),"the home screen did not show the song");
+        check(drawn(PhoneScreen::music,nothing)!=drawn(PhoneScreen::music,songs),"MUSIC showed no songs");
+        check(drawn(PhoneScreen::music,songs)!=drawn(PhoneScreen::music,longer),"MUSIC did not show the song");
+        check(drawn(PhoneScreen::music,songs)!=drawn(PhoneScreen::music,[&](PhoneView& v){songs(v);v.failed=true;}),
+              "MUSIC did not say a song could not play");
+        check(drawn(PhoneScreen::gear,nothing)!=drawn(PhoneScreen::gear,[](PhoneView& v){
+                  v.gearCount=1;
+                  std::snprintf(v.gear[0].name,sizeof v.gear[0].name,"%s","WEB BOMB");
+                  v.gear[0].most=4;
+              }),
+              "GEAR showed no gadgets");
+        // MAP shows the same whatever else the phone has: more than a phone with no screen at all.
+        check(drawn(PhoneScreen::map,nothing)>drawn(static_cast<PhoneScreen>(phoneApps+1),nothing),"MAP showed nothing");
     });
     test("sky anchors respect body occlusion and later world obstruction", [] {
         struct Occluded : TestWorld {

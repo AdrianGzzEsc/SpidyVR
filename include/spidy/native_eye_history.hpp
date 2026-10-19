@@ -32,8 +32,9 @@ struct NativeEyeFrame {
     SlowMotionView slow{};
     // The gadget wheel, open while X is held (gadget_wheel.hpp).
     GadgetWheelView gadgetWheel{};
-    // The phone, open from MY PHONE until B (phone.hpp).
-    PhoneView phone{};
+    // The phone, open from MY PHONE or a pocket draw until B: whether the
+    // image has it, and the image's way into its world (phone.hpp).
+    PhoneImage phone{};
     bool flatScreen{};
     // The game screen in stereo (eye command 3): the pair goes on the screen,
     // the left image for the left eye and the right one for the right.
