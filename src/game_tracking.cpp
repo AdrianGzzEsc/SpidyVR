@@ -393,14 +393,14 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     if (wallRun && !wallRunning_) {
         // Capture the direction visible BEFORE the wall-floor transition
         // resets the roll. Holding up from upside down must keep going down.
-        runView_ = length(climbNormal_) > .5f ? climbView_ : rig_.toWorld(f.head).orientation;
-        runHead_ = f.head.orientation;
+        const Quat runView = length(climbNormal_) > .5f ? climbView_ : rig_.toWorld(f.head).orientation;
         runNormal_ = held;
         // Set only the entry heading. The existing up-to-wall turn below
         // keeps its original axis, speed and placement path after this.
-        const Vec3 look = runView_.rotate({0, 0, -1}), top = runView_.rotate({0, 1, 0});
+        const Vec3 look = runView.rotate({0, 0, -1}), top = runView.rotate({0, 1, 0});
         const Vec3 along = look - held * dot(look, held);
         const Vec3 ahead = normalized(length(along) > .4f ? along : top - held * dot(top, held));
+        runAhead_ = ahead;
         const Vec3 side = normalized(cross(ahead, held));
         const Vec3 travel = normalized(ahead * f.hands[0].stickY + side * f.hands[0].stickX);
         const Quat floor = arc(surfaceTurn_.rotate({0, 1, 0}), held) * surfaceTurn_;
@@ -413,7 +413,13 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
         runYaw_ = rig_.yaw;
     }
     if (wallRun) {
-        runView_ = unit(arc(runNormal_, held) * Quat::yaw(rig_.yaw - runYaw_) * runView_);
+        // The held stick owns these axes. Head pitch/yaw only changes what
+        // the player sees; it cannot switch forward from crown to gaze.
+        // Corners transport the direction, and deliberate turning controls
+        // turn it about the wall's normal just as they turn the running view.
+        runAhead_ = arc(runNormal_, held).rotate(runAhead_);
+        runAhead_ = Quat::around(held, rig_.yaw - runYaw_).rotate(runAhead_);
+        runAhead_ = normalized(runAhead_ - held * dot(runAhead_, held));
         runNormal_ = held;
         runYaw_ = rig_.yaw;
         wallRoll_.reset();
@@ -563,15 +569,8 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     if (turned)
         out.swing.move = surfaceTurn_.rotate(levelMove);
     if (wallRun) {
-        // Keep these axes for the held stick, including physical head turns,
-        // and transport them onto the next face at a corner. The camera's
-        // transition into wall running cannot reverse the command mid-push.
-        const Quat view = runView_ * runHead_.conjugate() * f.head.orientation;
-        const Vec3 look = view.rotate({0, 0, -1}), top = view.rotate({0, 1, 0});
-        const Vec3 along = look - held * dot(look, held);
-        const Vec3 ahead = normalized(length(along) > .4f ? along : top - held * dot(top, held));
-        const Vec3 side = normalized(cross(ahead, held));
-        out.swing.move = limited(ahead * f.hands[0].stickY + side * f.hands[0].stickX, 1);
+        const Vec3 side = normalized(cross(runAhead_, held));
+        out.swing.move = limited(runAhead_ * f.hands[0].stickY + side * f.hands[0].stickX, 1);
     }
     if (out.releaseWebs)
         for (auto& hand : out.swing.hands)

@@ -341,8 +341,8 @@ class GameTrackingRig {
     bool handClimb_{};
     float wallDistance_ = .3f;
     WallRollGesture wallRoll_;
-    Vec3 climbNormal_{}, runNormal_{};
-    Quat climbView_{}, runView_{}, runHead_{};
+    Vec3 climbNormal_{}, runNormal_{}, runAhead_{};
+    Quat climbView_{};
     float runYaw_{};
     bool wallRunning_{};
     float headroom_{};
