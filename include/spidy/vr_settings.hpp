@@ -119,9 +119,8 @@ enum class Item : uint8_t {
     standOnWalls,
     screenDepth,
     view,
-    phone,
 };
-inline constexpr Item lastItem = Item::phone;
+inline constexpr Item lastItem = Item::view;
 // The SPIDY VR tab, top to bottom: a section's heading (item none) or a
 // setting. A setting without choices is an ON/OFF switch, the game's own;
 // one with choices steps through them. Titles are upper case, as the game's
@@ -136,7 +135,7 @@ struct Row {
     // menu (the one with resume)").
     bool page{};
 };
-const std::array<Row, 20>& rows();
+const std::array<Row, 19>& rows();
 // The choice a setting shows for these values: a switch 0 (off) or 1 (on), a
 // list its step nearest to the value (a launcher value between two steps
 // shows the nearer one, the lower on a tie).

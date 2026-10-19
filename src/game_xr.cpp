@@ -682,11 +682,11 @@ DWORD WINAPI run(void*) {
                     view.equipped = o.place;
             }
         };
-        // The phone (phone.hpp): open from MY PHONE or a back-pocket draw
-        // until B, live while VR shows play; its music plays on with it away,
-        // on a thread of its own (phone_music.hpp). phoneShown: what its
-        // screen shows, the newest, which every image draws. phoneBlows: the
-        // swing was last told the phone has the hands (Settings::noBlows).
+        // The phone (phone.hpp): open from a back-pocket draw until B, live
+        // while VR shows play; its music plays on with it away, on a thread
+        // of its own (phone_music.hpp). phoneShown: what its screen shows,
+        // the newest, which every image draws. phoneBlows: the swing was last
+        // told the phone has the hands (Settings::noBlows).
         Phone phone;
         PocketDraw pocketDraw;
         PhoneMusic phoneMusic;
@@ -1114,8 +1114,6 @@ DWORD WINAPI run(void*) {
             // The tracking space aligns with the new body's camera again.
             rig.reset();
             history.clear();
-            // A MY PHONE pressed before the main menu or a load opens nothing.
-            phone.cancel();
         };
         while (!stopRequested && (!nativeDeadline || GetTickCount64() < nativeDeadline)) {
             if (!config.durationMs && GetTickCount64() >= keepAliveDeadline)
@@ -1581,23 +1579,13 @@ DWORD WINAPI run(void*) {
                             runtime.haptic(1, .15f);
                         }
                     }
-                    // The phone. MY PHONE, pressed in the pause menu, opens it in
-                    // front of the player once VR has shown play for a moment; the
-                    // game screen or the main menu coming first drops the request
-                    // (October 19: it opened in the next VR play, however much
-                    // later). A back-pocket draw opens it in the hand. It is live
-                    // while VR shows play and no calibration has the controllers,
-                    // which it leaves to a calibration (October 19: one begun under
-                    // it could be neither finished nor skipped).
-                    if (game_menu::takePhone())
-                        phone.ask();
-                    if (values.flatScreen || !player.hero)
-                        phone.cancel();
+                    // The phone, which a back-pocket draw opens in the hand. It is
+                    // live while VR shows play and no calibration has the
+                    // controllers, which it leaves to a calibration (October 19:
+                    // one begun under it could be neither finished nor skipped).
                     {
                         const bool phonePlay = immersive && calibration.phase() == CalibrationPhase::idle;
-                        const float played =
-                            immersiveSince ? static_cast<float>(nowMs - immersiveSince) / 1000 : 0.f;
-                        if (phone.update(frame.seconds, phonePlay, played, frame.head, grips, gripsTracked,
+                        if (phone.update(frame.seconds, phonePlay, frame.head, grips, gripsTracked,
                                          phoneDrawnWith, pocketDraw.hand())) {
                             phoneMusic.load();
                             runtime.haptic(0, .2f);

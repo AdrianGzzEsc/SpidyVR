@@ -2467,26 +2467,33 @@ int main() {
         at(true,buttonA,0,true);
         check(!f.jump&&!(f.buttons&buttonA)&&mine.jump&&(mine.buttons&buttonA),"A was not the phone's, jump and all");
     });
-    test("phone: MY PHONE opens it in front once VR shows play, a draw in the hand; B puts it away", [] {
+    test("phone: a draw opens it in the hand once VR shows play, where it stays until B puts it away", [] {
         Phone p;
         const Pose head{{0,1.7f,0},{}};
         Pose grips[2]{Pose{{-.2f,1.1f,-.3f},{}},Pose{{.2f,1.1f,-.3f},{}}};
         bool tracked[2]{true,true};
         const float frame=1.f/90;
-        p.ask();
-        check(!p.update(frame,false,0,head,grips,tracked)&&!p.open(),"MY PHONE opened the phone outside VR play");
-        check(!p.update(frame,true,.1f,head,grips,tracked)&&!p.open(),"MY PHONE opened it before play had shown a moment");
-        check(p.update(frame,true,Phone::askedPlay,head,grips,tracked)&&p.open()&&p.live()&&p.hand()<0&&!p.asked(),
-              "MY PHONE did not open it in front of the player");
-        const Vec3 ahead=phoneFrame(head).centre;
-        check(length(p.place().centre-ahead)<1e-4f,"MY PHONE's phone is not in front of the player");
-        grips[0].position.x=-.5f;
-        p.update(frame,true,1,head,grips,tracked);
-        check(length(p.place().centre-ahead)<1e-4f,"MY PHONE's phone followed a hand");
+        check(!p.update(frame,false,head,grips,tracked,1,grips[1].position)&&!p.open(),
+              "a draw opened the phone outside VR play");
+        check(!p.update(frame,true,head,grips,tracked)&&!p.open(),"the phone opened with no draw");
+        // Drawn from a pocket it opens in the drawing hand and follows it; a hand lost leaves it where it was.
+        check(p.update(frame,true,head,grips,tracked,1,grips[1].position)&&p.open()&&p.live()&&p.hand()==1,
+              "a draw did not open the phone in its hand");
+        grips[1].position={.25f,1.2f,-.35f};
+        p.update(frame,true,head,grips,tracked);
+        const Vec3 held=p.place().centre;
+        check(length(held-phoneFrameAt(head,grips[1].position).centre)<1e-4f,"the drawn phone did not follow its hand");
+        tracked[1]=false;
+        grips[1].position={};
+        p.update(frame,true,head,grips,tracked);
+        check(length(p.place().centre-held)<1e-4f,"a hand the headset lost carried the phone off");
+        // A draw with the phone out takes nothing from the hand holding it.
+        check(!p.update(frame,true,head,grips,tracked,0,grips[0].position)&&p.hand()==1,
+              "a second draw took the phone out of its hand");
         // Out of play (a pause, a calibration) it is open but not live; back in play, live.
-        p.update(frame,false,0,head,grips,tracked);
+        p.update(frame,false,head,grips,tracked);
         check(p.open()&&!p.live(),"out of play the phone stayed live");
-        p.update(frame,true,1,head,grips,tracked);
+        p.update(frame,true,head,grips,tracked);
         check(p.live(),"back in play the phone was not live");
         // B on the home screen puts it away, and the game never sees that B.
         XrFrame f;
@@ -2495,21 +2502,6 @@ int main() {
         f.buttons=buttonB;
         check(p.take(f,0).action==PhoneAction::close&&!p.open()&&!p.live(),"B on the home screen did not put it away");
         check(!(f.buttons&buttonB),"the B that put the phone away reached the game");
-        // A request dropped opens nothing.
-        p.ask();
-        p.cancel();
-        check(!p.update(frame,true,1,head,grips,tracked)&&!p.open(),"a dropped MY PHONE opened the phone");
-        // Drawn from a pocket it opens in the drawing hand and follows it; a hand lost leaves it where it was.
-        check(p.update(frame,true,1,head,grips,tracked,1,grips[1].position)&&p.hand()==1,
-              "a draw did not open the phone in its hand");
-        grips[1].position={.25f,1.2f,-.35f};
-        p.update(frame,true,1,head,grips,tracked);
-        const Vec3 held=p.place().centre;
-        check(length(held-phoneFrameAt(head,grips[1].position).centre)<1e-4f,"the drawn phone did not follow its hand");
-        tracked[1]=false;
-        grips[1].position={};
-        p.update(frame,true,1,head,grips,tracked);
-        check(length(p.place().centre-held)<1e-4f,"a hand the headset lost carried the phone off");
     });
     test("phone: home screen apps, MUSIC's buttons, GEAR's scroll; A, B, stick and triggers once per press", [] {
         PhoneControls c;
@@ -8866,11 +8858,8 @@ int main() {
               "the sections: webs, body, comfort, experimental");
         check(all[17].item == Item::flips && all[17].choices.empty() && std::strcmp(all[16].title, "EXPERIMENTAL") == 0,
               "the flips: a switch under EXPERIMENTAL");
-        check(all.size() == 20 && all[18].item == Item::flipSpeed && all[18].choices.size() == std::size(flipSpeeds),
-              "the flip speed under the flips, the tab's last row");
-        check(all[19].item == Item::phone && all[19].page && all[19].choices.empty() &&
-                  std::strcmp(all[19].title, "MY PHONE") == 0,
-              "MY PHONE: a button on the pause menu's first page");
+        check(all.size() == 19 && all[18].item == Item::flipSpeed && all[18].choices.size() == std::size(flipSpeeds),
+              "the flip speed under the flips, the last row");
         // The wall view has no row of its own any more: it turned only while
         // Spidy held the player on a wall, so it was never a choice of its own
         // and the launcher's one "Wall running" now carries both (the player,
@@ -8894,7 +8883,7 @@ int main() {
               "the view above the game screen's rows: VR, or GAME SCREEN");
         // VR VIEW is on the pause menu's first page, beside RESUME, and no other row is.
         for (const auto& row : all)
-            check(row.page == (row.item == Item::view || row.item == Item::phone), "a row on the wrong page");
+            check(row.page == (row.item == Item::view), "a row on the wrong page");
         check(all[1].item == Item::webButton && all[1].choices.size() == 2 &&
                   std::strcmp(all[1].choices[0], "GRIP") == 0 && std::strcmp(all[1].choices[1], "TRIGGER") == 0,
               "the web button first under WEBS: GRIP, or TRIGGER");

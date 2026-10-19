@@ -118,9 +118,9 @@ Values sanitized(Values v) {
     v.screenDepth = std::clamp(v.screenDepth, 0, 3);
     return v;
 }
-const std::array<Row, 20>& rows() {
+const std::array<Row, 19>& rows() {
     // The help fits the game's description column beside the rows.
-    static const std::array<Row, 20> all{{
+    static const std::array<Row, 19> all{{
         {Item::none, "WEBS", nullptr, {}},
         {Item::webButton, "WEB BUTTON",
          "Which button shoots and holds a web; the other reels in and shoots web balls.", webButtonChoices},
@@ -152,10 +152,6 @@ const std::array<Row, 20>& rows() {
         {Item::flips, "FLIPS", "In the air the left stick turns you over; tap A for one flip, hold A to stay.", {}},
         {Item::flipSpeed, "FLIP SPEED", "How fast a flip turns you over, at full tilt of the left stick.",
          flipSpeedChoices},
-        // On the pause menu's first page under VR VIEW, as a button and no
-        // setting: A asks for the phone, which opens once play resumes
-        // (game_menu::takePhone).
-        {Item::phone, "MY PHONE", "Your music. Resume to use it: stick picks, A presses, B puts it away.", {}, true},
     }};
     return all;
 }

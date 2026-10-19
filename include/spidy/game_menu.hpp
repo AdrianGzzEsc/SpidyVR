@@ -24,10 +24,6 @@ void uninstall();
 void publish(const vr_settings::Values&);
 // A change made in the tab since the last call: true, with `values` holding it.
 bool take(vr_settings::Values&);
-// MY PHONE was pressed on the pause menu's first page since the last call (in
-// VR: on the game screen it does nothing). A press, not a setting: nothing
-// keeps it (phone.hpp's Phone::ask).
-bool takePhone();
 struct Telemetry {
     // The game built its Settings with the SPIDY VR tab (each opening, and
     // each refresh after a change), and the settings changed in it (RESET and

@@ -335,6 +335,15 @@ uint32_t nextCodePoint(const std::string& s, size_t& i) {
     i += more;
     return c;
 }
+// In front of the head (tracking space), level with the chest, upright and
+// facing it: the phone of a hand not to be had (phoneFrameAt).
+WheelFrame phoneFrame(Pose head) {
+    Vec3 ahead = head.orientation.rotate({0, 0, -1});
+    ahead.y = 0;
+    ahead = length(ahead) > .1f ? normalized(ahead) : Vec3{0, 0, -1};
+    const Vec3 up{0, 1, 0}, out = ahead * -1.f;
+    return {head.position + ahead * .4f + Vec3{0, -.22f, 0}, cross(up, out), up, out};
+}
 } // namespace
 
 PhoneControls::Event PhoneControls::update(float stickX, float stickY, bool a, bool b, float leftTrigger,
@@ -416,14 +425,6 @@ PhoneAction PhoneUi::update(const PhoneControls::Event& e, int gearRows) {
     return PhoneAction::none;
 }
 
-WheelFrame phoneFrame(Pose head) {
-    Vec3 ahead = head.orientation.rotate({0, 0, -1});
-    ahead.y = 0;
-    ahead = length(ahead) > .1f ? normalized(ahead) : Vec3{0, 0, -1};
-    const Vec3 up{0, 1, 0}, out = ahead * -1.f;
-    return {head.position + ahead * .4f + Vec3{0, -.22f, 0}, cross(up, out), up, out};
-}
-
 WheelFrame phoneFrameAt(Pose head, Vec3 hand) {
     if (!finite(hand) || !finite(head.position))
         return phoneFrame(head);
@@ -480,21 +481,16 @@ Phone::Use Phone::take(XrFrame& frame, int gearRows) {
     return use;
 }
 
-bool Phone::update(float seconds, bool play, float played, const Pose& head, const Pose grips[2],
-                   const bool tracked[2], int drawHand, Vec3 drawnAt) {
-    const bool drawn = drawHand == 0 || drawHand == 1;
+bool Phone::update(float seconds, bool play, const Pose& head, const Pose grips[2], const bool tracked[2],
+                   int drawHand, Vec3 drawnAt) {
     bool opened{};
-    if ((asked_ || drawn) && play && (drawn || played >= askedPlay)) {
-        // Spent: MY PHONE on an open phone does nothing.
-        asked_ = false;
-        if (!open_) {
-            open_ = opened = true;
-            age_ = 0;
-            controls_.reset();
-            ui_.reset();
-            hand_ = drawn ? drawHand : -1;
-            place_ = drawn ? phoneFrameAt(head, drawnAt) : phoneFrame(head);
-        }
+    if ((drawHand == 0 || drawHand == 1) && play && !open_) {
+        open_ = opened = true;
+        age_ = 0;
+        controls_.reset();
+        ui_.reset();
+        hand_ = drawHand;
+        place_ = phoneFrameAt(head, drawnAt);
     }
     if (open_) {
         age_ += std::isfinite(seconds) ? std::clamp(seconds, 0.f, .1f) : 0.f;

@@ -134,8 +134,6 @@ SRWLOCK lock = SRWLOCK_INIT;
 vr_settings::Values shown;
 uint32_t pending{}; // bits 1 << Item changed in the tab and not taken yet
 std::atomic<uint64_t> tabsBuilt{}, changesMade{};
-// MY PHONE pressed and not taken yet (takePhone).
-std::atomic<bool> phoneAsked{};
 std::atomic<uint32_t> failure{};
 std::atomic<bool> hooked{}, created{};
 // The tab and its items: 0 not built yet, 1 ready, 2 cannot be built.
@@ -145,8 +143,7 @@ alignas(16) unsigned char items[rowCount][itemBytes];
 // The tab's own items (the rows not on the first page), and the row that is.
 alignas(16) unsigned char tabItems[rowCount][itemBytes];
 size_t tabRows{};
-// VR VIEW's row, and MY PHONE's under it (phone.hpp): both on the first page.
-int pageRow = -1, phoneRow = -1;
+int pageRow = -1;
 std::atomic<uint64_t> pagesBuilt{};
 // The page's own build is this game's (checked at install): without it VR
 // VIEW stays off the page.
@@ -200,7 +197,7 @@ void addTexts() {
         const auto& row = vr_settings::rows()[r];
         sprintf_s(tag, "SPIDY_VR_%zu", r);
         titles[r] = addText(tag, row.title);
-        if (row.page && row.item == Item::view)
+        if (row.page)
             pageTitle = const_cast<Text*>(titles[r]);
         if (row.help) {
             sprintf_s(tag, "SPIDY_VR_%zu_HELP", r);
@@ -296,18 +293,14 @@ uint32_t buildItems() {
                 put<uint64_t>(c, 0x28, 0);
             }
         }
-        // The tab's rows, and the ones for the first page, each by its item.
+        // The tab's rows, and the one for the first page.
         tabRows = 0;
-        pageRow = phoneRow = -1;
-        for (size_t r = 0; r < rowCount; ++r) {
-            const auto& row = vr_settings::rows()[r];
-            if (!row.page)
-                std::memcpy(tabItems[tabRows++], items[r], itemBytes);
-            else if (row.item == Item::view)
+        pageRow = -1;
+        for (size_t r = 0; r < rowCount; ++r)
+            if (vr_settings::rows()[r].page)
                 pageRow = static_cast<int>(r);
-            else if (row.item == Item::phone)
-                phoneRow = static_cast<int>(r);
-        }
+            else
+                std::memcpy(tabItems[tabRows++], items[r], itemBytes);
         std::memcpy(tab, reinterpret_cast<const void*>(menu), tabBytes);
         put<uint32_t>(tab, 8, tabId);
         putText(tab, 0x10, tabName);
@@ -375,8 +368,6 @@ bool __fastcall addItemHook(GfxValue* array, void* movie, const void* item, bool
         buildingTab = true;
         if (originalAddItem(array, movie, items[pageRow], false))
             ++pagesBuilt;
-        if (phoneRow >= 0)
-            originalAddItem(array, movie, items[phoneRow], false);
         buildingTab = false;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         buildingTab = false;
@@ -446,24 +437,17 @@ bool __fastcall invokeHook(void* ui, const char* name, GfxValue* args, uint32_t 
 }
 void __fastcall callbackHook(void* ui, uint32_t hash, GfxValue* args, uint32_t count) {
     trace(2, ui, hash, nullptr, args, count, _ReturnAddress());
-    // A on a row of Spidy's on the pause menu's first page. VR VIEW: the
-    // other view, and the page built again to name the next one. MY PHONE:
-    // the phone, once play resumes in VR (takePhone).
-    if (built == 1 && pageReady && hash == pageSelectHash && args && count >= 1 &&
-        ((args[0].type & typeMask) == intType || (args[0].type & typeMask) == intType + 1)) {
-        const int r = rowOf(static_cast<int>(static_cast<uint32_t>(args[0].data)));
-        if (r >= 0 && (r == pageRow || r == phoneRow)) {
-            AcquireSRWLockShared(&lock);
-            const bool screen = shown.flatScreen;
-            ReleaseSRWLockShared(&lock);
-            if (r == pageRow) {
-                change(Item::view, screen ? 0 : 1);
-                reinterpret_cast<void(__fastcall*)(void*)>(imageBase + pageRefresh)(ui);
-            } else if (!screen) {
-                phoneAsked = true;
-            }
-            return;
-        }
+    // A on VR VIEW, on the pause menu's first page: the other view, and the
+    // page built again to name the next one.
+    if (built == 1 && pageReady && pageRow >= 0 && hash == pageSelectHash && args && count >= 1 &&
+        ((args[0].type & typeMask) == intType || (args[0].type & typeMask) == intType + 1) &&
+        static_cast<uint32_t>(args[0].data) == static_cast<uint32_t>(firstSetting + pageRow)) {
+        AcquireSRWLockShared(&lock);
+        const bool screen = shown.flatScreen;
+        ReleaseSRWLockShared(&lock);
+        change(Item::view, screen ? 0 : 1);
+        reinterpret_cast<void(__fastcall*)(void*)>(imageBase + pageRefresh)(ui);
+        return;
     }
     // Y RESET ALL on the SPIDY VR tab: the game's RESET ALL takes only its own tabs.
     if (built == 1 && args && count >= 1 && (args[0].type & typeMask) == intType &&
@@ -629,9 +613,6 @@ void game_menu::publish(const vr_settings::Values& values) {
     // A change from the tab not taken yet stays as the tab left it.
     shown = pending ? copyItems(shown, values, pending) : values;
     ReleaseSRWLockExclusive(&lock);
-}
-bool game_menu::takePhone() {
-    return phoneAsked.exchange(false);
 }
 bool game_menu::take(vr_settings::Values& values) {
     AcquireSRWLockExclusive(&lock);

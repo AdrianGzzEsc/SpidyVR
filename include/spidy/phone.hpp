@@ -9,11 +9,10 @@
 
 // Spidy's phone (the player, October 17: "an overlay of something that looks
 // like a flat phone screen ... I can start stop go back a track and auto play
-// music"). MY PHONE on the pause menu's first page opens it in front of the
-// player once play resumes; drawn from a back pocket, it opens in the hand
-// that drew it (Phone). The stick picks a button, A presses it, B puts the
-// phone away. The music goes on with the phone away. Songs are the files in
-// the Music folder beside the launcher (phone_music.hpp).
+// music"). Drawn from a back pocket, it opens in the hand that drew it
+// (Phone). The stick picks a button, A presses it, B puts the phone away. The
+// music goes on with the phone away. Songs are the files in the Music folder
+// beside the launcher (phone_music.hpp).
 namespace spidy {
 enum class PhoneButton : int { previous, play, next, autoplay };
 constexpr int phoneButtons = 4;
@@ -119,9 +118,6 @@ struct PhoneImage {
     bool open{};
     Pose toWorld{};
 };
-// Where the phone opens: in front of the head (tracking space), level with
-// the chest, upright and facing it.
-WheelFrame phoneFrame(Pose head);
 // The phone held in a hand: just above it, facing the eyes, its top up (the
 // player, October 17: "make the phone kinda stick to you hand until u press
 // b"). In front of the head instead if the hand is not to be had.
@@ -151,45 +147,29 @@ class PhoneHold {
   private:
     uint32_t mine_{}; // a bit per control the phone has (phone.cpp)
 };
-// The phone in VR play (game_xr.cpp's XR worker): open from MY PHONE, or a
-// back-pocket draw, until B; live - its screen shown, the controllers its own
-// (PhoneHold) - while VR shows play and no calibration has the controllers.
-// MY PHONE opens it in front of the player, where it stays; a draw opens it
-// in the hand that drew it, which it stays in until B (a hand the headset
-// loses leaves it where it last was).
+// The phone in VR play (game_xr.cpp's XR worker): open from a back-pocket
+// draw until B; live - its screen shown, the controllers its own (PhoneHold)
+// - while VR shows play and no calibration has the controllers. It opens in
+// the hand that drew it and stays in it until B (a hand the headset loses
+// leaves it where it last was).
 class Phone {
   public:
-    // VR play this long after MY PHONE opens the phone, seconds.
-    static constexpr float askedPlay = .3f;
     // What the phone made of its controls this frame (take).
     struct Use {
         PhoneControls::Event controls;
         PhoneAction action = PhoneAction::none;
         unsigned stick{}; // the hand whose stick it read
     };
-    // MY PHONE was picked in the pause menu: the phone opens once VR shows
-    // play. cancel() drops a request no VR play follows (the game screen
-    // picked instead, the main menu).
-    void ask() {
-        asked_ = true;
-    }
-    void cancel() {
-        asked_ = false;
-    }
-    bool asked() const {
-        return asked_;
-    }
     // First thing each frame: the phone takes its controls out of `frame`
     // (PhoneHold) and, live, works its screens with them. gearRows: how many
     // rows GEAR has. B on the home screen puts the phone away at once.
     Use take(XrFrame& frame, int gearRows);
     // Once the frame knows. play: VR shows play and no calibration has the
-    // controllers, for `played` seconds so far. head, grips: tracking space;
-    // tracked: each grip's. drawHand: the hand a back-pocket draw brought the
-    // phone out with this frame (PocketDraw), at `drawnAt`; -1 none. True as
-    // the phone opens.
-    bool update(float seconds, bool play, float played, const Pose& head, const Pose grips[2],
-                const bool tracked[2], int drawHand = -1, Vec3 drawnAt = {});
+    // controllers. head, grips: tracking space; tracked: each grip's.
+    // drawHand: the hand a back-pocket draw brought the phone out with this
+    // frame (PocketDraw), at `drawnAt`; -1 none. True as the phone opens.
+    bool update(float seconds, bool play, const Pose& head, const Pose grips[2], const bool tracked[2],
+                int drawHand = -1, Vec3 drawnAt = {});
     bool open() const {
         return open_;
     }
@@ -200,8 +180,7 @@ class Phone {
     float age() const {
         return age_;
     }
-    // The hand holding it: 0 the left, 1 the right, -1 none (MY PHONE's, in
-    // front of the player).
+    // The hand that drew it: 0 the left, 1 the right; -1 before any draw.
     int hand() const {
         return hand_;
     }
@@ -221,7 +200,7 @@ class Phone {
     PhoneControls controls_;
     PhoneUi ui_;
     PhoneHold hold_;
-    bool asked_{}, open_{}, live_{};
+    bool open_{}, live_{};
     int hand_ = -1;
     float age_{};
     WheelFrame place_{};
