@@ -3,7 +3,57 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 19, third): full buildings half as far again.** You,
+**Latest build (October 19, fourth): arcade webs, and the SPIDY VR tab in
+sections.** You: "the current web swinging is hard - webs get tangled over
+lightpoles and other small geometry, also they pull you down too much to the
+street. lets make an optional second set for arcady webs where they don't
+collide with those things, all sort the options in spidy vr settings ingame
+into nice sections".
+
+- **What your sessions showed.** Today's three sessions bent 12, 21 and 18
+  webs round edges and took them off again 0, 3 and 1 times: a bend stayed
+  until the web was let go. Several bends sat 3-7 m over the street with
+  the body 1-3 m up, a 100 m web cut down to a 7 m rope round a post (session
+  13:08 at 547, 2.4, -1548).
+- **WEB STYLE, the first row under WEBS: REALISTIC (as before, the default)
+  or ARCADE.** Arcade webs go through thin things - lamp posts, signs,
+  railings, a roof's parapet - and through anything that is not fixed (cars,
+  props), as they are shot and as they swing: no sticking to them, no bending
+  round them, no cutting off. The shot goes on to the building behind; with
+  nothing behind it, the web holds in open air (or misses, with that off).
+  Buildings still hold webs and bend them round their corners. And a swing
+  comes down to the street no nearer than 6 m (the body's centre; feet
+  about 5 m up, over buses) instead of 1.4 m: the fall is turned along the
+  street from higher up, its speed kept, as the near misses were. Let go to
+  come down.
+- **Thin, by the game's own rays.** Where a web meets a face, a ray from
+  1.5 m behind that face back out to it either starts in the open and meets
+  the thing's far face (a post, a sign: thin), or starts inside a building
+  and meets that face from within or nothing (the game's rays meet faces
+  from either side). One rule for every object, no list of props. A post
+  less than 1.5 m in front of a wall counts as the wall's (that ray starts
+  inside the wall), as before.
+- **The tab's sections:** WEBS (web style, web button, aim markers, webs in
+  open air), SWINGING (swing speed limit, weight), COMFORT (snap turn, smooth
+  turn, vibration), DISPLAY (game screen size, its 3D, the HUD), BODY
+  (calibrate body), EXPERIMENTAL (flips, flip speed). The launcher has "Web
+  style" above "Web button".
+- **Protocol:** the swing's settings version 7 (`arcade`; the probes' 3-6
+  still taken); XrConfig option bit 21 (`--arcade-webs`); XrData settings bit
+  512 and the report's `vr_settings.arcade_webs`; rope data version 3, whose
+  spare word is now `passed` (the report's `ropes.passed`: shots past a thin
+  or loose thing, and swings' lines coming onto one); menu probe flag 2048.
+  launcher.ini `arcade_webs`. The DLLs, run_game_vr.py and the launcher go
+  together.
+- **Checked:** 361 core tests (new: a lamp post a realistic web bends round
+  and an arcade web goes through; a shot through a post or a car on to the
+  building; a building's corner still bending an arcade web, with rays that
+  meet faces from either side; arcade swings held 6 m off the street), the
+  launcher's tests, all six protocol suites, the graphics test.
+  `tools/probe_menu.py` follows the new rows (24 changes); it was not run in
+  the game, and nothing of this has been in the game or a headset yet.
+
+**Earlier build (October 19, third): full buildings half as far again.** You,
 after the second build in the headset: "can we increase the distance a
 bit?"
 

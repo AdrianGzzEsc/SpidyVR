@@ -425,6 +425,21 @@ No web is wound in for the ground: an October 15 build that did pulled the
 player toward the web's end half the time he swung. A bare `SwingConfig` has
 both off, as it has walls and physical webs.
 
+**Arcade webs** (WEB STYLE: ARCADE, `SwingConfig::arcade`, `Swing::allowArcade`,
+the swing's settings version 7). Every ray a web's shot, its clear line, its
+held line, its bends and its unbending cast goes through `Swing::solid`: past a
+hit that is not fixed, or that `Swing::thin` calls thin, and out of it - the
+far face the ray then meets from inside, turned along the ray, is skipped -
+six things at most. Thin: a ray from `thinDepth` (1.5 m) behind the face,
+back out to it, meets a face turned against it (the thing's far side, so the
+ray started in the open). Started inside a building, it meets the same face
+from within, turned the same way, or nothing: the game's rays meet faces from
+either side. A web then neither sticks to a lamp post, a sign or a car, nor
+bends round one, nor is cut off by one; the shot's anchor is what comes after.
+`skimGround` uses `arcadeClearance` (6 m) for `groundClearance`. Each shot
+through something and each held line coming onto something is an
+`EventKind::Pass`, counted in the rope data's `passed`.
+
 **Webs round corners.** A web bent round edges (physical webs) is drawn by
 the game's rope from the web shooter round each edge to where it sticks: the
 ray module hands the edges on (`SpidySwingBends`, `game_swing::Bends`,
@@ -829,6 +844,7 @@ reattaching after a stopped session or a rebuilt DLL.
 | `-Flips` | Experimental flips on (off by default): in the air the left stick turns you over, and a tap of A flips you |
 | `-FlipSpeed 240` | How fast a flip turns you at full tilt of the left stick, degrees a second (90-480, default 180) |
 | `-TriggerWebs` | The trigger shoots and holds webs, and the grip reels them in and shoots web balls (WEB BUTTON: TRIGGER) |
+| `-ArcadeWebs` | Arcade webs (WEB STYLE: ARCADE): webs go through lamp posts, signs, cars and other thin or loose things, and swings stay 6 m above the street |
 | `-EyeHeight 1630 -ArmLength 590` | Your T-pose calibration in millimetres (the console's last "VR settings from the headset" line has it): Spider-Man's body takes your eye height and arm length, and the first gameplay asks for none |
 | `-NoCalibrationPrompt` | Without a calibration, do not ask for the T-pose at the first gameplay (Settings > SPIDY VR > CALIBRATE BODY still does it) |
 | `-NoBody` | Hide the hero (no hands are drawn) |

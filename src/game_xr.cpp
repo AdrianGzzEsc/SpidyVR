@@ -83,11 +83,13 @@ struct XrConfig {
     // as before October 11 (without it both use one set, fitted to a lens
     // covering both: SpidyEyeShadows);
     // bit 18: no targets for screen-space reflections in the eyes;
-    // bit 19: not used (until October 15, webs as before October 12: PHYSICAL
-    // WEBS off; webs are always physical since);
+    // bit 19: the eyes keep the distances their own wide lenses give
+    // (--eye-lens-distances; until October 15 it was webs as before October
+    // 12: PHYSICAL WEBS off);
     // bit 20: the game's own button prompts are left alone (neither read
     // for the button they ask for nor named with the VR control, and the
-    // interact button is the game's Y as before; the pad layer stays)
+    // interact button is the game's Y as before; the pad layer stays);
+    // bit 21: arcade webs (WEB STYLE: ARCADE; vr_settings::Values::arcadeWebs)
     uint32_t options{};
     // OpenXR runtime manifest the launcher chose; empty: Virtual Desktop's if
     // installed, else Windows' active runtime.
@@ -167,7 +169,8 @@ struct XrData {
     // them during play. settings bits: 1 web grab,
     // 2 punch, 4 body, 8 webs in open air, 16 web shooter, 32 flips, 64 the
     // trigger webs (WEB BUTTON: TRIGGER; the grip reels), 128 STAND ON WALLS,
-    // 256 PHYSICAL WEBS.
+    // 256 PHYSICAL WEBS (until October 15), 512 arcade webs (WEB STYLE:
+    // ARCADE).
     // Then the changes
     // made in that tab so far, the times the game built its Settings with it,
     // whether its hooks are in, and why it is missing (game_menu: 93xx-94xx
@@ -786,6 +789,7 @@ DWORD WINAPI run(void*) {
         values.flips = config.options & 2048;
         values.triggerWebs = config.options & 4096;
         values.standOnWalls = !(config.options & 8192);
+        values.arcadeWebs = config.options & 0x200000;
         values.swingSpeed = config.swingSpeed;
         values.snapTurn = static_cast<int>(config.snapTurn);
         values.smoothTurn = static_cast<int>(config.smoothTurn);
@@ -1056,6 +1060,7 @@ DWORD WINAPI run(void*) {
             s.airWebs = values.airWebs;
             s.gravity = vr_settings::gravity(values.weight);
             s.walls = !(config.options & 16384);
+            s.arcade = values.arcadeWebs;
             sentSwingSettings = s;
             swingSettingsSent = true;
             // A hand-over owns the walls while it lasts; the player's own
@@ -2631,7 +2636,7 @@ DWORD WINAPI run(void*) {
                         d.settings = (values.webGrab ? 1u : 0u) | (values.punch ? 2u : 0u) | (values.body ? 4u : 0u) |
                                      (values.airWebs ? 8u : 0u) | (values.webShooter ? 16u : 0u) |
                                      (values.flips ? 32u : 0u) | (values.triggerWebs ? 64u : 0u) |
-                                     (values.standOnWalls ? 128u : 0u);
+                                     (values.standOnWalls ? 128u : 0u) | (values.arcadeWebs ? 512u : 0u);
                         d.scans = templePress.scans();
                         d.chargeJumps = chargeJump.charges();
                         const auto prompts = game_prompts::live();
@@ -3644,7 +3649,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyXrStart(void* input) {
         config.runtime[std::size(config.runtime) - 1] ||
         config.base != reinterpret_cast<uint64_t>(GetModuleHandleW(nullptr)) ||
         !GetModuleHandleW(L"Spider-Man.exe") || !config.queue || !config.bridgeModule || !config.rayModule ||
-        !config.motionModule || config.options > 0x1fffff || config.snapTurn > 90 || config.haptics > 100 ||
+        !config.motionModule || config.options > 0x3fffff || config.snapTurn > 90 || config.haptics > 100 ||
         !validEyeUpscale(config.upscale) || !validMonitorRate(config.monitorRate) ||
         config.screenSize > 2 || config.screenDepth > 3 || config.spare || config.smoothTurn > 360 ||
         config.hud > 3 || config.flipSpeed < 90 ||

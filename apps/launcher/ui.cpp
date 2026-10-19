@@ -74,6 +74,8 @@ constexpr const char* kHudSizes[] = {"Off", "Small", "Medium", "Large"};
 constexpr const char* kScreenDepths[] = {"Off", "Low", "Medium", "High"};
 // The button that shoots and holds webs (SessionOptions::triggerWebs: the second).
 constexpr const char* kWebButtons[] = {"Grip", "Trigger"};
+// How webs behave (SessionOptions::arcadeWebs: the second).
+constexpr const char* kWebStyles[] = {"Realistic", "Arcade"};
 constexpr const char* kWeights[] = {"40%", "60%", "80%", "100%", "125%", "150%", "200%", "250%", "300%"};
 constexpr int kWeightValues[] = {40, 60, 80, 100, 125, 150, 200, 250, 300};
 constexpr const char* kFlipSpeeds[] = {"90\xC2\xB0/s",  "120\xC2\xB0/s", "150\xC2\xB0/s", "180\xC2\xB0/s",
@@ -1041,6 +1043,13 @@ void App::optionsCard(ImVec2 size) {
         }
         ImGui::PopFont();
     };
+    option("Web style", "Arcade: webs pass lamp posts, signs and cars, and swings stay above the street.",
+           S(150), [&] {
+               static constexpr int styles[] = {0, 1};
+               int arcade = o.arcadeWebs ? 1 : 0;
+               stepCombo("##webStyle", kWebStyles, styles, 2, &arcade);
+               o.arcadeWebs = arcade != 0;
+           });
     option("Web button", "Which button shoots and holds a web; the other reels in and shoots web balls.",
            S(150), [&] {
                static constexpr int buttons[] = {0, 1};

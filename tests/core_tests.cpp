@@ -926,6 +926,147 @@ int main() {
         }
         check(cut&&!wrapped&&!s.webs()[0].attached,"the wall in the way kept the web");
     });
+    // Arcade webs. Boxes the rays meet from either side, as the game's own do:
+    // from inside one a ray meets the face it leaves by, turned along the ray.
+    struct Boxes : TestWorld {
+        struct Box {Vec3 low,high;std::uint64_t id;bool fixed=true;};
+        std::vector<Box> boxes;
+        Boxes(){anchor={0,-1000,0};}
+        std::optional<RayHit> raycast(Vec3 o,Vec3 d,float distance) const override {
+            auto best=TestWorld::raycast(o,d,distance);
+            float nearest=best?length(best->point-o):distance;
+            for(const auto& b:boxes) {
+                const float from[3]{o.x,o.y,o.z},way[3]{d.x,d.y,d.z},lo[3]{b.low.x,b.low.y,b.low.z},
+                    hi[3]{b.high.x,b.high.y,b.high.z};
+                float enter=-1e30f,leave=1e30f;Vec3 in{},out{};bool miss=false;
+                for(int a=0;a<3&&!miss;++a) {
+                    Vec3 axis{};(a==0?axis.x:a==1?axis.y:axis.z)=1;
+                    if(std::abs(way[a])<1e-8f){miss=from[a]<lo[a]||from[a]>hi[a];continue;}
+                    float t0=(lo[a]-from[a])/way[a],t1=(hi[a]-from[a])/way[a];
+                    Vec3 n0=-axis,n1=axis;
+                    if(t0>t1){std::swap(t0,t1);std::swap(n0,n1);}
+                    if(t0>enter){enter=t0;in=n0;}
+                    if(t1<leave){leave=t1;out=n1;}
+                }
+                if(miss||enter>leave||leave<=0)continue;
+                const bool inside=enter<=0;const float t=inside?leave:enter;
+                if(t>nearest)continue;
+                nearest=t;best=RayHit{o+d*t,inside?out:in,b.id,b.fixed};
+            }
+            return best;
+        }
+        bool exists(std::uint64_t id) const override {
+            for(const auto& b:boxes)if(b.id==id)return b.fixed;
+            return TestWorld::exists(id);
+        }
+    };
+    const auto arcade=[physical]{auto c=physical();c.arcade=true;return c;};
+    // A building's face at z = -20, and a lamp post 0.3 m thick in front of it.
+    const auto street=[]{
+        Boxes w;
+        w.boxes={{{-30,0,-40},{30,60,-20},7},{{-.15f,0,-2.65f},{.15f,12,-2.35f},8}};
+        return w;
+    };
+    test("an arcade web goes through a lamp post that a realistic web bends round", [physical,arcade,street] {
+        // Shot at the building from beside the post and swung past it: the
+        // line to the web's end crosses the post as the body passes x = 0.
+        const auto run=[&](SwingConfig c){
+            const auto w=street();Swing s(c);
+            const Vec3 at{0,30,-20};const auto in=aimedAt({-6,4,2},at);
+            Body body{{-6,4,2},{10,0,0},false};
+            bool wrapped{},cut{},passed{};
+            for(int i=0;i<72;++i) {
+                const auto intent=s.predictNativeStep(1.f/60,in,w,body);
+                for(const auto& e:s.events()) {
+                    wrapped|=e.kind==EventKind::Wrap;cut|=e.kind==EventKind::Obstructed;
+                    passed|=e.kind==EventKind::Pass;
+                }
+                body={intent.target,{10,0,0},false};
+            }
+            check(!cut&&s.webs()[0].attached,"the post cut the web off");
+            check(body.position.x>3,"the body did not get past the post");
+            return std::tuple{wrapped,passed,s.webs()[0]};
+        };
+        const auto [bent,through,rope]=run(physical());
+        check(bent&&!through&&rope.bent>=1,"the realistic web did not bend round the post");
+        check(length(Vec3{rope.anchor.x,0,rope.anchor.z+2.5f})<.6f,"the bend is not at the post");
+        const auto [arcadeBent,arcadeThrough,web]=run(arcade());
+        check(!arcadeBent&&arcadeThrough&&!web.bent,"the arcade web bent round the post");
+        near(length(web.anchor-Vec3{0,30,-20}),0,.01f);
+    });
+    test("an arcade shot goes through a lamp post or a car to the building behind it", [physical,arcade,street] {
+        auto w=street();
+        const Vec3 from{0,4,6},facade{0,6,-20};
+        const Pose aim=aimedAt(from,facade).hands[0].aim;
+        const auto realistic=Swing(physical()).shot(aim,from,w);
+        check(realistic.web&&realistic.web->surface==8&&realistic.passed==0,"the realistic web did not stick to the post");
+        near(realistic.web->anchor.z,-2.35f,.01f);
+        const auto shot=Swing(arcade()).shot(aim,from,w);
+        check(shot.web&&shot.web->surface==7&&shot.passed==1,"the arcade web did not go on to the building");
+        near(length(shot.web->anchor-facade),0,.01f);
+        // Shot and attached: a Pass with the Attach.
+        Swing s(arcade());
+        Body body{from,{},false};
+        s.predictNativeStep(1.f/60,aimedAt(from,facade),w,body);
+        bool attached{},passed{};
+        for(const auto& e:s.events()){attached|=e.kind==EventKind::Attach;passed|=e.kind==EventKind::Pass;}
+        check(attached&&passed&&s.webs()[0].surface==7,"the shot through the post is not reported");
+        // A car, 2 m wide and not fixed: a realistic web misses on it, an arcade web goes on past it.
+        w.boxes[1]={{-1,0,-3},{1,1.6f,1},9,false};
+        const Pose low=aimedAt({0,1,6},{0,2,-20}).hands[0].aim;
+        check(!Swing(physical()).shot(low,{0,1,6},w).web,"a realistic web held on to a car");
+        const auto past=Swing(arcade()).shot(low,{0,1,6},w);
+        check(past.web&&past.web->surface==7&&past.passed==1,"the arcade web did not go past the car");
+        // A post nearer the wall than thinDepth (0.2 m in front of it) is the wall's: the ray from behind it
+        // starts inside the wall.
+        w.boxes[1]={{-.15f,0,-19.8f},{.15f,12,-19.5f},8};
+        const auto against=Swing(arcade()).shot(aim,from,w);
+        check(against.web&&against.web->surface==8,"a post against a wall was let through");
+    });
+    test("an arcade web still bends round a building's corner", [arcade] {
+        // The corner of the realistic test, its building met from either side.
+        Boxes w;w.anchor={5,20,-4};w.boxes={{{0,0,0},{10,30,10},7}};
+        Swing s(arcade());
+        Input in;
+        in.hands[0]={{{w.anchor.x,0,w.anchor.z},{.70710678f,0,0,.70710678f}},{0,0,0},true,0,1};
+        Body body{{14,20,2},{-10,0,0},false};
+        auto intent=s.predictNativeStep(1.f/60,in,w,body);
+        check(s.webs()[0].attached,"no web from beside the building");
+        bool wrapped{},cut{},passed{};
+        for(int i=0;i<24&&!wrapped;++i) {
+            body={intent.target,{-10,0,0},false};
+            intent=s.predictNativeStep(1.f/60,in,w,body);
+            for(const auto& e:s.events()) {
+                wrapped|=e.kind==EventKind::Wrap;cut|=e.kind==EventKind::Obstructed;passed|=e.kind==EventKind::Pass;
+            }
+        }
+        check(wrapped&&!cut&&!passed&&s.webs()[0].bent==1,"the arcade web went through the building");
+    });
+    test("arcade swings come down to the street no nearer than their own clearance", [] {
+        // The street swing of the realistic test: its bottom 5.5 m under the street.
+        const auto lowest=[](bool useArcade){
+            Street w;auto c=inert();c.gravity=9.81f;c.taut=true;c.groundClearance=1.4f;c.arcade=useArcade;Swing s(c);
+            const Vec3 from{-25,15,0};
+            const auto in=aimedAt(from,w.anchor);
+            Body body{from,{},false};
+            float low=100,furthest=-100;
+            for(int i=0;i<300;++i){
+                const auto intent=s.predictNativeStep(1.f/60,in,w,body);
+                body={intent.target,intent.velocity,false};
+                low=std::min(low,body.position.y);furthest=std::max(furthest,body.position.x);
+            }
+            check(s.webs()[0].attached,"the web let go");
+            check(furthest>3,"the body did not swing on past the web's end");
+            return low;
+        };
+        const float realistic=lowest(false),arcadeLow=lowest(true);
+        check(realistic>1.2f&&realistic<2,"the realistic swing is not held off the street at its clearance");
+        check(arcadeLow>SwingConfig{}.arcadeClearance-.2f,"the arcade swing came nearer the street than its clearance");
+        auto bad=inert();bad.groundTurn=0;
+        bool threw=false;
+        try{Swing broken(bad);(void)broken;}catch(const std::invalid_argument&){threw=true;}
+        check(threw,"an arcade clearance with no brake accepted");
+    });
     test("a physical web is held by its hand: pulling the hand pulls the body", [physical] {
         TestWorld w;Swing s(physical());auto in=aimed();in.hands[0].trigger=0;
         Body body{{0,0,0},{},false};
@@ -9563,7 +9704,7 @@ int main() {
               "NaN assist accepted");
         check(!bad([](ShooterConfig&) {}), "defaults rejected");
     });
-    test("VR settings tab: four sections, every setting once, a list's choices one per step", [] {
+    test("VR settings tab: six sections, every setting once, a list's choices one per step", [] {
         using namespace vr_settings;
         const auto& all = rows();
         unsigned seen = 0, headings = 0;
@@ -9583,12 +9724,21 @@ int main() {
             for (const char* c : row.choices)
                 check(c && *c, "an empty choice");
         }
-        check(headings == 4 && all[0].item == Item::none && all[6].item == Item::none && all[8].item == Item::none &&
-                  all[16].item == Item::none,
-              "the sections: webs, body, comfort, experimental");
-        check(all[17].item == Item::flips && all[17].choices.empty() && std::strcmp(all[16].title, "EXPERIMENTAL") == 0,
+        // The sections (the player, October 19: "sort the options in spidy vr
+        // settings ingame into nice sections"), each with a setting in the tab.
+        const std::pair<size_t, const char*> sections[] = {{0, "WEBS"},     {5, "SWINGING"}, {8, "COMFORT"},
+                                                           {12, "DISPLAY"}, {17, "BODY"},    {19, "EXPERIMENTAL"}};
+        check(headings == std::size(sections), "the sections: webs, swinging, comfort, display, body, experimental");
+        for (const auto& [at, title] : sections) {
+            check(all[at].item == Item::none && std::strcmp(all[at].title, title) == 0, "a section out of place");
+            size_t next = at + 1;
+            while (next < all.size() && all[next].page)
+                ++next;
+            check(next < all.size() && all[next].item != Item::none, "a section with no setting in the tab");
+        }
+        check(all[20].item == Item::flips && all[20].choices.empty() && std::strcmp(all[19].title, "EXPERIMENTAL") == 0,
               "the flips: a switch under EXPERIMENTAL");
-        check(all.size() == 19 && all[18].item == Item::flipSpeed && all[18].choices.size() == std::size(flipSpeeds),
+        check(all.size() == 22 && all[21].item == Item::flipSpeed && all[21].choices.size() == std::size(flipSpeeds),
               "the flip speed under the flips, the last row");
         // The wall view has no row of its own any more: it turned only while
         // Spidy held the player on a wall, so it was never a choice of its own
@@ -9598,28 +9748,35 @@ int main() {
         // then "also merge the two options").
         for (const auto& row : all)
             check(row.item != Item::standOnWalls, "the wall view still has a row of its own");
-        check(all[13].item == Item::screenSize && all[15].item == Item::hud && all[15].choices.size() == 4 &&
-                  std::strcmp(all[15].choices[0], "OFF") == 0 && std::strcmp(all[15].choices[3], "LARGE") == 0,
+        check(all[14].item == Item::screenSize && all[16].item == Item::hud && all[16].choices.size() == 4 &&
+                  std::strcmp(all[16].choices[0], "OFF") == 0 && std::strcmp(all[16].choices[3], "LARGE") == 0,
               "the HUD after the game screen's rows: OFF, SMALL, MEDIUM, LARGE");
-        check(all[14].item == Item::screenDepth && std::strcmp(all[14].title, "GAME SCREEN 3D") == 0 &&
-                  all[14].choices.size() == 4 && std::strcmp(all[14].choices[0], "OFF") == 0 &&
-                  std::strcmp(all[14].choices[3], "HIGH") == 0,
+        check(all[15].item == Item::screenDepth && std::strcmp(all[15].title, "GAME SCREEN 3D") == 0 &&
+                  all[15].choices.size() == 4 && std::strcmp(all[15].choices[0], "OFF") == 0 &&
+                  std::strcmp(all[15].choices[3], "HIGH") == 0,
               "the game screen's depth under its size: OFF, LOW, MEDIUM, HIGH");
         // Webs are always physical (the user, October 15: "remove non physical web, no need for it").
         for (const auto& row : all)
             check(std::strcmp(row.title, "PHYSICAL WEBS") != 0, "webs can still be made non-physical");
-        check(all[12].item == Item::view && std::strcmp(all[12].title, "VR VIEW") == 0 && all[12].choices.size() == 2 &&
-                  std::strcmp(all[12].choices[0], "VR") == 0 && std::strcmp(all[12].choices[1], "GAME SCREEN") == 0,
+        check(all[13].item == Item::view && std::strcmp(all[13].title, "VR VIEW") == 0 && all[13].choices.size() == 2 &&
+                  std::strcmp(all[13].choices[0], "VR") == 0 && std::strcmp(all[13].choices[1], "GAME SCREEN") == 0,
               "the view above the game screen's rows: VR, or GAME SCREEN");
         // VR VIEW is on the pause menu's first page, beside RESUME, and no other row is.
         for (const auto& row : all)
             check(row.page == (row.item == Item::view), "a row on the wrong page");
-        check(all[1].item == Item::webButton && all[1].choices.size() == 2 &&
-                  std::strcmp(all[1].choices[0], "GRIP") == 0 && std::strcmp(all[1].choices[1], "TRIGGER") == 0,
-              "the web button first under WEBS: GRIP, or TRIGGER");
-        check(all[4].item == Item::swingSpeed && all[5].item == Item::weight, "the weight under the swing speed");
-        check(all[7].item == Item::calibrate && all[7].choices.size() == 2 &&
-                  std::strcmp(all[7].choices[1], "ON RESUME") == 0,
+        check(all[1].item == Item::webStyle && std::strcmp(all[1].title, "WEB STYLE") == 0 &&
+                  all[1].choices.size() == 2 && std::strcmp(all[1].choices[0], "REALISTIC") == 0 &&
+                  std::strcmp(all[1].choices[1], "ARCADE") == 0,
+              "the web style first under WEBS: REALISTIC, or ARCADE");
+        check(all[2].item == Item::webButton && all[2].choices.size() == 2 &&
+                  std::strcmp(all[2].choices[0], "GRIP") == 0 && std::strcmp(all[2].choices[1], "TRIGGER") == 0,
+              "the web button under the web style: GRIP, or TRIGGER");
+        check(all[3].item == Item::aimMarkers && all[4].item == Item::airWebs, "the aim markers, then the air webs");
+        check(all[6].item == Item::swingSpeed && all[7].item == Item::weight, "SWINGING: the swing speed, the weight");
+        check(all[9].item == Item::snapTurn && all[10].item == Item::smoothTurn && all[11].item == Item::haptics,
+              "COMFORT: snap and smooth turning, the vibration");
+        check(all[18].item == Item::calibrate && all[18].choices.size() == 2 &&
+                  std::strcmp(all[18].choices[1], "ON RESUME") == 0,
               "the body's calibration: NO, or ON RESUME");
         // Every setting has a row but the wall view, which the launcher's one
         // "Wall running" now carries along with who holds you on the wall.
@@ -9701,6 +9858,10 @@ int main() {
                   choose(Item::webButton, 1, v) && v.triggerWebs && choice(Item::webButton, v) == 1 &&
                   !choose(Item::webButton, 1, v) && !choose(Item::webButton, 2, v),
               "the web button: GRIP by default, TRIGGER swaps it");
+        check(!defaults.arcadeWebs && choice(Item::webStyle, defaults) == 0 && defaultChoice(Item::webStyle) == 0 &&
+                  choose(Item::webStyle, 1, v) && v.arcadeWebs && choice(Item::webStyle, v) == 1 &&
+                  !choose(Item::webStyle, 1, v) && !choose(Item::webStyle, 2, v),
+              "the web style: REALISTIC by default, ARCADE the other");
         check(defaults.hud == 2 && choice(Item::hud, defaults) == 2 && defaultChoice(Item::hud) == 2 &&
                   choose(Item::hud, 0, v) && v.hud == 0 && choice(Item::hud, v) == 0 && choose(Item::hud, 3, v) &&
                   v.hud == 3 && !choose(Item::hud, 4, v) && !choose(Item::hud, -1, v),

@@ -62,6 +62,11 @@ struct Values {
     // depth there (the tab's GAME SCREEN 3D): 0 off, the game's flat frame; 1
     // low, 2 medium, 3 high (screenDepths).
     int screenDepth = 2;
+    // Arcade webs (the tab's WEB STYLE: ARCADE; SwingConfig::arcade): webs go
+    // through lamp posts, signs, cars and other thin or loose things, and
+    // swings stay above the street. Off, REALISTIC: webs are ropes that bend
+    // round whatever comes between you and where they stick.
+    bool arcadeWebs = false;
     bool operator==(const Values&) const = default;
 };
 // The steps the game's Settings offer. The launcher's slider sets any swing
@@ -119,10 +124,13 @@ enum class Item : uint8_t {
     standOnWalls,
     screenDepth,
     view,
+    webStyle,
 };
-inline constexpr Item lastItem = Item::view;
+inline constexpr Item lastItem = Item::webStyle;
 // The SPIDY VR tab, top to bottom: a section's heading (item none) or a
-// setting. A setting without choices is an ON/OFF switch, the game's own;
+// setting. The sections: WEBS, SWINGING, COMFORT, DISPLAY, BODY and
+// EXPERIMENTAL (the player, October 19: "sort the options in spidy vr
+// settings ingame into nice sections"). A setting without choices is an ON/OFF switch, the game's own;
 // one with choices steps through them. Titles are upper case, as the game's
 // own rows are; the help shows beside the rows while the setting is selected.
 struct Row {
@@ -135,7 +143,7 @@ struct Row {
     // menu (the one with resume)").
     bool page{};
 };
-const std::array<Row, 19>& rows();
+const std::array<Row, 22>& rows();
 // The choice a setting shows for these values: a switch 0 (off) or 1 (on), a
 // list its step nearest to the value (a launcher value between two steps
 // shows the nearer one, the lower on a tie).

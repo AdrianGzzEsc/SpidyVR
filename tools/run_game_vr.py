@@ -572,8 +572,9 @@ def start_settings(a):
                 swing_speed=round(a.swing_speed, 1), weight=a.weight,
                 snap_turn=a.snap_turn, smooth_turn=a.smooth_turn, haptics=a.haptics, screen_size=a.screen_size,
                 flips=a.flips, flip_speed=a.flip_speed, trigger_webs=a.trigger_webs, hud=a.hud,
-                stand_on_walls=not a.no_stand_on_walls, screen_depth=a.screen_depth, eye_height_mm=a.eye_height,
-                arm_length_mm=a.arm_length, calibration_prompt=not a.no_calibration_prompt)
+                stand_on_walls=not a.no_stand_on_walls, screen_depth=a.screen_depth, arcade_webs=a.arcade_webs,
+                eye_height_mm=a.eye_height, arm_length_mm=a.arm_length,
+                calibration_prompt=not a.no_calibration_prompt)
 
 
 def settings_line(start, sample):
@@ -903,7 +904,7 @@ def snapshot(game, address):
                                        flips=bool(flags & 32), flip_speed=flip_speed,
                                        trigger_webs=bool(flags & 64), hud=hud,
                                        stand_on_walls=bool(flags & 128),
-                                       screen_depth=screen_depth,
+                                       screen_depth=screen_depth, arcade_webs=bool(flags & 512),
                                        eye_height_mm=eye_height, arm_length_mm=arm_length,
                                        calibration_prompt=not calibration_flags & 1),
                       setting_changes=changes,
@@ -971,12 +972,14 @@ def rope_snapshot(game, address):
     """Physical webs (game_swing::Ropes): the bends made round edges and taken off again, the webs cut off
     because something stayed in the way, the steps a web paid out while the game walked the player, each
     hand's web now (its bends, the rope beyond the last and all of it, metres), the times a hand took hold of the
-    other hand's web, and whether both hold one now."""
+    other hand's web, whether both hold one now, and (version 3) the thin or loose things arcade webs went
+    through: a shot past one, a swing's line coming onto one."""
     for _ in range(8):
         raw = game.read(address, 96)
         if len(raw) != 96:
             return None
-        if struct.unpack_from('<3I', raw) != (0x53575250, 2, 96):
+        magic, version, size = struct.unpack_from('<3I', raw)
+        if (magic, size) != (0x53575250, 96) or version not in (2, 3):
             raise RuntimeError('Rope protocol mismatch')
         if struct.unpack_from('<Q', raw, 16)[0] & 1 or raw[16:24] != game.read(address+16, 8):
             continue
@@ -985,7 +988,8 @@ def rope_snapshot(game, address):
                     paid_out=paid_out, bends=list(struct.unpack_from('<2I', raw, 56)),
                     free_m=[round(x, 2) for x in struct.unpack_from('<2f', raw, 64)],
                     whole_m=[round(x, 2) for x in struct.unpack_from('<2f', raw, 72)],
-                    joins=struct.unpack_from('<Q', raw, 80)[0], shared=bool(struct.unpack_from('<I', raw, 88)[0]))
+                    joins=struct.unpack_from('<Q', raw, 80)[0], shared=bool(struct.unpack_from('<I', raw, 88)[0]),
+                    passed=struct.unpack_from('<I', raw, 92)[0] if version >= 3 else 0)
     return None
 STRIKE_PHASES = ('idle', 'flying', 'hanging')
 
@@ -1707,6 +1711,9 @@ def main():
     p.add_argument('--trigger-webs', action='store_true',
                    help='The trigger shoots and holds webs, and the grip reels in and shoots web balls (the two '
                         'swapped)')
+    p.add_argument('--arcade-webs', action='store_true',
+                   help='Arcade webs (WEB STYLE: ARCADE): webs go through lamp posts, signs, cars and other thin or '
+                        'loose things, and swings stay above the street')
     p.add_argument('--no-body', action='store_true',
                    help="Keep the hero hidden in VR (gloves drawn over the image) instead of your own body")
     p.add_argument('--no-punch', action='store_true', help='Fists pass through thugs instead of punching them')
@@ -1968,7 +1975,8 @@ def session(a, startup):
                              (16384 if a.no_wall_run else 0) | (0x8000 if a.no_eye_antialiasing else 0) |
                              (0x10000 if a.game_monitor_view or game_view else 0) |
                              (0x20000 if a.own_shadows else 0) | (0 if reflections else 0x40000) |
-                             (0x100000 if a.no_prompt_help else 0) | (0x80000 if a.eye_lens_distances else 0)) + \
+                             (0x100000 if a.no_prompt_help else 0) | (0x80000 if a.eye_lens_distances else 0) |
+                             (0x200000 if a.arcade_webs else 0)) + \
             runtime_path(manifest) + struct.pack('<14I', a.snap_turn, a.haptics, a.screen_size, a.smooth_turn,
                                                  a.render_scale, a.weight, a.eye_height, a.arm_length, a.hud,
                                                  a.flip_speed, a.upscale, a.monitor_rate, a.screen_depth, 0)

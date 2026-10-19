@@ -207,23 +207,28 @@ static_assert(sizeof(Config) == 64 && sizeof(Hand) == 52 && sizeof(Command) == 2
 // motion lands no blow, no punch and no web strike, as a hand whose web
 // carries the player lands none: both while the phone is out (phone.hpp,
 // October 19: a hand swung near a thug with the phone out punched him).
-// Version 5 (settingsBytesV5) ends before it: both hands fight.
+// Version 5 (settingsBytesV5) ends before it: both hands fight. Version 7,
+// arcade: arcade webs (the VR settings' WEB STYLE: ARCADE; SwingConfig::
+// arcade). Version 6 (settingsBytesV6) ends before it and leaves the webs'
+// style as it is.
 struct Settings {
-    uint32_t magic = 0x53575354, version = 6, bytes = sizeof(Settings), grab = 1;
+    uint32_t magic = 0x53575354, version = 7, bytes = sizeof(Settings), grab = 1;
     float maxSpeed = 32;
     uint32_t airWebs = 1;
     float gravity = 6;
     uint32_t walls = 1;
     uint32_t physical = 1;
     uint32_t noBlows{};
+    uint32_t arcade{};
 };
-constexpr uint32_t settingsBytesV3 = 28, settingsBytesV4 = 32, settingsBytesV5 = 36;
-static_assert(sizeof(Settings) == 40 && offsetof(Settings, walls) == settingsBytesV3 &&
+constexpr uint32_t settingsBytesV3 = 28, settingsBytesV4 = 32, settingsBytesV5 = 36, settingsBytesV6 = 40;
+static_assert(sizeof(Settings) == 44 && offsetof(Settings, walls) == settingsBytesV3 &&
               offsetof(Settings, physical) == settingsBytesV4 &&
-              offsetof(Settings, noBlows) == settingsBytesV5);
+              offsetof(Settings, noBlows) == settingsBytesV5 &&
+              offsetof(Settings, arcade) == settingsBytesV6);
 // Physical webs (SpidyRopeData): what the ropes did, for the session report.
 struct Ropes {
-    uint32_t magic = 0x53575250, version = 2, bytes = sizeof(Ropes), physical{};
+    uint32_t magic = 0x53575250, version = 3, bytes = sizeof(Ropes), physical{};
     int64_t sequence{};
     // Bends made round an edge and taken off again; webs let go because
     // something stayed in the way (no edge found, or too many); steps a web
@@ -234,9 +239,11 @@ struct Ropes {
     uint32_t bends[2]{};
     float free[2]{}, whole[2]{};
     // Version 2: grips taken on the other hand's web (EventKind::Join), and
-    // whether both hands hold one web now.
+    // whether both hands hold one web now. Version 3, in version 2's spare
+    // word: the thin or loose things arcade webs went through (EventKind::
+    // Pass: a shot past one, a swing's line coming onto one).
     uint64_t joins{};
-    uint32_t shared{}, reserved{};
+    uint32_t shared{}, passed{};
 };
 static_assert(sizeof(Ropes) == 96);
 // The edges each hand's web bends round (SpidySwingBends), for drawing it

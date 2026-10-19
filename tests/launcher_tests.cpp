@@ -230,6 +230,11 @@ int main() {
         options.triggerWebs = true;
         args = sessionArguments(options, L"r.json", L"", L"");
         check(args.size() == 8 && args[7] == L"--trigger-webs", "the web button on the trigger");
+        options = {};
+        check(!options.arcadeWebs, "arcade webs in a new launcher");
+        options.arcadeWebs = true;
+        args = sessionArguments(options, L"r.json", L"", L"");
+        check(args.size() == 8 && args[7] == L"--arcade-webs", "arcade webs chosen");
         // The view turning onto a wall is no option of its own and is never passed: it turns whoever holds
         // the player there, the swing or the game's own crawl, which is the whole point of giving the crawl
         // the view (the player, October 14: "i like how it feel to walk on building and stand on their side",
@@ -306,13 +311,13 @@ int main() {
         check(headsetSettings("VR settings from the headset: aim_markers=0 web_grab=1 air_webs=0 web_shooter=0 "
                               "punch=0 body=1 swing_speed=48 weight=150 snap_turn=45 smooth_turn=90 haptics=50 "
                               "flips=1 flip_speed=300 trigger_webs=1 hud=0 stand_on_walls=0 screen_depth=3 "
-                              "screen_size=2\r",
+                              "arcade_webs=1 screen_size=2\r",
                               options),
               "the line changed nothing");
         check(!options.aimMarkers && !options.airWebs && options.swingSpeed == 48 && options.weight == 150 &&
                   options.snapTurn == 45 && options.smoothTurn == 90 && options.haptics == 50 && options.flips &&
                   options.flipSpeed == 300 && options.triggerWebs && options.hud == 0 &&
-                  options.screenDepth == 3 && options.screenSize == 2,
+                  options.screenDepth == 3 && options.arcadeWebs && options.screenSize == 2,
               "every value, the last one before a carriage return");
         // ... and `stand_on_walls` in that line is no longer one of them.
         check(options.standOnWalls, "the view on walls was taken from a headset line");

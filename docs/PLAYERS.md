@@ -540,22 +540,31 @@ VR settings
   choose Settings, then SPIDY VR, the last tab (Up from GAME gets there in
   one press). It works like the game's other tabs: the left stick moves and
   changes the selected setting, X resets it, Y resets the whole tab, B goes
-  back.
-  Choose the WEB BUTTON (GRIP or TRIGGER: the one that shoots and holds a
-  web; the other reels in and shoots web balls), switch the aim markers and
-  webs holding in open air (a web that meets nothing within 100 m holds
-  there; off, it misses) on or off, or step the
-  swing speed limit, your weight, snap turn, smooth turn,
-  controller vibration, the game screen's size, its 3D depth and the HUD's
-  size (OFF hides it in VR). Playing the game on its screen instead of VR is
-  on the pause menu itself: SWITCH TO GAME SCREEN, under RESUME (each session
-  starts in VR).
-  Under EXPERIMENTAL, FLIPS (off until
-  you switch it on) lets the left stick and A in the air flip you, and FLIP
-  SPEED sets how fast. Changes apply at once. The
-  launcher starts your next session with them; its options show them too.
-  CALIBRATE BODY: set it to ON RESUME and resume, and the T-pose panel asks
-  for your measurements again.
+  back. Its sections:
+  WEBS ........... WEB STYLE (REALISTIC or ARCADE, below); the WEB BUTTON
+                   (GRIP or TRIGGER: the one that shoots and holds a web;
+                   the other reels in and shoots web balls); AIM MARKERS;
+                   webs holding in open air (a web that meets nothing
+                   within 100 m holds there; off, it misses).
+  SWINGING ....... the swing speed limit and your weight.
+  COMFORT ........ snap turn, smooth turn and controller vibration.
+  DISPLAY ........ the game screen's size, its 3D depth and the HUD's size
+                   (OFF hides it in VR).
+  BODY ........... CALIBRATE BODY: set it to ON RESUME and resume, and the
+                   T-pose panel asks for your measurements again.
+  EXPERIMENTAL ... FLIPS (off until you switch it on) lets the left stick
+                   and A in the air flip you, and FLIP SPEED sets how fast.
+  Changes apply at once. The launcher starts your next session with them;
+  its options show them too. Playing the game on its screen instead of VR
+  is on the pause menu itself: SWITCH TO GAME SCREEN, under RESUME (each
+  session starts in VR).
+  WEB STYLE: REALISTIC webs are ropes. They bend round whatever comes
+  between you and where they stick, lamp posts and signs too, and a swing
+  can take you down to just over the street. ARCADE webs go through lamp
+  posts, signs, railings, cars and other thin or loose things, as they are
+  shot and as they swing, and stick to the building behind; a swing keeps
+  you about 5 m over the street (let go to come down). Buildings still hold
+  them and bend them round their corners.
   Catching props and thugs, the web shooter, your own body and punching are
   always on.
   The title screen's Options have no SPIDY VR tab: load your save first, or
@@ -688,6 +697,9 @@ IF SOMETHING IS WRONG
 - A web lets go at a corner, or does something odd as it bends round one:
   it bends round six edges at most, and lets go where it finds no edge to
   bend round. Tell us where it happened.
+- Webs get caught on lamp posts and signs, or swings drag you down to the
+  street: set WEB STYLE to ARCADE in Settings > SPIDY VR (or "Web style" in
+  the launcher's options).
 - Lowering your arm on a web moves you: with PHYSICAL WEBS the web's length
   is measured to your hand, so a taut web follows it. That is also how you
   pull yourself along it.

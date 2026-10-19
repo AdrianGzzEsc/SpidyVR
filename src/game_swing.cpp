@@ -714,6 +714,7 @@ void visit(const native_rays::QueryContext& world) {
             r.unwraps += event.kind == EventKind::Unwrap;
             r.cut += event.kind == EventKind::Obstructed;
             r.joins += event.kind == EventKind::Join;
+            r.passed += event.kind == EventKind::Pass;
         }
         r.shared = solver.shared();
         for (unsigned i = 0; i < 2; ++i) {
@@ -908,20 +909,21 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingRetarget(void* input) {
     return result;
 }
 // The VR settings during play: the speed limit, whether webs catch props and
-// thugs, whether they hold in open air, the gravity (weight), and whether
-// walls are the swing's own. All apply from the next step; the visit holds
-// `simulation`.
+// thugs, whether they hold in open air, the gravity (weight), whether walls
+// are the swing's own, and the webs' style. All apply from the next step; the
+// visit holds `simulation`.
 extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingSettings(void* input) {
-    // Version 3 and 4 settings (the probes') are shorter: read as many bytes as they say.
+    // Version 3 to 6 settings (the probes') are shorter: read as many bytes as they say.
     Settings s;
     uint32_t header[3]{};
     if (!copy(header, input, sizeof(header)) ||
         (header[2] != settingsBytesV3 && header[2] != settingsBytesV4 && header[2] != settingsBytesV5 &&
-         header[2] != sizeof(s)) ||
+         header[2] != settingsBytesV6 && header[2] != sizeof(s)) ||
         !copy(&s, input, header[2]) || s.magic != 0x53575354 ||
         !((s.version == 3 && s.bytes == settingsBytesV3) || (s.version == 4 && s.bytes == settingsBytesV4) ||
-          (s.version == 5 && s.bytes == settingsBytesV5) || (s.version == 6 && s.bytes == sizeof(s))) ||
-        s.noBlows > 3 ||
+          (s.version == 5 && s.bytes == settingsBytesV5) || (s.version == 6 && s.bytes == settingsBytesV6) ||
+          (s.version == 7 && s.bytes == sizeof(s))) ||
+        s.noBlows > 3 || s.arcade > 1 ||
         s.grab > 1 || !std::isfinite(s.maxSpeed) || s.maxSpeed <= 0 || s.maxSpeed > motionSpeedLimit ||
         s.airWebs > 1 || !std::isfinite(s.gravity) || s.gravity < 0 || s.gravity > maxGravity || s.walls > 4 ||
         s.physical > 1)
@@ -956,6 +958,8 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingSettings(void* input) {
         if (s.version >= 5)
             solver.allowPhysical(s.physical != 0);
         noBlows = s.version >= 6 ? s.noBlows : 0u;
+        if (s.version >= 7)
+            solver.allowArcade(s.arcade != 0);
         // A swing started without the grab (-NoWebGrab) offers it from now on.
         if (s.grab && !game_grab::offering() && driveMotion && sampleDriven) {
             config.grabKinds = game_grab::movableKinds;

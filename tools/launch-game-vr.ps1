@@ -28,6 +28,7 @@ param(
     [switch]$NoCalibrationPrompt,
     [switch]$Flips,
     [switch]$TriggerWebs,
+    [switch]$ArcadeWebs,
     [switch]$NoStandOnWalls,
     [switch]$NoWallRun,
     [switch]$NoEyeOcclusion,
@@ -98,6 +99,7 @@ $report=Join-Path $projectRoot "reports\game-vr-$stamp.json"
 $captureArgs=@()
 if($CaptureImages) { $captureArgs=@('--capture-images') }
 if($TriggerWebs) { $captureArgs+=@('--trigger-webs') }
+if($ArcadeWebs) { $captureArgs+=@('--arcade-webs'); Write-Host 'Web style: arcade (webs go through lamp posts, signs and cars; swings stay above the street).' }
 if($NoStandOnWalls) { $captureArgs+=@('--no-stand-on-walls'); Write-Host 'Stand on walls off: on a wall your view stays upright.' }
 if($NoWallRun) { $captureArgs+=@('--no-wall-run'); Write-Host "Wall running off: the game's own wall crawl takes you at a wall." }
 if($OverlayWebs) { $captureArgs+=@('--overlay-webs'); Write-Host 'Webs: Spidy overlay strands.' }

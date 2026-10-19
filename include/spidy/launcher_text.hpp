@@ -504,6 +504,9 @@ struct SessionOptions {
     int flipSpeed = 180; // degrees a second a flip turns you at full tilt of the left stick
     // The trigger shoots and holds webs, and the grip reels them in and shoots web balls; off, the other way round.
     bool triggerWebs = false;
+    // Arcade webs (WEB STYLE: ARCADE): webs go through lamp posts, signs, cars and other thin or loose
+    // things, and swings stay above the street; off, realistic webs bend round whatever comes in their way.
+    bool arcadeWebs = false;
     int hud = 2; // the game's HUD in the headset: 0 off, 1 small, 2 medium, 3 large
     // Walking a wall or stopped on it, your view turns so that the wall is your floor; off, you stay upright.
     bool standOnWalls = true;
@@ -560,6 +563,8 @@ inline std::vector<std::wstring> sessionArguments(const SessionOptions& options,
         args.emplace_back(L"--flips");
     if (options.triggerWebs)
         args.emplace_back(L"--trigger-webs");
+    if (options.arcadeWebs)
+        args.emplace_back(L"--arcade-webs");
     if (!options.wallRun)
         args.emplace_back(L"--no-wall-run");
     if (options.gameDepthOfField)
@@ -644,6 +649,8 @@ inline bool headsetSettings(std::string_view line, SessionOptions& options) {
             next.flips = number != 0;
         else if (key == "trigger_webs")
             next.triggerWebs = number != 0;
+        else if (key == "arcade_webs")
+            next.arcadeWebs = number != 0;
         else if (key == "wall_run")
             next.wallRun = number != 0;
         else if (key == "swing_speed")

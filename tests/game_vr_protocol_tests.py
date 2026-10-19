@@ -353,14 +353,19 @@ class ProtocolTests(unittest.TestCase):
 
     def test_ropes_decode_bends_pay_out_and_a_web_in_both_hands(self):
         raw = bytearray(96)
-        # Physical; wraps, unwraps, cut, paid out; each hand's bends, free and whole rope; joins, shared.
-        struct.pack_into('<4Iq4Q2I4fQ2I', raw, 0, 0x53575250, 2, 96, 1, 8, 15, 3, 1, 66, 2, 0, 12.5, 30.25, 40, 30.25,
-                         4, 1, 0)
+        # Physical; wraps, unwraps, cut, paid out; each hand's bends, free and whole rope; joins, shared; the
+        # thin things arcade webs went through.
+        struct.pack_into('<4Iq4Q2I4fQ2I', raw, 0, 0x53575250, 3, 96, 1, 8, 15, 3, 1, 66, 2, 0, 12.5, 30.25, 40, 30.25,
+                         4, 1, 9)
         result = rope_snapshot(Reader(raw, struct.pack('<q', 8)), 0)
         self.assertEqual((result['physical'], result['wraps'], result['unwraps'], result['cut'], result['paid_out']),
                          (True, 15, 3, 1, 66))
         self.assertEqual((result['bends'], result['free_m'], result['whole_m']), ([2, 0], [12.5, 30.25], [40, 30.25]))
-        self.assertEqual((result['joins'], result['shared']), (4, True))
+        self.assertEqual((result['joins'], result['shared'], result['passed']), (4, True, 9))
+        # A build before arcade webs: its spare word is no count.
+        before = bytearray(raw)
+        struct.pack_into('<I', before, 4, 2)
+        self.assertEqual(rope_snapshot(Reader(before, struct.pack('<q', 8)), 0)['passed'], 0)
         old = bytearray(raw)
         struct.pack_into('<2I', old, 4, 1, 80)
         with self.assertRaisesRegex(RuntimeError, 'Rope protocol mismatch'):
@@ -1250,8 +1255,8 @@ class ProtocolTests(unittest.TestCase):
                                                      punch=False, body=True, swing_speed=48.0, weight=150,
                                                      snap_turn=45, smooth_turn=120, haptics=50, screen_size=2,
                                                      flips=False, flip_speed=300, trigger_webs=False, hud=3,
-                                                     stand_on_walls=False, screen_depth=3, eye_height_mm=0,
-                                                     arm_length_mm=0, calibration_prompt=True))
+                                                     stand_on_walls=False, screen_depth=3, arcade_webs=False,
+                                                     eye_height_mm=0, arm_length_mm=0, calibration_prompt=True))
         # The HUD switched off in the tab.
         struct.pack_into('<I', raw, 748, 0)
         self.assertEqual(xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)['vr_settings']['hud'], 0)
@@ -1282,6 +1287,11 @@ class ProtocolTests(unittest.TestCase):
         self.assertFalse(settings['flips'] or settings['trigger_webs'])
         # Webs are always physical since October 15: no setting reports them.
         self.assertNotIn('physical_webs', settings)
+        # WEB STYLE: ARCADE, webs through lamp posts and the like; nothing else changed.
+        struct.pack_into('<I', raw, 664, 5 | 512)
+        settings = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)['vr_settings']
+        self.assertTrue(settings['arcade_webs'])
+        self.assertFalse(settings['flips'] or settings['trigger_webs'] or settings['stand_on_walls'])
         # A trigger pulled at the temple scanned three times, and a held A charged two jumps.
         struct.pack_into('<2I', raw, 832, 3, 2)
         result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
@@ -1568,12 +1578,13 @@ class ProtocolTests(unittest.TestCase):
         args = Mock(no_aim_markers=False, no_web_grab=False, no_air_webs=False, no_web_shooter=False, no_punch=True,
                     no_body=False, swing_speed=32.0, weight=60, snap_turn=30, smooth_turn=0, haptics=100,
                     screen_size=1, flips=False, flip_speed=180, trigger_webs=False, hud=2, eye_height=0,
-                    arm_length=0, no_calibration_prompt=False, no_stand_on_walls=False, screen_depth=2)
+                    arm_length=0, no_calibration_prompt=False, no_stand_on_walls=False, screen_depth=2,
+                    arcade_webs=False)
         start = start_settings(args)
         self.assertEqual(start, dict(aim_markers=True, web_grab=True, air_webs=True, web_shooter=True, punch=False,
                                      body=True, swing_speed=32.0, weight=60, snap_turn=30, smooth_turn=0,
                                      haptics=100, screen_size=1, flips=False, flip_speed=180, trigger_webs=False,
-                                     hud=2, stand_on_walls=True, screen_depth=2,
+                                     hud=2, stand_on_walls=True, screen_depth=2, arcade_webs=False,
                                      eye_height_mm=0, arm_length_mm=0, calibration_prompt=True))
         # Nothing changed, or no sample: no line.
         self.assertIsNone(settings_line(start, dict(vr_settings=dict(start))))
@@ -1584,7 +1595,7 @@ class ProtocolTests(unittest.TestCase):
                          SETTINGS_LINE + 'aim_markers=1 web_grab=1 air_webs=0 web_shooter=0 punch=1 body=1 '
                                          'swing_speed=48 weight=150 snap_turn=0 smooth_turn=90 haptics=100 '
                                          'screen_size=1 flips=0 flip_speed=180 trigger_webs=0 hud=2 '
-                                         'stand_on_walls=1 screen_depth=2 eye_height_mm=0 '
+                                         'stand_on_walls=1 screen_depth=2 arcade_webs=0 eye_height_mm=0 '
                                          'arm_length_mm=0 calibration_prompt=1')
         # The experimental flips switched on in the headset go to the launcher too; so do their speed, the web
         # button and the HUD.
@@ -1595,6 +1606,8 @@ class ProtocolTests(unittest.TestCase):
         self.assertIn(' stand_on_walls=0 ', settings_line(start, dict(vr_settings=dict(start, stand_on_walls=False))))
         # GAME SCREEN 3D switched off in the headset: the next session's cutscenes are flat again.
         self.assertIn(' screen_depth=0 ', settings_line(start, dict(vr_settings=dict(start, screen_depth=0))))
+        # WEB STYLE: ARCADE chosen in the headset stays for the next session.
+        self.assertIn(' arcade_webs=1 ', settings_line(start, dict(vr_settings=dict(start, arcade_webs=True))))
         # A T-pose calibration in the headset goes to the launcher the same way; so does skipping it.
         self.assertTrue(settings_line(start, dict(vr_settings=dict(start, eye_height_mm=1630, arm_length_mm=590)))
                         .endswith(' eye_height_mm=1630 arm_length_mm=590 calibration_prompt=1'))
