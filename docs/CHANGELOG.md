@@ -3,7 +3,43 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 19, fourth): arcade webs, and the SPIDY VR tab in
+**Latest build (October 20): hand wall climbing, experimental - Adrian's
+pull request 24 (AdrianGzzEsc).** You: "review and merge or fix the open
+prs".
+
+- **HAND WALL CLIMBING, under EXPERIMENTAL, off by default.** On a wall with
+  the left stick at rest the view stays upright beside it, a little
+  crouched, the eyes WALL CAMERA DISTANCE out (40 cm; 20 to 100). A grip
+  squeezed within about 18 cm of the wall holds on, open-palmed, with a short
+  buzz, and pulling it moves you the other way along the wall; two hands
+  share the pull. Both grips held and rolled turn the view along the wall
+  (90 degrees a second at most); the stick runs along the wall, steered by
+  the head's left and right; A jumps off. Round an outside corner the view
+  turns onto the next face and the body goes 85 cm on along it. Off, the
+  climbing paths do not run.
+- **What the review changed.** The pull request came from the author's own
+  preview builds, and three of their changes would have reached every
+  player: the launcher's title, its settings moved to a folder of its own
+  (`%APPDATA%\SpidyWallClimbPreview`, so everyone's saved options would have
+  gone), and the update check switched off. Those are out, and so are the
+  preview's notes (`docs/WALL_CLIMB_PREVIEW.md`); the player's part is in
+  PLAYERS.md. The swing command went from version 4 to one version 5 (240
+  bytes: each grip's place and squeeze, the roll's flag) instead of the
+  previews' versions 5, 6 and 7, whose gaze direction nothing read any more.
+  WALL CAMERA DISTANCE lost 10 and 15 cm: the eyes keep 20 cm from any
+  surface anyway (`HeadClearance::margin`, as the pull request's own test
+  showed), and the tab shows nine choices at most. The two rows were for one
+  session only; they now stay, in `%APPDATA%\Spidy\spidy_vr.ini`, which the
+  game's side of Spidy keeps for the SPIDY VR rows the launcher does not
+  show. Every row is checked against the tab's nine choices.
+- **Checked:** 403 core tests (41 new from the pull request; new here: the
+  tab-only settings' lines and their reading), the launcher's, all six
+  protocol suites. The rebuilt ray module takes a version 2 and the probe's
+  version 5 command and refuses a roll flag of 2 and the previews' version
+  7. The author played earlier previews; the last one (corners) had not been
+  played. Not run here in the game or a headset.
+
+**Earlier build (October 19, fourth): arcade webs, and the SPIDY VR tab in
 sections.** You: "the current web swinging is hard - webs get tangled over
 lightpoles and other small geometry, also they pull you down too much to the
 street. lets make an optional second set for arcady webs where they don't
