@@ -1882,6 +1882,60 @@ int main() {
             near(dot(out.headPose.position - wall.anchor, wall.normal), .4f, .01f);
         }
     });
+    test("ground walking with hand climbing enabled never aligns the camera to the left stick", [] {
+        for (Vec3 normal : {Vec3{}, Vec3{0, 1, 0}, normalized(Vec3{.2f, 1, 0})}) {
+            for (bool crawl : {false, true}) {
+                GameTrackingRig rig;
+                rig.handClimb(true);
+                auto f = trackedFrame();
+                for (auto& h : f.hands) h.squeeze = 0;
+                const Vec3 feet{0, 0, 0};
+                const SurfaceHold floor{normal, feet, 0, crawl};
+                const auto before = holdFor(rig, f, feet, floor, .7f);
+                const Vec3 forward = before.headPose.orientation.rotate({0, 0, -1});
+                const Vec3 up = before.headPose.orientation.rotate({0, 1, 0});
+                for (Vec3 stick : {Vec3{1, 0, 0}, Vec3{}, Vec3{0, 1, 0}, Vec3{}, Vec3{0, -1, 0},
+                                   Vec3{}, Vec3{-1, 0, 0}, Vec3{}, Vec3{.7f, .7f, 0}, Vec3{}}) {
+                    f.hands[0].stickX = stick.x;
+                    f.hands[0].stickY = stick.y;
+                    for (int i = 0; i < 30; ++i) {
+                        const auto out = holdFor(rig, f, feet, floor, 1.f / 90);
+                        near(length(out.headPose.orientation.rotate({0, 0, -1}) - forward), 0, .005f);
+                        near(length(out.headPose.orientation.rotate({0, 1, 0}) - up), 0, .005f);
+                        near(length(out.headPose.position - before.headPose.position), 0, .005f);
+                        near(out.viewTilt, before.viewTilt, .005f);
+                        check(!out.wallRotate, "ground walking enabled a wall roll");
+                    }
+                }
+            }
+        }
+    });
+    test("landing after wall running keeps later ground stick movement from turning the view", [] {
+        GameTrackingRig rig;
+        rig.handClimb(true);
+        auto f = trackedFrame();
+        for (auto& h : f.hands) h.squeeze = 0;
+        Vec3 feet{0, 9, -4.1f};
+        const SurfaceHold wall{{0, 0, 1}, {0, 10, -5}, 0, false};
+        holdFor(rig, f, feet, wall, .7f);
+        f.hands[0].stickY = 1;
+        auto out = holdFor(rig, f, feet, wall, .5f);
+        check(out.standing && out.viewTilt > 1.5f, "actual wall did not enter the running view");
+        f.hands[0].stickY = 0;
+        const SurfaceHold floor{{0, 1, 0}, feet, 0, false};
+        const auto landed = holdFor(rig, f, feet, floor, .8f);
+        near(landed.viewTilt, 0, .005f);
+        for (Vec3 stick : {Vec3{1, 0, 0}, Vec3{}, Vec3{-1, 0, 0}, Vec3{0, -1, 0}, Vec3{}}) {
+            f.hands[0].stickX = stick.x;
+            f.hands[0].stickY = stick.y;
+            feet.x += .1f;
+            out = holdFor(rig, f, feet, floor, .3f);
+            near(length(out.headPose.orientation.rotate({0, 0, -1}) -
+                        landed.headPose.orientation.rotate({0, 0, -1})), 0, .005f);
+            near(out.viewTilt, 0, .005f);
+            near(out.headPose.position.x - landed.headPose.position.x, feet.x, .005f);
+        }
+    });
     test("wall-run reversal keeps the camera steady through the stick centre in every roll", [] {
         for (float angle : {0.f, 1.5707963f, 3.14159265f}) {
             for (int neutralFrames : {0, 1, 6}) {

@@ -406,7 +406,10 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     // Crossing the stick's centre to reverse must not restart the camera
     // transition. A sustained release still returns to the close climb view.
     runIdleSeconds_ = walks ? 0.f : std::min(.1f, runIdleSeconds_ + f.seconds);
-    const bool wallRun = handClimb_ && holds && handValid(f.hands[0]) && !f.jump &&
+    // A hold may also describe ground or a walkable slope. Only wall/ceiling
+    // contact may align the camera when the left stick starts moving.
+    const bool runSurface = holds && held.y < surfaceEnterCos;
+    const bool wallRun = handClimb_ && runSurface && handValid(f.hands[0]) && !f.jump &&
                          (walks || (wallRunning_ && runIdleSeconds_ < .1f));
     if (wallRun && !wallRunning_) {
         // Capture the direction visible BEFORE the wall-floor transition

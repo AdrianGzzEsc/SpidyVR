@@ -1,4 +1,4 @@
-# Spidy Wall Climb Finished — Preview 12 without the vent experiment
+# Spidy Wall Climb Finished 2 — ground-camera fix
 
 This modified build of Ilya Mezerowsky's Spidy VR mod is based on upstream
 0.4.0, commit c747c184dd97acaddf0db47f1a32f30cebe0d974, merged with the
@@ -6,6 +6,11 @@ working Preview 7 changes saved at e0fcb4c. Keep the whole
 extracted preview folder together.
 
 ## Finished build
+
+Moving the left stick on ordinary ground or a walkable slope no longer
+starts the wall-run camera alignment. The transition requires a wall or
+ceiling hold. Normal ground movement keeps the camera facing where the
+headset and the usual turning controls point, including after a wall landing.
 
 This is the finished build requested after Preview 12: the experimental vent
 hand crawling, its input/feedback path and its special camera changes have
@@ -18,8 +23,7 @@ The deliberate-roll-only reservation added by the free-hand-web change is
 removed as well.
 
 Outdoor grip climbing, open palms and vibration, camera/body roll, extended
-corner carry, wall running and its backward-input fix are retained. No part
-of the cancelled Preview 13 ground-camera investigation is included.
+corner carry, wall running and its backward-input fix are retained.
 
 ## Retained distance and movement controls
 
@@ -67,7 +71,7 @@ frame remain removed.
 ## Start
 
 1. Close the game and any other Spidy session.
-2. Open **Spidy Wall Climb Finished (Preview 12).exe**, connect your headset, and start VR.
+2. Open **Spidy Wall Climb Finished 2.exe**, connect your headset, and start VR.
 3. Enable **Settings → SPIDY VR → EXPERIMENTAL → HAND WALL CLIMBING**.
    Enable it again after restarting VR; the switch lasts for the session.
 4. **WALL CAMERA DISTANCE** sets the close climbing view to 10, 15, 20, 25,
@@ -159,7 +163,7 @@ No new original-game climbing animation cycle is integrated by this update.
 
 ## Validation
 
-Windows Release build: passed. Native core: **395/395** tests. Launcher:
+Windows Release build: passed. Native core: **397/397** tests. Launcher:
 **24/24** checks. Python protocols: **137/137** tests across six suites.
 The packaged runtime imports, source whitespace, and module/source copies
 are also checked during packaging.
@@ -180,6 +184,11 @@ continuous full head turns and pitches through vertical. Preview 11 also
 checks forward-to-backward reversals with zero, one and six centre frames
 in upright, sideways and upside-down views, backward and diagonal-backward
 starts after a full stop, and the return to climbing after a sustained release.
+
+Ground-camera regressions check every frame through left/right, forward,
+backward, diagonal and neutral stick changes on ground, walkable slopes and
+floor crawl contacts. A wall-run-to-ground test checks that walking and
+strafing after landing preserve the view while following the moving player.
 
 **This finished build has not yet been played in the game or tested in a headset.**
 Earlier previews were played by the user. Synthetic corner tests do not
