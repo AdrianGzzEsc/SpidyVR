@@ -246,7 +246,9 @@ void GameTrackingRig::reset() {
     const bool flips = flips_, triggerWebs = triggerWebs_, standOnWalls = standOnWalls_;
     const bool handClimb = handClimb_;
     const FlipMotion flip = flip_;
+    const auto autoSettings = autoSettings_;
     *this = {};
+    autoSettings_ = autoSettings;
     snap_ = snap;
     smooth_ = smooth;
     flips_ = flips;
@@ -297,6 +299,8 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
             gameplay && lastTime_ && since < static_cast<std::int64_t>(blipSeconds * 1'000'000'000.f);
         if (!brief) {
             flip_.reset();
+            automatic_.reset();
+            automaticHands_.reset();
             rig_.tilt = {};
             surfaceTurn_ = {};
             surfaceShift_ = {};
@@ -337,6 +341,8 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
             // After a break: over the feet again, facing as before.
             rig_.origin = feet - Quat::yaw(rig_.yaw).rotate({f.head.position.x, 0, f.head.position.z});
             flip_.reset();
+            automatic_.reset();
+            automaticHands_.reset();
             rig_.tilt = {};
         } else if (pendingRecenter_) {
             wallRoll_.reset();
@@ -344,6 +350,8 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
             wallRunning_ = false;
             // A recenter ends a flip: level, the head kept where it was.
             flip_.reset();
+            automatic_.reset();
+            automaticHands_.reset();
             rig_.tilt = {};
             surfaceTurn_ = {};
             surfaceShift_ = {};
@@ -391,11 +399,43 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     }
     flip.head = f.head.orientation;
     flip.seconds = f.seconds;
-    if (flip_.level())
+    if (autoSettings_.enabled ? automatic_.level() : flip_.level())
         rig_.pivot = f.head.position;
-    if (flips_) {
+    // REALISTIC FLIPS: the swing's flight and the arms turn the player
+    // (RealisticFlip). A pressed in the air rights them; with FLIPS on, the
+    // left stick, let go once in the air, steers the turn.
+    bool automaticSteering = false;
+    if (autoSettings_.enabled) {
+        flip_.reset();
+        auto flight = flight_;
+        RealisticControls controls;
+        const bool air = flip.airborne && !flip.surface;
+        if (f.jump && !automaticBrakeHeld_)
+            automaticBrakeFromAir_ = air;
+        if (!f.jump || !air)
+            automaticBrakeFromAir_ = false;
+        automaticBrakeHeld_ = f.jump;
+        controls.brake = autoSettings_.airBrake && air && f.jump && automaticBrakeFromAir_;
+        const Vec3 want = stickTurn(flip);
+        if (!air)
+            automaticStickReady_ = false;
+        else if (length(want) == 0)
+            automaticStickReady_ = true;
+        automaticSteering = flips_ && air && automaticStickReady_ && length(want) > 0 && !controls.brake;
+        controls.manualActive = automaticSteering;
+        controls.manualAngular = want * flip_.steeringRate();
+        if (controls.brake || automatic_.recovering())
+            automaticHands_.reset();
+        flight.handMomentum = automaticHands_.update(f, autoSettings_.handThreshold);
+        rig_.tilt = automatic_.update(flight, flip.airborne, flip.surface, rig_.yaw, f.seconds, autoSettings_,
+                                      controls);
+    } else if (flips_) {
+        automatic_.reset();
+        automaticHands_.reset();
         rig_.tilt = flip_.update(flip);
     } else {
+        automatic_.reset();
+        automaticHands_.reset();
         flip_.reset();
         rig_.tilt = {};
     }
@@ -588,7 +628,7 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     out.anchor = feet;
     out.swing = trackedSwingInput(f, placed, triggerWebs_);
     // The left stick turns the flip: the player does not walk or drift.
-    if (flip_.steering())
+    if (flip_.steering() || automaticSteering)
         out.swing.move = {};
     // The game takes the stick as the player stands, level; the swing takes
     // it as they see it: on a wall they stand on, along that wall.

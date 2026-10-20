@@ -11087,9 +11087,18 @@ int main() {
               "the flips: a switch under EXPERIMENTAL");
         check(all[22].item == Item::flipSpeed && all[22].choices.size() == std::size(flipSpeeds),
               "the flip speed under the flips");
-        check(all.size() == 25 && all[23].item == Item::handClimb && all[23].choices.empty() &&
-                  all[24].item == Item::wallDistance && all[24].choices.size() == std::size(wallDistances),
-              "hand wall climbing, a switch, and its camera distance last under EXPERIMENTAL");
+        check(all[23].item == Item::handClimb && all[23].choices.empty() && all[24].item == Item::wallDistance &&
+                  all[24].choices.size() == std::size(wallDistances),
+              "hand wall climbing, a switch, and its camera distance under the flips");
+        const Item realistic[] = {Item::realisticFlips,        Item::automaticStrength,    Item::automaticSpeed,
+                                  Item::automaticMinimumSpeed, Item::automaticReleaseFlip, Item::automaticResponse,
+                                  Item::automaticHandStrength, Item::automaticFalloff,     Item::automaticHandThreshold,
+                                  Item::automaticAirBrake};
+        check(all.size() == 25 + std::size(realistic), "the realistic flips' rows are not the last");
+        for (size_t i = 0; i < std::size(realistic); ++i)
+            check(all[25 + i].item == realistic[i], "the realistic flips' rows out of order");
+        check(std::strcmp(all[25].title, "REALISTIC FLIPS") == 0 && all[25].choices.empty(),
+              "realistic flips: a switch, first of its rows");
         // The wall view has no row of its own any more: it turned only while
         // Spidy held the player on a wall, so it was never a choice of its own
         // and the launcher's one "Wall running" now carries both (the player,
@@ -11168,11 +11177,25 @@ int main() {
     test("VR settings only the tab offers: kept as key=value lines, read back sanitized, the rest left", [] {
         using namespace vr_settings;
         const Values defaults;
-        check(tabOnlyText(defaults) == "near_clip_mm=20\nhand_climb=0\nwall_distance_cm=40\n", "the defaults' text");
+        check(tabOnlyText(defaults) == "near_clip_mm=20\nhand_climb=0\nwall_distance_cm=40\nrealistic_flips=0\n"
+                                       "rotation_strength=50\nrotation_speed=240\nflight_speed_min=3\n"
+                                       "swing_momentum=1\nrotation_response_ms=500\nhand_momentum=100\n"
+                                       "angular_drag_ms=3000\nhand_speed_min_cm=100\nair_rotation_brake=1\n",
+              "the defaults' text");
         Values changed = defaults;
         changed.handClimb = true;
         changed.wallDistance = 75;
         changed.nearClipMm = 50;
+        changed.realisticFlips = true;
+        changed.automaticReleaseFlip = false;
+        changed.automaticStrength = 75;
+        changed.automaticSpeed = 360;
+        changed.automaticMinimumSpeed = 8;
+        changed.automaticResponse = 200;
+        changed.automaticHandStrength = 150;
+        changed.automaticFalloff = 1000;
+        changed.automaticHandThreshold = 200;
+        changed.automaticAirBrake = false;
         check(withTabOnly(defaults, tabOnlyText(changed)) == changed, "the settings did not come back");
         // Windows' line ends, a line of another build, no number, and a
         // distance out of range: the rest still counts.
@@ -11378,6 +11401,98 @@ int main() {
         next(true);
         f.hands[1].stickX = 1;
         check(next(true).head[8] > held.head[8] + .01f, "the stick let go and held again did not turn");
+    });
+    test("momentum mode supports manual left-stick rotation and an airborne A brake", [] {
+        GameTrackingRig rig;
+        RealisticFlipSettings settings;
+        settings.enabled = true;
+        rig.automaticFlips(settings);
+        rig.flips(true);
+        rig.flipSpeed(3.14159265f);
+        rig.flight({{}, {}, true, false});
+        auto f = trackedFrame();
+        flipFrame(rig, f, false, false);
+        flipFrame(rig, f, false, true);
+        f.hands[0].stickY = 1;
+        GameMotionFrame m;
+        for (int i = 0; i < 45; ++i)
+            m = flipFrame(rig, f, false, true);
+        check(std::abs(m.flipTilt.x) > .1f, "left stick must rotate with momentum mode on");
+        check(length(m.swing.move) < .001f, "stick rotation must not also steer flight movement");
+        const auto beforeBrake = m.flipTilt;
+        m = flipFrame(rig, f, true, true);
+        check(std::abs(beforeBrake.x * m.flipTilt.x + beforeBrake.y * m.flipTilt.y + beforeBrake.z * m.flipTilt.z +
+                       beforeBrake.w * m.flipTilt.w) > .99f,
+              "A recovery must not snap");
+        f.hands[0].stickY = 0;
+        for (int i = 0; i < 240; ++i)
+            m = flipFrame(rig, f, false, true);
+        near(length(m.flipTilt.rotate({0, 1, 0}) - Vec3{0, 1, 0}), 0, .001f);
+    });
+    test("physical arm gestures generate airborne rotation without a button or tether", [] {
+        GameTrackingRig rig;
+        RealisticFlipSettings settings;
+        settings.enabled = true;
+        rig.automaticFlips(settings);
+        rig.flight({{}, {}, true, false});
+        auto frame = trackedFrame();
+        flipFrame(rig, frame, false, false);
+        GameMotionFrame moved;
+        for (int i = 0; i < 12; ++i) {
+            for (auto& hand : frame.hands)
+                hand.grip.position.y += .035f;
+            moved = flipFrame(rig, frame, false, true);
+        }
+        check(moved.active && std::abs(moved.flipTilt.x) > .001f,
+              "raw upward hand movement must turn the view without A, stick or web");
+        const auto first = moved.flipTilt;
+        for (int i = 0; i < 60; ++i)
+            moved = flipFrame(rig, frame, false, true);
+        check(std::abs(first.x - moved.flipTilt.x) > .05f, "rotation must continue after arms stop");
+    });
+    test("automatic rotation turns eyes and hands about the head without stick input", [] {
+        GameTrackingRig rig;
+        RealisticFlipSettings settings;
+        settings.enabled = true;
+        settings.strength = 100;
+        rig.automaticFlips(settings);
+        rig.flight({{0, 0, -15}, {1, 0, 0}, true, true});
+        auto f = trackedFrame();
+        f.hands[0].stickX = f.hands[0].stickY = 0;
+        GameMotionFrame m;
+        for (int i = 0; i < 60; ++i)
+            m = flipFrame(rig, f, false);
+        check(m.active && !levelTilt(m.flipTilt), "automatic rotation needs no A or stick");
+        check(std::abs(m.headPose.orientation.z) > .1f, "head must rotate with the body");
+        const Vec3 hand = m.grips[0].position - m.headPose.position;
+        near(length(hand), length(f.hands[0].grip.position - f.head.position), .001f);
+    });
+    test("realistic flips off: the flips are FlipMotion's, and the rows' values reach the rig as set", [] {
+        using namespace vr_settings;
+        Values v;
+        check(!v.realisticFlips, "realistic flips start on");
+        // Off, the flight and the arms turn nothing.
+        GameTrackingRig rig;
+        rig.automaticFlips({});
+        rig.flight({{0, 0, -15}, {1, 0, 0}, true, true});
+        auto f = trackedFrame();
+        flipFrame(rig, f, false, false);
+        GameMotionFrame m;
+        for (int i = 0; i < 12; ++i) {
+            for (auto& hand : f.hands)
+                hand.grip.position.y += .035f;
+            m = flipFrame(rig, f, false, true);
+        }
+        check(levelTilt(m.flipTilt), "realistic flips off still turned the player");
+        // Each row's choices step through its values and come back.
+        for (const Item item : {Item::automaticStrength, Item::automaticSpeed, Item::automaticMinimumSpeed,
+                                Item::automaticResponse, Item::automaticHandStrength, Item::automaticFalloff,
+                                Item::automaticHandThreshold})
+            for (int i = 0; i < 4; ++i) {
+                check(choose(item, i, v) || choice(item, v) == i, "a realistic flip row refused a choice");
+                check(choice(item, v) == i, "a realistic flip row's choice did not come back");
+            }
+        check(sanitized(v) == v, "a realistic flip row's step is out of its range");
     });
     test("flip: a tap of A in the air is one front flip about the head, and comes out level", [] {
         GameTrackingRig rig;

@@ -81,6 +81,15 @@ struct Values {
     // tab's NEAR CLIP, nearClips; near_clip.hpp). The game's own camera clips
     // at 100, which cut off hands held up before the face.
     int nearClipMm = 20;
+    // Realistic flips, experimental (the tab's REALISTIC FLIPS and the nine
+    // rows under it; RealisticFlipSettings, which holds what each means): the
+    // swing's flight and the arms turn the player in the air, and A there
+    // rights them.
+    bool realisticFlips = false, automaticReleaseFlip = true;
+    int automaticStrength = 50, automaticSpeed = 240, automaticMinimumSpeed = 3;
+    int automaticResponse = 500, automaticHandStrength = 100, automaticFalloff = 3000;
+    int automaticHandThreshold = 100;
+    bool automaticAirBrake = true;
     bool operator==(const Values&) const = default;
 };
 // The steps the game's Settings offer. The launcher's slider sets any swing
@@ -146,8 +155,18 @@ enum class Item : uint8_t {
     handClimb,
     wallDistance,
     nearClip,
+    realisticFlips,
+    automaticStrength,
+    automaticSpeed,
+    automaticMinimumSpeed,
+    automaticReleaseFlip,
+    automaticResponse,
+    automaticHandStrength,
+    automaticFalloff,
+    automaticHandThreshold,
+    automaticAirBrake,
 };
-inline constexpr Item lastItem = Item::nearClip;
+inline constexpr Item lastItem = Item::automaticAirBrake;
 // The SPIDY VR tab, top to bottom: a section's heading (item none) or a
 // setting. The sections: WEBS, SWINGING, COMFORT, DISPLAY, BODY and
 // EXPERIMENTAL (the player, October 19: "sort the options in spidy vr
@@ -164,7 +183,7 @@ struct Row {
     // menu (the one with resume)").
     bool page{};
 };
-const std::array<Row, 25>& rows();
+const std::array<Row, 35>& rows();
 // The most choices a row shows (game_menu's buffers): a row with more would
 // lose its last ones.
 inline constexpr size_t maxChoices = 9;
@@ -177,10 +196,10 @@ bool choose(Item, int choice, Values&);
 // What the game's RESET puts back: the choice for Spidy's defaults (Values{}).
 int defaultChoice(Item);
 // The settings only the tab offers, which no launcher option or XrConfig
-// field carries: NEAR CLIP, HAND WALL CLIMBING and WALL CAMERA DISTANCE. The
-// game module keeps them as these key=value lines in a file of their own, beside
-// the launcher's settings (game_xr.cpp, tabOnlyPath), and reads them back
-// when VR starts.
+// field carries: NEAR CLIP, HAND WALL CLIMBING, WALL CAMERA DISTANCE and the
+// realistic flips' ten rows. The game module keeps them as these key=value
+// lines in a file of their own, beside the launcher's settings (game_xr.cpp,
+// tabOnlyPath), and reads them back when VR starts.
 std::string tabOnlyText(const Values&);
 // The values with what such text holds, sanitized. A line with an unknown
 // key, or whose value is no whole number, is passed over.

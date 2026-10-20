@@ -3,7 +3,35 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 20, second): NEAR CLIP - pull request 22
+**Latest build (October 20, third): realistic flips, experimental - pull
+request 23 (iplusdvr).** You: "review and merge or fix the open prs".
+
+- **REALISTIC FLIPS, under EXPERIMENTAL, off by default, and nine rows that
+  tune it.** While it is on it takes the place of FLIPS' turns: on a web,
+  above a travel speed, the body turns toward the web's pull; a web let go
+  leaves the swing's spin; arm swings in the air add spin and swings the
+  other way take it out; drag lets it die away, and a spin can go past a
+  whole turn, with no flip of a set size. A in the air, or landing, brings
+  you upright with your heading kept. With FLIPS on as well, the left stick,
+  let go once in the air, steers the turn. The author drew on the
+  interaction of Blaze's Spider-Man for Blade & Sorcery, with none of its
+  code, and tried it in a headset. Off, the flips are as they were.
+- **What the review changed.** The ten rows came first in the tab, above
+  WEBS; they are last under EXPERIMENTAL now, and FLIPS keeps its own help
+  (the pull request had rewritten it for the new mode). The settings went
+  into `SpidyRotation.ini` beside the stereo module, which runs from a copy
+  staged per build, so every update would have reset them; they are kept in
+  `%APPDATA%\Spidy\spidy_vr.ini` with the tab's other own settings. The new
+  files are formatted as the rest (`.clang-format`), the speeds read as
+  FLIP SPEED's do (degrees a second), the separate test program is
+  `spidy_realistic_flip_tests` (ctest `realistic_flips`), and the flight is
+  only sampled for the rig while the switch is on.
+- **Checked:** 408 core tests (new: the pull request's three, and one that
+  realistic flips off turn nothing and that the rows step through their
+  values), the realistic flips' own test program, the launcher's, all six
+  protocol suites. Not run here in the game or a headset.
+
+**Earlier build (October 20, second): NEAR CLIP - pull request 22
 (iplusdvr).** You: "review and merge or fix the open prs".
 
 - **NEAR CLIP, the last row under DISPLAY: how near the eyes the headset

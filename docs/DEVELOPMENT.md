@@ -471,8 +471,25 @@ the view turns onto the next face at 4 radians a second and the swing carries
 the body 0.85 m on along it. Head clearance casts 0.75 m further and takes up
 to 32 passes between opposing walls while climbing close.
 
+**Realistic flips** (REALISTIC FLIPS and the nine rows under it,
+experimental and off by default; pull request 23, iplusdvr, after the
+interaction of Blaze's Spider-Man for Blade & Sorcery, with none of its code).
+`RealisticFlip` (`realistic_flip.hpp`) keeps an angular velocity and turns the
+tracking space's tilt by it, about the head, as `FlipMotion` does; no turn has
+a set size. On a web, above a travel speed, the body's up is eased toward the
+webs' pull (their directions weighted by tension, from `game_xr.cpp`'s flight
+sample); a web let go leaves the spin of the swing's orbit; arm swings faster
+than a threshold, read from the hands relative to the head before any of
+Spidy's motion (`AutomaticHandMotion`), add spin; drag takes it away; landing
+or A in the air (`RealisticControls::brake`) brings the body upright with the
+heading kept. With FLIPS on too, the left stick, once let go in the air,
+steers it. `GameTrackingRig::automaticFlips` switches between the two;
+`tests/realistic_flip_tests.cpp` is its own test program (ctest
+`realistic_flips`).
+
 The SPIDY VR tab's settings that no launcher option carries (NEAR CLIP, HAND
-WALL CLIMBING, WALL CAMERA DISTANCE) are kept by the stereo module itself:
+WALL CLIMBING, WALL CAMERA DISTANCE, the realistic flips' rows) are kept by
+the stereo module itself:
 `vr_settings::tabOnlyText` lines in `%APPDATA%\Spidy\spidy_vr.ini`, read as VR
 starts and written when the tab changes one (`game_xr.cpp`, `tabOnlyPath`). A
 file beside the module would not do: it runs from a copy staged per build
@@ -1372,6 +1389,7 @@ still requires a running game or headset.
 | `src/game_offers.cpp`, `src/game_warp.cpp`, `include/spidy/offer_pointing.hpp`, `tools/research_warp.py` | The game's interactions on Spidy's wall: the hero's offer processor, each offer's check and a vent's own check answered as the game's crawl would where the swing holds the player, and the offers it gathered near him; a hand pointing at one and the interact's use of it - the game's own crawl entry under him (`game_warp`), its pick, then its Y; the in-game check (`research_warp.py --use`) |
 | `src/game_xr.cpp`, `src/game_tracking.cpp` | Native eye presentation and Quest controls |
 | `include/spidy/wall_roll.hpp`, `src/swing.cpp` (`climbInputs`) | Hand wall climbing: palms that hold the wall and pull, the two-grip roll of the view |
+| `include/spidy/realistic_flip.hpp`, `tests/realistic_flip_tests.cpp` | Realistic flips: spin from the webs' pull, a let-go swing and arm swings, drag, and the way back upright |
 | `src/native_hud.cpp`, `include/spidy/native_hud.hpp`, `tools/probe_hud.py` | The game's HUD in VR: its panel in front of the head, the second movie (markers, subtitles, prompts) on it, and its check in the game |
 | `src/native_rays.cpp`, `src/native_movement.cpp`, `src/game_swing.cpp` | Native world queries and collision-controlled swing requests |
 | `src/lab_world.cpp`, `apps/xr_lab.cpp` | Synthetic collision world and VR lab |

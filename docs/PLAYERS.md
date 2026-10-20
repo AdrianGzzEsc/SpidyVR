@@ -513,6 +513,24 @@ in the launcher's options)
                          at full tilt unless you change it (90 to 480;
                          Settings > SPIDY VR or "Flip speed" in the launcher)
 
+Realistic flips (experimental, off until you switch REALISTIC FLIPS on in
+Settings > SPIDY VR; while it is on it takes the place of the flips above)
+  On a web ............. moving faster than MINIMUM FLIGHT SPEED (3 m/s), your
+                         body turns toward the web's pull, as hard as
+                         ROTATION STRENGTH says; where you face stays yours
+  Let go of the web .... the swing's spin goes on (SWING MOMENTUM) and dies
+                         away as ANGULAR DRAG says
+  Swing your arms ...... in the air, faster than MINIMUM HAND SPEED, and you
+                         turn with them, as much as HAND MOMENTUM says; swing
+                         them back the other way to slow down. A spin can go
+                         past a whole turn
+  A in the air ......... stops the spin and brings you upright (AIR ROTATION
+                         BRAKE); landing does too
+  Left stick in the air  with FLIPS on as well: let go of it once in the air,
+                         then it steers the turn
+  MAX ROTATION SPEED and ROTATION RESPONSE set how fast you can turn and how
+  soon a turn gets there.
+
 Hand wall climbing (experimental, off until you switch HAND WALL CLIMBING on
 in Settings > SPIDY VR)
   On a wall ............ with the left stick at rest you stay upright beside
@@ -577,10 +595,11 @@ VR settings
   EXPERIMENTAL ... FLIPS (off until you switch it on) lets the left stick
                    and A in the air flip you, and FLIP SPEED sets how fast.
                    HAND WALL CLIMBING (off until you switch it on, above)
-                   and its WALL CAMERA DISTANCE.
+                   and its WALL CAMERA DISTANCE. REALISTIC FLIPS (off until
+                   you switch it on, above) and the nine rows that tune it.
   Changes apply at once. The launcher starts your next session with them;
-  its options show them too. NEAR CLIP, HAND WALL CLIMBING and WALL CAMERA
-  DISTANCE are only in the tab: Spidy keeps them in
+  its options show them too. NEAR CLIP and the EXPERIMENTAL rows below FLIP
+  SPEED are only in the tab: Spidy keeps them in
   %APPDATA%\Spidy\spidy_vr.ini, beside the launcher's own settings. Playing
   the game on its screen instead of VR is on the pause menu itself: SWITCH
   TO GAME SCREEN, under RESUME (each session starts in VR).

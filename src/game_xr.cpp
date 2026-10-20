@@ -611,6 +611,13 @@ bool writeTabOnly(const std::string& text) {
     return whole &&
            MoveFileExW(written.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
 }
+// REALISTIC FLIPS and the rows under it, as the rig takes them.
+RealisticFlipSettings realisticFlips(const vr_settings::Values& v) {
+    return {v.realisticFlips,         v.automaticReleaseFlip,  v.automaticStrength,
+            v.automaticSpeed,         v.automaticMinimumSpeed, v.automaticResponse,
+            v.automaticHandStrength,  v.automaticFalloff,      v.automaticHandThreshold,
+            v.automaticAirBrake};
+}
 DWORD WINAPI run(void*) {
     bool nativeStarted = false, gpuStarted = false, raysStarted = false, swingStarted = false, websStarted = false,
          bodyStarted = false;
@@ -1137,6 +1144,7 @@ DWORD WINAPI run(void*) {
             rig.standOnWalls(values.standOnWalls);
             rig.handClimb(values.handClimb);
             rig.wallDistance(static_cast<float>(values.wallDistance) / 100.f);
+            rig.automaticFlips(realisticFlips(values));
             native_hud::setSize(values.hud);
             near_clip::set(values.nearClipMm);
             sendSwingSettings();
@@ -1514,6 +1522,33 @@ DWORD WINAPI run(void*) {
                                     rig.surfaceFound({hit.position, n});
                             }
                     }
+                    // REALISTIC FLIPS turn with the swing's flight: its
+                    // velocity, and while it has the player each web's pull
+                    // toward where it holds, by its tension.
+                    RealisticFlight flight;
+                    if (values.realisticFlips) {
+                        const int64_t fresh = now.QuadPart - frequency.QuadPart / 10;
+                        flight.valid = swingState.qpc && static_cast<int64_t>(swingState.qpc) > fresh &&
+                                       !swingState.error &&
+                                       (swingState.status == 1 || swingState.status == 2);
+                        flight.velocity = swingState.velocity;
+                        float ropes{};
+                        unsigned attached{};
+                        if (flight.valid && swingState.owned)
+                            for (const auto& web : swingState.webs) {
+                                const Vec3 toward = web.anchor - feet;
+                                if (!web.attached || !finite(web.anchor) || !std::isfinite(web.tension) ||
+                                    length(toward) < .1f)
+                                    continue;
+                                flight.attached = true;
+                                ropes += length(toward);
+                                ++attached;
+                                flight.pull += normalized(toward) * std::clamp(web.tension, .1f, 100.f);
+                            }
+                        if (attached)
+                            flight.ropeLength = ropes / static_cast<float>(attached);
+                    }
+                    rig.flight(flight);
                     motion = rig.update(controller, feet, {camera[8], camera[9], camera[10]}, gameplay,
                                         swingState.owned ? Vec3{0, 1, 0} : heroUp,
                                         game_swing::airborne(swingState, now.QuadPart, frequency.QuadPart), hold,

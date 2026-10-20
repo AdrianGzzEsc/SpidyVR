@@ -2,6 +2,7 @@
 #include "head_clearance.hpp"
 #include "native_rays.hpp"
 #include "native_view.hpp"
+#include "realistic_flip.hpp"
 #include "swing.hpp"
 #include "tracking.hpp"
 #include "wall_roll.hpp"
@@ -203,6 +204,11 @@ class FlipMotion {
     // turn; a tap's flip and the way back level go as much faster or slower.
     // A turn in holdTurnSeconds until set; reset() keeps it.
     void speed(float radiansPerSecond);
+    // The stick's turn at full tilt, radians a second (what speed() set):
+    // REALISTIC FLIPS steer by it.
+    float steeringRate() const {
+        return 6.2831853f / holdTurnSeconds * scale_;
+    }
     // Level at once (a menu, a recenter, another player). A held A stays held:
     // it flips again only once let go and pressed in the air; a held stick
     // flips again only once let go in the air.
@@ -328,9 +334,23 @@ class GameTrackingRig {
     void wallDistance(float metres) {
         wallDistance_ = std::isfinite(metres) ? std::clamp(metres, HeadClearance::margin, 1.f) : .4f;
     }
+    // REALISTIC FLIPS (RealisticFlip), from the VR settings; off, the flips
+    // are FlipMotion's. reset() keeps them.
+    void automaticFlips(RealisticFlipSettings settings) {
+        autoSettings_ = settings;
+    }
+    // The swing's flight for the next update: its velocity and its webs' pull.
+    void flight(RealisticFlight sample) {
+        flight_ = sample;
+    }
     void reset();
 
   private:
+    RealisticFlipSettings autoSettings_{};
+    RealisticFlight flight_{};
+    RealisticFlip automatic_{};
+    AutomaticHandMotion automaticHands_{};
+    bool automaticStickReady_{}, automaticBrakeHeld_{}, automaticBrakeFromAir_{};
     Rig rig_{};
     FlipMotion flip_{};
     Pose lastHead_{};
