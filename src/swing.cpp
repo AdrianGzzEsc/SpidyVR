@@ -593,15 +593,6 @@ bool Swing::wallHand(int i, const Input& in, const WorldQueries& world) const {
         return true;
     return wallContact(h, world).has_value();
 }
-unsigned Swing::reserveWallHands(Input& in, const WorldQueries& world) const {
-    unsigned reserved{};
-    for (unsigned i = 0; i < 2; ++i)
-        if (in.focused && (in.wallRotate || wallHand(i, in, world))) {
-            reserved |= 1u << i;
-            in.hands[i].grip = in.hands[i].trigger = 0;
-        }
-    return reserved;
-}
 void Swing::climbInputs(const Input& in, const WorldQueries& world) {
     for (int i = 0; i < 2; ++i) {
         auto& c = climbing_[i];

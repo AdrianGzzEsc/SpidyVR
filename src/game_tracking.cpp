@@ -402,14 +402,11 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     // eyes, each frame the short way from where its up is, so a corner's
     // next face turns it on from the wall it is on; back level, what is left
     // is a turn about the vertical, which the tracking space keeps.
-    // Native crawl owns the camera's floor in a vent/shaft. Outdoor close-wall
-    // offsets and run/roll transitions would push the eyes through the duct.
-    const bool handClimb = handClimb_ && !surface.crawl;
     const bool walks = handValid(f.hands[0]) && std::hypot(f.hands[0].stickX, f.hands[0].stickY) > .2f;
     // Crossing the stick's centre to reverse must not restart the camera
     // transition. A sustained release still returns to the close climb view.
     runIdleSeconds_ = walks ? 0.f : std::min(.1f, runIdleSeconds_ + f.seconds);
-    const bool wallRun = handClimb && holds && handValid(f.hands[0]) && !f.jump &&
+    const bool wallRun = handClimb_ && holds && handValid(f.hands[0]) && !f.jump &&
                          (walks || (wallRunning_ && runIdleSeconds_ < .1f));
     if (wallRun && !wallRunning_) {
         // Capture the direction visible BEFORE the wall-floor transition
@@ -450,7 +447,7 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
         wallRoll_.reset();
     }
     wallRunning_ = wallRun;
-    if (handClimb && holds && std::abs(held.y) < .5f) {
+    if (handClimb_ && holds && std::abs(held.y) < .5f) {
         const Vec3 face = normalized(Vec3{held.x, 0, held.z});
         if (!wallRun && length(climbNormal_) > .5f) {
             // Carry the climbing view around a building's side without an
@@ -465,9 +462,9 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     } else {
         climbNormal_ = {};
     }
-    if (!holds || !standOnWalls_ || (handClimb && !wallRun))
+    if (!holds || !standOnWalls_ || (handClimb_ && !wallRun))
         standing_ = false;
-    else if (handClimb || surface.crawl ||
+    else if (handClimb_ || surface.crawl ||
              (std::isfinite(surface.speed) && surface.speed < (walks ? wallStrideSpeed : wallStandSpeed)))
         standing_ = true;
     {
@@ -501,7 +498,7 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     }
     const Vec3 unplacedHead = rig_.toWorld(f.head).position;
     Vec3 target{};
-    if (handClimb && !standing_ && holds && std::abs(held.y) < .5f) {
+    if (handClimb_ && !standing_ && holds && std::abs(held.y) < .5f) {
         // Keep the horizon upright and crouch beside the facade, hands within
         // touching distance. This shifts the tracking space, never the collider.
         const Vec3 alongUp = normalized(Vec3{0, 1, 0} - held * held.y);
@@ -554,9 +551,9 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
         placed.tilt = unit(yaw.conjugate() * surfaceTurn_ * yaw * rig_.tilt);
         placed.pivot = {};
     }
-    if (!holds || f.jump || surface.crawl)
+    if (!holds || f.jump)
         wallRoll_.reset();
-    const bool rollAllowed = handClimb && holds && !standing_ && !walks && !f.jump && std::abs(held.y) < .5f;
+    const bool rollAllowed = handClimb_ && holds && !standing_ && !walks && !f.jump && std::abs(held.y) < .5f;
     const float rollAngle = wallRoll_.update(rollAllowed, f);
     if (rollAllowed) {
         const Pose before = placed.toWorld(f.head);
@@ -565,7 +562,7 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
         placed.tilt = unit(yaw.conjugate() * roll * yaw * placed.tilt);
         placed.origin += before.position - placed.toWorld(f.head).position;
         out.wallRoll = rollAngle;
-        out.wallRotate = wallRoll_.reservesHands();
+        out.wallRotate = wallRoll_.engaged();
     }
     // The eyes out of what the world is built of (HeadClearance), and the
     // hands, the webs and the body with them: they stay where the eyes see
@@ -603,7 +600,7 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     const auto head = placed.toWorld(f.head);
     out.head = worldPose(head);
     out.headPose = head;
-    if (handClimb && holds && !wallRun)
+    if (handClimb_ && holds && !wallRun)
         climbView_ = head.orientation;
     for (unsigned i = 0; i < 2; ++i) {
         out.eyes[i] = worldPose(placed.toWorld(f.eyes[i].pose));

@@ -260,22 +260,12 @@ struct Ropes {
 static_assert(sizeof(Ropes) == 96);
 // Separate telemetry keeps existing swing/probe packets compatible.
 struct ClimbData {
-    uint32_t magic = 0x53434c44, version = 2, bytes = sizeof(ClimbData), status{};
+    uint32_t magic = 0x53434c44, version = 1, bytes = sizeof(ClimbData), status{};
     int64_t sequence{};
     uint64_t contacts[2]{};
     uint32_t hands{}, reserved{};
-    Vec3 crawlMove{}; // world-space stick intent for the game's supported crawl
-    uint32_t crawl{};
-    uint64_t sampleTimeNs{};
 };
-static_assert(sizeof(ClimbData) == 72 && offsetof(ClimbData, crawlMove) == 48);
-// Expired feedback, leaving the crawl or a stick press never repeats a pull.
-inline Vec3 crawlPull(const ClimbData& d, bool allowed, uint64_t nowNs) {
-    if (!allowed || d.version != 2 || d.bytes != sizeof(ClimbData) || !d.status || d.crawl != 1 ||
-        !d.hands || d.hands > 3 || !d.sampleTimeNs || nowNs < d.sampleTimeNs ||
-        nowNs - d.sampleTimeNs > 100'000'000 || !finite(d.crawlMove)) return {};
-    return limited(d.crawlMove, 1.f);
-}
+static_assert(sizeof(ClimbData) == 48);
 // Contact counters survive an attachment released between headset samples.
 class ClimbPulses {
   public:
