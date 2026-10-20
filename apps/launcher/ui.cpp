@@ -135,9 +135,7 @@ App::App(HWND window, Fonts fonts, std::string updatedFrom)
       updatedFrom_(std::move(updatedFrom)) {
     scanner_.start(settings_);
     // A player's copy asks GitHub for a newer Spidy as it starts, unless the player turned that off.
-    // This local preview must not replace its modules with an official release.
-    settings_.updateCheck = false;
-    updater_.start(installFolder_, false);
+    updater_.start(installFolder_, !installFolder_.empty() && settings_.updateCheck);
 }
 
 App::~App() {

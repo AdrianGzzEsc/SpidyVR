@@ -1,5 +1,6 @@
 #include "spidy/vr_settings.hpp"
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <span>
 
@@ -27,8 +28,8 @@ constexpr const char* hudChoices[] = {"OFF", "SMALL", "MEDIUM", "LARGE"};
 constexpr const char* flipSpeedChoices[] = {"90\xC2\xB0/S",  "120\xC2\xB0/S", "150\xC2\xB0/S", "180\xC2\xB0/S",
                                             "240\xC2\xB0/S", "300\xC2\xB0/S", "360\xC2\xB0/S", "480\xC2\xB0/S"};
 constexpr const char* depthChoices[] = {"OFF", "LOW", "MEDIUM", "HIGH"};
-constexpr const char* wallDistanceChoices[] = {"10 CM", "15 CM", "20 CM", "25 CM", "30 CM",
-                                             "40 CM", "50 CM", "60 CM", "75 CM", "100 CM"};
+constexpr const char* wallDistanceChoices[] = {"20 CM", "25 CM", "30 CM", "40 CM",
+                                               "50 CM", "60 CM", "75 CM", "100 CM"};
 static_assert(std::size(wallDistanceChoices) == std::size(wallDistances));
 constexpr int screenSizes[] = {0, 1, 2};
 constexpr int hudSizes[] = {0, 1, 2, 3};
@@ -129,7 +130,7 @@ Values sanitized(Values v) {
     v.hud = std::clamp(v.hud, 0, 3);
     v.flipSpeed = std::clamp(v.flipSpeed, 90, 480);
     v.screenDepth = std::clamp(v.screenDepth, 0, 3);
-    v.wallDistance = std::clamp(v.wallDistance, 10, 100);
+    v.wallDistance = std::clamp(v.wallDistance, wallDistances[0], std::end(wallDistances)[-1]);
     return v;
 }
 const std::array<Row, 24>& rows() {
@@ -171,9 +172,9 @@ const std::array<Row, 24>& rows() {
         {Item::flipSpeed, "FLIP SPEED", "How fast a flip turns you over, at full tilt of the left stick.",
          flipSpeedChoices},
         {Item::handClimb, "HAND WALL CLIMBING",
-         "Grip and pull. Left stick: run and reset roll. A: jump off.", {}},
+         "On a wall, squeeze a grip near it and pull to climb; both grips roll the view.", {}},
         {Item::wallDistance, "WALL CAMERA DISTANCE",
-         "How close your eyes sit to the wall while hand climbing. Applies on resume.", wallDistanceChoices},
+         "How far your eyes keep from the wall while you hand climb.", wallDistanceChoices},
     }};
     return all;
 }
@@ -240,5 +241,50 @@ bool choose(Item item, int index, Values& v) {
 }
 int defaultChoice(Item item) {
     return choice(item, Values{});
+}
+namespace {
+// The settings tabOnlyText writes: a switch (flag) or a number.
+struct TabOnly {
+    std::string_view key;
+    bool Values::*flag;
+    int Values::*number;
+};
+constexpr TabOnly tabOnly[] = {
+    {"hand_climb", &Values::handClimb, nullptr},
+    {"wall_distance_cm", nullptr, &Values::wallDistance},
+};
+} // namespace
+std::string tabOnlyText(const Values& v) {
+    std::string text;
+    for (const auto& s : tabOnly) {
+        const int value = s.flag ? (v.*s.flag ? 1 : 0) : v.*s.number;
+        text.append(s.key).append("=").append(std::to_string(value)).append("\n");
+    }
+    return text;
+}
+Values withTabOnly(Values v, std::string_view text) {
+    while (!text.empty()) {
+        const size_t end = text.find('\n');
+        std::string_view line = text.substr(0, end);
+        text.remove_prefix(end == std::string_view::npos ? text.size() : end + 1);
+        if (!line.empty() && line.back() == '\r')
+            line.remove_suffix(1);
+        const size_t equals = line.find('=');
+        if (equals == std::string_view::npos)
+            continue;
+        const std::string_view key = line.substr(0, equals), value = line.substr(equals + 1);
+        int number{};
+        const auto [rest, error] = std::from_chars(value.data(), value.data() + value.size(), number);
+        if (error != std::errc{} || rest != value.data() + value.size())
+            continue;
+        for (const auto& s : tabOnly)
+            if (key == s.key) {
+                if (s.flag)
+                    v.*s.flag = number != 0;
+                else
+                    v.*s.number = number;
+            }
+    }
+    return sanitized(v);
 }
 } // namespace spidy::vr_settings

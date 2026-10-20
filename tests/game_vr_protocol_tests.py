@@ -30,7 +30,6 @@ from probe_native_rays import snapshot as ray_snapshot, command as ray_command
 from probe_game_swing import (snapshot as swing_snapshot, command as swing_command, assess as assess_swing,
                               flight_summary, climb_snapshot)
 from probe_game_grab import grab_snapshot, hand_command as grab_hand_command
-from probe_game_body import command as body_command
 
 
 class Reader:
@@ -42,24 +41,16 @@ class Reader:
 
 
 class ProtocolTests(unittest.TestCase):
-    def test_wall_roll_flag_uses_version_7_and_does_not_change_legacy_commands(self):
+    def test_wall_roll_flag_uses_version_5_and_does_not_change_legacy_commands(self):
         old = swing_command(1, (0, 0, 0))
         self.assertEqual(len(old), 168)
         packet = swing_command(1, (0, 0, 0), wall_rotate=True)
-        self.assertEqual(len(packet), 248)
-        self.assertEqual(struct.unpack_from('<3I', packet), (0x5357434d, 7, 248))
-        self.assertEqual(struct.unpack_from('<I', packet, 244), (1,))
-        self.assertEqual(struct.unpack_from('<3f', packet, 232), (0, 0, 0))
+        self.assertEqual(len(packet), 240)
+        self.assertEqual(struct.unpack_from('<3I', packet), (0x5357434d, 5, 240))
+        self.assertEqual(struct.unpack_from('<I', packet, 232), (1,))
+        self.assertEqual(struct.unpack_from('<4f', packet, 168), (0, 0, 0, 1))
         with self.assertRaises(ValueError):
             swing_command(1, (0, 0, 0), wall_rotate=2)
-
-    def test_body_commands_use_the_earlier_pose_protocol(self):
-        hands = [((0, 0, 0), (0, 0, 0, 1), 0, 0)] * 2
-        args = (1, 1, (0, 1.7, 0), (0, 0, 0, 1), hands)
-        self.assertEqual(len(body_command(*args)), 144)
-        packet = body_command(*args, shoots=(0, 0))
-        self.assertEqual(len(packet), 168)
-        self.assertEqual(struct.unpack_from('<4I', packet), (0x53424443, 3, 168, 1))
 
     def test_wall_contact_snapshot_reads_both_palms_and_counters(self):
         raw = struct.pack('<4IQ2Q2I', 0x53434c44, 1, 48, 1, 2, 7, 9, 3, 0)

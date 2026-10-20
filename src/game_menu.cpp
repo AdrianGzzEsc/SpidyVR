@@ -82,7 +82,7 @@ constexpr uint32_t tabId = 93;
 // The rows' setting numbers: the game's run 0-122.
 constexpr int firstSetting = 0x200;
 constexpr size_t tabBytes = 0x40, itemBytes = 0x88, choiceBytes = 0x50;
-constexpr size_t maxChoices = std::size(vr_settings::wallDistances);
+using vr_settings::maxChoices;
 constexpr size_t rowCount = std::tuple_size_v<std::remove_cvref_t<decltype(vr_settings::rows())>>;
 
 // A Scaleform GFx::Value as the game lays it out: 16 bytes of 0xff, the

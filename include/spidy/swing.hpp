@@ -200,8 +200,9 @@ struct Input {
     // Where the head looks (world, unit; zero: unknown): the enemy a punch
     // would go to is the one looked at (game_punch).
     Vec3 look{};
-    Vec3 climbDirection{}; // legacy protocol field; physical pulls ignore gaze
-    bool wallRotate{}; // both grips reserved for the wall-roll gesture
+    // Both grips are held for the wall roll (HAND WALL CLIMBING): they shoot
+    // no web and grab nothing until let go.
+    bool wallRotate{};
 };
 // The tracking space's orientation in the world (Rig::orientation): hand
 // motion relative to the head turns into the world with it.

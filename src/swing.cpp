@@ -598,8 +598,8 @@ void Swing::climbInputs(const Input& in, const WorldQueries& world) {
         auto& c = climbing_[i];
         const auto& h = in.hands[i];
         const bool valid = handClimb_ && wall_.on && in.focused && h.tracked &&
-                           !(finite(in.move) && length(in.move) > .2f) &&
-                           finite(h.gripRelativeToHead) && finite(h.wallPosition) && std::isfinite(h.wallGrip);
+                           !(finite(in.move) && length(in.move) > .2f) && finite(h.gripRelativeToHead) &&
+                           finite(h.wallPosition) && std::isfinite(h.wallGrip);
         const bool held = valid && h.wallGrip > (c.held ? .35f : .65f);
         const bool press = held && !c.held;
         c.held = valid ? held : true;

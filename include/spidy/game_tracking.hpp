@@ -326,7 +326,7 @@ class GameTrackingRig {
             wallRoll_.reset();
     }
     void wallDistance(float metres) {
-        wallDistance_ = std::isfinite(metres) ? std::clamp(metres, .1f, 1.f) : .4f;
+        wallDistance_ = std::isfinite(metres) ? std::clamp(metres, HeadClearance::margin, 1.f) : .4f;
     }
     void reset();
 

@@ -81,14 +81,16 @@ def command(serial, origin, anchor=None, held=False, focused=True, sample_second
     # Sample times must increase with every command; time.monotonic_ns() repeats within a timer tick.
     struct.pack_into('<Q', raw, 160, time.perf_counter_ns())
     if wall_rotate is not None:
+        # Version 5 (hand wall climbing): level, both grips at the origin, the first squeezed when held, and
+        # the wall roll's flag.
         if not isinstance(wall_rotate, bool):
             raise ValueError('wall_rotate must be a boolean')
-        raw.extend(bytes(248 - len(raw)))
-        struct.pack_into('<2I', raw, 4, 7, 248)
+        raw.extend(bytes(240 - len(raw)))
+        struct.pack_into('<2I', raw, 4, 5, 240)
         struct.pack_into('<4f', raw, 168, 0, 0, 0, 1)
         struct.pack_into('<6f', raw, 200, *origin, *origin)
         struct.pack_into('<2f', raw, 224, float(held), 0)
-        struct.pack_into('<I', raw, 244, int(wall_rotate))
+        struct.pack_into('<I', raw, 232, int(wall_rotate))
     return bytes(raw)
 
 

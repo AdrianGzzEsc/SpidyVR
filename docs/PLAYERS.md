@@ -513,6 +513,25 @@ in the launcher's options)
                          at full tilt unless you change it (90 to 480;
                          Settings > SPIDY VR or "Flip speed" in the launcher)
 
+Hand wall climbing (experimental, off until you switch HAND WALL CLIMBING on
+in Settings > SPIDY VR)
+  On a wall ............ with the left stick at rest you stay upright beside
+                         the wall, a little crouched, your eyes 40 cm from
+                         it (WALL CAMERA DISTANCE: 20 to 100 cm)
+  Squeeze a grip ....... with that hand within about 18 cm of the wall: the
+                         palm holds on, open, with a short buzz. Pull it down
+                         to climb, sideways to go along, up to go down; two
+                         hands share the pull. Let go and squeeze again for
+                         a new hold. The grips do this whichever WEB BUTTON
+                         you chose
+  Both grips held ...... roll both controllers the same way to turn your
+                         view along the wall, up to 90 degrees a second; they
+                         shoot no webs until you let go
+  Left stick ........... runs along the wall, steered by turning your head
+                         left or right; let go to climb again
+  A .................... jumps off the wall
+  Round a corner ....... your view turns onto the building's next side
+
 Menus and cutscenes show on a screen in the headset. There the controllers act
 as an Xbox controller: left stick moves, A selects, B goes back, grips switch
 tabs, the menu button is Start.
@@ -554,8 +573,12 @@ VR settings
                    T-pose panel asks for your measurements again.
   EXPERIMENTAL ... FLIPS (off until you switch it on) lets the left stick
                    and A in the air flip you, and FLIP SPEED sets how fast.
+                   HAND WALL CLIMBING (off until you switch it on, above)
+                   and its WALL CAMERA DISTANCE.
   Changes apply at once. The launcher starts your next session with them;
-  its options show them too. Playing the game on its screen instead of VR
+  its options show them too. HAND WALL CLIMBING and WALL CAMERA DISTANCE are
+  only in the tab: Spidy keeps them in %APPDATA%\Spidy\spidy_vr.ini, beside
+  the launcher's own settings. Playing the game on its screen instead of VR
   is on the pause menu itself: SWITCH TO GAME SCREEN, under RESUME (each
   session starts in VR).
   WEB STYLE: REALISTIC webs are ropes. They bend round whatever comes

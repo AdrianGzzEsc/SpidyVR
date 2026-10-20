@@ -1489,7 +1489,7 @@ int main() {
             auto& h = in.hands[0];
             h.tracked = true;
             h.wallPosition = {4.95f, 10, 0};
-            in.climbDirection = direction;
+            in.look = direction;
             step();
             h.wallGrip = h.grip = 1;
             step();
@@ -2519,7 +2519,7 @@ int main() {
                  static_cast<float>(wallDistances[i]) / 100, .005f);
         }
         values.wallDistance = -100;
-        check(sanitized(values).wallDistance == 10, "minimum distance not clamped");
+        check(sanitized(values).wallDistance == 20, "minimum distance not clamped");
         values.wallDistance = 999;
         check(sanitized(values).wallDistance == 100, "maximum distance not clamped");
         check(!choose(Item::wallDistance, 100, values), "invalid distance choice accepted");
@@ -11051,7 +11051,9 @@ int main() {
     test("VR settings tab: six sections, every setting once, a list's choices one per step", [] {
         using namespace vr_settings;
         const auto& all = rows();
-        unsigned seen = 0, headings = 0;
+        uint64_t seen = 0;
+        unsigned headings = 0;
+        static_assert(static_cast<unsigned>(lastItem) < 63, "more settings than the test's bits");
         for (const auto& row : all) {
             check(row.title && *row.title, "a row without a title");
             for (const char* c = row.title; *c; ++c)
@@ -11061,10 +11063,11 @@ int main() {
                 ++headings;
                 continue;
             }
-            const unsigned bit = 1u << static_cast<unsigned>(row.item);
+            const uint64_t bit = uint64_t{1} << static_cast<unsigned>(row.item);
             check(!(seen & bit), "a setting twice");
             seen |= bit;
             check(row.help && std::strlen(row.help) <= 80, "help missing, or too long for the game's column");
+            check(row.choices.size() <= maxChoices, "more choices than the tab shows");
             for (const char* c : row.choices)
                 check(c && *c, "an empty choice");
         }
@@ -11082,8 +11085,11 @@ int main() {
         }
         check(all[20].item == Item::flips && all[20].choices.empty() && std::strcmp(all[19].title, "EXPERIMENTAL") == 0,
               "the flips: a switch under EXPERIMENTAL");
-        check(all.size() == 24 && all[21].item == Item::flipSpeed && all[21].choices.size() == std::size(flipSpeeds),
-              "the flip speed under the flips, the last row");
+        check(all[21].item == Item::flipSpeed && all[21].choices.size() == std::size(flipSpeeds),
+              "the flip speed under the flips");
+        check(all.size() == 24 && all[22].item == Item::handClimb && all[22].choices.empty() &&
+                  all[23].item == Item::wallDistance && all[23].choices.size() == std::size(wallDistances),
+              "hand wall climbing, a switch, and its camera distance last under EXPERIMENTAL");
         // The wall view has no row of its own any more: it turned only while
         // Spidy held the player on a wall, so it was never a choice of its own
         // and the launcher's one "Wall running" now carries both (the player,
@@ -11124,8 +11130,8 @@ int main() {
               "the body's calibration: NO, or ON RESUME");
         // Every setting has a row but the wall view, which the launcher's one
         // "Wall running" now carries along with who holds you on the wall.
-        constexpr unsigned everySetting = (2u << static_cast<unsigned>(lastItem)) - 2;
-        constexpr unsigned noRowOfItsOwn = 1u << static_cast<unsigned>(Item::standOnWalls);
+        constexpr uint64_t everySetting = (uint64_t{2} << static_cast<unsigned>(lastItem)) - 2;
+        constexpr uint64_t noRowOfItsOwn = uint64_t{1} << static_cast<unsigned>(Item::standOnWalls);
         check(seen == (everySetting & ~noRowOfItsOwn), "a setting missing");
         auto choicesOf = [&](Item item) {
             return std::find_if(all.begin(), all.end(), [&](const Row& r) { return r.item == item; })->choices.size();
@@ -11137,6 +11143,27 @@ int main() {
                   choicesOf(Item::airWebs) == 0 && choicesOf(Item::aimMarkers) == 0,
               "lists: one choice per step; switches: the game's own ON and OFF");
         check(choicesOf(Item::calibrate) == 2, "the calibration's switch names its two choices");
+    });
+    test("VR settings only the tab offers: kept as key=value lines, read back sanitized, the rest left", [] {
+        using namespace vr_settings;
+        const Values defaults;
+        check(tabOnlyText(defaults) == "hand_climb=0\nwall_distance_cm=40\n", "the defaults' text");
+        Values changed = defaults;
+        changed.handClimb = true;
+        changed.wallDistance = 75;
+        check(withTabOnly(defaults, tabOnlyText(changed)) == changed, "the settings did not come back");
+        // Windows' line ends, a line of another build, no number, and a
+        // distance out of range: the rest still counts.
+        auto read = withTabOnly(defaults, "hand_climb=1\r\nfuture_row=3\nwall_distance_cm=near\n");
+        check(read.handClimb && read.wallDistance == 40, "a bad line spoiled the good one");
+        read = withTabOnly(defaults, "wall_distance_cm=5\nhand_climb=2");
+        check(read.handClimb && read.wallDistance == wallDistances[0], "a value out of range was kept");
+        // Nothing saved yet, and the launcher's settings untouched.
+        Values launched = defaults;
+        launched.swingSpeed = 40;
+        launched.flips = true;
+        check(withTabOnly(launched, "") == launched && withTabOnly(launched, "swing_speed=10\n") == launched,
+              "the file changed a setting the launcher gives");
     });
     test("VR settings choices: switches and lists round-trip, launcher values show the nearest step", [] {
         using namespace vr_settings;
@@ -11846,20 +11873,20 @@ int main() {
         game_swing::Command c;
         c.focused = 1;
         c.serial = 1;
-        check(c.version == 7 && c.bytes == 248 && game_swing::valid(c), "a level version 7 command was rejected");
+        check(c.version == 5 && c.bytes == 240 && game_swing::valid(c), "a level version 5 command was rejected");
         c.wallRotate = 1;
-        check(game_swing::valid(c) && game_swing::input(c).wallRotate, "wall gesture flag was lost");
+        check(game_swing::valid(c) && game_swing::input(c).wallRotate, "the wall roll's flag was lost");
         c.wallRotate = 2;
-        check(!game_swing::valid(c), "invalid wall gesture flag accepted");
-        c.version = 6;
-        check(game_swing::valid(c) && !game_swing::input(c).wallRotate, "legacy padding became a gesture flag");
-        c.wallRotate = 0;
-        c.version = 5;
-        c.bytes = game_swing::commandBytesV5;
-        check(game_swing::valid(c), "the previous preview's version 5 command was rejected");
+        check(!game_swing::valid(c), "a wall roll flag of 2 was accepted");
+        c.wallRotate = 1;
+        c.wallGrips[1] = 1.5f;
+        check(!game_swing::valid(c), "a grip squeezed past 1 was accepted");
+        c.wallGrips[1] = 0;
         c.version = 4;
         c.bytes = game_swing::commandBytesV4;
         check(game_swing::valid(c), "the previous release's version 4 command was rejected");
+        check(!game_swing::input(c).wallRotate, "a version 4 command held the grips for the wall roll");
+        c.wallRotate = 0;
         c.version = 3;
         c.bytes = game_swing::commandBytesV3;
         check(game_swing::valid(c), "a level version 3 command was rejected");

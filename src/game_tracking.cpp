@@ -243,7 +243,8 @@ Input trackedSwingInput(const XrFrame& f, const Rig& rig, bool triggerWebs) {
 }
 void GameTrackingRig::reset() {
     const float snap = snap_, smooth = smooth_, wallDistance = wallDistance_;
-    const bool flips = flips_, triggerWebs = triggerWebs_, standOnWalls = standOnWalls_, handClimb = handClimb_;
+    const bool flips = flips_, triggerWebs = triggerWebs_, standOnWalls = standOnWalls_;
+    const bool handClimb = handClimb_;
     const FlipMotion flip = flip_;
     *this = {};
     snap_ = snap;
@@ -596,7 +597,8 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
         out.swing.move = surfaceTurn_.rotate(levelMove);
     if (wallRun) {
         const Vec3 side = normalized(cross(runAhead_, held));
-        out.swing.move = walks ? limited(runAhead_ * f.hands[0].stickY + side * f.hands[0].stickX, 1) : Vec3{};
+        out.swing.move =
+            walks ? limited(runAhead_ * f.hands[0].stickY + side * f.hands[0].stickX, 1) : Vec3{};
     }
     if (out.releaseWebs)
         for (auto& hand : out.swing.hands)

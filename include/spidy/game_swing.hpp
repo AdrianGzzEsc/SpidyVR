@@ -119,7 +119,7 @@ struct Hand {
     float trigger{}, grip{};
 };
 struct Command {
-    uint32_t magic = 0x5357434d, version = 7, bytes = sizeof(Command), focused{};
+    uint32_t magic = 0x5357434d, version = 5, bytes = sizeof(Command), focused{};
     uint64_t serial{};
     uint32_t leaseMs = 100, jump{};
     Hand hands[2];
@@ -140,13 +140,16 @@ struct Command {
     // (commandBytesV3) ends before them.
     float leap{};
     Vec3 look{};
-    // Version 5: actual grip poses/buttons, independent of WEB BUTTON.
+    // Version 5, hand wall climbing (HAND WALL CLIMBING): where each hand's
+    // grip is and how far the controller's own grip is squeezed, whichever
+    // button WEB BUTTON gives the webs (HandInput::wallPosition, wallGrip);
+    // and 1 while both grips are held for the wall roll (Input::wallRotate).
+    // Version 4 (commandBytesV4) ends before them.
     Vec3 wallPositions[2]{};
     float wallGrips[2]{};
-    Vec3 climbDirection{}; // version 6: gaze-relative pulls, along the wall
-    uint32_t wallRotate{}; // version 7: uses version 6's trailing padding
+    uint32_t wallRotate{};
 };
-constexpr uint32_t commandBytesV2 = 168, commandBytesV3 = 184, commandBytesV4 = 200, commandBytesV5 = 232;
+constexpr uint32_t commandBytesV2 = 168, commandBytesV3 = 184, commandBytesV4 = 200;
 // attached: 0 none, else bits: 1 a web; 2 both hands hold it (Swing::shared:
 // the other hand's web is the same one); 4 this hand took hold of it and did
 // not shoot it (Web::taken; it stays when the other hand lets go).
@@ -186,11 +189,9 @@ struct Data {
     float wallDistance{};
     uint32_t walls{}, wallJumps{}, mount{};
 };
-static_assert(sizeof(Config) == 64 && sizeof(Hand) == 52 && sizeof(Command) == 248 &&
-              offsetof(Command, climbDirection) == commandBytesV5 &&
-              offsetof(Command, wallRotate) == 244 &&
-              offsetof(Command, wallPositions) == commandBytesV4 &&
-              offsetof(Command, tilt) == commandBytesV2 && offsetof(Command, leap) == commandBytesV3);
+static_assert(sizeof(Config) == 64 && sizeof(Hand) == 52 && sizeof(Command) == 240 &&
+              offsetof(Command, tilt) == commandBytesV2 && offsetof(Command, leap) == commandBytesV3 &&
+              offsetof(Command, wallPositions) == commandBytesV4 && offsetof(Command, wallRotate) == 232);
 // SpidySwingSettings: what the VR settings (the SPIDY VR tab in the game's
 // Settings) change during play.
 // grab: webs catch props and thugs (a swing started without them starts
@@ -232,7 +233,8 @@ struct Settings {
     uint32_t arcade{};
     uint32_t handClimb{};
 };
-constexpr uint32_t settingsBytesV3 = 28, settingsBytesV4 = 32, settingsBytesV5 = 36, settingsBytesV6 = 40, settingsBytesV7 = 44;
+constexpr uint32_t settingsBytesV3 = 28, settingsBytesV4 = 32, settingsBytesV5 = 36, settingsBytesV6 = 40,
+                   settingsBytesV7 = 44;
 static_assert(sizeof(Settings) == 48 && offsetof(Settings, walls) == settingsBytesV3 &&
               offsetof(Settings, physical) == settingsBytesV4 &&
               offsetof(Settings, noBlows) == settingsBytesV5 &&
@@ -369,8 +371,7 @@ inline bool valid(const Command& c) {
     const float tilt = t.x * t.x + t.y * t.y + t.z * t.z + t.w * t.w;
     if (c.magic != 0x5357434d ||
         !((c.version == 2 && c.bytes == commandBytesV2) || (c.version == 3 && c.bytes == commandBytesV3) ||
-          (c.version == 4 && c.bytes == commandBytesV4) || (c.version == 5 && c.bytes == commandBytesV5) ||
-          ((c.version == 6 || c.version == 7) && c.bytes == sizeof(c))) ||
+          (c.version == 4 && c.bytes == commandBytesV4) || (c.version == 5 && c.bytes == sizeof(c))) ||
         !std::isfinite(c.leap) || c.leap < 0 || c.leap > 1 || !finite(c.look) || length(c.look) > 1.01f ||
         !c.serial || c.focused > 1 || c.jump > 1 || c.leaseMs > 250 || (c.focused && !c.leaseMs) ||
         !finite(c.move) || length(c.move) > 1.001f || !std::isfinite(c.trackingYaw) || c.asks > 1 ||
@@ -385,13 +386,11 @@ inline bool valid(const Command& c) {
             h.trigger < 0 || h.trigger > 1 || h.grip < 0 || h.grip > 1)
             return false;
     }
-    if (c.version >= 5)
-        for (unsigned i = 0; i < 2; ++i)
-            if (!finite(c.wallPositions[i]) || !std::isfinite(c.wallGrips[i]) ||
-                c.wallGrips[i] < 0 || c.wallGrips[i] > 1)
-                return false;
-    return finite(c.climbDirection) && length(c.climbDirection) <= 1.01f &&
-           (c.version < 7 || c.wallRotate <= 1);
+    for (unsigned i = 0; i < 2; ++i)
+        if (!finite(c.wallPositions[i]) || !std::isfinite(c.wallGrips[i]) || c.wallGrips[i] < 0 ||
+            c.wallGrips[i] > 1)
+            return false;
+    return c.wallRotate <= 1;
 }
 class InputSampleClock {
   public:
@@ -519,10 +518,6 @@ inline Input input(const Command& c) {
     out.jump = c.jump != 0;
     out.move = c.move;
     out.trackingYaw = c.trackingYaw;
-    if (c.version >= 6)
-        out.climbDirection = c.climbDirection;
-    if (c.version >= 7)
-        out.wallRotate = c.wallRotate != 0;
     const float n =
         std::sqrt(c.tilt.x * c.tilt.x + c.tilt.y * c.tilt.y + c.tilt.z * c.tilt.z + c.tilt.w * c.tilt.w);
     if (c.version >= 3 && n > .5f)
@@ -534,11 +529,13 @@ inline Input input(const Command& c) {
     for (unsigned i = 0; i < 2; ++i)
         out.hands[i] = {c.hands[i].aim, c.hands[i].relative, c.hands[i].tracked != 0, c.hands[i].trigger,
                         c.hands[i].grip};
-    if (c.version >= 5)
+    if (c.version >= 5) {
         for (unsigned i = 0; i < 2; ++i) {
             out.hands[i].wallPosition = c.wallPositions[i];
             out.hands[i].wallGrip = c.wallGrips[i];
         }
+        out.wallRotate = c.wallRotate != 0;
+    }
     return out;
 }
 } // namespace spidy::game_swing

@@ -989,8 +989,8 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingSubmit(void* input) {
     Command c;
     uint32_t header[3]{};
     if (!copy(header, input, sizeof(header)) ||
-        (header[2] != commandBytesV2 && header[2] != commandBytesV3 &&
-         header[2] != commandBytesV4 && header[2] != commandBytesV5 && header[2] != sizeof(c)) ||
+        (header[2] != commandBytesV2 && header[2] != commandBytesV3 && header[2] != commandBytesV4 &&
+         header[2] != sizeof(c)) ||
         !copy(&c, input, header[2]) || !valid(c))
         return 2001;
     AcquireSRWLockExclusive(&control);

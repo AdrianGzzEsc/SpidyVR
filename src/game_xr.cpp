@@ -50,6 +50,7 @@
 #include <vector>
 #include <windows.h>
 #include <mmsystem.h>
+#include <shlobj.h>
 using namespace spidy;
 struct XrConfig {
     uint32_t magic = 0x53585243, version = 23, bytes = sizeof(XrConfig), pid{};
@@ -564,6 +565,51 @@ struct LayerSwitches {
             SetEnvironmentVariableA(variable.c_str(), nullptr);
     }
 };
+// Where the settings only the SPIDY VR tab offers are kept
+// (vr_settings::tabOnlyText): beside the launcher's launcher.ini, so every
+// Spidy folder and every build finds them (this module runs from a copy
+// staged per build).
+std::wstring tabOnlyPath() {
+    PWSTR folder{};
+    std::wstring path;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, nullptr, &folder)) && folder)
+        path = std::wstring(folder) + L"\\Spidy\\spidy_vr.ini";
+    CoTaskMemFree(folder);
+    return path;
+}
+std::string readTabOnly() {
+    const auto path = tabOnlyPath();
+    if (path.empty())
+        return {};
+    const HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                                    OPEN_EXISTING, 0, nullptr);
+    if (file == INVALID_HANDLE_VALUE)
+        return {};
+    std::string text(4096, '\0');
+    DWORD size{};
+    if (!ReadFile(file, text.data(), static_cast<DWORD>(text.size()), &size, nullptr))
+        size = 0;
+    CloseHandle(file);
+    text.resize(size);
+    return text;
+}
+// Written whole and then put in place, so a crash mid-write keeps the last.
+bool writeTabOnly(const std::string& text) {
+    const auto path = tabOnlyPath();
+    if (path.empty())
+        return false;
+    CreateDirectoryW(path.substr(0, path.find_last_of(L'\\')).c_str(), nullptr);
+    const auto written = path + L".new";
+    const HANDLE file = CreateFileW(written.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
+    if (file == INVALID_HANDLE_VALUE)
+        return false;
+    DWORD size{};
+    const bool whole = WriteFile(file, text.data(), static_cast<DWORD>(text.size()), &size, nullptr) &&
+                       size == text.size();
+    CloseHandle(file);
+    return whole &&
+           MoveFileExW(written.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
+}
 DWORD WINAPI run(void*) {
     bool nativeStarted = false, gpuStarted = false, raysStarted = false, swingStarted = false, websStarted = false,
          bodyStarted = false;
@@ -800,7 +846,9 @@ DWORD WINAPI run(void*) {
         values.hud = static_cast<int>(config.hud);
         values.flipSpeed = static_cast<int>(config.flipSpeed);
         values.screenDepth = static_cast<int>(config.screenDepth);
-        values = vr_settings::sanitized(values);
+        // And those only the tab offers, as it left them (tabOnlyPath).
+        values = vr_settings::withTabOnly(values, readTabOnly());
+        std::string tabOnlySaved = vr_settings::tabOnlyText(values);
         game_menu::publish(values);
         uint32_t settingChanges{};
         // aims are each hand's latest preview.
@@ -1549,6 +1597,11 @@ DWORD WINAPI run(void*) {
                     if (game_menu::take(values)) {
                         ++settingChanges;
                         applySettings();
+                        if (auto text = vr_settings::tabOnlyText(values); text != tabOnlySaved) {
+                            if (!writeTabOnly(text))
+                                message(3, 0, "VR settings: the SPIDY VR tab's own settings were not saved");
+                            tabOnlySaved = std::move(text);
+                        }
                     }
                     game_menu::publish(values);
                     const uint32_t gate =
@@ -1791,8 +1844,6 @@ DWORD WINAPI run(void*) {
                     }
                     if (swingStarted) {
                         game_swing::Command input;
-                        // Pulls use tracked hand motion again; gaze changes no movement.
-                        input.climbDirection = {};
                         input.wallRotate = motion.wallRotate;
                         input.serial = ++serial;
                         input.focused = motion.active && !flatScreen && controlsVisible;
@@ -1822,7 +1873,8 @@ DWORD WINAPI run(void*) {
                         if (!sampleClimb || sampleClimb(&climbState) || climbState.magic != 0x53434c44 ||
                             climbState.version != 1 || climbState.bytes != sizeof(climbState))
                             climbState = {};
-                        const unsigned wallPulses = climbPulses.update(climbState, input.focused && values.handClimb);
+                        const unsigned wallPulses =
+                            climbPulses.update(climbState, input.focused && values.handClimb);
                         for (unsigned i = 0; i < 2; ++i)
                             if (wallPulses & (1u << i))
                                 runtime.haptic(i, .45f, .045f);
@@ -2956,8 +3008,8 @@ DWORD WINAPI run(void*) {
                             gripsSeen[i] = tracked;
                             HandPoseInput doing;
                             doing.tracked = tracked;
-                            doing.wallContact = motion.active && !flatScreen && values.handClimb && climbState.status &&
-                                                (climbState.hands & (1u << i));
+                            doing.wallContact = motion.active && !flatScreen && values.handClimb &&
+                                                climbState.status && (climbState.hands & (1u << i));
                             doing.web = motion.swing.hands[i].grip;
                             doing.squeeze = hand.squeeze;
                             doing.speed = speed;
