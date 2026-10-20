@@ -84,6 +84,8 @@ __declspec(dllexport) ShadowData SpidyShadowData;
 __declspec(dllexport) Data SpidyStereoData;
 __declspec(dllexport) native_eyes::FrameData SpidyStereoFrames;
 __declspec(dllexport) native_appearance::Data SpidyAppearanceData;
+// Frames in which the eyes marked what they drew for the game (rested, below).
+__declspec(dllexport) volatile LONG64 SpidyDrawnFrames;
 }
 namespace {
 using Maintain = void (*)(void*);
@@ -219,6 +221,19 @@ void* shadowFitting{};
 std::atomic<uintptr_t> tracedJobs[3]{};
 // The game's own view while this module keeps it from rendering (restGameView).
 std::atomic<uintptr_t> rested{};
+// What the player sees, for the game. Each scene submit clears its view's
+// list of drawn instances (1920e54: view +1b80, +1b88 entries) and the view's
+// model jobs mark every instance they draw (1799a7d, through job +2b0).
+// Gameplay reads the lists to know what is on screen: the
+// ViewportUpdateSystem's enter and leave events from the active view's
+// (214f150), and "drawn in any view" from the pool views' (18a1890; for an
+// instance 159e940: pedestrians, targeting, about 60 callers in all).
+// Offscreen views get no list (189ce20 skips kind 2), so the eyes marked
+// nothing, and a resting game view submits no scene, so its list kept the last
+// frame that view drew: from 0.2.12 on nothing the player saw in VR counted as
+// on screen. While the view rests, placeEyes clears its list each frame and
+// the eyes' model jobs mark into it (setupModels); SpidyDrawnFrames counts
+// those frames.
 // The eyes' distances (createViews bit 64 off). A wide lens makes the engine
 // draw a model's detail, and the model itself, only within a shorter distance
 // and ask for its textures only nearer (native_view::distanceScale): an eye's
@@ -511,9 +526,16 @@ void renderActor(void* context, void* actor, uint8_t visibility) {
 // it asked for textures as for the smaller one: two thirds of the detail the
 // headset shows at the default 67%. Its requests are sized for its image, as
 // upscalers are meant to have them; what the job leaves out as too small to
-// see (+300) stays at the rendered size.
+// see (+300) stays at the rendered size. While the game's view rests, an eye's
+// job marks what it draws in that view's list (+2b0; see rested above).
 uint64_t setupModels(void* context, void* job, void* third, uint64_t fourth, uint64_t fifth) {
     const auto result = originalSetupModels(context, job, third, fourth, fifth);
+    if (const auto resting = rested.load(std::memory_order_relaxed);
+        enabled && resting && eyeView(pointer(reinterpret_cast<uintptr_t>(context) + 8)) >= 0) {
+        auto& marks = *reinterpret_cast<uintptr_t*>(static_cast<uint8_t*>(context) + 0x2b0);
+        if (const auto drawn = pointer(resting + 0x1b80); drawn && !marks)
+            marks = drawn;
+    }
     const auto view = enabled && distances ? pointer(reinterpret_cast<uintptr_t>(context) + 8) : 0;
     float half[2]{};
     if (eyeView(view) < 0 || !read(view + 0x420, half, sizeof(half)) || !(half[0] > 0) || !(half[1] > 0))
@@ -1293,6 +1315,19 @@ bool writeFloat(uintptr_t p, float value) {
         return false;
     }
 }
+// Clears a view's list of drawn instances, as its scene submit does (1920e54).
+bool clearDrawn(uintptr_t view) {
+    __try {
+        const auto drawn = *reinterpret_cast<uint8_t* volatile*>(view + 0x1b80);
+        const auto count = *reinterpret_cast<volatile uint32_t*>(view + 0x1b88);
+        if (!drawn || !count || count >= (1u << 26))
+            return false;
+        std::memset(drawn, 0, count);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
 // An eye's level-of-detail multiplier for the lens it was just given
 // (distances); the engine multiplies it into the eye's scale in the eye's
 // scene submit (189e4b0 sets +1cc4 there, 1796d20 reads both).
@@ -1391,6 +1426,9 @@ void placeEyes() {
     // The game's view is on the head and both eyes render: it need not.
     restGameView(primary, latchedImmersive && (config.createViews & 32) && live.load() == 2 &&
                               !native_gpu::screenRequested());
+    // The eyes' jobs of this frame mark into the resting view's list (see rested).
+    if (const auto resting = rested.load(); resting && clearDrawn(resting))
+        InterlockedIncrement64(&SpidyDrawnFrames);
     // The HUD's second movie goes on its panel while the eyes are shown.
     // On the game screen in stereo only in a frame whose panel went onto
     // that screen (placeScreenHud, earlier in the frame): without the panel

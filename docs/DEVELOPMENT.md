@@ -1097,11 +1097,34 @@ degrees. While the left eye stands in, both eyes' results get 150% of it,
 218 m (`impostorQueries`, a hook on `16faf10`; `SpidyImpostorReach`, and
 `--building-reach` for a session, set 50-400%); on October 19 that cost
 nothing measurable at 3072 x 3264 eyes, and 200% about 1%. The right eye's outer edge, which the left
-eye does not see, is not covered. Other active-view-only work still stops
-while the view rests: pedestrians ask "drawn in any view" (`18a1890`, the
-game's views' drawn bytes at `+1b80`), animated models get their joints
-updated only from the game's view (model job `+342`), and `189daa0` has about
-15 other callers (shadows, post-processing, decals).
+eye does not see, is not covered.
+
+What the player sees is the eyes' since October 20's second build. Each
+view's scene submit clears its list of drawn instances (`+1b80`, a byte per
+instance, `+1b88` of them; `1920e54`) and its model jobs mark what they draw
+(`1799a7d`, through job `+2b0`). Gameplay reads the lists: the
+ViewportUpdateSystem's enter and leave events from the active view's
+(`214f150`), and "drawn in any view" from the game's pool views' (`18a1890`,
+7 direct call sites, and 55 more through `159e940`, which passes it the
+index at `+64` of the instance it is given). The callers named so far: the
+pedestrian groups and bots (`d9aa90`, `dbb220`), `PedestrianSystem`,
+`PedestrianInteractBotManager`, the joint matching of attached models
+(`20cc568` and its neighbours), `ClosestOnScreenTargeting` (`5a3020`), the
+target scoring (`211c950`, named by projects-87), `TrackingSenseFocus`
+(`8e4800`) and `AmbientFlyerStraight` (`1d40a00`); the traffic phases
+(`d67740` to `d6b8b6`) reach none of them within three direct calls.
+Offscreen views get no list (`189ce20` skips kind 2), and a resting view's
+list kept its last rendered frame, so from 0.2.12 on nothing in VR counted
+as on screen. While the game's view rests, `placeEyes` clears its list each
+frame and `setupModels` points each eye's model job at it;
+`SpidyDrawnFrames` counts those frames. The clear is in the hook of
+`1920240`, which `175a060` calls just before the views' scene submits
+(`19206a0`), so gameplay reads the list at the same point of its frame as
+in the flat game (a read between the clear and the jobs' marks finds it
+empty there too). Other active-view-only work still
+stops while the view rests: animated models get part of their joint update
+only from the game's view (model job `+342`), and `189daa0` has about 15
+other callers (shadows, post-processing, decals).
 
 Since October 13 that left eye is the one the headset showed. The XR worker
 draws Spidy's own things (gloves and webs, the aim markers, the combat marks,

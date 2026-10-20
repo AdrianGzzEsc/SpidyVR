@@ -3,7 +3,7 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 20, fourth): realistic flips, experimental - pull
+**Latest build (October 20, fifth): realistic flips, experimental - pull
 request 23 (iplusdvr).** You: "review and merge or fix the open prs".
 
 - **REALISTIC FLIPS, under EXPERIMENTAL, off by default, and nine rows that
@@ -31,7 +31,7 @@ request 23 (iplusdvr).** You: "review and merge or fix the open prs".
   values), the realistic flips' own test program, the launcher's, all six
   protocol suites. Not run here in the game or a headset.
 
-**Earlier build (October 20, third): NEAR CLIP - pull request 22
+**Earlier build (October 20, fourth): NEAR CLIP - pull request 22
 (iplusdvr).** You: "review and merge or fix the open prs".
 
 - **NEAR CLIP, the last row under DISPLAY: how near the eyes the headset
@@ -55,7 +55,7 @@ request 23 (iplusdvr).** You: "review and merge or fix the open prs".
   line in the tab's file), the launcher's, all six protocol suites. Not run
   here in the game or a headset.
 
-**Earlier build (October 20, second): hand wall climbing, experimental -
+**Earlier build (October 20, third): hand wall climbing, experimental -
 Adrian's pull request 24 (AdrianGzzEsc).** You: "review and merge or fix the
 open prs".
 
@@ -90,6 +90,60 @@ open prs".
   version 5 command and refuses a roll flag of 2 and the previews' version
   7. The author played earlier previews; the last one (corners) had not been
   played. Not run here in the game or a headset.
+
+**Earlier build (October 20, second): what the eyes draw counts as on
+screen.** You: "its not the textures its like the game lod system range is
+very short with low LOD objects seen from pretty close and stuff popping in
+from nearby (cars pedestrians). it didnt use to be like this".
+
+- **The cause, from 0.2.12 on.** Each of the game's views keeps a list of
+  the render instances it drew in its last frame (view `+1b80`, a byte each,
+  327,808 at your save). The view's scene submit clears it (`1920e54`) and
+  its model jobs mark what they draw (`1799a7d`). Gameplay reads these lists
+  to know what you see: the ViewportUpdateSystem sends actors their
+  entered- and left-the-viewport events from the active view's list
+  (`214f150`), and about 60 places ask whether an instance was drawn in any
+  of the game's views (`18a1890`, for one instance `159e940`), among them
+  the pedestrian groups and bots, the joint matching of attached models,
+  and the game's targeting (`ClosestOnScreenTargeting`, `5a3020`, and the
+  target scoring, `211c950`; projects-87 found these two). The eyes never
+  had a list (the view setup, `189ce20`, gives offscreen views none), and
+  since 0.2.12 the game's own view rests in VR and submits no scene, so its
+  list kept the last frame it drew before VR started. In 0.2.11 that view
+  still rendered from your head every frame, which kept its list right.
+- **Measured, in the game without a headset** (your save, the eyes at a
+  street, `reports/drawn-ab.json`): before VR the game's camera had 116
+  instances marked. With the eyes on as 0.4.0 has them, the list did not
+  change for whole 16-second stretches: it held the game camera's last
+  rendered frame (113 to 116 instances) while the eyes drew 3,900 to 4,600.
+- **What changed.** While the game's view rests, Spidy clears its list each
+  frame before the eyes' jobs are set up (`placeEyes`), and each eye's model
+  job marks what it draws into it (`setupModels`, job `+2b0`). The clear
+  comes where the game's own would (`1920240`, just before the views' scene
+  submits in `175a060`), so gameplay reads the list at the same point of
+  its frame as in the flat game. With this build (`reports/tree-drawn.json`,
+  `reports/tree-fly.json`): 4,460 to 4,600 instances at the street, every
+  frame (`SpidyDrawnFrames`, a new export, counts them; a sample taken
+  between the clear and the jobs' marks reads empty, in the flat game too);
+  following the view through a 15 m/s flight down the street (4,897 down to
+  884 as it opened up); with the game's view rendering again and resting
+  again in between; the eyes stopped cleanly each time.
+- **Not shown without the headset:** what the game does differently with a
+  right list. The viewport events go to the actors' own scripts, and people
+  and traffic come and go at random, so a few minutes of eye images showed
+  no difference I could put down to it. In the headset: swing along a street
+  with people and cars, and watch whether they still appear and vanish close
+  by; and where there is something to throw or yank, watch whether its
+  marker stays. hantop's playthrough lost those markers in VR (Fisk's
+  turrets, the Shocker bank's throwables, the car-crash boxes) and got them
+  back by switching to GAME SCREEN and back, which is what a list frozen at
+  the game camera's last frame does. Traffic's own code (`d67740` to
+  `d6b8b6`) reaches none of the readers within three direct calls, so cars
+  that still pop in may have another cause. Not changed: animated models get
+  part of their joint update only in the game's view's model job (`+342`),
+  which rests in VR; not looked into.
+- **Checked:** the build, both C++ suites and all six Python suites. Only
+  `spidy_stereo_probe.dll` changed; no protocol changed.
 
 **Earlier build (October 20): press what you see.** You, about hantop's
 playthrough in #mod-chat (50 items, October 14-19, the Oscorp research
