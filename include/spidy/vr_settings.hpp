@@ -58,6 +58,8 @@ struct Values {
     // your floor (the tab's STAND ON WALLS; GameTrackingRig::standOnWalls);
     // off, you stay upright beside it.
     bool standOnWalls = true;
+    bool handClimb = false;
+    int wallDistance = 40; // camera clearance in centimetres, during hand climbing
     // Scenes the game plays on the game screen (cutscenes, finishers) have
     // depth there (the tab's GAME SCREEN 3D): 0 off, the game's flat frame; 1
     // low, 2 medium, 3 high (screenDepths).
@@ -77,6 +79,7 @@ inline constexpr int smoothTurns[] = {0, 60, 90, 120, 180, 240};
 inline constexpr int hapticLevels[] = {0, 25, 50, 75, 100};
 inline constexpr int weights[] = {40, 60, 80, 100, 125, 150, 200, 250, 300};
 inline constexpr int flipSpeeds[] = {90, 120, 150, 180, 240, 300, 360, 480};
+inline constexpr int wallDistances[] = {10, 15, 20, 25, 30, 40, 50, 60, 75, 100};
 // Real gravity, m/s^2: a weight of 100% falls at it.
 inline constexpr float realGravity = 9.81f;
 // The swing's gravity for a weight, m/s^2.
@@ -123,6 +126,8 @@ enum class Item : uint8_t {
     flipSpeed,
     standOnWalls,
     screenDepth,
+    handClimb,
+    wallDistance,
     view,
     webStyle,
 };
@@ -143,7 +148,7 @@ struct Row {
     // menu (the one with resume)").
     bool page{};
 };
-const std::array<Row, 22>& rows();
+const std::array<Row, 24>& rows();
 // The choice a setting shows for these values: a switch 0 (off) or 1 (on), a
 // list its step nearest to the value (a launcher value between two steps
 // shows the nearer one, the lower on a tie).

@@ -4,6 +4,7 @@
 #include "native_view.hpp"
 #include "swing.hpp"
 #include "tracking.hpp"
+#include "wall_roll.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -51,6 +52,8 @@ struct GameMotionFrame {
     // tracking space turns onto it; and how far it leans from the world's up
     // now, radians (0 level, a quarter turn on a wall).
     bool standing{};
+    float wallRoll{};
+    bool wallRotate{};
     float viewTilt{};
     // For the player's body: the up the view stands him along (the world's
     // until it turns onto a surface), the point of that surface under his
@@ -62,6 +65,9 @@ struct GameMotionFrame {
     // How far the eyes, and the hands and the body placed with them, moved
     // out of what the world is built of (HeadClearance), metres in the world.
     Vec3 headPush{};
+    Quat bodyTilt() const {
+        return standing ? flipTilt : swing.tilt;
+    }
 };
 // The wall or ceiling that holds the player, as the swing module reports it
 // (game_swing::Data's wall): the swing's own wall, or the game's wall crawl.
@@ -304,6 +310,14 @@ class GameTrackingRig {
     const HeadClearance& clearance() const {
         return clearance_;
     }
+    void handClimb(bool on) {
+        handClimb_ = on;
+        if (!on)
+            wallRoll_.reset();
+    }
+    void wallDistance(float metres) {
+        wallDistance_ = std::isfinite(metres) ? std::clamp(metres, .1f, 1.f) : .4f;
+    }
     void reset();
 
   private:
@@ -324,6 +338,14 @@ class GameTrackingRig {
     Quat surfaceTurn_{};
     Vec3 surfaceShift_{};
     bool standing_{}, standOnWalls_ = true;
+    bool handClimb_{};
+    float wallDistance_ = .4f;
+    WallRollGesture wallRoll_;
+    Vec3 climbNormal_{}, runNormal_{}, runAhead_{};
+    Quat climbView_{};
+    float runYaw_{}, runHeadYaw_{};
+    bool wallRunning_{};
+    float runIdleSeconds_{};
     float headroom_{};
     Vec3 headDrop_{};
     HeadClearance clearance_{};
