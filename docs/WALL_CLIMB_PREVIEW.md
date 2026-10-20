@@ -1,11 +1,19 @@
-# Spidy Wall Climb Preview 11 — custom build
+# Spidy Wall Climb Preview 12 — custom build
 
 This modified build of Ilya Mezerowsky's Spidy VR mod is based on upstream
 0.4.0, commit c747c184dd97acaddf0db47f1a32f30cebe0d974, merged with the
 working Preview 7 changes saved at e0fcb4c. Keep the whole
 extracted preview folder together.
 
-## Changes in Preview 11
+## Changes in Preview 12
+
+Grip-based hand crawling now drives the game's native crawl inside vents,
+including horizontal ducts and wall/ceiling crawl surfaces. The native game
+keeps control of movement collision, corners and vent interactions. The vent
+camera uses the supported crawl and headroom clearance instead of outdoor
+wall offsets or the outdoor wall-running transition.
+
+## Retained Preview 11 controls
 
 Updated: hold a wall with one grip and shoot webs with the free hand,
 without releasing the wall grip. Both hands and both WEB BUTTON mappings
@@ -56,7 +64,7 @@ frame remain removed.
 ## Start
 
 1. Close the game and any other Spidy session.
-2. Open **Spidy Wall Climb Preview 11.exe**, connect your headset, and start VR.
+2. Open **Spidy Wall Climb Preview 12.exe**, connect your headset, and start VR.
 3. Enable **Settings → SPIDY VR → EXPERIMENTAL → HAND WALL CLIMBING**.
    Enable it again after restarting VR; the switch lasts for the session.
 4. **WALL CAMERA DISTANCE** sets the close climbing view to 10, 15, 20, 25,
@@ -68,7 +76,37 @@ camera at least 20 cm from solid geometry even if 10 or 15 cm is selected,
 and can push it farther out at obstructions. Eyes, hands and body receive
 the same collision adjustment.
 
-## Grip climbing
+## Inside vents
+
+Enable HAND WALL CLIMBING as usual, then enter the vent through the game's
+normal interaction. Release your grips once after entering. Reach against
+a solid side, floor or ceiling, squeeze a grip and pull your hand backward
+to crawl forward. Reverse or move sideways with opposite hand pulls. Release,
+reach and squeeze again for the next stroke. Palms slightly inside geometry
+are accepted. Touching without a grip does not attach.
+
+Two hands share the movement. Pulling into the supporting floor is removed
+from movement; the game's crawl chooses the route around bends and up shafts.
+Hand pulls set the native crawl's stick input, limited to its ordinary speed,
+so movement inside vents is not the outdoor system's exact hand displacement.
+Attached palms stay open and vibrate once on a fresh grip. The other hand's
+web controls remain available when it is free and away from solid geometry.
+
+The left joystick still works and takes over from a hand hold. Release and
+squeeze again to resume hand crawling after joystick movement, jumping,
+tracking loss, a menu, or leaving and re-entering the crawl.
+
+In native crawl the camera stays oriented to the supporting surface and
+uses the existing crouch/headroom protection. The outdoor 40 cm wall-distance
+setting and two-grip camera-roll gesture apply again after leaving native
+crawl. There is no new vent setting. Closed vents still need their usual
+interaction; hand pulling does not open a vent or unlock a scripted route.
+
+The input path also publishes stationary crawl feedback before the next
+native movement step, so starting a pull does not depend on a joystick push.
+Actual game vents, especially scripted bends and doors, still need play testing.
+
+## Grip climbing outdoors
 
 Touch climbing and its setting have been removed. Putting a hand against
 or inside the wall without pressing a grip does not attach it.
@@ -154,8 +192,8 @@ No new original-game climbing animation cycle is integrated by this update.
 
 ## Validation
 
-Windows Release build: passed. Native core: **396/396** tests. Launcher:
-**24/24** checks. Python protocols: **137/137** tests across six suites.
+Windows Release build: passed. Native core: **402/402** tests. Launcher:
+**24/24** checks. Python protocols: **138/138** tests across six suites.
 The packaged runtime imports, source whitespace, and module/source copies
 are also checked during packaging.
 
@@ -180,7 +218,15 @@ the game adapter: either wall hand, both web-button mappings and both web
 styles; repeated shots and releases preserve the wall hold. They also check
 free-hand web-ball input and deliberate-roll reservation/release.
 
-**Preview 11 has not yet been played in the game or tested in a headset.**
+Preview 12 adds synthetic hollow-duct tests for either hand, both side walls,
+floor and ceiling contacts, embedded palms, shared/reversed pulls, shaft and
+ceiling tracking frames, speed limits, repeated samples, no button-free contact,
+web-held hands, tracking loss, jump, joystick and setting changes, missing
+geometry, expiring feedback and native-camera entry/exit. The telemetry reader
+accepts the original contact packet and the new crawl packet and rejects invalid
+or truncated data.
+
+**Preview 12 has not yet been played in the game or tested in a headset.**
 Earlier previews were played by the user. Synthetic corner tests do not
 establish that every game building has suitable collision geometry.
 
@@ -204,6 +250,8 @@ official update's native-action requests. Swing settings are version 8
 (48 bytes): the official phone suppression and arcade style fields keep
 their 0.4.0 offsets, with handClimb appended at byte 44. Official version
 3–7 settings remain accepted with their original meanings. The body command
-remains version 4 (192 bytes), and the separate sticky-palm contact report
-remains version 1 (48 bytes). Keep this preview's modules together; old custom
+remains version 4 (192 bytes). The separate sticky-palm contact report is now
+version 2 (72 bytes), adding native-crawl intent and its input timestamp after
+the original 48-byte prefix. The Python reader also accepts version 1. Keep
+this preview's modules together; old custom
 preview settings packets are not interchangeable with the updated modules.

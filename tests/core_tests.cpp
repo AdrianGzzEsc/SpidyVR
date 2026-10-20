@@ -27,6 +27,7 @@
 #include "spidy/lab_props.hpp"
 #include "spidy/body_ik.hpp"
 #include "spidy/crawl_stick.hpp"
+#include "spidy/crawl_hands.hpp"
 #include "spidy/body_calibration.hpp"
 #include "spidy/overlay_text.hpp"
 #include "spidy/punch.hpp"
@@ -200,6 +201,38 @@ struct Building : TestWorld {
     bool exists(std::uint64_t id) const override {
         return id == 7;
     }
+};
+// A hollow duct: collision normals face into its interior.
+struct Duct : World {
+    Vec3 low{-1, 0, -20}, high{1, 1.2f, 20};
+    bool present = true;
+    std::optional<RayHit> raycast(Vec3 from, Vec3 way, float reach) const override {
+        if (!present) return {};
+        std::optional<RayHit> best;
+        float closest = reach;
+        const float p[]{from.x, from.y, from.z}, d[]{way.x, way.y, way.z};
+        const float lo[]{low.x, low.y, low.z}, hi[]{high.x, high.y, high.z};
+        for (int axis = 0; axis < 3; ++axis) {
+            if (std::abs(d[axis]) < 1e-5f) continue;
+            for (int face = 0; face < 2; ++face) {
+                const float t = ((face ? hi[axis] : lo[axis]) - p[axis]) / d[axis];
+                if (t <= 0 || t > closest) continue;
+                const Vec3 hit = from + way * t;
+                if (hit.x < low.x - .001f || hit.x > high.x + .001f ||
+                    hit.y < low.y - .001f || hit.y > high.y + .001f ||
+                    hit.z < low.z - .001f || hit.z > high.z + .001f) continue;
+                Vec3 n{};
+                if (axis == 0) n.x = face ? -1.f : 1.f;
+                if (axis == 1) n.y = face ? -1.f : 1.f;
+                if (axis == 2) n.z = face ? -1.f : 1.f;
+                closest = t;
+                best = RayHit{hit, n, static_cast<uint64_t>(10 + axis * 2 + face), true};
+            }
+        }
+        return best;
+    }
+    MoveResult sweep(Vec3, Vec3 to, float) const override { return {to, {}, false}; }
+    bool exists(uint64_t id) const override { return present && id >= 10 && id < 16; }
 };
 SwingConfig walled() {
     SwingConfig c;
@@ -1287,6 +1320,179 @@ int main() {
         hanging(0);     // its hold 0.3 m of slack below
         hanging(-.2f);  // moved further down the web: the hold would have been 0.2 m too short
         hanging(.25f);  // moved up beside the other
+    });
+    test("native vent crawling: either grip catches duct walls, floor, ceiling and embedded palms", [] {
+        Duct duct;
+        for (int hand : {0, 1}) {
+            for (Vec3 palm : {Vec3{.9f, .6f, 0}, Vec3{1.2f, .6f, 0}, Vec3{-.9f, .6f, 0},
+                              Vec3{0, .1f, 0}, Vec3{0, -.2f, 0}, Vec3{0, 1.1f, 0}, Vec3{0, 1.4f, 0}}) {
+                CrawlHands crawl;
+                Input in;
+                auto& h = in.hands[hand];
+                h.tracked = true;
+                h.wallPosition = palm;
+                auto step = [&] { crawl.update(true, .01f, in, {0, 1, 0}, {0, .5f, 0}, duct); };
+                step();
+                check(!crawl.hands(), "button-free vent touch attached");
+                h.wallGrip = 1;
+                step();
+                check(crawl.hands() == (1u << hand) && crawl.contacts() == (1u << hand), "duct grip did not attach and pulse");
+                h.gripRelativeToHead.z += .02f;
+                step();
+                near(crawl.move().z, -2.f / 2.6f, .001f);
+                near(crawl.move().y, 0);
+                check(!crawl.contacts(), "held vent grip repeated vibration");
+                step();
+                near(length(crawl.move()), 0);
+                h.wallGrip = 0;
+                step();
+                check(!crawl.hands(), "vent grip did not release");
+                near(length(crawl.move()), 0);
+            }
+        }
+    });
+    test("native vent crawling: shared pulls follow the tracking frame and shaft support", [] {
+        Duct duct;
+        for (Vec3 normal : {Vec3{0, 1, 0}, Vec3{-1, 0, 0}, Vec3{0, -1, 0}}) {
+            CrawlHands crawl;
+            Input in;
+            in.tilt = arc({0, 1, 0}, normal);
+            for (int i = 0; i < 2; ++i) {
+                in.hands[i].tracked = true;
+                in.hands[i].wallPosition = {i ? .9f : -.9f, .6f, 0};
+            }
+            auto step = [&] { crawl.update(true, .01f, in, normal, {0, .5f, 0}, duct); };
+            step();
+            for (auto& h : in.hands) h.wallGrip = 1;
+            step();
+            check(crawl.hands() == 3, "two duct grips failed");
+            for (auto& h : in.hands) h.gripRelativeToHead.z += .02f;
+            step();
+            const Vec3 expected = in.tilt.rotate({0, 0, -2.f / 2.6f});
+            near(length(crawl.move() - expected), 0, .001f);
+            near(dot(crawl.move(), normal), 0);
+            const Vec3 before = crawl.move();
+            crawl.update(true, 0, in, normal, {0, .5f, 0}, duct);
+            near(length(crawl.move() - before), 0);
+            check(!crawl.contacts(), "duplicate headset sample repeated a contact");
+            step();
+            near(length(crawl.move()), 0);
+            for (auto& h : in.hands) h.gripRelativeToHead.z += 2;
+            step();
+            near(length(crawl.move()), 1);
+            in.hands[0].wallGrip = 0;
+            step();
+            check(crawl.hands() == 2, "one released vent grip dropped the other");
+        }
+    });
+    test("native vent crawling: input loss, joystick, jump, setting and missing geometry release holds", [] {
+        for (int interruption = 0; interruption < 8; ++interruption) {
+            Duct duct;
+            CrawlHands crawl;
+            Input in;
+            auto& h = in.hands[0];
+            h.tracked = true;
+            h.wallPosition = {.9f, .6f, 0};
+            bool active = true;
+            auto step = [&] { crawl.update(active, .01f, in, {0, 1, 0}, {0, .5f, 0}, duct); };
+            step();
+            h.wallGrip = 1;
+            step();
+            check(crawl.hands() == 1, "test vent hold failed");
+            if (interruption == 0) in.focused = false;
+            if (interruption == 1) h.tracked = false;
+            if (interruption == 2) in.move = {0, 0, -1};
+            if (interruption == 3) in.jump = true;
+            if (interruption == 4) active = false;
+            if (interruption == 5) duct.present = false;
+            if (interruption == 6) h.wallGrip = std::numeric_limits<float>::quiet_NaN();
+            if (interruption == 7) h.gripRelativeToHead.x = std::numeric_limits<float>::quiet_NaN();
+            step();
+            check(!crawl.hands(), "vent interruption kept a hand attached");
+            near(length(crawl.move()), 0);
+            active = in.focused = h.tracked = duct.present = true;
+            in.jump = false; in.move = {}; h.wallGrip = 1; h.gripRelativeToHead = {};
+            step();
+            check(!crawl.hands(), "vent hold resumed without a fresh press");
+            h.wallGrip = 0;
+            step();
+            h.wallGrip = 1;
+            step();
+            check(crawl.hands() == 1, "fresh vent grip could not resume");
+        }
+    });
+    test("native vent crawling: empty air and existing webs do not become wall holds", [] {
+        Duct duct;
+        CrawlHands crawl;
+        Input in;
+        auto& h = in.hands[0]; h.tracked = true; h.wallPosition = {0, .6f, 0};
+        crawl.update(true, .01f, in, {0, 1, 0}, {0, .5f, 0}, duct);
+        h.wallGrip = 1;
+        crawl.update(true, .01f, in, {0, 1, 0}, {0, .5f, 0}, duct);
+        check(!crawl.hands(), "remote duct palm attached");
+        h.wallGrip = 0; h.wallPosition.x = .9f;
+        crawl.update(true, .01f, in, {0, 1, 0}, {0, .5f, 0}, duct, 1);
+        h.wallGrip = 1;
+        crawl.update(true, .01f, in, {0, 1, 0}, {0, .5f, 0}, duct, 1);
+        check(!crawl.hands(), "a web-holding hand became a duct grip");
+    });
+    test("native vent crawl feedback expires and respects native camera axes", [] {
+        game_swing::ClimbData d;
+        d.status = d.crawl = d.hands = 1;
+        d.sampleTimeNs = 1'000'000'000;
+        d.crawlMove = {0, 0, -.7f};
+        const auto pull = game_swing::crawlPull(d, true, d.sampleTimeNs + 20'000'000);
+        near(pull.z, -.7f);
+        near(length(game_swing::crawlPull(d, true, d.sampleTimeNs + 100'000'001)), 0);
+        near(length(game_swing::crawlPull(d, true, d.sampleTimeNs - 1)), 0);
+        near(length(game_swing::crawlPull(d, false, d.sampleTimeNs)), 0);
+        for (Vec3 n : {Vec3{0, 1, 0}, Vec3{-1, 0, 0}, Vec3{0, -1, 0}}) {
+            for (float yaw : {0.f, .7f, 2.f}) {
+                GameTrackingRig rig;
+                rig.handClimb(true);
+                rig.headroom(1.2f);
+                auto f = trackedFrame();
+                f.head.orientation = Quat::yaw(yaw);
+                const SurfaceHold surface{n, {}, 0, true};
+                const auto out = holdFor(rig, f, {}, surface, .8f);
+                check(out.standing && !out.wallRotate, "native vent crawl used the outdoor camera/roll");
+                near(dot(out.headPose.position, n), 1.f, .01f);
+                near(dot(out.headPose.orientation.rotate({0, 1, 0}), n), 1, .01f);
+                const Vec3 intent = out.walkForwardAxis * .6f + out.walkRightAxis * .3f;
+                d.crawlMove = intent;
+                const Vec3 got = game_swing::crawlPull(d, true, d.sampleTimeNs);
+                near(dot(got, out.walkForwardAxis), .6f, .005f);
+                near(dot(got, out.walkRightAxis), .3f, .005f);
+            }
+        }
+    });
+    test("vent entry and exit preserve crouched native crawl and restore outdoor wall distance", [] {
+        GameTrackingRig rig;
+        rig.handClimb(true);
+        auto f = trackedFrame();
+        const Vec3 feet{0, 9, -4.1f};
+        SurfaceHold wall{{0, 0, 1}, {0, 10, -5}, 0, false};
+        auto out = holdFor(rig, f, feet, wall, .8f);
+        near(dot(out.headPose.position - wall.anchor, wall.normal), .4f, .005f);
+        wall.crawl = true;
+        wall.anchor = feet;
+        rig.headroom(1.2f);
+        out = holdFor(rig, f, feet, wall, .8f);
+        check(out.standing, "stationary native crawl did not keep the supported camera");
+        near(dot(out.headPose.position - wall.anchor, wall.normal), 1.f, .01f);
+        f.hands[0].stickY = 1;
+        out = holdFor(rig, f, feet, wall, .2f);
+        f.hands[0].stickY = 0;
+        const auto stopped = holdFor(rig, f, feet, wall, .2f);
+        check(stopped.standing, "releasing the stick switched a vent to outdoor close view");
+        near(length(stopped.headPose.position - out.headPose.position), 0, .01f);
+        near(out.wallRoll, 0);
+        wall.crawl = false;
+        wall.anchor = {0, 10, -5};
+        rig.headroom(0);
+        out = holdFor(rig, f, feet, wall, .8f);
+        check(!out.standing, "leaving native crawl did not restore hand climbing");
+        near(dot(out.headPose.position - wall.anchor, wall.normal), .4f, .01f);
     });
     test("hand climbing: either grip pulls up, sideways and down without firing webs", [] {
         constexpr float dt = 1.f / 60;

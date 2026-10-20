@@ -1817,7 +1817,7 @@ DWORD WINAPI run(void*) {
                         check(submitSwing(&input), "Tracked swing input");
                         check(sampleSwing(&swingState), "Native swing feedback");
                         if (!sampleClimb || sampleClimb(&climbState) || climbState.magic != 0x53434c44 ||
-                            climbState.version != 1 || climbState.bytes != sizeof(climbState))
+                            climbState.version != 2 || climbState.bytes != sizeof(climbState))
                             climbState = {};
                         const unsigned wallPulses = climbPulses.update(climbState, input.focused && values.handClimb);
                         for (unsigned i = 0; i < 2; ++i)
@@ -2298,6 +2298,16 @@ DWORD WINAPI run(void*) {
                         if (playing) {
                             walk.right = mounting ? 0 : motion.walkRight;
                             walk.forward = mounting ? 0 : motion.walkForward;
+                            // Hand pulls become ordinary native crawl input. The
+                            // game keeps vent collision and its supported state.
+                            const bool handCrawl = hold.crawl && values.handClimb && motion.active && !flatScreen &&
+                                !calibrationInput && !layerOn && !mounting &&
+                                std::hypot(motion.walkRight, motion.walkForward) <= .2f;
+                            const Vec3 pull = game_swing::crawlPull(climbState, handCrawl, frame.predictedDisplayTime);
+                            if (handCrawl && climbState.crawl && climbState.hands) {
+                                walk.right = dot(pull, motion.walkRightAxis);
+                                walk.forward = dot(pull, motion.walkForwardAxis);
+                            }
                             // On the game's own crawl, with the view turned
                             // onto the wall, what the game makes of that stick
                             // is the one thing no session has measured.
