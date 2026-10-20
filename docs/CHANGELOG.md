@@ -3,7 +3,7 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 20, third): realistic flips, experimental - pull
+**Latest build (October 20, fourth): realistic flips, experimental - pull
 request 23 (iplusdvr).** You: "review and merge or fix the open prs".
 
 - **REALISTIC FLIPS, under EXPERIMENTAL, off by default, and nine rows that
@@ -31,7 +31,7 @@ request 23 (iplusdvr).** You: "review and merge or fix the open prs".
   values), the realistic flips' own test program, the launcher's, all six
   protocol suites. Not run here in the game or a headset.
 
-**Earlier build (October 20, second): NEAR CLIP - pull request 22
+**Earlier build (October 20, third): NEAR CLIP - pull request 22
 (iplusdvr).** You: "review and merge or fix the open prs".
 
 - **NEAR CLIP, the last row under DISPLAY: how near the eyes the headset
@@ -55,7 +55,7 @@ request 23 (iplusdvr).** You: "review and merge or fix the open prs".
   line in the tab's file), the launcher's, all six protocol suites. Not run
   here in the game or a headset.
 
-**Earlier build (October 20, first): hand wall climbing, experimental -
+**Earlier build (October 20, second): hand wall climbing, experimental -
 Adrian's pull request 24 (AdrianGzzEsc).** You: "review and merge or fix the
 open prs".
 
@@ -90,6 +90,93 @@ open prs".
   version 5 command and refuses a roll flag of 2 and the previews' version
   7. The author played earlier previews; the last one (corners) had not been
   played. Not run here in the game or a headset.
+
+**Earlier build (October 20): press what you see.** You, about hantop's
+playthrough in #mod-chat (50 items, October 14-19, the Oscorp research
+stations among them): "review the research hantop did ... try to come up
+with a unified immersive fix or a set of fixes", then "build it" for its
+first part.
+
+- **What the playthrough came down to.** The moments it could finish only on
+  the game screen name buttons VR play never sent. Read off its recordings:
+  "Hold LT and tap RB to fire webs and seal the leaks" (Under Pressure,
+  Chemical Leak, Ventilate the Problem), "Press LB to disperse vaccine"
+  (Vaccinate the Fish, Pigeon Vaccine), "Press D-pad up to equip the
+  camera", "Hold LT to aim the camera" (the smog stations, the landmarks),
+  "Press X for Vent Takedown" (Fisk Tower, the museum), "hold X + A to
+  Ground Strike" (Shaking Harlem), "Hold RB to bring up the Gadget Select"
+  (the Web Bomb's lesson), and a hostage's "use the left stick to aim, RB to
+  disarm". In VR play X opened the map or the wheel, the triggers and grips
+  shot Spidy's webs, and the game's LB, RB and LT on their own and its D-pad
+  up could not be sent at all.
+- **Why "Y sends what the prompt asks for" never helped.** Every session
+  since October 15 had the prompt reading off: on October 13 it closed the
+  game at CONTINUE, every time. The fault was Spidy's own logging, not the
+  game: each prompt call's line for the report went through `sprintf_s` with
+  a timestamp in front into a 128-byte buffer, and a call's line alone can
+  be 126 characters. A long text - the help line a save's load brings, a
+  police dispatch subtitle - overflowed it, and `sprintf_s` ends the process
+  for that, with no exception and no crash dump. The line is cut to its
+  buffer now (`keepLine`), and every raw read of the game's memory asks
+  Windows first (`readable`), and the reading is on in every session again.
+- **Measured, in the game without a headset** (your save, CONTINUE, the
+  reading on from the title): with 0.4.0's module the game died right after
+  CONTINUE, both times, its log ending on the load's own save request. With
+  this build the same run went through CONTINUE (the player at 68 s) and two
+  minutes of free roam, and lived. The first thing the game showed after the
+  load was `ShowText(7, 'Press [STICK_LEFT_PRESS] to <span
+  class='emphasis'>dive</span> and <span class='emphasis'>gain speed</span>
+  while swinging. ...')`, 127 characters in the report's ring. A later
+  load's help line, "Press [BTN_X] then [BTN_B] to perform the Dodge Under
+  move", came through as the pad's X and B and stayed live the 6.5 s it was
+  shown. Your 17 save files came out byte-identical after every run.
+- **Press what you see** (`game_pad::NamedPress`). While the game names a
+  button, the VR control of that name sends it. A, B, X and Y as they are: X
+  is then no menu or wheel, A no leap or flip, and B goes out while you
+  swing. LT or LB is the left hand's web-ball button and RT or RB the right
+  one's: the trigger, or the grip with WEB BUTTON: TRIGGER. The grips stay
+  your webs, so a mission that asks for its triggers still swings. L3 and R3
+  are the sticks' clicks (no slow motion, no pull meanwhile), and D-pad up,
+  left or right is the right stick pushed that way (no zip, no turn
+  meanwhile). A control is the game's only when it goes down while the game
+  names it, and it stays so until it is let go. Pressed in flight, it asks
+  the swing to let the game have its move (AirYield): the dive, the game's
+  own web swing, the Ground Strike.
+- **Fists.** While the game names its X, a fist thrown fast (2.2 m/s, and
+  not pulled back toward the head) is that X: held 0.6 s where the prompt
+  says hold (the Air Launch's uppercut). With X and A named in the air, a
+  fist thrown down is both: the Ground Strike. Spidy's own blows stand down
+  meanwhile (the swing's `noBlows`), so a takedown is the game's alone.
+- **A help line lasts as long as it is shown.** `ShowText(channel, text)`
+  stays up until `HideText(channel)`. What it names now lives that long (60
+  s at most without a call), not 2 s, and not until any `HideText` (a
+  subtitle sends one on its own channel). The rules are
+  `prompt_buttons::LiveDemands`, tested on their own.
+- **New words.** `[STICK_LEFT_PRESS]` and `[STICK_RIGHT_PRESS]`, which the
+  exe does not hold (the texts' own data has words of its own), and
+  `[FUNC_MELEE]`, the melee's button: X. **Not read yet:** a third kind,
+  the game's actions by name. Another load showed "While in the air, hold
+  `[ACTION_WEB_YANK_BOT]` to yank enemies up to you": an action of its own
+  binding configs (Fire, Swing, WebZip, WebYankBot, WebStrike, AimMode,
+  UseGadget, Heal and the rest), whose buttons the configs hold and the exe
+  does not. A line that names an action names nothing to Spidy until those
+  are read; guessing would press the wrong thing.
+- **What went.** `ContextPress`, the interact sending a prompt's demand: it
+  never ran with the reading off, and with each button now its own, there is
+  nothing left for it. A pull with both webs at a thing whose prompt names
+  both triggers still sends LT + RT.
+- **Docs:** PLAYERS.md (WHEN THE GAME ASKS FOR A BUTTON, the troubleshooting
+  line), the README, the launcher's Controls page. Discord's Controls post
+  and Webster's `faq.ts` still say "press Y": they follow with the release.
+- **Protocol:** none. The report's `prompts.context_presses` now counts the
+  presses that went to a named button, thrown fists included, and the
+  report's prompts section (census, timeline) fills again.
+- **Checked:** 365 core tests (new: the named presses, the fists, a coverage
+  test that every button the game can name is sent in VR play, the help
+  lines measured in the game, and what stays live how long); three bugs planted on purpose, each caught by
+  its test; all six protocol suites; the launcher's tests. **Not yet in a
+  headset:** the presses themselves, the fists, and the game taking its move
+  from the swing.
 
 **Earlier build (October 19, fourth): arcade webs, and the SPIDY VR tab in
 sections.** You: "the current web swinging is hard - webs get tangled over

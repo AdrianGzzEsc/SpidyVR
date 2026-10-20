@@ -379,7 +379,9 @@ Moving
   Hold both sticks in .. pause too, after a moment (both hands buzz). Under
                          SteamVR the Quest's menu button is SteamVR's own:
                          it opens SteamVR's dashboard, not the game's pause
-  X .................... game menu (map, suits, skills)
+  X .................... game menu (map, suits, skills); while the game asks
+                         for its X, that X (WHEN THE GAME ASKS FOR A
+                         BUTTON, below)
   Hold X ............... the gadget wheel, in front of that hand (the
                          right one on a Steam Frame): move the hand toward
                          a gadget to light it (it turns red, its name in
@@ -400,25 +402,35 @@ Moving
                          or just stop pressing anything for 20 seconds.
                          Your webs are off while it is on, so it does not
                          latch while a web is carrying you
-  A, B and Y are the game's own A, B and Y: where the game shows one of
-  them on screen, press that button. Your grips shoot webs, so they are
-  not the game's LB and RB in VR: the right stick's click is both. The
-  controllers have no D-pad, and the triggers are webs too: the right
-  stick pushed down is the game's D-pad down, pushed up its LT + RT. A
-  push counts from the stick at rest, straight down or up: turning, a
-  diagonal and a quick flick do neither.
+  A, B and Y are the game's own A, B and Y, and X too while the game shows
+  it: where the game shows one of them on screen, press that button. Your
+  grips shoot webs, so they are not the game's LB and RB in VR: the right
+  stick's click is both, and where the game shows a bumper or a trigger on
+  its own, your triggers are those (below). The controllers have no D-pad:
+  the right stick pushed down is the game's D-pad down, pushed up its
+  LT + RT. A push counts from the stick at rest, straight down or up:
+  turning, a diagonal and a quick flick do neither.
 
   WHEN THE GAME ASKS FOR A BUTTON
-  Where the game puts a button on screen - a door to tear off, a vent, a
-  tutorial, "tap X", a boss - Y does whatever it is asking for, whichever
-  button that is. You do not have to work out which VR control stands for
-  it: look at the thing and press Y. A pull with both webs does the same
-  where you can reach the thing with them.
-
-  Spidy also writes the VR control into the game's own prompt where the
-  prompt spells the button out, so "LB + RB (Hold) Throw" reads "RIGHT
-  STICK CLICK (Hold) Throw". Where there is no VR control of its own the
-  prompt says "Y".
+  Press the button of the name it shows. The game's prompts name an Xbox
+  controller's buttons, and while one is on screen your controllers send
+  them under those names:
+    A, B, X, Y ......... the button of that letter. X is then the game's
+                         X, not the menu or the wheel
+    LT or LB ........... your left trigger
+    RT or RB ........... your right trigger
+    L3, R3 ............. a click of the left or the right stick
+    D-pad up, left,
+    right .............. the right stick pushed that way (down heals, as
+                         always)
+  With WEB BUTTON set to TRIGGER the grips stand in for the triggers here.
+  "Hold LT and tap RB to fire webs and seal the leaks": hold the left
+  trigger and pull the right one. "Press X for Vent Takedown": press X.
+  While the game asks for its X, a punch you throw is that X (an uppercut
+  for the Air Launch it holds), and with X and A asked for in the air, a
+  fist thrown down is both: the Ground Strike. A button you were already
+  holding as the prompt came up goes on doing what it did, and the grips
+  stay your webs, so you can still swing.
 
   The pad layer above is the way out if a moment still asks for something
   none of this reaches.
@@ -777,17 +789,17 @@ IF SOMETHING IS WRONG
   depth: HIGH.
 - The HUD is too small, too large or in the way: HUD in Settings > SPIDY VR
   (or "HUD" in the launcher's options): SMALL, MEDIUM, LARGE, or OFF.
-- The game asks for a button and nothing you press does it: press Y. Since
-  October 13 Y sends whatever the game is asking for, so one button answers
-  every prompt - the LB + RB door, the vent's LT + RT, the heal, "tap X",
-  the Shocker fight's throw. Pulling with both webs at the thing does the
-  same. If a moment still asks for something neither reaches, click both
-  thumbsticks for the pad layer, where your grips are the game's LB and RB,
-  your triggers its LT and RT, X its X and the right stick its D-pad; click
-  both again to leave it.
-  Up to 0.3.4 each of those moments needed its own VR control, and the ones
-  nobody had found yet stopped you: the game's X, its L3, a single bumper
-  or trigger, and three ways of its D-pad could not be sent at all.
+- The game asks for a button and nothing you press does it: press the
+  button of the name it shows (WHEN THE GAME ASKS FOR A BUTTON, above). X is
+  the game's X while it asks for X, your triggers its LT, LB, RT and RB,
+  your stick clicks its L3 and R3, the right stick its D-pad. Up to 0.4.0
+  Spidy read none of the game's prompts (the reading closed the game as a
+  save loaded, and was off from October 13): "press X" opened the map, and
+  the Oscorp stations' leaks, vaccine and camera could only be done on the
+  game screen. If a moment still asks for something none of this reaches,
+  click both thumbsticks for the pad layer, where your grips are the game's
+  LB and RB, your triggers its LT and RT, X its X and the right stick its
+  D-pad; click both again to leave it.
 - A prompt shows keyboard keys ("click F to decipher") and no button works:
   the game shows the icons of the device it last saw. Press something on
   the controllers so it sees the pad again, then Y. If it keeps happening,

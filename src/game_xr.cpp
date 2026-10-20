@@ -250,10 +250,11 @@ struct XrData {
     uint64_t promptInvokes{}, promptCalls{}, promptsRaised{}, promptsCleared{};
     uint64_t promptTexts{}, promptRewrites{};
     uint32_t promptDemand{}, promptLastDemand{}, promptBeyondPlay{}, promptKeyboardTexts{};
-    // Presses of the interact button that sent what a prompt asked for
-    // instead of the game's Y (game_pad::ContextPress), the times the pad
-    // layer was latched on and whether it is on now (game_pad::PadLayer),
-    // and a spare word.
+    // Presses that went to a button the game named, from the VR control of
+    // that name or a thrown fist (game_pad::NamedPress, since October 20;
+    // before it the interact button sending a prompt's demand, which never
+    // ran with the reading off), the times the pad layer was latched on and
+    // whether it is on now (game_pad::PadLayer), and a spare word.
     // Then the presses of Y that went out while the player stood on a wall,
     // which `playing` withheld until October 13 (the closed vent).
     uint32_t contextPresses{}, padEntries{}, padLayerNow{}, wallInteracts{};
@@ -727,10 +728,15 @@ DWORD WINAPI run(void*) {
         bool askingGame{};
         uint32_t interacts{}, dodges{}, heals{}, zips{};
         // The whole pad, latched by clicking both thumbsticks, for the
-        // controls VR play has no room for; and the interact button sending
-        // what the game is asking for (game_pad.hpp, game_prompts.hpp).
+        // controls VR play has no room for; and the buttons the game names in
+        // a prompt, sent by the VR controls of those names (game_pad.hpp,
+        // game_prompts.hpp): what they send this frame, and whether the swing
+        // was last told that fists are the game's X meanwhile.
         game_pad::PadLayer padLayer;
-        game_pad::ContextPress contextPress;
+        game_pad::NamedPress namedPress;
+        game_pad::State namedPad{};
+        bool namedFists{}, fistsBlows{};
+        uint32_t namedPressesBefore{};
         // The gadget wheel (X held; gadget_wheel.hpp): the player's gadgets
         // as the shooter last listed them, whether the free hand's trigger
         // fires the equipped one (off: the web shooter's ball, as before the
@@ -1109,7 +1115,9 @@ DWORD WINAPI run(void*) {
         // Puts the settings into effect: at once, or when the module they
         // belong to starts (each start reads `values`).
         // What the swing is told during play: the settings, a hand-over's
-        // walls, and the phone's hands, which land no blow while it is out.
+        // walls, and the hands that land no blow: the phone's while it is out,
+        // and both while the game names its X, whose press a thrown fist is
+        // then (NamedPress) - a blow of Spidy's on top would hit as well.
         auto sendSwingSettings = [&] {
             if (!swingStarted || !swingSettings)
                 return;
@@ -1128,7 +1136,8 @@ DWORD WINAPI run(void*) {
             if (wallsHandedBack)
                 s.walls = 0;
             phoneBlows = phone.live();
-            s.noBlows = phoneBlows ? 3u : 0u;
+            fistsBlows = namedFists;
+            s.noBlows = phoneBlows || fistsBlows ? 3u : 0u;
             if (const auto code = swingSettings(&s)) {
                 const auto text = "VR settings: the swing did not take them (" + std::to_string(code) + ")";
                 message(3, 0, text.c_str());
@@ -1378,6 +1387,50 @@ DWORD WINAPI run(void*) {
                             if (pocketDraw.hands() & (1u << i))
                                 controller.hands[i].squeeze = 0;
                     }
+                    // The buttons the game names in a prompt, pressed with the
+                    // controls of those names (game_pad::NamedPress). A control
+                    // it claims is the game's until it is let go, and does
+                    // nothing of Spidy's meanwhile: no web ball or reel from that
+                    // hand's web-ball button, no jump or flip from A, no turn
+                    // from the right stick pushed for the game's D-pad.
+                    {
+                        const auto asked = game_prompts::demand();
+                        game_pad::NamedPress::Input named;
+                        named.buttons = frame.buttons;
+                        // The temple's scan has a trigger, the pocket's draw a grip.
+                        const uint32_t gestures =
+                            values.triggerWebs ? pocketDraw.hands() : templePress.hands();
+                        for (unsigned i = 0; i < 2; ++i) {
+                            const auto& hand = frame.hands[i];
+                            named.balls[i] = values.triggerWebs ? hand.squeeze : hand.trigger;
+                            named.ballsTaken[i] = (gestures & (1u << i)) != 0;
+                            named.clicks[i] = hand.stickClick;
+                            named.hands[i] = hand.grip.position - frame.head.position;
+                            named.tracked[i] = gripsTracked[i] && validTrackedPose(frame.head);
+                            named.busy[i] = swingState.webs[i].attached != 0;
+                        }
+                        named.stickX = frame.hands[1].stickX;
+                        named.stickY = frame.hands[1].stickY;
+                        named.airborne = game_swing::airborne(swingState, now.QuadPart, frequency.QuadPart);
+                        const bool namedPlay =
+                            gesturesPlay && !padLayer.latched() && !phone.open() && !gadgetWheel.open();
+                        namedPad = namedPress.update(frame.seconds, namedPlay, named, asked);
+                        const uint32_t claimed = namedPress.claimed();
+                        if (claimed & game_pad::NamedPress::controlA) {
+                            controller.jump = false;
+                            controller.buttons &= ~static_cast<uint32_t>(buttonA);
+                        }
+                        for (unsigned i = 0; i < 2; ++i) {
+                            auto& hand = controller.hands[i];
+                            if (claimed & game_pad::NamedPress::ball(i))
+                                (values.triggerWebs ? hand.squeeze : hand.trigger) = 0;
+                        }
+                        if (claimed & (game_pad::NamedPress::stickLeft | game_pad::NamedPress::stickRight))
+                            controller.hands[1].stickX = 0;
+                        // While the game names its X a thrown fist is that X, and
+                        // the swing lands no blow of its own (sendSwingSettings).
+                        namedFists = namedPlay && (asked.buttons & game_pad::x) != 0;
+                    }
                     // The player's up (its actor's second row): a wall's normal
                     // while the game holds it on one. Spidy's own flight is on none.
                     const Vec3 heroUp{body[4], body[5], body[6]};
@@ -1604,32 +1657,19 @@ DWORD WINAPI run(void*) {
                     // phone's presses are the controllers' too.
                     if (inPlay)
                         vrButtonsPlayed |= trackedFrame.buttons;
-                    // The prompts are read wherever the game's UI builds one - it
-                    // looks their texts up while it owns the screen - and rewritten
-                    // only in VR play, where the game's own button names are wrong.
-                    // The reading stays OFF in a session, and October 13 is why:
-                    // with it on, pressing CONTINUE at the main menu killed the
-                    // game every time, in a player's two sessions and in two
-                    // reproductions of mine; with it off the same save loaded and
-                    // played. The process simply ends, no crash dump, so the
-                    // fault is not reached by the guards here. Loading a save is
-                    // when it happens, which is when the game resolves a flood of
-                    // its own UI, and what is left to read there is a call's
-                    // argument (readPromptText).
-                    //
-                    // Nothing a player uses needs it. The vent's hand-over
-                    // (game_pad::WallHandover) asks only whether the game is
-                    // offering an interact, and with the reading off it never is,
-                    // which is exactly the case the hand-over is for. What waits
-                    // on this is the prompt-driven press (ContextPress) and the
-                    // prompt wording, neither of which has run in a headset.
-                    //
-                    // `SpidyPromptsWatch` still turns it on for a probe, which is
-                    // where the rest of this gets found - in a game of mine, not
-                    // in a session of theirs.
-                    game_prompts::setReading(false);
+                    // The prompts are read wherever the game's UI builds one: what
+                    // they name is what the controls of those names send in VR
+                    // play (NamedPress). Off from October 13 to 20, because with
+                    // the reading on CONTINUE at the main menu killed the game
+                    // every time - the process simply gone, no crash dump. The
+                    // death was the reading's own: the timeline's line for a
+                    // prompt call went through sprintf_s into a buffer a long
+                    // text overflowed, and sprintf_s ends the process for that
+                    // (game_prompts.cpp, keepLine). The wording stays the game's:
+                    // a text is never rewritten (setRewriting).
+                    game_prompts::setObserving(promptHelp);
+                    game_prompts::setReading(promptHelp);
                     game_prompts::setRewriting(false);
-                    (void)promptHelp;
                     // A change in the SPIDY VR tab takes effect at once.
                     if (game_menu::take(values)) {
                         ++settingChanges;
@@ -1756,8 +1796,9 @@ DWORD WINAPI run(void*) {
                                           "until B puts it away");
                         }
                     }
-                    // While it is out its hands land no blow (Settings::noBlows).
-                    if (phone.live() != phoneBlows)
+                    // While it is out its hands land no blow (Settings::noBlows),
+                    // nor while the game names its X (NamedPress, above).
+                    if (phone.live() != phoneBlows || namedFists != fistsBlows)
                         sendSwingSettings();
                     if (calibrationInput && calibration.phase() == CalibrationPhase::idle) {
                         bool held = (frame.buttons & buttonB) || frame.jump;
@@ -1784,10 +1825,15 @@ DWORD WINAPI run(void*) {
                     }
                     // Slow motion: the left thumbstick's click, in VR play outside the calibration.
                     const bool slowAllowed = immersive && calibration.phase() == CalibrationPhase::idle;
-                    stepSlowMotion(frame.seconds,
-                                   slowPress.update(frame.seconds, slowAllowed, frame.hands[0].stickClick,
-                                                    frame.hands[1].stickClick),
-                                   slowAllowed);
+                    // A click the game names (its L3, its R3) is not slow motion.
+                    const uint32_t clicksNamed = namedPress.claimed();
+                    const bool slowLeft =
+                        frame.hands[0].stickClick && !(clicksNamed & game_pad::NamedPress::leftClick);
+                    const bool slowRight =
+                        frame.hands[1].stickClick && !(clicksNamed & game_pad::NamedPress::rightClick);
+                    const bool slowPressed =
+                        slowPress.update(frame.seconds, slowAllowed, slowLeft, slowRight);
+                    stepSlowMotion(frame.seconds, slowPressed, slowAllowed);
                     if (motion.active && !raysStarted) {
                         native_rays::Config rays;
                         rays.pid = config.pid;
@@ -2447,8 +2493,13 @@ DWORD WINAPI run(void*) {
                         // Spidy's wall at one of the game's interactions a hand points
                         // at, it is that one's use: the game's crawl under the player
                         // there, then the game's interact for him.
+                        // A Y the game names goes out as it is (NamedPress), with no
+                        // turn or step of the interact's.
+                        const uint32_t named = namedPress.claimed();
                         walk.interact = offerUse.update(
-                            frame.seconds, (reaching || inFlight) && (origins.play() & buttonY) != 0,
+                            frame.seconds,
+                            (reaching || inFlight) && (origins.play() & buttonY) != 0 &&
+                                !(named & game_pad::NamedPress::controlY),
                             onOwnWall, pointed,
                             {offers.usesTaken, offers.usesDeclined, offers.best},
                             [&](uint32_t handle) { return useOffer && !useOffer(&handle); });
@@ -2477,14 +2528,9 @@ DWORD WINAPI run(void*) {
                         // The game's Y: the player's, and after a tap the time the
                         // hero takes to turn to what they look at.
                         walk.interact = interactStep.pressed();
-                        // What the game is asking for, if it named a button: the
-                        // interact button sends that instead of the game's Y, so one
-                        // control answers every prompt in the game rather than a
-                        // gesture for each moment a player reports.
-                        // Not in the pad layer: there the player presses the game's
-                        // own buttons, and Y is its Y.
+                        // What the game names now, for a pull (below). Not in the pad
+                        // layer: there the player presses the game's own buttons.
                         const auto asked = layerOn ? prompt_buttons::Demand{} : game_prompts::demand();
-                        walk.demand = contextPress.update(walk.interact && !layerOn, asked);
                         // The game takes its own interact away the moment the
                         // player leaves the surface, and the swing's wall is
                         // the player off it: hand him back for the press. Only
@@ -2553,16 +2599,17 @@ DWORD WINAPI run(void*) {
                             runtime.haptic(1, 1);
                             message(3, 0, "Web pull - the game's LB + RB, for as long as you hold both web buttons");
                         }
+                        const bool pullClick =
+                            frame.hands[1].stickClick && !(named & game_pad::NamedPress::rightClick);
                         const bool pulled =
-                            pullPress.update(frame.seconds, reaching, frame.hands[1].stickClick,
-                                             frame.hands[0].stickClick) ||
+                            pullPress.update(frame.seconds, reaching, pullClick, frame.hands[0].stickClick) ||
                             (yanked && playing);
-                        // A yank at a thing the game is prompting for sends what it
-                        // asks (its LT + RT for a vent as readily as its LB + RB for a
-                        // door): the gesture is the player's first way in, the interact
-                        // button the fallback. With nothing named it is the pull it was.
-                        if (pulled && asked.any() && !walk.demand.any())
-                            walk.demand = asked;
+                        // A yank at a thing the game is prompting both triggers for
+                        // sends those (its LT + RT for a vent as readily as its
+                        // LB + RB for a door): the gesture is the player's first way
+                        // in. With nothing of the kind named it is the pull it was.
+                        if (pulled && asked.leftTrigger && asked.rightTrigger)
+                            walk.demand = {0, true, true};
                         else
                             walk.pull = pulled;
                         if (walk.pull && !pulling_)
@@ -2577,7 +2624,11 @@ DWORD WINAPI run(void*) {
                         // lost for a moment (the controller out of the cameras' sight, as it is held
                         // down by the hip) took the stick to rest and spent a heal under the thumb.
                         const auto& turning = frame.hands[1];
-                        const bool sticking = steering && !calibrationInput && !layerOn;
+                        // Not a push the game names a D-pad way for (NamedPress).
+                        const bool sticking =
+                            steering && !calibrationInput && !layerOn &&
+                            !(named & (game_pad::NamedPress::stickUp | game_pad::NamedPress::stickLeft |
+                                       game_pad::NamedPress::stickRight));
                         const auto push =
                             stickPush.update(frame.seconds, sticking, turning.stickX, turning.stickY);
                         walk.heal = push == game_pad::StickPush::Way::down;
@@ -2593,8 +2644,11 @@ DWORD WINAPI run(void*) {
                             runtime.haptic(1, .2f);
                         // The swing hears of it with the next command: the zip from its own wall
                         // too, where Y is the wall's interactions' (offerUse).
+                        // And of any button the game names, pressed in flight: the
+                        // dive it asks for, its web swing, its Ground Strike.
                         askingGame = steering && swingState.owned && !calibrationInput &&
-                                     (walk.zip || (inFlight && (walk.interact || walk.demand.any())));
+                                     (walk.zip ||
+                                      (inFlight && (walk.interact || walk.demand.any() || named != 0)));
                         walk.jump = (keys & swingJumpKey) != 0;
                         // A jump on the game's own crawl - the player's, a web's
                         // takeoff, or the mount's that walks him on from it onto
@@ -2640,6 +2694,9 @@ DWORD WINAPI run(void*) {
                             }
                         }
                         auto buttons = origins.filtered(frame, mapping);
+                        // An X the game names is its X: no wheel, no menu (NamedPress).
+                        if (named & game_pad::NamedPress::controlX)
+                            buttons.buttons &= ~static_cast<uint32_t>(buttonX);
                         // The gadget wheel: X held opens it in front of the hand
                         // X is on (the left on Touch and Index, the right on the
                         // Steam Frame); X tapped is the game menu as it is let go.
@@ -2679,6 +2736,21 @@ DWORD WINAPI run(void*) {
                             }
                         }
                         auto pad = game_pad::fromControllers(buttons, mapping, walk);
+                        // What the controls of the names the game shows send it.
+                        if (mapping == game_pad::Mapping::gameplay) {
+                            pad.buttons |= namedPad.buttons;
+                            pad.leftTrigger = std::max(pad.leftTrigger, namedPad.leftTrigger);
+                            pad.rightTrigger = std::max(pad.rightTrigger, namedPad.rightTrigger);
+                        }
+                        if (namedPress.presses() != namedPressesBefore) {
+                            namedPressesBefore = namedPress.presses();
+                            char line[96];
+                            sprintf_s(line, "the player's press of a button the game names -> 0x%04x%s%s%s",
+                                      namedPad.buttons, namedPad.leftTrigger ? " LT" : "",
+                                      namedPad.rightTrigger ? " RT" : "",
+                                      named & game_pad::NamedPress::fist ? ", a thrown fist" : "");
+                            game_prompts::note(line);
+                        }
                         if (menuTap > 0) {
                             pad.buttons |= game_pad::back;
                             menuTap -= std::isfinite(frame.seconds) ? std::clamp(frame.seconds, 0.f, .1f) : .1f;
@@ -2760,7 +2832,7 @@ DWORD WINAPI run(void*) {
                         d.promptLastDemand = prompts.lastDemand;
                         d.promptBeyondPlay = prompts.beyondPlay;
                         d.promptKeyboardTexts = prompts.keyboardTexts;
-                        d.contextPresses = contextPress.presses();
+                        d.contextPresses = namedPress.presses();
                         d.padEntries = padLayer.entries();
                         d.padLayerNow = padLayer.latched() ? 1u : 0u;
                         d.wallInteracts = wallInteracts;

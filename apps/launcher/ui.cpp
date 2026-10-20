@@ -1445,7 +1445,11 @@ void App::controls(ImVec2 origin, ImVec2 size) {
           {"Menu button", "Pause; there SWITCH TO GAME SCREEN plays the game as it is, on a 3D screen, and VR "
                           "settings are in Settings > SPIDY VR"},
           {"Both sticks held in", "Pause too: under SteamVR a Quest's menu button opens SteamVR's dashboard"},
-          {"X", "Game menu: map, suits, skills"}}},
+          {"X", "Game menu: map, suits, skills. While the game asks for its X, it is that X"},
+          {"A button the game shows", "Press the one of that name: A, B, X and Y as they are, your left "
+                                      "trigger its LT or LB, your right trigger its RT or RB, the stick "
+                                      "clicks its L3 and R3, the right stick pushed its D-pad. While it asks "
+                                      "for X, a punch is that X"}}},
         {"MENUS AND CUTSCENES",
          {{"Left stick", "Move through menus (they show on a screen in the headset)"},
           {"A  /  B", "Select  /  Back"},

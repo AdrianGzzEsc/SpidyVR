@@ -324,6 +324,14 @@ of impact:
   and `SpidyPromptsNote` puts the probe's own presses in that timeline beside
   the game's calls. `--press y` sends the game's interact every couple of
   seconds.
+- `tools/probe_prompt_load.py`: the same reading through a save's load, which
+  is where it used to end the game (October 13 to 20: keepLine's overflow).
+  It launches the game itself, turns the reading on at the title, presses A
+  through CONTINUE and watches free roam (`--seconds`), writing
+  `reports/prompt-load.json` every second, so a death leaves what came
+  before it, and listing every second the game named something. `--dll`
+  loads another build's stereo module for a before and after. Close the game
+  with `tools/close_game.py` and end Steam afterwards.
 - `tools/probe_vent.py`: the same reading, plus driving the game there from one
   attach, with a little script of steps - `a*6@2` (a press, repeated, seconds
   apart), `walk:4` and `look:2,-1,0` (the sticks, held), `watch`, `watched`,

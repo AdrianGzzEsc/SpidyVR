@@ -1,6 +1,48 @@
-# Validation — 2026-10-18
+# Validation — 2026-10-20
 
-## Spider-Sense and the counter (latest build)
+## The game's prompts read again, and pressed by name (latest build)
+
+The user, about a helper's 50-item playthrough (October 14-19): "try to come
+up with a unified immersive fix", then "build it". Its first part: the
+buttons the game names reach it from the VR controls of the same names, and
+the prompt reading that names them is on again.
+
+| | |
+| --- | --- |
+| The reading's death, from the code | `keepLine` stamped each prompt call's line (`formatCall`, up to `callChars` - 1 = 127 characters, a text cut where the line ends) with `sprintf_s("%6llu %s")` into a buffer of `callChars`: a line of 121 characters or more overflowed it, and `sprintf_s` ends the process for that (the CRT's invalid-parameter handler), with no exception for a guard to catch and no crash dump. Fixed with `_snprintf_s(..., _TRUNCATE)` straight into the ring. `read` now asks `VirtualQuery` (`readable`) before it touches the game's memory |
+| The control, in the game | 0.4.0's `spidy_stereo_probe.dll` (the play folder's), the reading on from the title (`SpidyMenuStart` + `SpidyPromptsWatch`), A every 2 s: dead right after CONTINUE, twice. Run 2: the reading on at 28.4 s, the process gone at 64.5 s; the last reading a second before held 12 UI calls of the title and no prompt call; the game's log ends `[Save] Request load save type 0` (08:12:20), `[Save] Request save type 2` (08:12:22). Run 1 the same, its log ending 08:10:20 / 08:10:22. Steam had refused the first launch (`WaitingPrevProcess`, `AppError_16`): it was still holding the previous day's game |
+| This build, in the game | The same run: the reading on at 26.0 s, the player at 68.1 s, free roam watched to 188.5 s, the game alive. 38 UI calls, 7 prompt calls (`ShowText` 3, `HideText` 4). The ring's lines: `ShowText(7, 'Press [STICK_LEFT_PRESS] to <span class='emphasis'>dive</span> and ...` 93 ms after the load (127 characters, cut at the ring's width), then `HideText(7, 0)` at 6453 ms, and two police dispatch lines on channel 1 (123 and 112 characters) |
+| Saves | The save folder backed up before, compared after: all 17 files byte-identical |
+| Core tests | 365 (new 5): `NamedPress` sends each named button from the control of its name and keeps it until let go; a press begun before the prompt stays the player's; the web-ball buttons as LT or LB and RT or RB, their travel, a gesture's trigger; the right stick's ways, decisive only; out of play nothing; bad readings press nothing. Fists: a thrown fist is X, a hold's held, X + A thrown down in the air both, a level throw in the air neither; not with nothing named, not from a hand on its web, not pulled back, not slow, once a blow. Every button the game can name is sent in VR play. The help lines as measured (the dive's `[STICK_LEFT_PRESS]`, a subtitle naming nothing, the leaks, the vaccine, the camera, the vent takedown, the Ground Strike, the gadget select). What stays live: a call's demand 2 s after its last call or until its clear, a channel's text until its own HideText (not another channel's), replaced by the next text, 60 s at most |
+| Planted bugs | X sending Y, the recoil's sign flipped and `[STICK_LEFT_PRESS]` removed, together: 4 tests failed, each on its own message; the files restored and checked by hash |
+| Protocol | All six Python suites; no struct changed |
+
+**A third run, the final build** (the user: "run however many times you
+need"): alive again through CONTINUE (the player at 69.6 s) and two minutes
+of free roam. The load's help line was another this time, `ShowText(7,
+'While in the air, <span class='emphasis'>hold</span> [ACTION_WEB_YANK_BOT]
+to yank enemies up to you. ...')`: a third kind of word, an action of the
+game's own binding configs (the exe holds their names - HeroUsabilityBindings
+Config's Fire, Swing, WebZip, WebYankBot, WebStrike, AimMode, UseGadget,
+Heal and the rest - not their buttons). It named nothing (`named` 0), as it
+should until the configs are read. Game and Steam closed after each run.
+
+**A help line read live** (the final build with `LiveDemands`, a fresh game
+until a load's tip was in words Spidy reads; the first was): `ShowText(7,
+'Press [BTN_X] then [BTN_B] to perform the <span class='emphasis'>Dodge
+Under</span> move on enemies with sh...')` 94 ms into the ring, `HideText(7,
+0)` at 6579 ms. Polled every second, the live demand read `0x6000` - the
+pad's X and B - from 64.0 s to 69.6 s and 0 from 71.0 s on: live for as long
+as the line was shown, where the old rule kept it 2 s. `named` 1,
+`beyond_play` 1 (X is no button VR play had). The player at 71.0 s, free
+roam to 161.3 s, alive; game closed, Steam shut down, the 17 save files
+identical.
+
+**Not checked.** Everything a headset needs: `NamedPress` runs in the XR
+worker, so the presses, the fists and the swing letting the game have its
+move (AirYield) on a named press in flight have not run.
+
+## Spider-Sense and the counter (October 18 evening build)
 
 The user: "design a vr version of the alert/spidey senses for combat (make it
 arkham shadow style)". Arkham Shadow, as its coverage tells it: a blue icon

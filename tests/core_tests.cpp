@@ -7546,28 +7546,197 @@ int main() {
         run(away,dt,true,false,false);
         check(run(away,game_pad::pauseHoldSeconds+.1f,true,true,true),"after letting go, a hold was no Start");
     });
-    test("the interact button sends what the game asks for, and keeps it for the press", [] {
-        using game_pad::ContextPress;
+    test("a button the game names is sent by the VR control of its name, for as long as that is held", [] {
+        using namespace game_pad;
         using prompt_buttons::Demand;
-        const Demand pull{prompt_buttons::padLeftShoulder|prompt_buttons::padRightShoulder};
-        const Demand vent{0,true,true};
-        ContextPress press;
-        check(!press.update(false,pull).any(),"a demand went out with no press");
-        check(press.update(true,pull)==pull,"the press did not send the demand");
-        check(press.presses()==1,"the press was not counted");
-        // The demand it began with stands until the button is let go, even
-        // after the prompt ends or another one takes its place.
-        check(press.update(true,{})==pull,"the demand went when the prompt did");
-        check(press.update(true,vent)==pull,"a new prompt changed the buttons under the thumb");
-        check(!press.update(false,vent).any(),"the demand stayed after the press");
-        check(press.update(true,vent)==vent,"the next press did not take the new demand");
-        check(press.presses()==2,"the second press was not counted");
-        // Y held while the hero walks up to a door takes the prompt that then shows.
-        ContextPress walking;
-        check(!walking.update(true,{}).any(),"a press with no prompt sent something");
-        check(walking.presses()==0,"a press with no prompt was counted");
-        check(walking.update(true,pull)==pull,"a prompt that arrived under the thumb was not taken");
-        check(walking.presses()==1,"the arrival was not counted");
+        const float dt=1.f/90;
+        using P=NamedPress;
+        const auto step=[&](P& p,const P::Input& in,Demand d,bool play=true){return p.update(dt,play,in,d);};
+        const auto face=[](uint32_t buttons){P::Input in;in.buttons=buttons;return in;};
+        // The vent's takedown: X is its X, not the menu, and only while it names X.
+        const Demand takedown{prompt_buttons::padX};
+        P p;
+        check(step(p,face(0),takedown)==State{},"something went out with nothing pressed");
+        check(step(p,face(buttonX),takedown)==State{x},"X was not the game's X while it named X");
+        check(p.claimed()==P::controlX && p.presses()==1,"the claim or its count");
+        // The press keeps its X after the prompt has gone, until it is let go.
+        check(step(p,face(buttonX),{})==State{x},"X stopped with the prompt under the thumb");
+        check(step(p,face(0),{})==State{} && !p.claimed(),"the claim outlived the press");
+        // With nothing named, X is Spidy's again: no claim, nothing sent.
+        check(step(p,face(buttonX),{})==State{} && !p.claimed(),"an X with nothing named was claimed");
+        step(p,face(0),{});
+        // A press that began before the game named it stays the player's.
+        P before;
+        step(before,face(buttonY),{});
+        check(step(before,face(buttonY),Demand{prompt_buttons::padY})==State{},"a press held into a prompt was taken");
+        step(before,face(0),{});
+        check(step(before,face(buttonY),Demand{prompt_buttons::padY})==State{y},"the next press of Y was not the game's Y");
+        // A, B and Y as they are; the X and A of a Ground Strike together.
+        P faces;
+        const Demand strike{static_cast<uint16_t>(prompt_buttons::padX|prompt_buttons::padA),false,false,true};
+        check(step(faces,face(buttonX|buttonA),strike)==State{static_cast<uint16_t>(x|a)},"X + A did not go out");
+        check(faces.claimed()==(P::controlX|P::controlA),"X + A were not both claimed");
+        // A named button the pressed control is not named for is not its to send.
+        P other;
+        check(step(other,face(buttonB),takedown)==State{} && !other.claimed(),"B sent the game's X");
+        // The web-ball buttons: "Hold [BTN_L2] and tap [BTN_R1] to fire webs and seal the leaks".
+        const Demand leaks{prompt_buttons::padRightShoulder,true,false};
+        P balls;
+        P::Input both;both.balls[0]=1;both.balls[1]=1;
+        const auto sent=step(balls,both,leaks);
+        check(sent.leftTrigger==255 && sent.buttons==rightShoulder && !sent.rightTrigger,
+              "the left ball was not LT, or the right one not RB");
+        check(balls.claimed()==(P::leftBall|P::rightBall),"both balls were not claimed");
+        // "Press [BTN_L1] to disperse vaccine": the left ball is LB, the right one stays Spidy's.
+        P vaccine;
+        check(step(vaccine,both,Demand{prompt_buttons::padLeftShoulder})==State{leftShoulder},"LB did not go out");
+        check(vaccine.claimed()==P::leftBall,"the right ball was claimed for a prompt that names none of it");
+        // "Press [BTN_R2] to zip to ceiling while aiming": the right ball is RT.
+        P zip;
+        check(step(zip,both,Demand{0,false,true}).rightTrigger==255,"RT did not go out");
+        // A trigger past `pressed` goes down, stays down to `released`, and lets go below it.
+        P travel;
+        P::Input half;half.balls[0]=.5f;
+        check(step(travel,half,leaks)==State{},"half a pull was a press");
+        half.balls[0]=.7f;
+        check(step(travel,half,leaks).leftTrigger==255,"a full pull was no press");
+        half.balls[0]=.4f;
+        check(step(travel,half,leaks).leftTrigger==255,"the press let go above `released`");
+        half.balls[0]=.2f;
+        check(step(travel,half,leaks)==State{},"the press held on below `released`");
+        // A ball a gesture has (the temple's scan, the pocket's draw) is no press.
+        P taken;
+        P::Input scanning=both;scanning.ballsTaken[0]=true;
+        check(step(taken,scanning,leaks).leftTrigger==0,"the scan's trigger went to the game");
+        // The right stick for the D-pad, decisively and along the way only.
+        const auto stick=[&](float x,float y){P::Input in;in.stickX=x;in.stickY=y;return in;};
+        const Demand camera{prompt_buttons::padDpadUp};
+        P up;
+        check(step(up,stick(0,.6f),camera)==State{},"a push short of `pushed` was the D-pad");
+        check(step(up,stick(0,.8f),camera)==State{dpadUp},"the push up was not D-pad up");
+        check(step(up,stick(.3f,.6f),camera)==State{dpadUp},"the push let go before the stick came to rest");
+        check(step(up,stick(0,.3f),camera)==State{},"the push held on at rest");
+        P sideways;
+        check(step(sideways,stick(.6f,.6f),Demand{prompt_buttons::padDpadRight})==State{},"a diagonal was the D-pad");
+        step(sideways,stick(0,0),{});
+        check(step(sideways,stick(-.8f,0),Demand{prompt_buttons::padDpadLeft})==State{dpadLeft},"left was not D-pad left");
+        check(sideways.claimed()==P::stickLeft,"the push left was not claimed");
+        // Each thumbstick's click for the game's L3 and R3.
+        P clicks;
+        P::Input clicked;clicked.clicks[0]=clicked.clicks[1]=true;
+        check(step(clicks,clicked,Demand{static_cast<uint16_t>(prompt_buttons::padLeftThumb|prompt_buttons::padRightThumb)})==
+                  State{static_cast<uint16_t>(leftThumb|rightThumb)},"L3 + R3 did not go out");
+        // Out of VR play nothing is claimed, and a press held through that must be let go first.
+        P away;
+        check(step(away,face(buttonX),takedown,false)==State{} && !away.claimed(),"a press out of play was claimed");
+        check(step(away,face(buttonX),takedown)==State{},"a press held into play was claimed");
+        step(away,face(0),takedown);
+        check(step(away,face(buttonX),takedown)==State{x},"a fresh press in play was not");
+        check(step(away,face(buttonX),takedown,false)==State{} && !away.claimed(),"a claim outlived play");
+        // Bad readings are no presses.
+        P broken;
+        P::Input bad;bad.balls[0]=bad.balls[1]=std::nanf("");bad.stickX=bad.stickY=std::nanf("");
+        check(step(broken,bad,leaks)==State{} && step(broken,bad,camera)==State{},"a bad reading pressed something");
+    });
+    test("while the game names its X a thrown fist is that X, held for a hold, and thrown down in the air with "
+         "X + A named it is both", [] {
+        using namespace game_pad;
+        using prompt_buttons::Demand;
+        using P=NamedPress;
+        const float dt=1.f/90;
+        // A hand at rest by the body, then thrown at `speed` (m/s) along `way` for `seconds`.
+        const auto throwHand=[&](P& p,Demand d,Vec3 way,float speed,float seconds,bool airborne=false,bool busy=false,
+                                 Vec3 from={.15f,-.35f,-.2f}){
+            P::Input in;in.tracked[0]=true;in.busy[0]=busy;in.airborne=airborne;
+            Vec3 at=from;
+            State most;
+            for(float t=0;t<.2f;t+=dt){in.hands[0]=at;p.update(dt,true,in,d);}
+            for(float t=0;t<seconds-1e-4f;t+=dt){
+                at=at+way*(speed*dt);in.hands[0]=at;
+                const auto s=p.update(dt,true,in,d);
+                most.buttons|=s.buttons;
+            }
+            return most;
+        };
+        const auto rest=[&](P& p,Demand d,float seconds,bool airborne=false){
+            P::Input in;in.tracked[0]=true;in.hands[0]={.15f,-.35f,-.2f};in.airborne=airborne;
+            State last;
+            for(float t=0;t<seconds-1e-4f;t+=dt)last=p.update(dt,true,in,d);
+            return last;
+        };
+        const Demand takedown{prompt_buttons::padX};
+        P punch;
+        check(throwHand(punch,takedown,{0,0,-1},3.5f,.1f)==State{x},"a fist thrown out was not the game's X");
+        check(punch.blows()==1 && punch.presses()==1,"the blow was not counted once");
+        check(rest(punch,takedown,P::tapSeconds+.05f)==State{},"a tap's X held on");
+        // Not with nothing named, nor from a hand whose web holds, nor pulled back in.
+        P none;
+        check(throwHand(none,{},{0,0,-1},3.5f,.1f)==State{} && !none.blows(),"a fist was an X with nothing named");
+        P webbed;
+        check(throwHand(webbed,takedown,{0,0,-1},3.5f,.1f,false,true)==State{},"a hand on its web threw an X");
+        // The recoil: from the arm out, straight back toward the head.
+        P back;
+        const Vec3 out{.15f,-.3f,-.65f};
+        check(throwHand(back,takedown,normalized(Vec3{0,0,0}-out),3.5f,.1f,false,false,out)==State{},
+              "a fist pulled back in was an X");
+        P slow;
+        check(throwHand(slow,takedown,{0,0,-1},1.5f,.2f)==State{},"a slow reach was an X");
+        // One X a blow: a hand still flying sends no second one until it slows or rearmSeconds pass.
+        P twice;
+        throwHand(twice,takedown,{0,0,-1},3.5f,.1f);
+        check(twice.blows()==1,"one blow counted twice");
+        // "Hold [BTN_X] to launch an enemy into the air": the X is held.
+        P launch;
+        const Demand airLaunch{prompt_buttons::padX,false,false,true};
+        check(throwHand(launch,airLaunch,{0,.8f,-.6f},3.5f,.1f)==State{x},"the uppercut was not the game's X");
+        check(rest(launch,airLaunch,P::holdSeconds-.2f)==State{x},"the hold's X let go early");
+        check(rest(launch,airLaunch,.3f)==State{},"the hold's X never let go");
+        // "Swing into the air and hold [BTN_X] + [BTN_A] to Ground Strike": thrown down, in the air.
+        const Demand strike{static_cast<uint16_t>(prompt_buttons::padX|prompt_buttons::padA),false,false,true};
+        P ground;
+        check(throwHand(ground,strike,{0,-1,0},3.5f,.1f,true)==State{static_cast<uint16_t>(x|a)},
+              "a fist thrown down in the air was not X + A");
+        check(rest(ground,strike,P::holdSeconds-.2f,true)==State{static_cast<uint16_t>(x|a)},"the strike let go early");
+        P level;
+        check(throwHand(level,strike,{0,0,-1},3.5f,.1f,true)==State{},"a fist thrown level was the Ground Strike");
+        // On the ground the same prompt's X is a fist's X as any other.
+        P standing;
+        check(throwHand(standing,strike,{0,0,-1},3.5f,.1f)==State{x},"on the ground the fist was not X");
+        // An untracked hand throws nothing; out of play neither.
+        P lost;
+        P::Input untracked;untracked.hands[0]={0,0,-3};
+        check(lost.update(dt,true,untracked,takedown)==State{} && !lost.blows(),"an untracked hand threw an X");
+    });
+    test("every button the game can name is sent in VR play: by its own control while it is named, or as play sends "
+         "it anyway", [] {
+        using namespace game_pad;
+        using prompt_buttons::Demand;
+        using P=NamedPress;
+        // Each NamedPress control, alone and with the other hand's ball (a pair of bumpers or triggers).
+        const uint32_t presses[]={P::controlA,P::controlB,P::controlX,P::controlY,P::leftBall,P::rightBall,
+                                  P::leftClick,P::rightClick,P::stickUp,P::stickLeft,P::stickRight,
+                                  P::leftBall|P::rightBall};
+        std::string missing;
+        for(const auto& control:prompt_buttons::controls()){
+            const Demand d=control.demand;
+            bool answered=false;
+            for(uint32_t pressing:presses){
+                State s;
+                for(uint32_t bit=1;bit<=P::stickRight;bit<<=1)
+                    if(pressing&bit){
+                        const auto one=P::sends(bit,d);
+                        s.buttons|=one.buttons;
+                        s.leftTrigger=std::max(s.leftTrigger,one.leftTrigger);
+                        s.rightTrigger=std::max(s.rightTrigger,one.rightTrigger);
+                    }
+                answered=answered||(s.buttons==d.buttons&&(s.leftTrigger>200)==d.leftTrigger&&
+                                    (s.rightTrigger>200)==d.rightTrigger);
+            }
+            // What play sends anyway: the menu button's Start, X's Back, the heal's D-pad down.
+            answered=answered||prompt_buttons::reachableInPlay(d);
+            if(!answered)missing+=std::string(missing.empty()?"":", ")+control.name;
+        }
+        check(missing.empty(),("VR play cannot send what the game names: "+missing).c_str());
     });
     test("the game's icon ids say what a prompt asks of the pad, in every device family", [] {
         using namespace prompt_buttons;
@@ -7687,6 +7856,65 @@ int main() {
                   !std::strcmp(out,"Hold PAD + LEFT GRIP + PAD + RIGHT GRIP to throw"),
               "a pair of tokens was not rewritten");
         check(!rewrite("[BTN_CANCEL] to go back",out,sizeof out,true),"[BTN_CANCEL] was rewritten");
+    });
+    test("the help lines measured in the game name what the missions ask for, the sticks' presses included", [] {
+        using namespace prompt_buttons;
+        // As ShowText carried them on October 20, the help line a save's load
+        // brings and a police dispatch line after it; and the Oscorp stations'
+        // lines as a player's recordings show them (October 18 and 19).
+        check(forText("Press [STICK_LEFT_PRESS] to <span class='emphasis'>dive</span> and <span "
+                      "class='emphasis'>gain speed</span> while swinging.")==Demand{padLeftThumb},
+              "the dive's [STICK_LEFT_PRESS] named no L3");
+        check(forText("[STICK_RIGHT_PRESS]")==Demand{padRightThumb},"[STICK_RIGHT_PRESS]");
+        check(forText("Press [FUNC_MELEE] to attack")==Demand{padX},"[FUNC_MELEE] is the melee's X");
+        check(!forText("<span class='emphasis'>Police Dispatch:</span> All officers on alert, a kidnapping was "
+                       "just reported.").any(),"a subtitle named a button");
+        const auto leaks=forText("Hold [BTN_L2] and tap [BTN_R1] to fire webs and seal the leaks.");
+        check(leaks.leftTrigger&&!leaks.rightTrigger&&leaks.buttons==padRightShoulder&&leaks.hold,
+              "the leaks' line is not LT held and RB");
+        check(forText("Press [BTN_L1] to disperse vaccine.")==Demand{padLeftShoulder},"the vaccine's LB");
+        check(forText("Press [DPAD_UP] to equip the camera.")==Demand{padDpadUp},"the camera's D-pad up");
+        check(forText("Press [BTN_X] for Vent Takedown.")==Demand{padX},"the vent takedown's X");
+        const auto strike=forText("Swing into the air and hold [BTN_X] + [BTN_A] to Ground Strike.");
+        check(strike.buttons==(padX|padA)&&strike.hold,"the Ground Strike's X + A, held");
+        const auto bomb=forText("Hold [BTN_R1] to bring up the Gadget Select.");
+        check(bomb.buttons==padRightShoulder&&bomb.hold,"the gadget select's RB, held");
+    });
+    test("what the game names stays live as long as its prompt: a call's two seconds, a channel's text until that "
+         "channel is hidden", [] {
+        using namespace prompt_buttons;
+        LiveDemands d;
+        const uint32_t y=pack(Demand{padY}),x=pack(Demand{padX});
+        const auto leaks=forText("Hold [BTN_L2] and tap [BTN_R1] to fire webs and seal the leaks.");
+        // A prompt call: liveMs after the last call that named or raised it, until its manager clears it.
+        d.call(1000,y,false);
+        check(d.demand(2000)==Demand{padY},"a call's demand went within its two seconds");
+        d.call(2900,0,false);
+        check(d.demand(4800)==Demand{padY},"a raise did not keep it");
+        check(!d.demand(4901).any(),"a call's demand outlived liveMs");
+        d.call(5000,y,false);d.call(5100,0,true);
+        check(!d.demand(5200).any(),"its manager's clear did not end it");
+        // The help line on channel 7, up for as long as its mission's timer: until HideText(7).
+        d.text(10000,7,pack(leaks),false);
+        check(d.demand(40000)==leaks,"a help line went while it was still shown");
+        // A subtitle on channel 1 and its own HideText leave it.
+        d.text(41000,1,0,false);d.text(42000,1,0,true);
+        check(d.demand(43000)==leaks,"another channel's HideText ended the help line");
+        d.text(44000,7,0,true);
+        check(!d.demand(44001).any(),"HideText of its own channel did not end it");
+        // Another text on the channel replaces it, one that names nothing as well.
+        d.text(50000,7,x,false);d.text(51000,7,0,false);
+        check(!d.demand(51001).any(),"a text that named nothing left the one before it standing");
+        // channelMs at most with no call.
+        d.text(60000,3,x,false);
+        check(d.demand(60000+LiveDemands::channelMs)==Demand{padX},"a channel's text went before channelMs");
+        check(!d.demand(60001+LiveDemands::channelMs).any(),"a channel's text outlived channelMs");
+        // A call's and a channel's together; a channel out of range is no channel.
+        d.text(200000,2,x,false);d.call(200000,y,false);d.text(200000,LiveDemands::channels,pack(leaks),false);
+        const auto both=d.demand(200500);
+        check(both.buttons==(padX|padY)&&!both.leftTrigger,"the two together, or a channel out of range taken");
+        d.clear();
+        check(!d.demand(200600).any(),"clear left something live");
     });
     test("the QTE's own handles: the D-pad, a stick to move, and the keyboard's keys", [] {
         using namespace prompt_buttons;
