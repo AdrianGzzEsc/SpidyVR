@@ -471,8 +471,8 @@ the view turns onto the next face at 4 radians a second and the swing carries
 the body 0.85 m on along it. Head clearance casts 0.75 m further and takes up
 to 32 passes between opposing walls while climbing close.
 
-The SPIDY VR tab's settings that no launcher option carries (HAND WALL
-CLIMBING, WALL CAMERA DISTANCE) are kept by the stereo module itself:
+The SPIDY VR tab's settings that no launcher option carries (NEAR CLIP, HAND
+WALL CLIMBING, WALL CAMERA DISTANCE) are kept by the stereo module itself:
 `vr_settings::tabOnlyText` lines in `%APPDATA%\Spidy\spidy_vr.ini`, read as VR
 starts and written when the tab changes one (`game_xr.cpp`, `tabOnlyPath`). A
 file beside the module would not do: it runs from a copy staged per build
@@ -1031,6 +1031,13 @@ shading inputs shared by every view of a frame, which carry the key-light shadow
 setup and a camera position available to every shader. Moving the view lines
 that work up with the headset. That view now covers a wider field of view than
 the stock camera, which may cost some frame rate; compare with `-StockMonitorView`.
+
+That view on the head, and the eyes, take NEAR CLIP's near plane (2 cm unless
+the player chose another, 1 to 10 cm; `near_clip.hpp`, set by `game_xr.cpp` as
+the settings apply) instead of the stock camera's 10 cm, which cut off hands
+held up before the face. The engine's depth is reversed, so the nearer plane
+costs no precision far away. Pull request 22 (iplusdvr), tried by its author in
+a headset.
 
 Since October 10's eighth build the game does that work for its view but does
 not render it while you are immersive, both eyes are live and no game screen

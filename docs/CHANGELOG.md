@@ -3,9 +3,33 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 20): hand wall climbing, experimental - Adrian's
-pull request 24 (AdrianGzzEsc).** You: "review and merge or fix the open
-prs".
+**Latest build (October 20, second): NEAR CLIP - pull request 22
+(iplusdvr).** You: "review and merge or fix the open prs".
+
+- **NEAR CLIP, the last row under DISPLAY: how near the eyes the headset
+  still shows things, 2 cm unless you change it (1, 1.5, 2, 3, 5, 7.5 or 10
+  cm).** Spidy used to keep the game's own camera's near plane, 10 cm: right
+  for a camera behind the hero, but on the head it cut off hands held up
+  before the face. The head's view and both eyes take it while you are
+  immersive; the game screen and menus keep the game's. The engine's depth
+  is reversed, so the nearer plane costs no precision far away, and the
+  hero's head is already shrunk to a millimetre in VR, so its inside does not
+  show. The author tried it in a headset.
+- **What the review changed.** The row came first in the tab, above WEBS;
+  it is under DISPLAY now. The setting went into a file beside the stereo
+  module, which runs from a copy staged per build, so every update would
+  have reset it; and the render thread read that file every half second. It
+  is kept in `%APPDATA%\Spidy\spidy_vr.ini` with the tab's other own
+  settings (see the build before), and the XR worker hands it to the lenses
+  (`near_clip::set`) as the settings apply. `tools/probe_menu.py` steps past
+  the new row.
+- **Checked:** core tests (new: the near clip's choices and range, and its
+  line in the tab's file), the launcher's, all six protocol suites. Not run
+  here in the game or a headset.
+
+**Earlier build (October 20, first): hand wall climbing, experimental -
+Adrian's pull request 24 (AdrianGzzEsc).** You: "review and merge or fix the
+open prs".
 
 - **HAND WALL CLIMBING, under EXPERIMENTAL, off by default.** On a wall with
   the left stick at rest the view stays upright beside it, a little

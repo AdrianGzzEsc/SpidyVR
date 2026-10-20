@@ -9,6 +9,7 @@
 #include "spidy/native_hud.hpp"
 #include "spidy/native_view.hpp"
 #include "spidy/native_webs.hpp"
+#include "spidy/near_clip.hpp"
 #include <MinHook.h>
 #include <atomic>
 #include <cstdint>
@@ -17,6 +18,15 @@
 #include <windows.h>
 using namespace spidy;
 using native_view::Descriptor;
+// NEAR CLIP's near plane for the head's and the eyes' lenses in immersive VR
+// (near_clip.hpp), metres: the XR worker sets it, each frame's lenses read it.
+std::atomic<float> nearClip{.02f};
+void spidy::near_clip::set(int millimetres) {
+    nearClip.store(static_cast<float>(std::clamp(millimetres, 10, 100)) / 1000, std::memory_order_relaxed);
+}
+float spidy::near_clip::metres() {
+    return nearClip.load(std::memory_order_relaxed);
+}
 struct Config {
     uint32_t magic, version, bytes, pid;
     uint64_t base;
@@ -1186,10 +1196,13 @@ bool activeView(const Descriptor* incoming, Descriptor& out) {
     bool placed = head.viewed;
     if (placed) {
         out = stock;
-        // Keep the stock camera's clip planes and temporal jitter.
-        reinterpret_cast<Lens>(base + 0x187bb00)(&out, stock.nearZ(), stock.farZ(), lens.left, lens.right,
-                                                 lens.top, lens.bottom, 0, 0, stock.values[0x428 / 4],
-                                                 stock.values[0x42c / 4], false, false);
+        // Keep the stock camera's far plane and temporal jitter. Its near
+        // plane, 10 cm, suits a camera behind the hero; on the head it cut
+        // off hands held up before the face (NEAR CLIP).
+        reinterpret_cast<Lens>(base + 0x187bb00)(&out, near_clip::metres(), stock.farZ(), lens.left,
+                                                 lens.right, lens.top, lens.bottom, 0, 0,
+                                                 stock.values[0x428 / 4], stock.values[0x42c / 4], false,
+                                                 false);
         reinterpret_cast<SetPose>(base + 0x187ca10)(&out, pose.data());
         placed = native_view::valid(out);
     }
@@ -1444,7 +1457,7 @@ void placeEyes() {
             pose[14] += placed.offset.z;
             auto aligned = main;
             reinterpret_cast<Lens>(base + 0x187bb00)(
-                &aligned, main.nearZ(), main.farZ(), lens.left, lens.right, lens.top, lens.bottom,
+                &aligned, near_clip::metres(), main.farZ(), lens.left, lens.right, lens.top, lens.bottom,
                 0, 0, main.values[0x428 / 4], main.values[0x42c / 4], false, false);
             reinterpret_cast<SetPose>(base + 0x187ca10)(&aligned, pose.data());
             if (native_view::valid(aligned)) {
@@ -1506,8 +1519,9 @@ void placeEyes() {
             const float aspect = static_cast<float>(config.width) / config.height;
             const auto& fov = desired.eyes[index].fov;
             const auto jitter = eyeJitter();
+            const float nearZ = controlled && desired.enabled == 1 ? near_clip::metres() : main.nearZ();
             reinterpret_cast<Lens>(base + 0x187bb00)(
-                &descriptor, main.nearZ(), main.farZ(), controlled ? std::tan(fov[0]) : -aspect,
+                &descriptor, nearZ, main.farZ(), controlled ? std::tan(fov[0]) : -aspect,
                 controlled ? std::tan(fov[1]) : aspect, controlled ? -std::tan(fov[3]) : -1,
                 controlled ? -std::tan(fov[2]) : 1, 0, 0, jitter[0], jitter[1], false, false);
             reinterpret_cast<SetPose>(base + 0x187ca10)(&descriptor, pose.data());

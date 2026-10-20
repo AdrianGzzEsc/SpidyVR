@@ -31,6 +31,8 @@ constexpr const char* depthChoices[] = {"OFF", "LOW", "MEDIUM", "HIGH"};
 constexpr const char* wallDistanceChoices[] = {"20 CM", "25 CM", "30 CM", "40 CM",
                                                "50 CM", "60 CM", "75 CM", "100 CM"};
 static_assert(std::size(wallDistanceChoices) == std::size(wallDistances));
+constexpr const char* nearClipChoices[] = {"1 CM", "1.5 CM", "2 CM", "3 CM", "5 CM", "7.5 CM", "10 CM"};
+static_assert(std::size(nearClipChoices) == std::size(nearClips));
 constexpr int screenSizes[] = {0, 1, 2};
 constexpr int hudSizes[] = {0, 1, 2, 3};
 constexpr int depthSteps[] = {0, 1, 2, 3};
@@ -63,6 +65,8 @@ std::span<const int> steps(Item item) {
         return depthSteps;
     case Item::wallDistance:
         return wallDistances;
+    case Item::nearClip:
+        return nearClips;
     default:
         return {};
     }
@@ -89,6 +93,8 @@ float numberOf(Item item, const Values& v) {
         return static_cast<float>(v.screenDepth);
     case Item::wallDistance:
         return static_cast<float>(v.wallDistance);
+    case Item::nearClip:
+        return static_cast<float>(v.nearClipMm);
     default:
         return 0;
     }
@@ -131,11 +137,12 @@ Values sanitized(Values v) {
     v.flipSpeed = std::clamp(v.flipSpeed, 90, 480);
     v.screenDepth = std::clamp(v.screenDepth, 0, 3);
     v.wallDistance = std::clamp(v.wallDistance, wallDistances[0], std::end(wallDistances)[-1]);
+    v.nearClipMm = std::clamp(v.nearClipMm, nearClips[0], std::end(nearClips)[-1]);
     return v;
 }
-const std::array<Row, 24>& rows() {
+const std::array<Row, 25>& rows() {
     // The help fits the game's description column beside the rows.
-    static const std::array<Row, 24> all{{
+    static const std::array<Row, 25> all{{
         {Item::none, "WEBS", nullptr, {}},
         {Item::webStyle, "WEB STYLE",
          "Arcade: webs pass lamp posts, signs and cars, and swings stay above the street.", webStyleChoices},
@@ -164,6 +171,8 @@ const std::array<Row, 24>& rows() {
          "Cutscenes and VIEW: GAME SCREEN get depth. Higher brings them nearer. Off: flat.",
          depthChoices},
         {Item::hud, "HUD", "How large the game's HUD shows in front of you. Off: no HUD in VR.", hudChoices},
+        {Item::nearClip, "NEAR CLIP",
+         "How near your eyes things still show. Nearer keeps your hands in view.", nearClipChoices},
         {Item::none, "BODY", nullptr, {}},
         {Item::calibrate, "CALIBRATE BODY", "Fit Spider-Man to you: pick ON RESUME, then hold both triggers in a T-pose.",
          calibrateChoices},
@@ -234,6 +243,9 @@ bool choose(Item item, int index, Values& v) {
     case Item::wallDistance:
         v.wallDistance = s[index];
         break;
+    case Item::nearClip:
+        v.nearClipMm = s[index];
+        break;
     default:
         return false;
     }
@@ -250,6 +262,7 @@ struct TabOnly {
     int Values::*number;
 };
 constexpr TabOnly tabOnly[] = {
+    {"near_clip_mm", nullptr, &Values::nearClipMm},
     {"hand_climb", &Values::handClimb, nullptr},
     {"wall_distance_cm", nullptr, &Values::wallDistance},
 };

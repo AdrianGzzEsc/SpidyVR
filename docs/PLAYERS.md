@@ -568,7 +568,10 @@ VR settings
   SWINGING ....... the swing speed limit and your weight.
   COMFORT ........ snap turn, smooth turn and controller vibration.
   DISPLAY ........ the game screen's size, its 3D depth and the HUD's size
-                   (OFF hides it in VR).
+                   (OFF hides it in VR). NEAR CLIP: how near your eyes things
+                   still show, 2 cm unless you change it (1 to 10 cm; the
+                   game's own camera keeps 10 cm, which hid hands held up
+                   before your face).
   BODY ........... CALIBRATE BODY: set it to ON RESUME and resume, and the
                    T-pose panel asks for your measurements again.
   EXPERIMENTAL ... FLIPS (off until you switch it on) lets the left stick
@@ -576,11 +579,11 @@ VR settings
                    HAND WALL CLIMBING (off until you switch it on, above)
                    and its WALL CAMERA DISTANCE.
   Changes apply at once. The launcher starts your next session with them;
-  its options show them too. HAND WALL CLIMBING and WALL CAMERA DISTANCE are
-  only in the tab: Spidy keeps them in %APPDATA%\Spidy\spidy_vr.ini, beside
-  the launcher's own settings. Playing the game on its screen instead of VR
-  is on the pause menu itself: SWITCH TO GAME SCREEN, under RESUME (each
-  session starts in VR).
+  its options show them too. NEAR CLIP, HAND WALL CLIMBING and WALL CAMERA
+  DISTANCE are only in the tab: Spidy keeps them in
+  %APPDATA%\Spidy\spidy_vr.ini, beside the launcher's own settings. Playing
+  the game on its screen instead of VR is on the pause menu itself: SWITCH
+  TO GAME SCREEN, under RESUME (each session starts in VR).
   WEB STYLE: REALISTIC webs are ropes. They bend round whatever comes
   between you and where they stick, lamp posts and signs too, and a swing
   can take you down to just over the street. ARCADE webs go through lamp

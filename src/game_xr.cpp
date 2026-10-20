@@ -32,6 +32,7 @@
 #include "spidy/native_eye_history.hpp"
 #include "spidy/native_hud.hpp"
 #include "spidy/native_webs.hpp"
+#include "spidy/near_clip.hpp"
 #include "spidy/offer_pointing.hpp"
 #include "spidy/presentation_gate.hpp"
 #include "spidy/slow_motion.hpp"
@@ -1137,6 +1138,7 @@ DWORD WINAPI run(void*) {
             rig.handClimb(values.handClimb);
             rig.wallDistance(static_cast<float>(values.wallDistance) / 100.f);
             native_hud::setSize(values.hud);
+            near_clip::set(values.nearClipMm);
             sendSwingSettings();
             if (swingStarted && startPunch && samplePunch) {
                 if (values.punch && !punchStarted) {
