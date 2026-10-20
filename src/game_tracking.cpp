@@ -562,7 +562,7 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
         placed.tilt = unit(yaw.conjugate() * roll * yaw * placed.tilt);
         placed.origin += before.position - placed.toWorld(f.head).position;
         out.wallRoll = rollAngle;
-        out.wallRotate = wallRoll_.engaged();
+        out.wallRotate = wallRoll_.reservesHands();
     }
     // The eyes out of what the world is built of (HeadClearance), and the
     // hands, the webs and the body with them: they stay where the eyes see

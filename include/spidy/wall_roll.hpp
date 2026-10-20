@@ -21,6 +21,7 @@ class WallRollGesture {
         }
         if (!both) {
             engaged_ = false;
+            reserved_ = false;
             return angle_;
         }
         if (!engaged_) {
@@ -41,21 +42,26 @@ class WallRollGesture {
         const float deflection = (angles[0] + angles[1]) * .5f;
         // Ten degrees of neutral play; full speed from 45 degrees of wrist roll.
         const float amount = std::clamp((std::abs(deflection) - .17453293f) / .61086524f, 0.f, 1.f);
+        // Both grips alone may mean one wall hold and one web shot. Reserve
+        // them only after a deliberate wrist roll, until either is released.
+        reserved_ |= amount > 0;
         angle_ = std::remainder(angle_ + std::copysign(amount * 1.5707963f * frame.seconds, deflection),
                                 6.2831853f);
         return angle_;
     }
     float angle() const { return angle_; }
     bool engaged() const { return engaged_; }
+    bool reservesHands() const { return reserved_; }
     void suspend() {
         engaged_ = false;
+        reserved_ = false;
         held_[0] = held_[1] = false;
     }
     void reset() { *this = {}; }
   private:
     Quat neutral_[2]{};
     Vec3 axis_{0, 0, -1};
-    bool held_[2]{}, engaged_{};
+    bool held_[2]{}, engaged_{}, reserved_{};
     float angle_{};
 };
 } // namespace spidy

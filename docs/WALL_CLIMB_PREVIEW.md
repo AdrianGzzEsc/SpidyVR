@@ -7,6 +7,11 @@ extracted preview folder together.
 
 ## Changes in Preview 11
 
+Updated: hold a wall with one grip and shoot webs with the free hand,
+without releasing the wall grip. Both hands and both WEB BUTTON mappings
+work. Simply holding both grips no longer reserves both hands for camera
+roll; a deliberate wrist roll activates that reservation instead.
+
 The default WALL CAMERA DISTANCE is now **40 cm**. You can still choose any
 of the existing distance options in the settings menu.
 
@@ -82,7 +87,9 @@ with hand pulls limited to 3 m/s.
 Attached hands stay open and give one short vibration on each new contact.
 The existing vibration setting controls its strength. Both physical grips
 work regardless of the WEB BUTTON mapping. Existing webs retain their
-controls. A free hand away from the wall can shoot a web. Press **A** to
+controls. A free hand away from the wall can shoot, hold, release and reshoot
+a web while the other hand keeps gripping the wall. Its web-ball button is
+also available. Press **A** to
 jump away. Tracking loss releases that hand and requires a fresh grip press.
 
 ## Camera roll and wall running
@@ -92,6 +99,11 @@ climbing view along the wall. Each two-grip hold captures a fresh neutral
 wrist pose. Past roughly 10 degrees of tilt, the view turns, up to 90 degrees
 per second at 45 degrees. Return toward neutral to stop, or release either
 grip to lock the angle. Sideways and upside-down hand pulls still work.
+
+Capturing the neutral pose leaves the free hand's web controls available.
+Once you deliberately roll past the neutral zone, both hands are reserved
+for the roll gesture until either grip is released. This keeps returning
+the wrists to neutral from accidentally firing a web during that gesture.
 
 Push the left stick to wall run. The starting view and joystick direction
 choose the camera's heading once, when a forward or sideways run begins.
@@ -142,7 +154,7 @@ No new original-game climbing animation cycle is integrated by this update.
 
 ## Validation
 
-Windows Release build: passed. Native core: **395/395** tests. Launcher:
+Windows Release build: passed. Native core: **396/396** tests. Launcher:
 **24/24** checks. Python protocols: **137/137** tests across six suites.
 The packaged runtime imports, source whitespace, and module/source copies
 are also checked during packaging.
@@ -163,6 +175,10 @@ continuous full head turns and pitches through vertical. Preview 11 also
 checks forward-to-backward reversals with zero, one and six centre frames
 in upright, sideways and upside-down views, backward and diagonal-backward
 starts after a full stop, and the return to climbing after a sustained release.
+Free-hand web regression checks exercise the same input reservation used by
+the game adapter: either wall hand, both web-button mappings and both web
+styles; repeated shots and releases preserve the wall hold. They also check
+free-hand web-ball input and deliberate-roll reservation/release.
 
 **Preview 11 has not yet been played in the game or tested in a headset.**
 Earlier previews were played by the user. Synthetic corner tests do not

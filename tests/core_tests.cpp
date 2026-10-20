@@ -1340,6 +1340,83 @@ int main() {
             check(body.position.y >= rested - .01f, "releasing a climb dropped the sticky body");
         }
     });
+    test("wall grip leaves the other hand free to shoot, hold and reshoot in either button mapping", [] {
+        for (int wallHand : {0, 1}) {
+            for (bool triggerWebs : {false, true}) {
+                for (bool arcade : {false, true}) {
+                    Building world;
+                    Swing solver(walled());
+                    solver.allowHandClimb(true);
+                    solver.allowArcade(arcade);
+                    GameTrackingRig rig;
+                    rig.handClimb(true);
+                    rig.triggerWebs(triggerWebs);
+                    auto f = trackedFrame();
+                    for (auto& h : f.hands) h.squeeze = h.trigger = 0;
+                    const SurfaceHold wall{{-1, 0, 0}, {5, 11, 0}, 0, false};
+                    Body body{{4.1f, 11, 0}, {1, 0, 0}, false};
+                    holdFor(rig, f, body.position - Vec3{0, 1, 0}, wall, .7f);
+                    const int freeHand = 1 - wallHand;
+                    GameMotionFrame motion;
+                    Input routed;
+                    unsigned reserved{};
+                    auto advance = [&] {
+                        motion = holdFor(rig, f, body.position - Vec3{0, 1, 0}, wall, 1.f / 90);
+                        routed = motion.swing;
+                        routed.wallRotate = motion.wallRotate;
+                        for (int i = 0; i < 2; ++i) {
+                            routed.hands[i].wallGrip = f.hands[i].squeeze;
+                            routed.hands[i].wallPosition = {i == wallHand ? 4.95f : 3.5f, 11, 0};
+                        }
+                        routed.hands[freeHand].aim = {{3.5f, 14, 0}, arc({0, 0, -1}, {1, 0, 0})};
+                        reserved = solver.reserveWallHands(routed, world);
+                        const auto step = solver.predictNativeStep(1.f / 90, routed, world, body);
+                        check(step.valid, "wall/web prediction failed");
+                        body = {step.target, step.velocity, false};
+                    };
+                    advance();
+                    advance();
+                    f.hands[wallHand].squeeze = 1;
+                    advance();
+                    check(solver.climbingHands() == (1u << wallHand), "test wall hand failed to attach");
+                    for (int shot = 0; shot < 2; ++shot) {
+                        if (triggerWebs) f.hands[freeHand].trigger = 1;
+                        else f.hands[freeHand].squeeze = 1;
+                        for (int frame = 0; frame < 10; ++frame) {
+                            advance();
+                            check(!motion.wallRotate, "neutral grips claimed a roll and blocked the free hand");
+                            check(reserved == (1u << wallHand), "reservation blocked the free hand");
+                            near(routed.hands[wallHand].grip, 0);
+                            near(routed.hands[wallHand].trigger, 0);
+                            near(routed.hands[freeHand].grip, 1);
+                            check(solver.webs()[freeHand].attached, "free hand could not shoot or hold its web");
+                            check(solver.climbingHands() == (1u << wallHand), "web shot released the wall hand");
+                            check(!solver.webs()[wallHand].attached, "wall hand shot an unintended web");
+                        }
+                        f.hands[freeHand].squeeze = f.hands[freeHand].trigger = 0;
+                        advance();
+                        check(!solver.webs()[freeHand].attached, "free hand could not release its web");
+                        check(solver.climbingHands() == (1u << wallHand), "web release dropped the wall hand");
+                    }
+                    // Web balls use the other mapped button; it also remains available.
+                    if (triggerWebs) f.hands[freeHand].squeeze = 1;
+                    else f.hands[freeHand].trigger = 1;
+                    advance();
+                    near(routed.hands[freeHand].trigger, 1);
+                    check(reserved == (1u << wallHand), "free-hand web-ball input was reserved");
+                    f.hands[freeHand].squeeze = 1;
+                    advance(); // capture neutral for an intentional two-grip roll
+                    for (auto& h : f.hands) h.grip.orientation = Quat::around({0, 0, -1}, .78539816f);
+                    advance();
+                    check(motion.wallRotate && reserved == 3, "deliberate wrist roll did not reserve both grips");
+                    for (auto& h : routed.hands) {
+                        near(h.grip, 0);
+                        near(h.trigger, 0);
+                    }
+                }
+            }
+        }
+    });
     test("hand climbing: two hands share movement, handovers and jumps release holds", [] {
         constexpr float dt = 1.f / 60;
         Building w;
@@ -1743,18 +1820,26 @@ int main() {
             f.seconds = dt;
             near(gesture.update(true, f), 0);
             check(gesture.engaged(), "two grips did not engage wall roll");
+            check(!gesture.reservesHands(), "neutral grip capture blocked web controls");
             for (auto& h : f.hands)
                 h.grip.orientation = Quat::around({0, 0, -1}, direction * .78539816f);
             for (int i = 0; i < 90; ++i)
                 gesture.update(true, f);
             near(gesture.angle(), direction * 1.5707963f, .002f);
+            check(gesture.reservesHands(), "deliberate roll did not reserve controls");
+            for (auto& h : f.hands) h.grip.orientation = {};
+            gesture.update(true, f);
+            check(gesture.reservesHands(), "returning wrists to neutral unreserved a held roll");
             f.hands[0].squeeze = 0;
             const float held = gesture.update(true, f);
             check(!gesture.engaged(), "one released grip kept turning");
+            check(!gesture.reservesHands(), "released grip kept web controls reserved");
             for (int i = 0; i < 90; ++i)
                 gesture.update(true, f);
             near(gesture.angle(), held, .001f);
             f.hands[0].squeeze = 1;
+            for (auto& h : f.hands)
+                h.grip.orientation = Quat::around({0, 0, -1}, direction * .78539816f);
             for (int i = 0; i < 20; ++i)
                 gesture.update(true, f);
             near(gesture.angle(), held, .001f);

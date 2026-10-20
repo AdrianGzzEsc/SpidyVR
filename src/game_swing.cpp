@@ -279,13 +279,9 @@ void visit(const native_rays::QueryContext& world) {
     else
         coast();
     auto in = focused ? input(c) : Input{};
-    unsigned wallHands{};
-    for (unsigned i = 0; i < 2; ++i)
-        if (focused && (in.wallRotate || solver.wallHand(i, in, world))) {
-            wallHands |= 1u << i;
-            // Reserve the physical grip before web shots, target grabs and punches.
-            in.hands[i].grip = in.hands[i].trigger = 0;
-        }
+    // Reserve wall holds and deliberate wrist rolls before other actions.
+    // Simply holding both grips must leave an off-wall hand free to web.
+    const unsigned wallHands = solver.reserveWallHands(in, world);
     game_warp::observe(steppedView | (focused ? 2u : 0u), false);
     // The player for picks, throws and aim previews: where it stands, and its
     // speed when moving.
