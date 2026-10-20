@@ -571,7 +571,8 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     // hands, the webs and the body with them: they stay where the eyes see
     // them.
     if (finite(bodyCentre_)) {
-        out.headPush = clearance_.update(f.seconds, bodyCentre_, placed.toWorld(f.head).position);
+        const bool closeClimb = handClimb_ && holds && !standing_ && std::abs(held.y) < .5f;
+        out.headPush = clearance_.update(f.seconds, bodyCentre_, placed.toWorld(f.head).position, closeClimb);
         placed.origin += out.headPush;
     }
     out.standing = standing_;

@@ -201,6 +201,39 @@ struct Building : TestWorld {
         return id == 7;
     }
 };
+// Convex facade pairs at arbitrary angles, optionally cut by a chamfer.
+struct AngledBuilding : World {
+    std::vector<HeadClearance::Surface> faces;
+    Vec3 nextNormal{};
+    AngledBuilding(float degrees, float side, bool bevel = false) {
+        const float radians = degrees * 3.14159265f / 180;
+        nextNormal = {-std::cos(radians), 0, side * std::sin(radians)};
+        faces = {{{5, 0, 0}, {-1, 0, 0}}, {{5, 0, 0}, nextNormal},
+                 {{25, 0, 0}, {1, 0, 0}}, {{0, 0, -side * 20}, {0, 0, -side}},
+                 {{0, 0, 0}, {0, -1, 0}}, {{0, 30, 0}, {0, 1, 0}}};
+        if (bevel)
+            faces.push_back({{5, 0, -side * .4f}, normalized(Vec3{-1, 0, side})});
+    }
+    std::optional<RayHit> raycast(Vec3 from, Vec3 way, float reach) const override {
+        float enter = 0, leave = reach;
+        Vec3 normal{};
+        for (const auto& face : faces) {
+            const float distance = dot(from - face.point, face.normal), speed = dot(way, face.normal);
+            if (std::abs(speed) < 1e-7f) {
+                if (distance > 0) return {};
+                continue;
+            }
+            const float t = -distance / speed;
+            if (speed < 0 && t > enter) { enter = t; normal = face.normal; }
+            if (speed > 0) leave = std::min(leave, t);
+            if (enter > leave) return {};
+        }
+        if (enter <= 0 || length(normal) < .5f) return {};
+        return RayHit{from + way * enter, normal, 71, true};
+    }
+    MoveResult sweep(Vec3, Vec3 to, float) const override { return {to, {}, false}; }
+    bool exists(uint64_t id) const override { return id == 71; }
+};
 SwingConfig walled() {
     SwingConfig c;
     c.walls = true;
@@ -1501,6 +1534,206 @@ int main() {
         hand.wallGrip = 0;
         step();
         check(!s.climbingHands(), "palm stayed attached after releasing its grip");
+    });
+    test("grip climbing follows angled, bevelled and faceted rounded corners in either direction", [] {
+        constexpr float dt = 1.f / 90;
+        for (float degrees : {15.f, 30.f, 45.f, 60.f, 90.f, 120.f, 135.f, 150.f}) {
+            for (float side : {-1.f, 1.f}) {
+                for (int shape : {0, 1, 2}) {
+                    if (shape && degrees != 90) continue;
+                    AngledBuilding world(degrees, side, shape == 1);
+                    if (shape == 2) {
+                        const Vec3 centre{6, 0, -side};
+                        for (float angle : {15.f, 30.f, 45.f, 60.f, 75.f}) {
+                            const float radians = angle * 3.14159265f / 180;
+                            const Vec3 n{-std::cos(radians), 0, side * std::sin(radians)};
+                            world.faces.push_back({centre + n, n});
+                        }
+                    }
+                    Swing s(walled());
+                    s.allowHandClimb(true);
+                    Input in;
+                    Body body{{4.1f, 10, -side * 1.4f}, {1, 0, 0}, false};
+                    auto step = [&] {
+                        const auto next = s.predictNativeStep(dt, in, world, body);
+                        check(next.valid, "angled-corner prediction failed");
+                        body = {next.target, next.velocity, false};
+                    };
+                    step();
+                    auto& hand = in.hands[0];
+                    hand.tracked = true;
+                    hand.wallPosition = {4.95f, 10, body.position.z};
+                    step();
+                    hand.wallGrip = 1;
+                    step();
+                    check(s.climbingHands() == 1, "angled-corner palm failed to attach");
+                    for (int i = 0; i < 540; ++i) {
+                        const Vec3 n = s.wall().normal;
+                        const Vec3 along = normalized(cross(Vec3{0, 1, 0}, n)) * side;
+                        hand.gripRelativeToHead -= along * dt;
+                        hand.wallPosition = body.position - n * (s.wall().distance - .05f);
+                        step();
+                        if (!s.wall().on)
+                            throw std::runtime_error("lost angled wall: " + std::to_string(degrees));
+                    }
+                    if (dot(s.wall().normal, world.nextNormal) < .98f)
+                        throw std::runtime_error("did not reach angled face: " + std::to_string(degrees));
+                    // holdWall intentionally keeps up to 10 cm of outward
+                    // slack after moving across a curved/segmented facade.
+                    check(s.wall().distance >= .85f && s.wall().distance <= 1.01f,
+                          "curved corner exceeded the normal body-clearance range");
+                }
+            }
+        }
+    });
+    test("climbing corner camera stays outside projecting trim with delayed world-ray feedback", [] {
+        struct TrimmedCorner : World {
+            AngledBuilding facade;
+            Building trim;
+            TrimmedCorner(float angle, float side) : facade(angle, side) {
+                trim.low = {4.4f, 10.2f, -.6f};
+                trim.high = {5.6f, 11.1f, .6f};
+            }
+            std::optional<RayHit> raycast(Vec3 from, Vec3 way, float reach) const override {
+                const auto a = facade.raycast(from, way, reach), b = trim.raycast(from, way, reach);
+                if (!a) return b;
+                if (!b) return a;
+                return length(a->point - from) < length(b->point - from) ? a : b;
+            }
+            MoveResult sweep(Vec3, Vec3 to, float) const override { return {to, {}, false}; }
+            bool exists(uint64_t id) const override { return facade.exists(id) || trim.exists(id); }
+            bool inside(Vec3 p) const {
+                bool main = true;
+                for (const auto& face : facade.faces)
+                    main &= dot(p - face.point, face.normal) < -.001f;
+                return main || (p.x > trim.low.x + .001f && p.x < trim.high.x - .001f &&
+                                p.y > trim.low.y + .001f && p.y < trim.high.y - .001f &&
+                                p.z > trim.low.z + .001f && p.z < trim.high.z - .001f);
+            }
+        };
+        constexpr float dt = 1.f / 90;
+        for (float angle : {45.f, 90.f, 120.f}) {
+            for (float side : {-1.f, 1.f}) {
+                TrimmedCorner world(angle, side);
+                Swing s(walled());
+                s.allowHandClimb(true);
+                Input in;
+                Body body{{4.1f, 10, -side * 1.4f}, {1, 0, 0}, false};
+                GameTrackingRig rig;
+                rig.handClimb(true);
+                auto frame = trackedFrame();
+                frame.head.position.y = 2.05f;
+                for (auto& hand : frame.hands) hand.squeeze = 0;
+                std::vector<HeadClearance::Surface> delayed;
+                GameMotionFrame view;
+                auto step = [&] {
+                    const auto next = s.predictNativeStep(dt, in, world, body);
+                    body = {next.target, next.velocity, false};
+                    const auto wall = s.wall();
+                    const Vec3 feet = body.position - Vec3{0, 1, 0};
+                    const SurfaceHold hold{wall.normal, feet - wall.normal * wall.distance, 0, false};
+                    rig.bodyCentre(headCollisionOrigin(feet, {0, 1, 0}, hold, true));
+                    rig.surfaceFound({hold.anchor, hold.normal}, true);
+                    for (const auto& hit : delayed) rig.surfaceFound(hit);
+                    delayed.clear();
+                    ++frame.predictedDisplayTime;
+                    view = rig.update(frame, feet, {1, 0, 0}, true, {0, 1, 0}, true, hold);
+                    const auto q = view.headPose.orientation;
+                    for (const auto& ray : rig.clearanceRays(q.rotate({0, 0, -1}), q.rotate({1, 0, 0}),
+                                                            q.rotate({0, 1, 0}))) {
+                        if (ray.distance < .01f) continue;
+                        const auto hit = world.raycast(ray.origin, ray.direction, ray.distance);
+                        if (hit && dot(hit->normal, ray.direction) < -.2f)
+                            delayed.push_back({hit->point, hit->normal});
+                    }
+                };
+                step();
+                auto& hand = in.hands[0];
+                hand.tracked = true;
+                hand.wallPosition = {4.95f, 10, body.position.z};
+                step();
+                hand.wallGrip = 1;
+                step();
+                for (int i = 0; i < 540; ++i) {
+                    const Vec3 n = s.wall().normal;
+                    hand.gripRelativeToHead -= normalized(cross(Vec3{0, 1, 0}, n)) * (side * dt);
+                    hand.wallPosition = body.position - n * (s.wall().distance - .05f);
+                    step();
+                    check(s.wall().on, "projecting corner trim dropped the wall hold");
+                    if (world.inside(view.headPose.position))
+                        throw std::runtime_error("camera entered corner trim at " + std::to_string(angle) +
+                                                 " degrees, frame " + std::to_string(i));
+                    check(!view.standing, "trimmed corner started the wall-running view");
+                }
+                near(dot(s.wall().normal, world.facade.nextNormal), 1, .01f);
+            }
+        }
+    });
+    test("close climbing clearance resolves both walls of acute inside corners", [] {
+        for (float degrees : {30.f, 60.f, 90.f, 120.f, 135.f, 150.f}) {
+            const float angle = degrees * 3.14159265f / 180;
+            const Vec3 first{1, 0, 0}, second{std::cos(angle), 0, std::sin(angle)};
+            const Vec3 point{0, 1, 0}, body = point + normalized(first + second) * 2.f;
+            HeadClearance clearance;
+            clearance.found({point, first});
+            clearance.found({point, second});
+            const Vec3 safe = point + clearance.update(1.f / 90, body, point, true);
+            check(dot(safe - point, first) >= HeadClearance::margin - .001f &&
+                  dot(safe - point, second) >= HeadClearance::margin - .001f,
+                  "clearing one angled wall put the camera inside the other");
+            check(length(safe - point) < 1.f, "inside corner overcorrected the camera");
+        }
+    });
+    test("climbing camera clears projecting pillars using the native collision centre", [] {
+        for (float turn : {0.f, .6f, 1.5707963f}) {
+            const Quat rotation = Quat::yaw(turn);
+            const Vec3 feet = rotation.rotate({4.1f, 9, 0});
+            const Vec3 n = rotation.rotate({-1, 0, 0});
+            const SurfaceHold wall{n, rotation.rotate({5, 9, 0}), 0, false};
+            const Vec3 pillar = rotation.rotate({4.4f, 10, 0});
+            const Vec3 origin = headCollisionOrigin(feet, {0, 1, 0}, wall, true);
+            near(length(origin - (feet + Vec3{0, 1, 0})), 0, .001f);
+            near(length(headCollisionOrigin(feet, {0, 1, 0}, wall, false) - (wall.anchor + n * .5f)), 0);
+            GameTrackingRig rig;
+            rig.handClimb(true);
+            auto frame = trackedFrame();
+            for (auto& hand : frame.hands) hand.squeeze = 0;
+            GameMotionFrame view;
+            for (int i = 0; i < 90; ++i) {
+                ++frame.predictedDisplayTime;
+                rig.bodyCentre(origin);
+                rig.surfaceFound({wall.anchor, n}, true);
+                rig.surfaceFound({pillar, n});
+                view = rig.update(frame, feet, -n, true, {0, 1, 0}, true, wall);
+            }
+            check(dot(view.headPose.position - pillar, n) >= HeadClearance::margin - .001f,
+                  "pillar front was ignored and the climbing camera entered it");
+            near(view.headPose.position.y, feet.y + 1.f, .01f);
+            check(!view.standing, "pillar forced the wall-running view");
+            near(length(view.headPush), .4f, .01f);
+            const Vec3 left{view.eyes[0][12], view.eyes[0][13], view.eyes[0][14]};
+            const Vec3 right{view.eyes[1][12], view.eyes[1][13], view.eyes[1][14]};
+            near(length(left - right), .064f, .001f);
+        }
+    });
+    test("only the close climbing camera anticipates nearby corner obstacles", [] {
+        GameTrackingRig rig;
+        rig.handClimb(true);
+        auto frame = trackedFrame();
+        for (auto& hand : frame.hands) hand.squeeze = 0;
+        const Vec3 feet{0, 9, -4.1f};
+        const SurfaceHold wall{{0, 0, 1}, {0, 10, -5}, 0, false};
+        holdFor(rig, frame, feet, {}, .3f);
+        auto rays = rig.clearanceRays({0, 0, -1}, {1, 0, 0}, {0, 1, 0});
+        near(rays[1].distance, .3f);
+        holdFor(rig, frame, feet, wall, .7f);
+        rays = rig.clearanceRays({0, 0, -1}, {1, 0, 0}, {0, 1, 0});
+        near(rays[1].distance, 1.05f);
+        near(rays[2].distance, .97f);
+        frame.hands[0].stickY = 1;
+        holdFor(rig, frame, feet, wall, .4f);
+        rays = rig.clearanceRays({0, 0, -1}, {1, 0, 0}, {0, 1, 0});
+        near(rays[1].distance, .3f);
     });
     test("outside corners carry the body past first contact with the next face and then stop", [] {
         for (float direction : {-1.f, 1.f}) {

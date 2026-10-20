@@ -1447,8 +1447,11 @@ DWORD WINAPI run(void*) {
                         const Vec3 held = normalized(hold.normal);
                         const Vec3 bodyUp = swingState.owned ? Vec3{0, 1, 0} : normalized(heroUp);
                         const bool holds = finite(held) && length(held) > .5f && finite(hold.anchor);
-                        rig.bodyCentre(holds ? hold.anchor + held * .5f
-                                             : feet + (length(bodyUp) > .5f ? bodyUp : Vec3{0, 1, 0}));
+                        // A thick corner pillar can cover the old half-metre
+                        // point. Start climbing camera rays inside the actual
+                        // native capsule so its front cannot be ignored.
+                        rig.bodyCentre(
+                            headCollisionOrigin(feet, bodyUp, hold, values.handClimb && swingState.owned));
                         if (holds)
                             rig.surfaceFound({hold.anchor, held}, true);
                         if (rayResults)

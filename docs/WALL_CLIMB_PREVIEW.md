@@ -1,11 +1,37 @@
-# Spidy Wall Climb Finished 2 — ground-camera fix
+# Spidy Wall Climb Corner Preview — angled and obstructed facades
 
 This modified build of Ilya Mezerowsky's Spidy VR mod is based on upstream
 0.4.0, commit c747c184dd97acaddf0db47f1a32f30cebe0d974, merged with the
 working Preview 7 changes saved at e0fcb4c. Keep the whole
 extracted preview folder together.
 
-## Finished build
+## Corner preview
+
+This local preview builds on Finished 2 and improves climbing camera safety
+near pillars, projecting trim and tight inside corners. It has not been
+uploaded to the contribution branch or submitted as a pull request.
+
+Climbing camera safety rays now start from the native collision capsule's
+centre. The old point half a metre from the facade could itself sit inside
+a projecting pillar, causing its front to be ignored. Close climbing also
+checks 75 cm farther ahead and to the sides/up, using the same ray count,
+so upcoming trim is found before the view swings into it.
+
+Close climbing resolves opposing wall planes for more passes at acute
+inside corners. This prevents clearing one wall from leaving the eyes
+inside the other. Ground and wall-running clearance keep their existing
+short ray distances and ordinary constraint passes.
+
+The shared wall detector already follows clean non-right-angle corners.
+Regression worlds now cover 15 to 150 degree facade turns in both
+directions, bevels and faceted rounded corners, plus projecting trim during
+a complete corner turn with one frame of delayed world-ray feedback.
+
+Try the same buildings where the view collided with a corner. Headset play
+is still needed: synthetic shapes do not establish that every game facade
+or ornament has suitable collision geometry.
+
+## Retained finished-build controls
 
 Moving the left stick on ordinary ground or a walkable slope no longer
 starts the wall-run camera alignment. The transition requires a wall or
@@ -71,7 +97,7 @@ frame remain removed.
 ## Start
 
 1. Close the game and any other Spidy session.
-2. Open **Spidy Wall Climb Finished 2.exe**, connect your headset, and start VR.
+2. Open **Spidy Wall Climb Corner Preview.exe**, connect your headset, and start VR.
 3. Enable **Settings → SPIDY VR → EXPERIMENTAL → HAND WALL CLIMBING**.
    Enable it again after restarting VR; the switch lasts for the session.
 4. **WALL CAMERA DISTANCE** sets the close climbing view to 10, 15, 20, 25,
@@ -163,7 +189,7 @@ No new original-game climbing animation cycle is integrated by this update.
 
 ## Validation
 
-Windows Release build: passed. Native core: **397/397** tests. Launcher:
+Windows Release build: passed. Native core: **402/402** tests. Launcher:
 **24/24** checks. Python protocols: **137/137** tests across six suites.
 The packaged runtime imports, source whitespace, and module/source copies
 are also checked during packaging.
@@ -190,7 +216,7 @@ backward, diagonal and neutral stick changes on ground, walkable slopes and
 floor crawl contacts. A wall-run-to-ground test checks that walking and
 strafing after landing preserve the view while following the moving player.
 
-**This finished build has not yet been played in the game or tested in a headset.**
+**This corner preview has not yet been played in the game or tested in a headset.**
 Earlier previews were played by the user. Synthetic corner tests do not
 establish that every game building has suitable collision geometry.
 

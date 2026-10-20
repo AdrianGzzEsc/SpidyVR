@@ -85,6 +85,15 @@ struct SurfaceHold {
     float speed{}; // the player's speed, m/s
     bool crawl{};  // the game's wall crawl: its actor's feet are on the surface
 };
+// The native collision capsule's centre is clear even when a projecting
+// pillar covers the point half a metre off the facade used by the crawl.
+inline Vec3 headCollisionOrigin(Vec3 feet, Vec3 bodyUp, const SurfaceHold& surface, bool physicalClimb) {
+    const Vec3 n = normalized(surface.normal);
+    const bool holds = finite(n) && length(n) > .5f && finite(surface.anchor);
+    if (holds && !(physicalClimb && std::abs(n.y) < .5f))
+        return surface.anchor + n * .5f;
+    return feet + (finite(bodyUp) && length(bodyUp) > .5f ? normalized(bodyUp) : Vec3{0, 1, 0});
+}
 // Standing on a wall (the STAND ON WALLS setting). Once the player walks the
 // surface that holds them (the left stick tilted, slower than wallStrideSpeed:
 // the swing's walk is 6 m/s), or has come to rest on it (slower than
@@ -305,7 +314,8 @@ class GameTrackingRig {
     // After an update: the rays for the next batch, along the head's own
     // look, side and up.
     std::array<HeadClearance::Ray, HeadClearance::rays> clearanceRays(Vec3 look, Vec3 side, Vec3 up) const {
-        return clearance_.next(look, side, up);
+        const bool closeClimb = handClimb_ && !standing_ && length(climbNormal_) > .5f;
+        return clearance_.next(look, side, up, closeClimb ? .75f : 0.f);
     }
     const HeadClearance& clearance() const {
         return clearance_;
