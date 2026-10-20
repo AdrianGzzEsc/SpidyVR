@@ -1115,6 +1115,12 @@ void App::optionsCard(ImVec2 size) {
     option("Controller vibration", "How strongly webs and punches buzz.", S(150), [&] {
         stepCombo("##haptics", kHaptics, kHapticValues, static_cast<int>(std::size(kHapticValues)), &o.haptics);
     });
+    option("Body haptics", "A bHaptics vest, sleeves and visor feel webs, blows, wind and Spider-Sense; the bHaptics "
+                           "Player has to be running.",
+           S(150), [&] {
+               stepCombo("##bodyhaptics", kHaptics, kHapticValues, static_cast<int>(std::size(kHapticValues)),
+                         &o.bodyHaptics);
+           });
     option("Game screen size", "The headset's screen for menus, cutscenes and flat mode.", S(150), [&] {
         static constexpr int sizes[] = {0, 1, 2};
         stepCombo("##screen", kScreenSizes, sizes, 3, &o.screenSize);

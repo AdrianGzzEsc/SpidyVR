@@ -21,6 +21,7 @@
 #include "spidy/monitor_rate.hpp"
 #include "spidy/eye_snapshot.hpp"
 #include "spidy/vr_settings.hpp"
+#include "spidy/body_haptics.hpp"
 #include "spidy/web_visual.hpp"
 #include "spidy/web_pull.hpp"
 #include "spidy/web_grab.hpp"
@@ -11276,7 +11277,7 @@ int main() {
               "NaN assist accepted");
         check(!bad([](ShooterConfig&) {}), "defaults rejected");
     });
-    test("VR settings tab: six sections, every setting once, a list's choices one per step", [] {
+    test("VR settings tab: seven sections, every setting once, a list's choices one per step", [] {
         using namespace vr_settings;
         const auto& all = rows();
         uint64_t seen = 0;
@@ -11302,8 +11303,10 @@ int main() {
         // The sections (the player, October 19: "sort the options in spidy vr
         // settings ingame into nice sections"), each with a setting in the tab.
         const std::pair<size_t, const char*> sections[] = {{0, "WEBS"},     {5, "SWINGING"}, {8, "COMFORT"},
-                                                           {12, "DISPLAY"}, {18, "BODY"},    {20, "EXPERIMENTAL"}};
-        check(headings == std::size(sections), "the sections: webs, swinging, comfort, display, body, experimental");
+                                                           {11, "HAPTICS"}, {18, "DISPLAY"}, {24, "BODY"},
+                                                           {26, "EXPERIMENTAL"}};
+        check(headings == std::size(sections),
+              "the sections: webs, swinging, comfort, haptics, display, body, experimental");
         for (const auto& [at, title] : sections) {
             check(all[at].item == Item::none && std::strcmp(all[at].title, title) == 0, "a section out of place");
             size_t next = at + 1;
@@ -11311,21 +11314,21 @@ int main() {
                 ++next;
             check(next < all.size() && all[next].item != Item::none, "a section with no setting in the tab");
         }
-        check(all[21].item == Item::flips && all[21].choices.empty() && std::strcmp(all[20].title, "EXPERIMENTAL") == 0,
+        check(all[27].item == Item::flips && all[27].choices.empty() && std::strcmp(all[26].title, "EXPERIMENTAL") == 0,
               "the flips: a switch under EXPERIMENTAL");
-        check(all[22].item == Item::flipSpeed && all[22].choices.size() == std::size(flipSpeeds),
+        check(all[28].item == Item::flipSpeed && all[28].choices.size() == std::size(flipSpeeds),
               "the flip speed under the flips");
-        check(all[23].item == Item::handClimb && all[23].choices.empty() && all[24].item == Item::wallDistance &&
-                  all[24].choices.size() == std::size(wallDistances),
+        check(all[29].item == Item::handClimb && all[29].choices.empty() && all[30].item == Item::wallDistance &&
+                  all[30].choices.size() == std::size(wallDistances),
               "hand wall climbing, a switch, and its camera distance under the flips");
         const Item realistic[] = {Item::realisticFlips,        Item::automaticStrength,    Item::automaticSpeed,
                                   Item::automaticMinimumSpeed, Item::automaticReleaseFlip, Item::automaticResponse,
                                   Item::automaticHandStrength, Item::automaticFalloff,     Item::automaticHandThreshold,
                                   Item::automaticAirBrake};
-        check(all.size() == 25 + std::size(realistic), "the realistic flips' rows are not the last");
+        check(all.size() == 31 + std::size(realistic), "the realistic flips' rows are not the last");
         for (size_t i = 0; i < std::size(realistic); ++i)
-            check(all[25 + i].item == realistic[i], "the realistic flips' rows out of order");
-        check(std::strcmp(all[25].title, "REALISTIC FLIPS") == 0 && all[25].choices.empty(),
+            check(all[31 + i].item == realistic[i], "the realistic flips' rows out of order");
+        check(std::strcmp(all[31].title, "REALISTIC FLIPS") == 0 && all[31].choices.empty(),
               "realistic flips: a switch, first of its rows");
         // The wall view has no row of its own any more: it turned only while
         // Spidy held the player on a wall, so it was never a choice of its own
@@ -11335,21 +11338,21 @@ int main() {
         // then "also merge the two options").
         for (const auto& row : all)
             check(row.item != Item::standOnWalls, "the wall view still has a row of its own");
-        check(all[14].item == Item::screenSize && all[16].item == Item::hud && all[16].choices.size() == 4 &&
-                  std::strcmp(all[16].choices[0], "OFF") == 0 && std::strcmp(all[16].choices[3], "LARGE") == 0,
+        check(all[20].item == Item::screenSize && all[22].item == Item::hud && all[22].choices.size() == 4 &&
+                  std::strcmp(all[22].choices[0], "OFF") == 0 && std::strcmp(all[22].choices[3], "LARGE") == 0,
               "the HUD after the game screen's rows: OFF, SMALL, MEDIUM, LARGE");
-        check(all[15].item == Item::screenDepth && std::strcmp(all[15].title, "GAME SCREEN 3D") == 0 &&
-                  all[15].choices.size() == 4 && std::strcmp(all[15].choices[0], "OFF") == 0 &&
-                  std::strcmp(all[15].choices[3], "HIGH") == 0,
+        check(all[21].item == Item::screenDepth && std::strcmp(all[21].title, "GAME SCREEN 3D") == 0 &&
+                  all[21].choices.size() == 4 && std::strcmp(all[21].choices[0], "OFF") == 0 &&
+                  std::strcmp(all[21].choices[3], "HIGH") == 0,
               "the game screen's depth under its size: OFF, LOW, MEDIUM, HIGH");
-        check(all[17].item == Item::nearClip && std::strcmp(all[17].title, "NEAR CLIP") == 0 &&
-                  all[17].choices.size() == std::size(nearClips) && std::strcmp(all[17].choices[6], "10 CM") == 0,
+        check(all[23].item == Item::nearClip && std::strcmp(all[23].title, "NEAR CLIP") == 0 &&
+                  all[23].choices.size() == std::size(nearClips) && std::strcmp(all[23].choices[6], "10 CM") == 0,
               "the near clip last under DISPLAY: 1 to 10 cm");
         // Webs are always physical (the user, October 15: "remove non physical web, no need for it").
         for (const auto& row : all)
             check(std::strcmp(row.title, "PHYSICAL WEBS") != 0, "webs can still be made non-physical");
-        check(all[13].item == Item::view && std::strcmp(all[13].title, "VR VIEW") == 0 && all[13].choices.size() == 2 &&
-                  std::strcmp(all[13].choices[0], "VR") == 0 && std::strcmp(all[13].choices[1], "GAME SCREEN") == 0,
+        check(all[19].item == Item::view && std::strcmp(all[19].title, "VR VIEW") == 0 && all[19].choices.size() == 2 &&
+                  std::strcmp(all[19].choices[0], "VR") == 0 && std::strcmp(all[19].choices[1], "GAME SCREEN") == 0,
               "the view above the game screen's rows: VR, or GAME SCREEN");
         // VR VIEW is on the pause menu's first page, beside RESUME, and no other row is.
         for (const auto& row : all)
@@ -11363,10 +11366,15 @@ int main() {
               "the web button under the web style: GRIP, or TRIGGER");
         check(all[3].item == Item::aimMarkers && all[4].item == Item::airWebs, "the aim markers, then the air webs");
         check(all[6].item == Item::swingSpeed && all[7].item == Item::weight, "SWINGING: the swing speed, the weight");
-        check(all[9].item == Item::snapTurn && all[10].item == Item::smoothTurn && all[11].item == Item::haptics,
-              "COMFORT: snap and smooth turning, the vibration");
-        check(all[19].item == Item::calibrate && all[19].choices.size() == 2 &&
-                  std::strcmp(all[19].choices[1], "ON RESUME") == 0,
+        check(all[9].item == Item::snapTurn && all[10].item == Item::smoothTurn, "COMFORT: snap and smooth turning");
+        // HAPTICS (October 20): the controllers' vibration, the bHaptics level and its four groups' switches.
+        check(all[12].item == Item::haptics && all[13].item == Item::bodyHaptics &&
+                  std::strcmp(all[13].title, "BODY HAPTICS") == 0 && all[14].item == Item::hapticWebs &&
+                  all[15].item == Item::hapticWind && all[16].item == Item::hapticCombat &&
+                  all[17].item == Item::hapticMovement && all[14].choices.empty() && all[17].choices.empty(),
+              "HAPTICS: the vibration, body haptics, then the web, wind, combat and movement switches");
+        check(all[25].item == Item::calibrate && all[25].choices.size() == 2 &&
+                  std::strcmp(all[25].choices[1], "ON RESUME") == 0,
               "the body's calibration: NO, or ON RESUME");
         // Every setting has a row but the wall view, which the launcher's one
         // "Wall running" now carries along with who holds you on the wall.
@@ -11378,7 +11386,8 @@ int main() {
         };
         check(choicesOf(Item::swingSpeed) == std::size(swingSpeeds) && choicesOf(Item::snapTurn) == std::size(snapTurns) &&
                   choicesOf(Item::smoothTurn) == std::size(smoothTurns) &&
-                  choicesOf(Item::haptics) == std::size(hapticLevels) && choicesOf(Item::screenSize) == 3 &&
+                  choicesOf(Item::haptics) == std::size(hapticLevels) &&
+                  choicesOf(Item::bodyHaptics) == std::size(hapticLevels) && choicesOf(Item::screenSize) == 3 &&
                   choicesOf(Item::weight) == std::size(weights) &&
                   choicesOf(Item::airWebs) == 0 && choicesOf(Item::aimMarkers) == 0,
               "lists: one choice per step; switches: the game's own ON and OFF");
@@ -11408,7 +11417,9 @@ int main() {
         check(tabOnlyText(defaults) == "near_clip_mm=20\nhand_climb=0\nwall_distance_cm=40\nrealistic_flips=0\n"
                                        "rotation_strength=50\nrotation_speed=240\nflight_speed_min=3\n"
                                        "swing_momentum=1\nrotation_response_ms=500\nhand_momentum=100\n"
-                                       "angular_drag_ms=3000\nhand_speed_min_cm=100\nair_rotation_brake=1\n",
+                                       "angular_drag_ms=3000\nhand_speed_min_cm=100\nair_rotation_brake=1\n"
+                                       "body_haptics_webs=1\nbody_haptics_wind=1\nbody_haptics_combat=1\n"
+                                       "body_haptics_movement=1\n",
               "the defaults' text");
         Values changed = defaults;
         changed.handClimb = true;
@@ -11424,6 +11435,8 @@ int main() {
         changed.automaticFalloff = 1000;
         changed.automaticHandThreshold = 200;
         changed.automaticAirBrake = false;
+        changed.hapticWind = false;
+        changed.hapticCombat = false;
         check(withTabOnly(defaults, tabOnlyText(changed)) == changed, "the settings did not come back");
         // Windows' line ends, a line of another build, no number, and a
         // distance out of range: the rest still counts.
@@ -11465,6 +11478,10 @@ int main() {
         v.smoothTurn = 100;
         check(choice(Item::smoothTurn, v) == 2, "a launcher speed shows the step nearest to it");
         check(choose(Item::haptics, 1, v) && v.haptics == 25, "a quarter of the vibration");
+        check(choice(Item::bodyHaptics, defaults) == 4 && defaults.bodyHaptics == 100 &&
+                  choose(Item::bodyHaptics, 0, v) && v.bodyHaptics == 0 && v.haptics == 25 &&
+                  choice(Item::bodyHaptics, v) == 0 && !choose(Item::bodyHaptics, 5, v),
+              "body haptics: 100% by default, off a step of their own, apart from the vibration");
         check(!choose(Item::weight, 3, v) && choose(Item::weight, 2, v) && v.weight == 80 &&
                   choose(Item::weight, 3, v) && v.weight == 100 && choice(Item::weight, v) == 3,
               "real gravity, the default, and lighter");
@@ -11694,6 +11711,60 @@ int main() {
         check(std::abs(m.headPose.orientation.z) > .1f, "head must rotate with the body");
         const Vec3 hand = m.grips[0].position - m.headPose.position;
         near(length(hand), length(f.hands[0].grip.position - f.head.position), .001f);
+    });
+    test("realistic flips: the way a spin leaves the player facing is the way the stick walks", [] {
+        // Until October 20 the spin's turn about the vertical stayed in the
+        // tilt, out of the yaw the stick walks by: after a landing every walk
+        // went off to the side of the look ("moving forward would cause me to
+        // walk left"). Landed, or upright again from A in the air, the yaw
+        // has it, and nothing in view moves as it goes over.
+        const auto turnOf = [](Quat q) { return 2 * std::atan2(length(Vec3{q.x, q.y, q.z}), std::abs(q.w)); };
+        for (const bool brake : {false, true}) {
+            GameTrackingRig rig;
+            RealisticFlipSettings settings;
+            settings.enabled = true;
+            rig.automaticFlips(settings);
+            rig.flight({{}, {}, true, false});
+            auto f = trackedFrame();
+            // Off the middle of the room, as the tilt's pivot: the yaw turns
+            // about the room's, so the place has to make up for it.
+            f.head.position = {.4f, 1.7f, -.3f};
+            GameMotionFrame m = flipFrame(rig, f, false, false);
+            const Vec3 head = matrixRow(m.head, 3);
+            float drift = 0, step = 0;
+            const auto next = [&](bool jump, bool airborne) {
+                const Vec3 look = matrixRow(m.head, 2);
+                m = flipFrame(rig, f, jump, airborne);
+                drift = std::max(drift, length(matrixRow(m.head, 3) - head));
+                step = std::max(step, std::acos(std::clamp(dot(look, matrixRow(m.head, 2)), -1.f, 1.f)));
+            };
+            // Both arms swept to the left in the air: a turn to the left.
+            for (int i = 0; i < 12; ++i) {
+                for (auto& hand : f.hands)
+                    hand.grip.position.x -= .035f;
+                next(false, true);
+            }
+            for (int i = 0; i < 90; ++i)
+                next(false, true);
+            if (brake) {
+                next(true, true);
+                for (int i = 0; i < 270; ++i)
+                    next(false, true);
+            } else {
+                for (int i = 0; i < 270; ++i)
+                    next(false, false);
+            }
+            check(drift < .001f, "the head moved as the turn went into the yaw");
+            // MAX ROTATION SPEED's 240 degrees a second: 4.7 degrees a frame.
+            check(step < .09f, "the view jumped as the turn went into the yaw");
+            const Vec3 look = matrixRow(m.head, 2);
+            check(std::abs(std::atan2(-look.x, -look.z)) > .35f, "the arm swing turned too little to tell");
+            check(turnOf(m.flipTilt) < .01f, "upright again, the realistic flip still turns the player");
+            f.hands[0].stickY = 1;
+            next(false, brake);
+            check(dot(normalized(m.swing.move), normalized(Vec3{look.x, 0, look.z})) > .999f,
+                  "the stick does not walk where the view looks");
+        }
     });
     test("realistic flips off: the flips are FlipMotion's, and the rows' values reach the rig as set", [] {
         using namespace vr_settings;
@@ -12485,6 +12556,370 @@ int main() {
         check(!menu.update(.011f, true, false, false), "releasing a click held through a menu counted");
         check(!menu.update(.011f, true, true, false), "a new click counted at once");
         check(menu.update(.011f, true, false, false), "a new click after the menu did not count");
+    });
+    test("body haptics: the vest is bHaptics' TactSuit Pro grid, the wearer's left first", [] {
+        using body_haptics::Body, body_haptics::body, body_haptics::Device, body_haptics::Event,
+            body_haptics::Frame, body_haptics::Kind, body_haptics::Mixer, body_haptics::State,
+            body_haptics::LandingWatch, body_haptics::HealthWatch, body_haptics::vestMotor,
+            body_haptics::vestAzimuth, body_haptics::vestHeight, body_haptics::visorMotor,
+            body_haptics::motorCount, body_haptics::sdkPosition, body_haptics::arm, body_haptics::name,
+            body_haptics::duration, body_haptics::kindCount, body_haptics::deviceCount, body_haptics::maxMotors;
+        check(vestMotor(false, 0, 0) == 0 && vestMotor(false, 0, 3) == 3 && vestMotor(false, 3, 0) == 12 &&
+                  vestMotor(true, 0, 0) == 16 && vestMotor(true, 3, 3) == 31,
+              "front 0-15 and back 16-31, row by row from the shoulders");
+        check(motorCount(Device::vest) == 32 && motorCount(Device::leftArm) == 3 && motorCount(Device::rightArm) == 3 &&
+                  motorCount(Device::head) == 4,
+              "32 motors in the vest, 3 in each sleeve, 4 in the visor");
+        check(sdkPosition(Device::vest) == 0 && sdkPosition(Device::leftArm) == 1 && sdkPosition(Device::rightArm) == 2 &&
+                  sdkPosition(Device::head) == 3 && arm(0) == Device::leftArm && arm(1) == Device::rightArm,
+              "the SDK's positions: the vest, the left and right forearm, the head");
+        for (unsigned m = 0; m < 32; ++m) {
+            const float az = vestAzimuth(m);
+            check(m < 16 ? std::abs(az) < 1.6f : std::abs(az) > 1.6f, "a front motor behind, or a back one ahead");
+            const unsigned side = m % 4;
+            check((side < 2) == (az < 0), "a motor on the wrong side of the body");
+        }
+        near(vestHeight(vestMotor(false, 0, 2)), 0);
+        near(vestHeight(vestMotor(true, 3, 1)), 1);
+        check(std::string(name(Kind::webShot)) == "web_shot" && std::string(name(Kind::phone)) == "phone" &&
+                  std::string(name(Kind::spiderSense)) == "spider_sense" &&
+                  std::string(name(Kind::wallGrip)) == "wall_grip" && kindCount == 35,
+              "the kinds' names, as the report gives them");
+        for (unsigned k = 0; k < kindCount; ++k)
+            check(duration(static_cast<Kind>(k)) > .05f && duration(static_cast<Kind>(k)) <= 1, "a pattern's length");
+    });
+    test("body haptics: the body's frame turns with the head, level", [] {
+        using body_haptics::Body, body_haptics::body, body_haptics::Device, body_haptics::Event,
+            body_haptics::Frame, body_haptics::Kind, body_haptics::Mixer, body_haptics::State,
+            body_haptics::LandingWatch, body_haptics::HealthWatch, body_haptics::vestMotor,
+            body_haptics::vestAzimuth, body_haptics::vestHeight, body_haptics::visorMotor,
+            body_haptics::motorCount, body_haptics::sdkPosition, body_haptics::arm, body_haptics::name,
+            body_haptics::duration, body_haptics::kindCount, body_haptics::deviceCount, body_haptics::maxMotors;
+        const Body ahead = body({});
+        near(ahead.ahead.z, -1);
+        near(ahead.right.x, 1);
+        near(ahead.azimuth({1, 0, 0}), 1.5707963f);
+        near(ahead.azimuth({-1, 0, 0}), -1.5707963f);
+        near(std::abs(ahead.azimuth({0, 0, 1})), 3.1415927f);
+        near(ahead.azimuth({0, 0, -1}), 0);
+        const Vec3 local = ahead.local({3, -2, -5});
+        near(local.x, 3);
+        near(local.y, -2);
+        near(local.z, 5);
+        // Turned a quarter to the left, what was on the left is ahead.
+        const Body turned = body(Quat::yaw(1.5707963f));
+        near(turned.azimuth({-1, 0, 0}), 0);
+        // Looking straight down the head's top points ahead: still the same way.
+        const Body down = body(Quat::around({1, 0, 0}, -1.5707963f));
+        near(down.ahead.z, -1);
+        check(ahead.height({0, 1, 0}) < ahead.height({1, 0, 0}) && ahead.height({1, 0, 0}) < ahead.height({0, -1, 0}),
+              "a blow from above lands higher than one from the side, one from below lower");
+    });
+    test("body haptics: the torso stays put for a look over the shoulder, and turns with the room", [] {
+        using body_haptics::Facing, body_haptics::Body;
+        Facing facing;
+        Body b = facing.update({}, {}, 1.f / 90);
+        near(b.ahead.z, -1);
+        // A look 30 degrees to the left: the torso stays (it drifts after it slowly).
+        for (int i = 0; i < 9; ++i)
+            b = facing.update(Quat::yaw(.52f), {}, 1.f / 90);
+        check(std::abs(b.azimuth({0, 0, -1})) < .05f, "a look aside turned the torso");
+        // Turned 90 degrees and held there: the torso follows to within the dead zone at once, the rest over seconds.
+        for (int i = 0; i < 30; ++i)
+            b = facing.update(Quat::yaw(1.5707963f), {}, 1.f / 90);
+        const float behind = b.azimuth({-1, 0, 0});
+        check(behind < 0 && behind > -Facing::deadZone - .05f, "the torso left behind past the dead zone");
+        for (int i = 0; i < 900; ++i)
+            b = facing.update(Quat::yaw(1.5707963f), {}, 1.f / 90);
+        check(std::abs(b.azimuth({-1, 0, 0})) < .05f, "the torso never came round to the head");
+        // A snap turn turns the room: the torso with it, at once.
+        const Quat snap = Quat::yaw(.7853982f);
+        b = facing.update(Quat::yaw(1.5707963f), snap, 1.f / 90);
+        check(std::abs(b.azimuth(snap.rotate({-1, 0, 0}))) < .05f, "a snap turn left the torso behind");
+        // Stood on a wall the room's up is the wall's normal, and the body's with it.
+        const Quat onWall = Quat::around({1, 0, 0}, 1.5707963f);
+        b = facing.update(Quat::yaw(1.5707963f), onWall, 1.f / 90);
+        near(b.up.z, 1);
+        near(b.local(onWall.rotate({0, 1, 0})).y, 1);
+    });
+    test("body haptics: a pattern plays in VR play only, on its own side, and runs out", [] {
+        using body_haptics::Body, body_haptics::body, body_haptics::Device, body_haptics::Event,
+            body_haptics::Frame, body_haptics::Kind, body_haptics::Mixer, body_haptics::State,
+            body_haptics::LandingWatch, body_haptics::HealthWatch, body_haptics::vestMotor,
+            body_haptics::vestAzimuth, body_haptics::vestHeight, body_haptics::visorMotor,
+            body_haptics::motorCount, body_haptics::sdkPosition, body_haptics::arm, body_haptics::name,
+            body_haptics::duration, body_haptics::kindCount, body_haptics::deviceCount, body_haptics::maxMotors;
+        Mixer m;
+        Event shot{Kind::webShot, 0};
+        m.post(shot, 0);
+        check(m.playing() == 0, "an event played out of VR play");
+        State live;
+        live.live = true;
+        m.set(live);
+        m.post(shot, 1);
+        const Frame f = m.render(1.03);
+        check(f.any(Device::leftArm) && !f.any(Device::rightArm) && !f.any(Device::vest) && !f.any(Device::head),
+              "a left hand's web shot plays elsewhere than the left arm");
+        check(!m.render(1.6).any(Device::leftArm) && m.playing() == 0, "a web shot that does not end");
+        m.post({Kind::finisher, 1}, 2);
+        check(m.render(2.05).any(Device::vest), "no finisher");
+        m.set({});
+        check(!m.render(2.1).any(Device::vest) && m.playing() == 0, "a pattern played on into a menu");
+    });
+    test("body haptics: each switch silences its group, and what it was playing, at once", [] {
+        using body_haptics::Device, body_haptics::Event, body_haptics::Frame, body_haptics::Group,
+            body_haptics::Kind, body_haptics::Mixer, body_haptics::State, body_haptics::group,
+            body_haptics::kindCount, body_haptics::allGroups;
+        check(group(Kind::zip) == Group::webs && group(Kind::grabYanked) == Group::webs &&
+                  group(Kind::hit) == Group::combat && group(Kind::spiderSense) == Group::combat &&
+                  group(Kind::slowStart) == Group::combat && group(Kind::landing) == Group::movement &&
+                  group(Kind::wallGrip) == Group::movement && group(Kind::scan) == Group::always,
+              "a kind in the wrong group");
+        const auto bit = [](Group g) { return 1u << static_cast<unsigned>(g); };
+        for (unsigned k = 0; k < kindCount; ++k) {
+            const auto kind = static_cast<Kind>(k);
+            Mixer m;
+            State s;
+            s.live = true;
+            s.groups = allGroups & ~bit(group(kind));
+            m.set(s);
+            m.post({kind, 0}, 0);
+            check(m.playing() == (group(kind) == Group::always ? 1u : 0u), "an event its switch turned off played");
+        }
+        // Switched off while it plays: it stops, and the web's pull with it.
+        Mixer m;
+        State s;
+        s.live = true;
+        s.webTension = {40, 0};
+        m.set(s);
+        m.post({Kind::hit, -1, 1}, 0);
+        for (int i = 0; i < 10; ++i)
+            m.render(i * .01);
+        Frame f = m.render(.1);
+        check(f.any(Device::vest) && f.any(Device::leftArm), "no blow or no web pull to begin with");
+        s.groups = allGroups & ~bit(Group::webs) & ~bit(Group::combat);
+        m.set(s);
+        f = m.render(.11);
+        check(!f.any(Device::vest) && !f.any(Device::leftArm) && m.playing() == 0,
+              "a blow or a web's pull went on after its switch went off");
+        // The heart is combat's: no beat at low health with COMBAT HAPTICS off.
+        Mixer heart;
+        State low;
+        low.live = true;
+        low.health = .1f;
+        low.groups = allGroups & ~bit(Group::combat);
+        heart.set(low);
+        bool beat = false;
+        for (double t = 0; t < 1; t += .01)
+            beat = beat || heart.render(t).any(Device::vest);
+        check(!beat, "a heartbeat with COMBAT HAPTICS off");
+    });
+    test("body haptics: a blow lands where it came from; Spider-Sense tingles on the attack's side", [] {
+        using body_haptics::Body, body_haptics::body, body_haptics::Device, body_haptics::Event,
+            body_haptics::Frame, body_haptics::Kind, body_haptics::Mixer, body_haptics::State,
+            body_haptics::LandingWatch, body_haptics::HealthWatch, body_haptics::vestMotor,
+            body_haptics::vestAzimuth, body_haptics::vestHeight, body_haptics::visorMotor,
+            body_haptics::motorCount, body_haptics::sdkPosition, body_haptics::arm, body_haptics::name,
+            body_haptics::duration, body_haptics::kindCount, body_haptics::deviceCount, body_haptics::maxMotors;
+        // Each side of the body summed over the frames of one pattern.
+        const auto felt = [](const Event& e) {
+            Mixer m;
+            State live;
+            live.live = true;
+            m.set(live);
+            m.post(e, 0);
+            std::array<float, 4> sides{}; // front, back, left, right
+            std::array<float, 4> visor{};
+            for (double t = 0; t < .5; t += .02) {
+                const Frame f = m.render(t);
+                for (unsigned i = 0; i < 32; ++i) {
+                    const float v = f.at(Device::vest, i);
+                    sides[i < 16 ? 0 : 1] += v;
+                    sides[i % 4 < 2 ? 2 : 3] += v;
+                }
+                for (unsigned i = 0; i < 4; ++i)
+                    visor[i] += f.at(Device::head, visorMotor(i));
+            }
+            return std::pair{sides, visor};
+        };
+        const float pi = 3.1415927f;
+        const auto ahead = felt({Kind::hit, -1, .5f, 0}).first, behind = felt({Kind::hit, -1, .5f, pi}).first;
+        const auto right = felt({Kind::hit, -1, .5f, pi / 2}).first, left = felt({Kind::hit, -1, .5f, -pi / 2}).first;
+        check(ahead[0] > 2 * ahead[1] && behind[1] > 2 * behind[0], "a blow from ahead or behind on the other side");
+        check(right[3] > 2 * right[2] && left[2] > 2 * left[3], "a blow from the right or left on the other side");
+        check(right[3] > .8f * ahead[0], "a blow from the side felt less than one from ahead");
+        const auto light = felt({Kind::hit, -1, 0, 0}).first, heavy = felt({Kind::hit, -1, 1, 0}).first;
+        check(heavy[0] > light[0] && light[0] > 0, "a heavy blow no harder than a light one");
+        // A spot, not a side: a blow from ahead plays on the front's middle, not its flanks.
+        {
+            Mixer m;
+            State live;
+            live.live = true;
+            m.set(live);
+            m.post({Kind::hit, -1, 1, 0}, 0);
+            const Frame f = m.render(.03);
+            check(f.at(Device::vest, vestMotor(false, 1, 1)) > .5f && f.at(Device::vest, vestMotor(false, 1, 0)) == 0 &&
+                      f.at(Device::vest, vestMotor(false, 3, 2)) == 0,
+                  "a blow from ahead spread past the chest's middle");
+        }
+        // From nowhere known: the chest and the back.
+        Event unplaced{Kind::hit, -1, .5f};
+        unplaced.placed = false;
+        const auto anywhere = felt(unplaced).first;
+        check(anywhere[0] > 0 && anywhere[1] > 0, "a blow from nowhere known on one side only");
+        const auto fromLeft = felt({Kind::spiderSense, -1, 1, -pi / 2}).second;
+        const auto fromRight = felt({Kind::spiderSense, -1, 1, pi / 2}).second;
+        check(fromLeft[0] > fromLeft[3] && fromRight[3] > fromRight[0], "Spider-Sense on the wrong side of the visor");
+        const auto dodge = felt({Kind::senseDodge, -1, 1, 0}).second, counter = felt({Kind::spiderSense, -1, 1, 0}).second;
+        check(dodge[1] + dodge[2] > counter[1] + counter[2], "a warning to dodge no stronger than one to counter");
+    });
+    test("body haptics: the wind meets the body where it flies, the webs pull in their arms", [] {
+        using body_haptics::Body, body_haptics::body, body_haptics::Device, body_haptics::Event,
+            body_haptics::Frame, body_haptics::Kind, body_haptics::Mixer, body_haptics::State,
+            body_haptics::LandingWatch, body_haptics::HealthWatch, body_haptics::vestMotor,
+            body_haptics::vestAzimuth, body_haptics::vestHeight, body_haptics::visorMotor,
+            body_haptics::motorCount, body_haptics::sdkPosition, body_haptics::arm, body_haptics::name,
+            body_haptics::duration, body_haptics::kindCount, body_haptics::deviceCount, body_haptics::maxMotors;
+        const auto frame = [](const State& s, int frames = 30) {
+            Mixer m;
+            m.set(s);
+            Frame f;
+            for (int i = 0; i < frames; ++i)
+                f = m.render(i * .04);
+            return f;
+        };
+        const auto sum = [](const Frame& f, bool back, unsigned top, unsigned bottom) {
+            float total = 0;
+            for (unsigned row = top; row <= bottom; ++row)
+                for (unsigned side = 0; side < 4; ++side)
+                    total += f.at(Device::vest, vestMotor(back, row, side));
+            return total;
+        };
+        State flying;
+        flying.live = flying.airborne = true;
+        flying.velocity = {0, 0, 40};
+        const Frame ahead = frame(flying);
+        check(sum(ahead, false, 0, 3) > .5f && sum(ahead, true, 0, 3) == 0 && ahead.any(Device::head),
+              "flying ahead: no wind on the chest and face, or some on the back");
+        for (unsigned i = 0; i < 32; ++i)
+            check(ahead.at(Device::vest, i) <= .17f, "the wind at 40 m/s past 17%");
+        // Free flight only: not along a wall, not while a web holds the player.
+        flying.onWall = true;
+        check(!frame(flying).any(Device::vest), "wind on a wall");
+        flying.onWall = false;
+        flying.webTension = {0, 20};
+        check(sum(frame(flying), false, 1, 3) == 0, "wind while a web holds the player (its pull: the shoulder)");
+        flying.webTension = {};
+        // WIND HAPTICS off.
+        flying.groups &= ~(1u << static_cast<unsigned>(body_haptics::Group::wind));
+        check(!frame(flying).any(Device::vest) && !frame(flying).any(Device::head), "wind with WIND HAPTICS off");
+        flying.groups = body_haptics::allGroups;
+        flying.velocity = {0, -40, 0};
+        const Frame falling = frame(flying);
+        check(sum(falling, false, 3, 3) > sum(falling, false, 0, 0) && sum(falling, true, 3, 3) > 0,
+              "falling: the waist no windier than the shoulders");
+        flying.velocity = {0, 0, 10};
+        check(!frame(flying).any(Device::vest), "wind at 10 m/s");
+        flying.velocity = {0, 0, 40};
+        flying.airborne = false;
+        check(!frame(flying).any(Device::vest), "wind on the ground");
+        State swinging;
+        swinging.live = true;
+        swinging.webTension = {0, 40};
+        const Frame hard = frame(swinging);
+        swinging.webTension = {0, 10};
+        const Frame hanging = frame(swinging);
+        check(hard.at(Device::rightArm, 1) > hanging.at(Device::rightArm, 1) && hanging.at(Device::rightArm, 1) > 0 &&
+                  !hard.any(Device::leftArm),
+              "a web's pull not in its own arm, or no harder at the bottom of a swing");
+        swinging.webTension = {0, 1};
+        check(!frame(swinging).any(Device::rightArm), "a slack web pulls");
+        // A pull rises over a tenth of a second, not at once: the swing's steps would buzz.
+        Mixer m;
+        swinging.webTension = {0, 40};
+        m.set(swinging);
+        m.render(0);
+        const float first = m.render(.02).at(Device::rightArm, 0);
+        check(first > 0 && first < hard.at(Device::rightArm, 0) * .5f, "a web's pull jumps to its strength");
+    });
+    test("body haptics: patterns mix without passing full strength; the heart beats at low health", [] {
+        using body_haptics::Body, body_haptics::body, body_haptics::Device, body_haptics::Event,
+            body_haptics::Frame, body_haptics::Kind, body_haptics::Mixer, body_haptics::State,
+            body_haptics::LandingWatch, body_haptics::HealthWatch, body_haptics::vestMotor,
+            body_haptics::vestAzimuth, body_haptics::vestHeight, body_haptics::visorMotor,
+            body_haptics::motorCount, body_haptics::sdkPosition, body_haptics::arm, body_haptics::name,
+            body_haptics::duration, body_haptics::kindCount, body_haptics::deviceCount, body_haptics::maxMotors;
+        Mixer m;
+        State live;
+        live.live = true;
+        live.airborne = true;
+        live.velocity = {0, -50, 30};
+        live.webTension = {60, 60};
+        m.set(live);
+        for (const auto kind : {Kind::finisher, Kind::landing, Kind::hit, Kind::slowStart, Kind::webPull})
+            m.post({kind}, 0);
+        for (double t = 0; t < .6; t += .02) {
+            const Frame f = m.render(t);
+            for (unsigned d = 0; d < deviceCount; ++d)
+                for (unsigned i = 0; i < maxMotors; ++i)
+                    check(f.motors[d][i] >= 0 && f.motors[d][i] <= 1, "a motor past full strength");
+        }
+        // Low health: a beat within every period of it, on the front, left of the middle.
+        Mixer heart;
+        State low;
+        low.live = true;
+        low.health = .1f;
+        heart.set(low);
+        bool beat = false, elsewhere = false;
+        for (double t = 0; t < .6; t += .01) {
+            const Frame f = heart.render(t);
+            beat = beat || f.at(Device::vest, vestMotor(false, 1, 1)) > .2f;
+            elsewhere = elsewhere || f.at(Device::vest, vestMotor(false, 1, 3)) > 0 || f.any(Device::head);
+        }
+        check(beat && !elsewhere, "no heartbeat at 10% health, or one on the right of the chest");
+        low.health = .9f;
+        heart.set(low);
+        bool calm = true;
+        for (double t = 1; t < 3; t += .01)
+            calm = calm && !heart.render(t).any(Device::vest);
+        check(calm, "a heartbeat at 90% health");
+    });
+    test("body haptics: landings come from the flight's speed, blows from the hero's health", [] {
+        using body_haptics::Body, body_haptics::body, body_haptics::Device, body_haptics::Event,
+            body_haptics::Frame, body_haptics::Kind, body_haptics::Mixer, body_haptics::State,
+            body_haptics::LandingWatch, body_haptics::HealthWatch, body_haptics::vestMotor,
+            body_haptics::vestAzimuth, body_haptics::vestHeight, body_haptics::visorMotor,
+            body_haptics::motorCount, body_haptics::sdkPosition, body_haptics::arm, body_haptics::name,
+            body_haptics::duration, body_haptics::kindCount, body_haptics::deviceCount, body_haptics::maxMotors;
+        LandingWatch landing;
+        float landed = 0;
+        for (int i = 0; i < 90; ++i)
+            landed = landing.update(1.f / 90, true, 20);
+        check(landed == 0, "a landing in the air");
+        landed = landing.update(1.f / 90, false, 0);
+        near(landed, .15f + .85f * 16 / 24);
+        check(landing.update(1.f / 90, false, 0) == 0, "a landing twice");
+        for (int i = 0; i < 9; ++i)
+            landing.update(1.f / 90, true, 20);
+        check(landing.update(1.f / 90, false, 0) == 0, "a hop of a tenth of a second landed");
+        for (int i = 0; i < 90; ++i)
+            landing.update(1.f / 90, true, 3);
+        check(landing.update(1.f / 90, false, 0) == 0, "a step down landed");
+        // The speed it came down at last, not at its fastest long before.
+        for (int i = 0; i < 90; ++i)
+            landing.update(1.f / 90, true, i < 30 ? 40.f : 6.f);
+        const float soft = landing.update(1.f / 90, false, 0);
+        check(soft > 0 && soft < .3f, "a fast fall that slowed lands hard");
+        HealthWatch health;
+        check(health.update(110) == 0 && health.fraction() == 1, "a first reading lost something");
+        near(health.update(105), 5.f / 110);
+        near(health.fraction(), 105.f / 110);
+        check(health.update(110) == 0, "a heal is a blow");
+        check(health.update(std::numeric_limits<float>::quiet_NaN()) == 0 && health.update(109.9f) == 0,
+              "an unreadable or tiny change is a blow");
+        health.reset();
+        check(health.fraction() == 1 && health.update(50) == 0 && health.fraction() == 1,
+              "a new hero measured by the last");
     });
 #ifdef _WIN32
     test("the target scan knows a game class by what it derives from", [] {

@@ -596,7 +596,10 @@ VR settings
                    webs holding in open air (a web that meets nothing
                    within 100 m holds there; off, it misses).
   SWINGING ....... the swing speed limit and your weight.
-  COMFORT ........ snap turn, smooth turn and controller vibration.
+  COMFORT ........ snap turn and smooth turn.
+  HAPTICS ........ controller vibration; BODY HAPTICS (a bHaptics vest,
+                   sleeves and visor, below) and its four switches: WEB,
+                   WIND, COMBAT and MOVEMENT HAPTICS.
   DISPLAY ........ the game screen's size, its 3D depth and the HUD's size
                    (OFF hides it in VR). NEAR CLIP: how near your eyes things
                    still show, 2 cm unless you change it (1 to 10 cm; the
@@ -610,8 +613,9 @@ VR settings
                    and its WALL CAMERA DISTANCE. REALISTIC FLIPS (off until
                    you switch it on, above) and the nine rows that tune it.
   Changes apply at once. The launcher starts your next session with them;
-  its options show them too. NEAR CLIP and the EXPERIMENTAL rows below FLIP
-  SPEED are only in the tab: Spidy keeps them in
+  its options show them too. NEAR CLIP, the four body haptics switches and
+  the EXPERIMENTAL rows below FLIP SPEED are only in the tab: Spidy keeps
+  them in
   %APPDATA%\Spidy\spidy_vr.ini, beside the launcher's own settings. Playing
   the game on its screen instead of VR is on the pause menu itself: SWITCH
   TO GAME SCREEN, under RESUME (each session starts in VR).
@@ -626,6 +630,27 @@ VR settings
   always on.
   The title screen's Options have no SPIDY VR tab: load your save first, or
   set them in the launcher.
+
+bHaptics vest, sleeves and visor
+  With a bHaptics TactSuit, TactSleeves or a TactVisor you feel the game on
+  your body: a web taking hold and its pull in your arm and shoulder,
+  growing through the bottom of a swing; the wind when you fly or fall free
+  of webs and walls; landings and walls; the blows you land, and the ones
+  you take on a spot on the side they came from; and Spider-Sense tingling
+  in the visor and at your shoulders toward the attack. The vest faces
+  where your body does: a look over your shoulder does not turn it. Install
+  the bHaptics Player (bhaptics.com/software/player), pair your devices in
+  it, and start it before VR: Spidy finds it by itself, and the headset says
+  which devices are on. BODY HAPTICS under HAPTICS (or "Body haptics" in the
+  launcher's options) sets how strongly they play; OFF stops them. Below it
+  WEB HAPTICS (shots, holds, the swing's pull, zips, grabs), WIND HAPTICS,
+  COMBAT HAPTICS (punches, hits, Spider-Sense, dodges, heals, slow motion)
+  and MOVEMENT HAPTICS (landings, walls, wall climbing, leaps) each switch
+  their group off. Without the Player nothing changes. To feel each pattern
+  without the game, run
+  build\windows-ninja\spidy_haptics_test.exe: it checks the Player and the
+  devices, buzzes each part of each device in turn, then plays every
+  pattern and says what it should feel like.
 
 
 IF SOMETHING IS WRONG
@@ -746,6 +771,13 @@ IF SOMETHING IS WRONG
   launcher's options). The grip then reels in and shoots web balls.
 - Snap turning makes you uneasy, or the vibration is too strong: Settings >
   SPIDY VR has both.
+- Your bHaptics devices stay still: start the bHaptics Player before VR and
+  check that it shows them connected; the headset says "Body haptics on:"
+  and names them once Spidy has them. BODY HAPTICS (Settings > SPIDY VR >
+  HAPTICS) must not be OFF, nor the switch of what you expect to feel. Too
+  much: turn BODY HAPTICS down, or switch a group off (the wind is WIND
+  HAPTICS). A part that plays on the wrong side of you: tell us which
+  (spidy_haptics_test.exe map shows each part in turn).
 - Swinging feels floaty, or falls too hard: WEIGHT in Settings > SPIDY VR
   (or "Weight" in the launcher's options) sets how heavy you are while
   swinging and after letting go, until you land: 100% is real gravity and

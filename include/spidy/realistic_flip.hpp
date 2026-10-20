@@ -121,6 +121,29 @@ class RealisticFlip {
     Vec3 angularVelocity() const {
         return angular_;
     }
+    // Takes the tilt's turn about the vertical out of it, radians (more than
+    // 0 to the left, as Quat::yaw), for the tracking space's yaw to keep:
+    // where a spin leaves the player facing is the heading from then on, and
+    // the stick walks by that yaw (GameTrackingRig). The rest turns with it,
+    // so the world sees no change and the next update goes on as before.
+    // Only while the player's up is within a quarter turn of the world's:
+    // further over, which way the player faces is no clear thing, and the
+    // turn waits.
+    float takeHeading() {
+        if (!(tilt_.rotate({0, 1, 0}).y > 0))
+            return 0;
+        const float heading = std::remainder(2 * std::atan2(tilt_.y, tilt_.w), 6.2831853f);
+        if (!std::isfinite(heading) || std::abs(heading) < 1e-6f)
+            return 0;
+        const Quat back = Quat::yaw(-heading);
+        tilt_ = unit(back * tilt_);
+        levelTarget_ = unit(back * levelTarget_);
+        angular_ = back.rotate(angular_);
+        momentum_ = back.rotate(momentum_);
+        averageVelocity_ = back.rotate(averageVelocity_);
+        lastPull_ = back.rotate(lastPull_);
+        return heading;
+    }
     Quat update(RealisticFlight flight, bool airborne, bool surface, float yaw, float dt,
                 RealisticFlipSettings settings, RealisticControls controls = {}) {
         if (!settings.enabled) {

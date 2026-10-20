@@ -75,6 +75,7 @@ std::span<const int> steps(Item item) {
     case Item::smoothTurn:
         return smoothTurns;
     case Item::haptics:
+    case Item::bodyHaptics:
         return hapticLevels;
     case Item::screenSize:
         return screenSizes;
@@ -118,6 +119,8 @@ float numberOf(Item item, const Values& v) {
         return static_cast<float>(v.smoothTurn);
     case Item::haptics:
         return static_cast<float>(v.haptics);
+    case Item::bodyHaptics:
+        return static_cast<float>(v.bodyHaptics);
     case Item::screenSize:
         return static_cast<float>(v.screenSize);
     case Item::weight:
@@ -177,6 +180,14 @@ template <class V> auto switchOf(Item item, V& v) -> decltype(&v.aimMarkers) {
         return &v.automaticReleaseFlip;
     case Item::automaticAirBrake:
         return &v.automaticAirBrake;
+    case Item::hapticWebs:
+        return &v.hapticWebs;
+    case Item::hapticWind:
+        return &v.hapticWind;
+    case Item::hapticCombat:
+        return &v.hapticCombat;
+    case Item::hapticMovement:
+        return &v.hapticMovement;
     default:
         return nullptr;
     }
@@ -188,6 +199,7 @@ Values sanitized(Values v) {
     v.snapTurn = std::clamp(v.snapTurn, 0, 90);
     v.smoothTurn = std::clamp(v.smoothTurn, 0, 360);
     v.haptics = std::clamp(v.haptics, 0, 100);
+    v.bodyHaptics = std::clamp(v.bodyHaptics, 0, 100);
     v.screenSize = std::clamp(v.screenSize, 0, 2);
     v.weight = std::clamp(v.weight, 40, 300);
     v.hud = std::clamp(v.hud, 0, 3);
@@ -205,9 +217,9 @@ Values sanitized(Values v) {
     v.automaticHandThreshold = std::clamp(v.automaticHandThreshold, 50, 300);
     return v;
 }
-const std::array<Row, 35>& rows() {
+const std::array<Row, 41>& rows() {
     // The help fits the game's description column beside the rows.
-    static const std::array<Row, 35> all{{
+    static const std::array<Row, 41> all{{
         {Item::none, "WEBS", nullptr, {}},
         {Item::webStyle, "WEB STYLE",
          "Arcade: webs pass lamp posts, signs and cars, and swings stay above the street.", webStyleChoices},
@@ -225,8 +237,19 @@ const std::array<Row, 35>& rows() {
          snapChoices},
         {Item::smoothTurn, "SMOOTH TURN", "Turn steadily while you hold the right stick. Off: it snap turns.",
          smoothChoices},
+        {Item::none, "HAPTICS", nullptr, {}},
         {Item::haptics, "CONTROLLER VIBRATION", "How strongly webs, grabs and punches buzz in your hands.",
          hapticChoices},
+        {Item::bodyHaptics, "BODY HAPTICS",
+         "How strongly bHaptics vest, sleeves and visor play webs, hits and Spider-Sense.", hapticChoices},
+        {Item::hapticWebs, "WEB HAPTICS",
+         "Body haptics for webs: shots, holds, the swing's pull, zips and grabs.", {}},
+        {Item::hapticWind, "WIND HAPTICS",
+         "Body haptics for the wind when you fly or fall free of webs and walls.", {}},
+        {Item::hapticCombat, "COMBAT HAPTICS",
+         "Body haptics for punches, hits, Spider-Sense, dodges, heals and slow motion.", {}},
+        {Item::hapticMovement, "MOVEMENT HAPTICS",
+         "Body haptics for landings, walls, wall climbing and charged leaps.", {}},
         {Item::none, "DISPLAY", nullptr, {}},
         {Item::view, "VR VIEW", "Play in VR, or the game as it is on a 3D screen, with pad controls.", viewChoices,
          true},
@@ -311,6 +334,9 @@ bool choose(Item item, int index, Values& v) {
     case Item::haptics:
         v.haptics = s[index];
         break;
+    case Item::bodyHaptics:
+        v.bodyHaptics = s[index];
+        break;
     case Item::screenSize:
         v.screenSize = s[index];
         break;
@@ -382,6 +408,10 @@ constexpr TabOnly tabOnly[] = {
     {"angular_drag_ms", nullptr, &Values::automaticFalloff},
     {"hand_speed_min_cm", nullptr, &Values::automaticHandThreshold},
     {"air_rotation_brake", &Values::automaticAirBrake, nullptr},
+    {"body_haptics_webs", &Values::hapticWebs, nullptr},
+    {"body_haptics_wind", &Values::hapticWind, nullptr},
+    {"body_haptics_combat", &Values::hapticCombat, nullptr},
+    {"body_haptics_movement", &Values::hapticMovement, nullptr},
 };
 } // namespace
 std::string tabOnlyText(const Values& v) {

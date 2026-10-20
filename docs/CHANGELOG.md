@@ -3,7 +3,146 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 20, fifth): realistic flips, experimental - pull
+**Latest build (October 20, seventh): after a realistic flip the stick walks
+where you look.** You: "i tried the new experimental locomotion and crawling
+settings - they somehow caused offset where moving forward would cause me to
+walk left (see last session)".
+
+- **The session** (16:58, 6 minutes 44 seconds; HAND WALL CLIMBING and
+  REALISTIC FLIPS switched on at 1:32-1:36, FLIPS at 1:40): from the first
+  flights with REALISTIC FLIPS on, every walk on the ground went off to the
+  side of where you looked, measured from your view against the way you
+  moved: 91 degrees to the left at 3:45, 85 to 90 at 5:35-5:45, 55 at 6:35,
+  and the game was sent its left key (A) where you pushed ahead. Your body's
+  legs kept their air pose on the ground from 2:30 to the end; before the
+  switches they stood (164 of 166 samples on the ground).
+- **Why: the heading a realistic flip keeps stayed in its tilt.** A realistic
+  flip brings you upright with your heading kept, and it kept that heading in
+  the tilt it turns the view by. The stick walks by the tracking space's yaw,
+  which leaves a flip's tilt aside, and the game's camera turns with the
+  view: whatever turn about the vertical a spin left was missing from every
+  walk, until a menu turned the view back. FLIPS' own flips always end
+  level, so they never had it. The body took the leftover turn for a lean,
+  and a lean over 5 degrees has its feet off the ground. HAND WALL CLIMBING
+  was no part of it: its turns go into the yaw, and its roll ends with the
+  wall.
+- **Fixed:** while you are within a quarter turn of upright, the yaw takes
+  the spin's turn about the vertical every frame, about the point the tilt
+  turns round, so nothing in view moves; the tilt keeps only the lean, level
+  again once you land or press A in the air. The stick walks, and steers in
+  the air, where you look; a menu or a recenter keeps the way you face; the
+  legs stand again after a landing.
+- **Checked:** a new rig test (both arms swept to the left in the air, then a
+  landing or A: the stick walks along the look, the head stays where it is,
+  the view never jumps a frame) failed on the old code and passes, and fails
+  with the place not made up for as the yaw turns. In the realistic flips'
+  own test, a twin that keeps the turn in its tilt turns the same to 0.000006
+  radians over 900 frames of webs, a release, arm swings, A and a landing,
+  and leaving out any of the five things that turn with the heading breaks
+  it. 422 core tests, the realistic flips' and the launcher's programs, all
+  six protocol suites. Only the stereo and ray modules change; no protocol
+  change. Not run in the game or a headset.
+
+**Earlier build (October 20, sixth): body haptics on bHaptics devices, retuned
+after the first session on the devkit, with a switch for each group.** You:
+"plan and build the bhaptics implementation. im getting my devkit tomorrow
+(TactSuit Pro, TactSleeve, and TactVisor)"; after the first session: "ok it
+worked buy way too agressive, directionality didnt really feel like anything,
+felt like 0 to 100 always with sometimes still going when im standing (on the
+wall or in pause menu etc)"; then "also add a toggle to settings?" (one switch
+per effect group).
+
+- **The first session** (a TactSuit Pro and both TactSleeves; the visor was
+  not paired): 5,483 frames to the devices, none refused, 227 events (80 webs
+  taking hold and 80 letting go, 52 zips, 11 walls, 2 landings, a scan). The
+  report and the bHaptics Player's own log showed what you felt: the wind blew
+  94% of the time in the air (the swing's speed was 31 m/s at the middle and
+  it blew from 12 m/s) and along walls too; most events played at 50-100% on
+  half the vest; each device's 70 ms frames came every 40 ms, overlapping for
+  30 ms of each; and the vest faced wherever your head looked. The
+  pause menu itself was quiet: nothing went to the Player in its 4 s.
+- **Gentler, and from nothing.** Events play at 10-45%, the heaviest blows
+  (finishers, heavy blows) up to 75%. A web's pull grows with its tension from
+  nothing: 2% hanging, 8% in the middle of a swing, 23% at the bottom of a fast
+  one, 30% at most (until now any pull over 2 m/s^2 played 12% at once). A
+  motor under 3% is sent as off.
+- **The wind only in free flight**: in the air, off any wall, no web holding
+  you. From 15 m/s (nothing) to 40 m/s (16%), on the motors that face where
+  you fly, gliding instead of fluttering, coming and going over a quarter of a
+  second; in a fall it comes up round the waist.
+- **Spots instead of halves.** A blow, a zip, a wall and Spider-Sense play on
+  a few motors toward where they come from, the nearest at full strength (a
+  blow from the side was weaker than one from ahead). Zips play toward where
+  the web pulls you, walls on the side the wall is; a blow from nowhere known
+  on the chest and the back.
+- **The vest faces where your body does**: a look over your shoulder (up to 34
+  degrees) leaves it; past that it follows your head, and it turns with snap
+  and smooth turns, a wall you stand on and a flip at once.
+- **One frame at a time.** Each device's last frame is stopped before the next
+  plays. Whether the Player played two overlapping frames at once, adding them
+  up, is not to be seen from outside; now it cannot.
+- **The switches.** A new HAPTICS section in the SPIDY VR tab: CONTROLLER
+  VIBRATION (from COMFORT), BODY HAPTICS (OFF, 25-100%) and four switches:
+  WEB HAPTICS (shots, holds, the swing's pull, zips, grabs), WIND HAPTICS,
+  COMBAT HAPTICS (punches, hits, Spider-Sense, dodges, heals, slow motion and
+  the heart) and MOVEMENT HAPTICS (landings, walls, wall climbing, leaps). A
+  group switched off stops at once. They are the tab's alone, kept in
+  `%APPDATA%\Spidy\spidy_vr.ini` like the other tab-only rows; "Body haptics"
+  in the launcher stays the level.
+- **What else you feel.** The arm whose web takes hold ticks, then its
+  shoulder; a web ball ticks in its forearm. Landings come up from the waist,
+  as hard as you came down; a charged leap builds round the waist and lets go
+  up the body; HAND WALL CLIMBING's grips tick in their arm. Every punch kicks
+  back through its arm and shoulder, a heavy blow through the chest, a
+  finisher through everything. Spider-Sense tingles in the visor, two motors
+  at a time a dozen times a second, strongest on the attacker's side, and on
+  a spot at your shoulders toward him; a warning to dodge harder and longer.
+  Blows you take are as hard as the health they took (falls in the hero's
+  `HeroHealth`, vtable `38a6df0`, hit points at +0x88), from the attack the
+  game warned of last. Below 30% health your heart races left of the chest's
+  middle; slow motion beats it slowly. Menus, scenes and the game screen are
+  quiet.
+- **How.** The patterns are code (`body_haptics`, in the core): nothing is
+  designed in bHaptics' portal. bHaptics' C/C++ SDK 2.7.1 (tact-cpp2) plays
+  them, its library loaded only once BODY HAPTICS is on, on a thread of its
+  own (`bhaptics_output`). A PC without the bHaptics Player does nothing more;
+  a Player started after VR is found by itself. "No device" waits three
+  seconds for the Player's device list.
+- **The bHaptics app.** The Player plays only for an app of bHaptics'
+  Developer Portal: its workspace ID (not the app's own record ID, which gets
+  "No workspace") and API key go in `bhaptics-app.local` (git-ignored) or the
+  `SPIDY_BHAPTICS_APP_ID` / `SPIDY_BHAPTICS_API_KEY` variables, and the
+  release workflow takes repository secrets of those names (not set yet). Your
+  app, SpidyVR, is in this PC's `bhaptics-app.local`. A Player that connects
+  but sends no event list within 5 s says `rejected`.
+- **`spidy_haptics_test.exe`**, in the zip too: `check`, `map` (each part of
+  each device in turn), `effects` (every pattern, named, with what it should
+  feel like), `stream`, and `--dry` (the frames as the devices would get them,
+  no Player).
+- **Protocol:** XrConfig version 24 (`bodyHaptics` in version 23's spare
+  word); a new export, `SpidyHapticsData` (version 2, 256 bytes: the report's
+  and each sample's `haptics` - now also the seconds of play with the Player,
+  each device's share of them playing and its mean strength (`played`), and
+  the switches on (`groups`) - and `vr_settings.body_haptics`); a new kind,
+  `wall_grip` (35); the menu probe's structs version 6 (`body_haptics`);
+  launcher.ini `body_haptics`; `--body-haptics`. A session puts
+  `bhaptics_library.dll` beside the stereo module it stages. The DLLs,
+  run_game_vr.py and the launcher go together. On main's 3ce3baa (October 20,
+  fifth) with pull requests 22, 23 and 24 and the prompt fixes.
+- **Checked:** 421 core tests (new here: the TactSuit Pro's grid and the
+  body's frame, the torso staying put for a look aside and turning with the
+  room, a pattern on its own side only and out of VR play never, each switch
+  silencing its group at once, blows on a spot toward the attacker and
+  Spider-Sense on his side, the wind in free flight only and the webs' pull,
+  mixing below full strength and the heart, landings and health, the tab's
+  HAPTICS section and its lines in `spidy_vr.ini`), 24 launcher tests, the
+  realistic flips' tests, all six protocol suites (138 tests). The Player,
+  probed from this PC: `stop` ends a frame at once, its legacy socket does not
+  report the SDK's dots, and `isPlayingByRequestId` stuck on after some
+  streams. The retuned patterns have not been felt yet, nor run in the game.
+  `tools/probe_menu.py` follows the new rows (26 changes); not run in the game.
+
+**Earlier build (October 20, fifth): realistic flips, experimental - pull
 request 23 (iplusdvr).** You: "review and merge or fix the open prs".
 
 - **REALISTIC FLIPS, under EXPERIMENTAL, off by default, and nine rows that

@@ -90,6 +90,13 @@ struct Values {
     int automaticResponse = 500, automaticHandStrength = 100, automaticFalloff = 3000;
     int automaticHandThreshold = 100;
     bool automaticAirBrake = true;
+    // How strongly a bHaptics vest, sleeves and visor play (the tab's BODY
+    // HAPTICS; body_haptics.hpp), percent; 0 off. And which of its groups
+    // play (the tab's WEB, WIND, COMBAT and MOVEMENT HAPTICS switches;
+    // body_haptics::Group): the player, October 20, after the first session
+    // on the devkit, asked for "one switch per effect group".
+    int bodyHaptics = 100;
+    bool hapticWebs = true, hapticWind = true, hapticCombat = true, hapticMovement = true;
     bool operator==(const Values&) const = default;
 };
 // The steps the game's Settings offer. The launcher's slider sets any swing
@@ -129,8 +136,9 @@ inline float screenDepth(int choice) {
 }
 // The values within the session's ranges: swing speed 1-65 m/s (what
 // run_game_vr.py accepts), snap turn 0-90 degrees, smooth turn 0-360 degrees
-// a second, vibration 0-100%, weight 40-300%, HUD 0-3, flip speed 90-480
-// degrees a second, the game screen's depth 0-3, near clip 10-100 mm.
+// a second, vibration and body haptics 0-100%, weight 40-300%, HUD 0-3, flip
+// speed 90-480 degrees a second, the game screen's depth 0-3, near clip
+// 10-100 mm.
 Values sanitized(Values);
 
 enum class Item : uint8_t {
@@ -165,12 +173,18 @@ enum class Item : uint8_t {
     automaticFalloff,
     automaticHandThreshold,
     automaticAirBrake,
+    bodyHaptics,
+    hapticWebs,
+    hapticWind,
+    hapticCombat,
+    hapticMovement,
 };
-inline constexpr Item lastItem = Item::automaticAirBrake;
+inline constexpr Item lastItem = Item::hapticMovement;
 // The SPIDY VR tab, top to bottom: a section's heading (item none) or a
-// setting. The sections: WEBS, SWINGING, COMFORT, DISPLAY, BODY and
+// setting. The sections: WEBS, SWINGING, COMFORT, HAPTICS, DISPLAY, BODY and
 // EXPERIMENTAL (the player, October 19: "sort the options in spidy vr
-// settings ingame into nice sections"). A setting without choices is an ON/OFF switch, the game's own;
+// settings ingame into nice sections"; HAPTICS since October 20, the
+// controllers' vibration and the bHaptics rows together). A setting without choices is an ON/OFF switch, the game's own;
 // one with choices steps through them. Titles are upper case, as the game's
 // own rows are; the help shows beside the rows while the setting is selected.
 struct Row {
@@ -183,7 +197,7 @@ struct Row {
     // menu (the one with resume)").
     bool page{};
 };
-const std::array<Row, 35>& rows();
+const std::array<Row, 41>& rows();
 // The most choices a row shows (game_menu's buffers): a row with more would
 // lose its last ones.
 inline constexpr size_t maxChoices = 9;

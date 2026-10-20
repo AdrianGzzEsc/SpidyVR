@@ -641,22 +641,23 @@ namespace {
 // calibration wanted (CALIBRATE BODY: ON RESUME); 128 flips (experimental);
 // 256 the trigger webs (WEB BUTTON: TRIGGER); 512 STAND ON WALLS; 1024 (in the
 // sample) VR VIEW: GAME SCREEN; 2048 arcade webs (WEB STYLE: ARCADE). hud: the
-// HUD row (0 off, 1-3); flipSpeed: FLIP SPEED, degrees a second.
+// HUD row (0 off, 1-3); flipSpeed: FLIP SPEED, degrees a second. Version 6:
+// bodyHaptics, BODY HAPTICS in percent, and a spare word.
 struct ProbeSettings {
-    uint32_t magic = 0x554e4d53, version = 5, bytes = sizeof(ProbeSettings), flags{};
+    uint32_t magic = 0x554e4d53, version = 6, bytes = sizeof(ProbeSettings), flags{};
     uint32_t snapTurn{}, haptics{}, screenSize{};
     float swingSpeed{};
-    uint32_t smoothTurn{}, weight{}, hud{}, flipSpeed{};
+    uint32_t smoothTurn{}, weight{}, hud{}, flipSpeed{}, bodyHaptics{}, spare{};
 };
-static_assert(sizeof(ProbeSettings) == 48);
+static_assert(sizeof(ProbeSettings) == 56);
 struct ProbeSample {
-    uint32_t magic = 0x554e4d53, version = 5, bytes = sizeof(ProbeSample), installed{};
+    uint32_t magic = 0x554e4d53, version = 6, bytes = sizeof(ProbeSample), installed{};
     uint64_t tabs{}, changes{};
     uint32_t status{}, flags{}, snapTurn{}, haptics{}, screenSize{};
     float swingSpeed{};
-    uint32_t smoothTurn{}, weight{}, hud{}, flipSpeed{};
+    uint32_t smoothTurn{}, weight{}, hud{}, flipSpeed{}, bodyHaptics{}, spare{};
 };
-static_assert(sizeof(ProbeSample) == 72);
+static_assert(sizeof(ProbeSample) == 80);
 } // namespace
 extern "C" __declspec(dllexport) DWORD WINAPI SpidyMenuStart(void* input) {
     ProbeSettings s;
@@ -690,6 +691,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyMenuStart(void* input) {
     v.weight = static_cast<int>(s.weight);
     v.hud = static_cast<int>(s.hud);
     v.flipSpeed = static_cast<int>(s.flipSpeed);
+    v.bodyHaptics = static_cast<int>(s.bodyHaptics);
     if (const auto code = install(reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr))))
         return code;
     publish(vr_settings::sanitized(v));
@@ -717,6 +719,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyMenuSample(void* output) {
     s.weight = static_cast<uint32_t>(v.weight);
     s.hud = static_cast<uint32_t>(v.hud);
     s.flipSpeed = static_cast<uint32_t>(v.flipSpeed);
+    s.bodyHaptics = static_cast<uint32_t>(v.bodyHaptics);
     __try {
         if (reinterpret_cast<uintptr_t>(output) < 0x10000)
             return 9601;

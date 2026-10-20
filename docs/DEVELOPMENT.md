@@ -105,7 +105,8 @@ Make the zip with:
 .\tools\package.ps1               # dist\Spidy-<version>-win64.zip
 ```
 
-It holds the launcher, the seven game modules, the Python tools a session
+It holds the launcher, the seven game modules, bHaptics' library and the
+haptics test ([Body haptics](#body-haptics-bhaptics)), the Python tools a session
 imports, the Windows embeddable Python 3.12.10 (hash-pinned), the notices and
 [docs/PLAYERS.md](PLAYERS.md) as `README.txt`. Players extract it anywhere
 they can write and start `Spidy Launcher.exe`. The version comes from
@@ -490,8 +491,15 @@ sample); a web let go leaves the spin of the swing's orbit; arm swings faster
 than a threshold, read from the hands relative to the head before any of
 Spidy's motion (`AutomaticHandMotion`), add spin; drag takes it away; landing
 or A in the air (`RealisticControls::brake`) brings the body upright with the
-heading kept. With FLIPS on too, the left stick, once let go in the air,
-steers it. `GameTrackingRig::automaticFlips` switches between the two;
+heading kept. The rig's yaw keeps that heading: while the player's up is
+within a quarter turn of the world's, `RealisticFlip::takeHeading` hands the
+tilt's turn about the vertical to `GameTrackingRig` every frame, which adds it
+to the yaw about the tilt's pivot (nothing placed moves), so the tilt holds
+only the lean and is the identity again once level. Until October 20 the turn
+stayed in the tilt, which the stick's walk leaves aside: after a landing every
+walk went off to the side of the look, and the body, taking the turn for a
+lean, kept its legs in the air pose. With FLIPS on too, the left stick, once
+let go in the air, steers it. `GameTrackingRig::automaticFlips` switches between the two;
 `tests/realistic_flip_tests.cpp` is its own test program (ctest
 `realistic_flips`).
 
@@ -1295,6 +1303,136 @@ VR-like eyes through head poses, the game screen and the flat screen, sets the
 HUD's size and a turned panel through `SpidyHudSet` (the XR worker's follow
 needs a headset), and saves both eyes and the window.
 
+## Body haptics (bHaptics)
+
+A bHaptics TactSuit (the vest, 32 motors), a TactSleeve on each forearm (3
+each) and a TactVisor on the headset (4) feel what happens to Spider-Man. Three
+parts:
+
+- **The patterns** (`include/spidy/body_haptics.hpp`, `src/body_haptics.cpp`,
+  in `spidy_core`, pure and covered by the core tests). The XR worker posts what
+  happened (`Event`: a web shot, a web taking hold, a zip, a landing, a blow
+  given or taken, Spider-Sense, slow motion, ...) and every frame what goes on
+  (`State`: the body's velocity, each web's tension, a grab's pull, a charged
+  leap, slow motion, the health). `Mixer::render` makes every motor's strength
+  for one moment: the patterns are code, nothing is designed or deployed in
+  bHaptics' portal. The vest's motors carry bHaptics' TactSuit Pro index (front
+  0-15, back 16-31, rows from the shoulders, column 0 the wearer's left, from
+  the diagram at docs.bhaptics.com/sdk/further/motor); `frontMirrored`,
+  `backMirrored` and `visorMirrored` flip a side if the devices say otherwise.
+  Directions are taken around the body from the torso's facing (`Facing`: the
+  vest is not tracked, so it follows the head once the head turns past 34
+  degrees, and turns with the room at once - snap and smooth turns, a wall
+  stood on, a flip): a blow, a zip, a wall or Spider-Sense plays on a spot of a
+  few motors toward where it comes from, the nearest at full strength
+  (`Paint::toward`); the wind meets the motors that face the flight, in free
+  flight only (in the air, off any wall, no web holding the player), from 15
+  m/s. Strengths are a share of a motor's full strength at 100%: what goes on
+  all the time stays under a third and grows from nothing (a web's pull 2% when
+  hanging, 23% at the bottom of a fast swing; the wind 0-16%), events play at
+  10-45%, the heaviest blows up to 75%. Every kind belongs to a `Group` (webs,
+  combat, movement; the wind is its own), which the tab's switches silence.
+- **The output** (`include/spidy/bhaptics_output.hpp`,
+  `src/bhaptics_output.cpp`, the `spidy_bhaptics` library). bHaptics' C/C++ SDK
+  2.7.1 (tact-cpp2, fetched by `tools/bootstrap.ps1`, the library's SHA-256
+  pinned): its header names the functions, its `bhaptics_library.dll` is loaded
+  at run time from beside the module, by a thread of its own, only once BODY
+  HAPTICS is on. Every SDK call waits for the SDK's own worker, so the headset's
+  frame loop never calls one. The thread renders the mixer every 40 ms and sends
+  each connected device its frame (`playDot`, 100 ms long, a request id for each
+  device), stopping the device's last frame first, so one plays at a time:
+  whether the Player replaces a playing frame under the same id or plays both
+  (and how it would mix them) is not to be seen from outside. Until the second
+  build of October 20, 70 ms frames every 40 ms overlapped. A motor under 3% goes
+  as off (`minimumLevel`); a device that falls quiet (a menu) is stopped at
+  once. It connects with `registryAndInit`, which keeps reconnecting by itself:
+  a Player started after VR is found; the Player lists its devices a second or
+  so after it connects, so "no device" waits three seconds. Without a Player
+  installed it shuts the SDK down and does nothing more; the library stays
+  loaded until the game ends (one VR session a process; a library unloaded
+  under its own threads is a crash).
+- **The game** (`src/game_xr.cpp`): each controller pulse has its body pattern
+  beside it; the state goes out once a frame, live only in VR play. Blows the
+  player takes come from his health: `game_player`'s watch finds the hero's
+  `HeroHealth` (vtable `38a6df0`, a `SegmentedHealth`, a `Health`; hit points a
+  float at +0x88, 110 to 105 under a probe's blow of 5,
+  `reports/body-probe.json`), the frame loop reads it, and a fall in it is a
+  blow from the attack the game warned of last (Spider-Sense's threats, within
+  a second), else on the chest and the back at once. Zips play toward the
+  zipped webs' ends, walls on the side the swing's wall normal puts them, hand
+  climbing's grips in their arm. Landings come from the swing's samples
+  (`LandingWatch`: the speed it came down at in the flight's last fifth of a
+  second).
+
+**The first session on the devkit** (October 20, a TactSuit Pro and both
+TactSleeves; the visor was not paired): 5,483 frames, none refused, but "way
+too agressive, directionality didnt really feel like anything, felt like 0 to
+100 always with sometimes still going when im standing". The report and the
+Player's log showed why: the wind blew 94% of the time in the air (the swing's
+speed was 31 m/s at the middle, and it blew from 12 m/s) and along walls too,
+most events played at 50-100% on half the vest, frames overlapped, and the vest
+faced wherever the head looked. The pause menu itself was quiet: nothing went to
+the Player in its 4 s. Reading the Player: its log
+(`%LOCALAPPDATA%\com.bhaptics.player\logs`, about a megabyte every 10-30 s while
+a game streams) has every `SdkPlayDotMode`, `SdkStopByRequestId` and its active
+request ids (each listed twice, a single frame's too), a second's resolution;
+its legacy socket (`ws://127.0.0.1:15881/v2/feedbacks`) reports connected
+devices but not the SDK's dots, and `isPlayingByRequestId` stuck on after some
+streams, so none of them tells what a motor does.
+
+**The bHaptics app.** The Player knows an app by the workspace ID and API key
+of an app on the [bHaptics Developer Portal](https://developer.bhaptics.com):
+create one, add one event with any pattern (Spidy never plays it, but an app
+needs one to deploy), deploy it, and make an API key (its API Key tab). The ID
+is the workspace's: on October 20 the app's own record ID got "No workspace"
+from bHaptics' server, and the workspace ID worked (the server returned the
+deployed app, and the Player sent its event list within a fifth of a second of
+connecting). A Player that connects but sends no event list within 5 s did not
+take the app: the status says `rejected`. A build takes them from
+`SPIDY_BHAPTICS_APP_ID` (the workspace ID) and `SPIDY_BHAPTICS_API_KEY` in the
+environment, else from `bhaptics-app.local` beside `CMakeLists.txt`
+(git-ignored):
+
+```
+app_id=...
+api_key=...
+```
+
+The release workflow passes the two repository secrets of those names. A build
+without them plays no body haptics and says so in the headset; `cmake` prints
+which it has. bHaptics calls them no secret (every build carries them), but the
+repository is public, so they stay out of it.
+
+**The settings.** The SPIDY VR tab's HAPTICS section: CONTROLLER VIBRATION,
+BODY HAPTICS (OFF, 25-100%) and four switches, WEB, WIND, COMBAT and MOVEMENT
+HAPTICS (the player, October 20: "one switch per effect group"). BODY HAPTICS
+is "Body haptics" in the launcher (`body_haptics` in `launcher.ini`),
+`--body-haptics` for `tools/run_game_vr.py`, and rides XrConfig version 24 in
+version 23's spare word; the switches are the tab's alone, kept in
+`%APPDATA%\Spidy\spidy_vr.ini` (`body_haptics_webs`, `_wind`, `_combat`,
+`_movement`) with the other tab-only rows. A session puts a copy of
+`bhaptics_library.dll` beside the stereo module it stages
+(`reports\stereo-modules\<sha256>\`). The session report's `haptics` (and each
+sample's; `SpidyHapticsData` version 2) says what the connection did
+(`no_player` on a PC without the Player), the devices on now and at any time,
+frames sent, blows felt (and how many by an attacker's direction), landings,
+the seconds of VR play with the Player connected and each device's share of
+them with something playing and its strongest motor's mean then (`played`), the
+switches on (`groups`) and the events by kind (posted, played or not); the
+headset says once which devices are on, or why there are none. The library is
+unsigned, like Spidy's modules: one more file an antivirus heuristic may look
+at.
+
+**Without the game**, `build\windows-ninja\spidy_haptics_test.exe` plays every
+pattern through the same mixer and output: `check` (the Player and the devices),
+`map` (each part of each device in turn, to say where it is felt; `--step`
+waits for Enter), `effects` (each pattern with what it should feel like;
+`--only NAME`), `stream` (a steady frame and a ramp: one buzz, or a pulse?).
+`--dry` needs no Player and prints the frames as the devices would get them, a
+digit a motor in tenths rounded up (1: 3-10%, 9: over 80%), the vest's front
+and back row by row from the wearer's left; `--app-id` and `--api-key` try an
+app before a build has it.
+
 ## Run the lab
 
 Connect Quest 3 to Virtual Desktop on this PC, then double-click
@@ -1410,6 +1548,7 @@ still requires a running game or headset.
 | `src/web_strike.cpp` | Fighting across the room: the web strike that flies the player to the thug a fist is thrown at, the flow's count and finisher, how each blow is delivered (melee, or the kinetic blow that sends him flying), and the hit stop; `game_punch.cpp` runs it and `game_swing.cpp` flies the player |
 | `src/spider_sense.cpp`, `src/game_sense.cpp` | Spider-Sense: the game's own warnings of an attack about to land, read from the hero's `HeroDodgeManager` (`game_sense`), what each asks for, the counter a fist thrown at the attacker makes and the blow after it (`spider_sense`); `game_punch.cpp` runs it, `game_xr.cpp` tingles and draws the marks (`web_visual.cpp`'s `appendSense`, `appendSenseSight`) |
 | `src/impact_sound.cpp` | The blows' sounds and a strike's rush, synthesized as WAVs in memory |
+| `src/body_haptics.cpp`, `src/bhaptics_output.cpp`, `apps/haptics_test.cpp` | Body haptics on a bHaptics vest, sleeves and visor: the patterns (pure, in the core tests), the bHaptics SDK on a thread of its own, and the test tool without the game ([Body haptics](#body-haptics-bhaptics)) |
 | `src/shooter.cpp`, `src/game_shooter.cpp` | The web shooter: trigger pulls and their aim, and the game's own web-shooter shot fired from the hand |
 | `src/slow_motion.cpp`, `src/game_time.cpp` | Slow motion: the left stick's click, focus and the eased time scale; the game's own time system slowed to it (its look: `D3D12Renderer::Grade`, the meter in `web_visual.cpp`) |
 | `src/game_grab.cpp`, `src/native_bodies.cpp`, `src/game_targets.cpp` | Web grab in the game: candidates, freed Havok props, flung bots |

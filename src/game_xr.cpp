@@ -2,7 +2,9 @@
 #include "spidy/native_appearance.hpp"
 #include "spidy/native_body.hpp"
 // The input bridge remains a separately verified, separately stoppable module.
+#include "spidy/bhaptics_output.hpp"
 #include "spidy/body_calibration.hpp"
+#include "spidy/body_haptics.hpp"
 #include "spidy/crawl_stick.hpp"
 #include "spidy/eye_resolution.hpp"
 #include "spidy/monitor_rate.hpp"
@@ -45,6 +47,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -54,7 +57,7 @@
 #include <shlobj.h>
 using namespace spidy;
 struct XrConfig {
-    uint32_t magic = 0x53585243, version = 23, bytes = sizeof(XrConfig), pid{};
+    uint32_t magic = 0x53585243, version = 24, bytes = sizeof(XrConfig), pid{};
     // record and mover are no longer used: VR starts with the game, before
     // there is a player, and finds each new player itself (game_player).
     uint64_t base{}, queue{}, bridgeModule{}, rayModule{}, motionModule{}, record{}, mover{};
@@ -120,9 +123,10 @@ struct XrConfig {
     // every frame (monitor_rate.hpp).
     uint32_t upscale = defaultEyeUpscale, monitorRate = defaultMonitorRate;
     // Version 23: how much depth scenes have on the game screen: 0 none (the
-    // game's flat frame), 1 low, 2 medium, 3 high (vr_settings::screenDepths);
-    // and a spare word.
-    uint32_t screenDepth = 2, spare{};
+    // game's flat frame), 1 low, 2 medium, 3 high (vr_settings::screenDepths).
+    // Version 24, in version 23's spare word: how strongly a bHaptics vest,
+    // sleeves and visor play (BODY HAPTICS, percent; 0 off: body_haptics.hpp).
+    uint32_t screenDepth = 2, bodyHaptics = 100;
 };
 static_assert(sizeof(XrConfig) == 664);
 // Why the last frame had no gameplay (XrData::gate bits).
@@ -408,10 +412,36 @@ struct SlowMotionData {
     float momentScale = 1;
 };
 static_assert(sizeof(SlowMotionData) == 120);
+// Body haptics on bHaptics devices (body_haptics.hpp, bhaptics_output.hpp):
+// what the bHaptics Player and its devices did. status: bhaptics::Status (0
+// off: BODY HAPTICS has not been on; 4 no_player: no bHaptics Player installed,
+// as for most players). level: BODY HAPTICS now, percent. Devices on now and
+// at any time (bit 1 << body_haptics::Device: 1 the vest, 2 and 4 the left and
+// right sleeve, 8 the visor) and the times the Player was connected. Events
+// posted, frames sent to a device and those the SDK did not send. Blows the
+// player took (a fall in his health) and of them those placed by the attacker
+// the game had warned of, and landings. Version 2: ticks of VR play with the
+// Player connected (25 a second), and of them each device's with something
+// playing and the sum of its strongest motor over those (percent) - how much
+// of play a device was on, and how strongly. Then the events by Kind (posted,
+// whether their group played them or not), and the groups the tab's switches
+// leave on (bit 1 << body_haptics::Group: 1 webs, 2 wind, 4 combat, 8 movement).
+struct HapticsData {
+    uint32_t magic = 0x53485044, version = 2, bytes = sizeof(HapticsData), status{};
+    int64_t sequence{};
+    uint32_t level{}, devices{}, devicesSeen{}, connects{};
+    uint64_t events{}, frames{}, refused{};
+    uint32_t hits{}, aimedHits{}, landings{}, liveTicks{};
+    uint32_t onTicks[body_haptics::deviceCount]{}, peakSum[body_haptics::deviceCount]{};
+    uint32_t kinds[body_haptics::kindCount]{};
+    uint32_t groups{};
+};
+static_assert(sizeof(HapticsData) == 116 + 4 * body_haptics::kindCount && body_haptics::kindCount == 35);
 extern "C" {
 __declspec(dllexport) XrData SpidyXrData;
 __declspec(dllexport) PromptData SpidyPromptData;
 __declspec(dllexport) SlowMotionData SpidySlowMotionData;
+__declspec(dllexport) HapticsData SpidyHapticsData;
 __declspec(dllexport) XrTimingData SpidyXrTimingData;
 __declspec(dllexport) EyeSnapshot SpidyXrSnapshot;
 DWORD WINAPI SpidyStart(void*);
@@ -836,8 +866,9 @@ DWORD WINAPI run(void*) {
         // arrival among them): in the air, time slows as one arrives.
         uint64_t catchesBefore{};
         // A dodge the game itself slows time for is its perfect dodge: for a
-        // moment after B went down with the game's time at full speed.
-        float dodgeWatch{};
+        // moment after B went down with the game's time at full speed. The
+        // side its whoosh starts on (body_haptics' azimuth: + the right).
+        float dodgeWatch{}, dodgeFrom{};
         // The VR settings: the launch options, then the SPIDY VR tab in the
         // game's Settings during play.
         vr_settings::Values values;
@@ -860,10 +891,19 @@ DWORD WINAPI run(void*) {
         values.hud = static_cast<int>(config.hud);
         values.flipSpeed = static_cast<int>(config.flipSpeed);
         values.screenDepth = static_cast<int>(config.screenDepth);
-        // And those only the tab offers, as it left them (tabOnlyPath).
+        values.bodyHaptics = static_cast<int>(config.bodyHaptics);
+        // And those only the tab offers, as it left them (tabOnlyPath); all sanitized.
         values = vr_settings::withTabOnly(values, readTabOnly());
         std::string tabOnlySaved = vr_settings::tabOnlyText(values);
         game_menu::publish(values);
+        {
+            // BODY HAPTICS as the session starts: written before the first frame,
+            // so a report never reads the zero of a struct not yet written.
+            std::lock_guard lock(telemetry);
+            InterlockedIncrement64(&SpidyHapticsData.sequence);
+            SpidyHapticsData.level = static_cast<uint32_t>(values.bodyHaptics);
+            InterlockedIncrement64(&SpidyHapticsData.sequence);
+        }
         uint32_t settingChanges{};
         // aims are each hand's latest preview.
         uint64_t markersDrawn{};
@@ -1036,6 +1076,44 @@ DWORD WINAPI run(void*) {
         uint32_t calibrations{}, calibrationSkips{};
         LARGE_INTEGER frequency{};
         QueryPerformanceFrequency(&frequency);
+        // Body haptics (body_haptics.hpp): a bHaptics vest, sleeves and visor,
+        // played on a thread of their own (bhaptics_output.hpp), started the
+        // first time BODY HAPTICS is on. What happens is posted where it
+        // happens, beside the controllers' pulses (feel); what goes on, once a
+        // frame. A fall in the hero's health is a blow, from where the attack
+        // the game last warned of came (blowFrom, since the display time
+        // blowSeen); landings come from the swing's samples.
+        bhaptics::Output haptics;
+        // feel: an event in its own place (a dodge's azimuth names only its
+        // side); feelFrom: one that comes from a world direction, placed on the
+        // vest by where the torso faces (Facing: it follows the head, the
+        // room's turns at once), which the frame loop updates every frame.
+        body_haptics::Facing facing;
+        body_haptics::Body torso;
+        const auto feel = [&](body_haptics::Kind kind, int hand = -1, float strength = 1, float azimuth = 0) {
+            haptics.post({kind, static_cast<int8_t>(hand), strength, azimuth, .4f, false});
+        };
+        const auto feelFrom = [&](body_haptics::Kind kind, int hand, float strength, Vec3 from) {
+            const bool placed = finite(from) && length(from) > 1e-3f;
+            haptics.post({kind, static_cast<int8_t>(hand), strength, placed ? torso.azimuth(from) : 0.f,
+                          placed ? torso.height(from) : .4f, placed});
+        };
+        // The groups the tab's WEB, WIND, COMBAT and MOVEMENT HAPTICS switches
+        // leave on (body_haptics::State::groups).
+        const auto hapticGroups = [&] {
+            using body_haptics::Group;
+            const auto bit = [](bool on, Group g) { return on ? 1u << static_cast<unsigned>(g) : 0u; };
+            return bit(values.hapticWebs, Group::webs) | bit(values.hapticWind, Group::wind) |
+                   bit(values.hapticCombat, Group::combat) | bit(values.hapticMovement, Group::movement);
+        };
+        body_haptics::LandingWatch landingWatch;
+        body_haptics::HealthWatch heroHealth;
+        Vec3 blowFrom{};
+        int64_t blowSeen{};
+        uint32_t hits{}, aimedHits{}, landings{};
+        bhaptics::Status hapticsTold{};
+        uint32_t devicesTold{};
+        uint64_t hapticsSince{};
         // Slow motion: the left thumbstick's click (StickPress keeps it apart
         // from clicking both), its focus and the game's eased time
         // (SlowMotion). Each step sets the game's time, gives the controllers
@@ -1066,15 +1144,18 @@ DWORD WINAPI run(void*) {
                 ++slowCounts.starts;
                 runtime.haptic(0, .55f);
                 runtime.haptic(1, .55f);
+                feel(body_haptics::Kind::slowStart);
                 break;
             case Event::stopped:
                 ++slowCounts.stops;
                 runtime.haptic(0, .3f);
                 runtime.haptic(1, .3f);
+                feel(body_haptics::Kind::slowStop);
                 break;
             case Event::emptied:
                 ++slowCounts.emptied;
                 runtime.haptic(0, .8f);
+                feel(body_haptics::Kind::slowStop);
                 break;
             case Event::refused:
                 ++slowCounts.refused;
@@ -1145,6 +1226,17 @@ DWORD WINAPI run(void*) {
         };
         auto applySettings = [&] {
             runtime.hapticStrength(static_cast<float>(values.haptics) / 100);
+            // The bHaptics library loads, on the haptics' own thread, the first
+            // time BODY HAPTICS is on; at 0 the devices go quiet.
+            if (values.bodyHaptics > 0 && !haptics.started()) {
+                bhaptics::Config felt;
+                felt.library = bhaptics::libraryBeside();
+                felt.appId = bhaptics::builtAppId();
+                felt.apiKey = bhaptics::builtApiKey();
+                haptics.start(felt);
+                hapticsSince = GetTickCount64();
+            }
+            haptics.level(values.bodyHaptics);
             rig.snapTurn(static_cast<float>(values.snapTurn) * 3.14159265f / 180);
             rig.smoothTurn(static_cast<float>(values.smoothTurn) * 3.14159265f / 180);
             rig.flips(values.flips);
@@ -1222,6 +1314,8 @@ DWORD WINAPI run(void*) {
             if (websStarted)
                 native_webs::retarget(player.record);
             playersFound += player.hero != 0;
+            // A respawn or another hero: his health is his own.
+            heroHealth.reset();
             // The tracking space aligns with the new body's camera again.
             rig.reset();
             history.clear();
@@ -1370,6 +1464,7 @@ DWORD WINAPI run(void*) {
                             scansBefore = templePress.scans();
                             runtime.haptic(0, .3f);
                             runtime.haptic(1, .3f);
+                            feel(body_haptics::Kind::scan);
                         }
                     }
                     // A grip squeezed at a back pocket draws the phone, and shoots
@@ -1770,6 +1865,7 @@ DWORD WINAPI run(void*) {
                             calibrationShownAt = nowMs;
                             runtime.haptic(0, .7f);
                             runtime.haptic(1, .7f);
+                            feel(body_haptics::Kind::calibrated);
                             char text[160];
                             sprintf_s(text, "Body calibrated: eye height %.2f m, arm length %.2f m (left %.2f, right %.2f)",
                                       calibratedEye, calibratedArm, lastCalibration.reach[0], lastCalibration.reach[1]);
@@ -1792,6 +1888,7 @@ DWORD WINAPI run(void*) {
                             phoneMusic.load();
                             runtime.haptic(0, .2f);
                             runtime.haptic(1, .2f);
+                            feel(body_haptics::Kind::phone, pocketDraw.drewWith());
                             message(3, 0, "Phone out - the stick, A, B and the triggers are the phone's "
                                           "until B puts it away");
                         }
@@ -1959,8 +2056,10 @@ DWORD WINAPI run(void*) {
                         const unsigned wallPulses =
                             climbPulses.update(climbState, input.focused && values.handClimb);
                         for (unsigned i = 0; i < 2; ++i)
-                            if (wallPulses & (1u << i))
+                            if (wallPulses & (1u << i)) {
                                 runtime.haptic(i, .45f, .045f);
+                                feel(body_haptics::Kind::wallGrip, static_cast<int>(i));
+                            }
                         if (!sampleBends || sampleBends(&swingBends))
                             swingBends = {};
                         // Nothing here changes who holds the player on a wall
@@ -2002,6 +2101,9 @@ DWORD WINAPI run(void*) {
                         }
                         bool trails[2]{};
                         Vec3 trailEnds[2]{};
+                        // The hands whose webs a zip pulled: one zip on the body, in the arm of
+                        // each (both: a web held in both hands).
+                        unsigned zipHands{};
                         for (unsigned i = 0; i < 2; ++i) {
                             // A web that caught a thug ends on him, wherever he goes.
                             const auto& held = grabState.hands[i];
@@ -2017,6 +2119,10 @@ DWORD WINAPI run(void*) {
                                                       : phase == GrabPhase::Held ? .4f
                                                                                  : .55f);
                                     pulseUntil[i] = displayAt + 30'000'000;
+                                    feel(phase == GrabPhase::Yanked ? body_haptics::Kind::grabYanked
+                                         : phase == GrabPhase::Held ? body_haptics::Kind::grabHeld
+                                                                    : body_haptics::Kind::grabCaught,
+                                         static_cast<int>(i));
                                 } else if (held.tension > .05f && displayAt >= pulseUntil[i]) {
                                     // Between pulses the hand feels the web pull: a
                                     // hanging trash can faintly, one swung hard or too
@@ -2025,6 +2131,7 @@ DWORD WINAPI run(void*) {
                                 }
                             } else if (wasGrabbing) {
                                 runtime.haptic(i, .6f); // thrown or let go
+                                feel(body_haptics::Kind::grabLetGo, static_cast<int>(i));
                             }
                             grabPhases[i] = grabbing ? held.phase : 0;
                             // The web let go of trails what it held as it dissolves.
@@ -2035,10 +2142,17 @@ DWORD WINAPI run(void*) {
                             // A web taken hold of, not shot: the hand closes on it,
                             // a softer pulse than a shot's.
                             const bool taken = attached && !grabbing && (swingState.webs[i].attached & 4);
-                            if (attached != attachedBefore[i] && !grabbing && !wasGrabbing)
+                            if (attached != attachedBefore[i] && !grabbing && !wasGrabbing) {
                                 runtime.haptic(i, !attached ? .2f : taken ? .4f : .65f);
-                            if (attached && swingState.zips > zipBefore && !grabbing)
+                                feel(!attached ? body_haptics::Kind::webRelease
+                                     : taken   ? body_haptics::Kind::webTaken
+                                               : body_haptics::Kind::webAttach,
+                                     static_cast<int>(i));
+                            }
+                            if (attached && swingState.zips > zipBefore && !grabbing) {
                                 runtime.haptic(i, 1);
+                                zipHands |= 1u << i;
+                            }
                             attachedBefore[i] = attached;
                             webTaken[i] = taken;
                             webTimes.update(i, attached, swingState.webs[i].anchor,
@@ -2046,6 +2160,14 @@ DWORD WINAPI run(void*) {
                                             frame.predictedDisplayTime);
                         }
                         zipBefore = swingState.zips;
+                        if (zipHands) {
+                            // On the body toward where the zipped webs pull it.
+                            Vec3 toward{};
+                            for (unsigned i = 0; i < 2; ++i)
+                                if (zipHands & (1u << i))
+                                    toward += swingState.webs[i].anchor - swingState.position;
+                            feelFrom(body_haptics::Kind::zip, zipHands == 3 ? -1 : zipHands == 2 ? 1 : 0, 1, toward);
+                        }
                         {
                             // One web in both hands is one of the game's ropes,
                             // from the hand that holds it nearer its end.
@@ -2067,6 +2189,7 @@ DWORD WINAPI run(void*) {
                             moments.start(Moment::airPull);
                             runtime.haptic(0, .45f);
                             runtime.haptic(1, .45f);
+                            feel(body_haptics::Kind::airPull);
                         }
                         catchesBefore = grabState.catches;
                         // Onto a wall, and off it with a jump: both hands feel it.
@@ -2075,6 +2198,10 @@ DWORD WINAPI run(void*) {
                             const float pulse = swingState.wallJumps > wallJumpsBefore ? .6f : .45f;
                             runtime.haptic(0, pulse);
                             runtime.haptic(1, pulse);
+                            // On the body's side toward the wall (behind its normal).
+                            feelFrom(swingState.wallJumps > wallJumpsBefore ? body_haptics::Kind::wallJump
+                                                                            : body_haptics::Kind::wallLand,
+                                     -1, 1, -swingState.wallNormal);
                         }
                         wallsBefore = swingState.walls;
                         wallJumpsBefore = swingState.wallJumps;
@@ -2100,6 +2227,7 @@ DWORD WINAPI run(void*) {
                                 // Off to him: a tick in both hands, and the rush.
                                 runtime.haptic(0, .35f, .05f);
                                 runtime.haptic(1, .35f, .05f);
+                                feel(body_haptics::Kind::strikeRush);
                                 play(ImpactSound::Rush);
                             }
                             if (strikes.blows > blowsBefore && input.focused) {
@@ -2122,6 +2250,10 @@ DWORD WINAPI run(void*) {
                                 runtime.haptic(hand, heavy ? 1.f : .6f + .4f * strength, kick);
                                 if (heavy)
                                     runtime.haptic(1 - hand, finisher ? 1.f : .5f, finisher ? kick : .1f);
+                                feel(finisher ? body_haptics::Kind::finisher
+                                     : heavy  ? body_haptics::Kind::heavyBlow
+                                              : body_haptics::Kind::punch,
+                                     static_cast<int>(hand), strength);
                                 for (unsigned i = 0; i < 2; ++i)
                                     if (i == hand || heavy)
                                         pulseUntil[i] = frame.predictedDisplayTime +
@@ -2146,6 +2278,7 @@ DWORD WINAPI run(void*) {
                                 moments.start(Moment::knockout);
                                 runtime.haptic(0, .8f, .09f);
                                 runtime.haptic(1, .8f, .09f);
+                                feel(body_haptics::Kind::knockout);
                                 auto& mark = knockoutMarks[nextKnockout++ % knockoutMarks.size()];
                                 mark.view = {strikes.knockoutPoint, 0};
                                 mark.since = frame.predictedDisplayTime;
@@ -2221,6 +2354,9 @@ DWORD WINAPI run(void*) {
                                             pulseUntil[h] = std::max(pulseUntil[h], until);
                                         }
                                     ++senseTingles;
+                                    // In the head, from his side.
+                                    feelFrom(dodge ? body_haptics::Kind::senseDodge : body_haptics::Kind::spiderSense,
+                                             -1, 1, placed ? to : Vec3{});
                                 }
                                 mark->live = true;
                                 mark->head = t.head;
@@ -2231,6 +2367,19 @@ DWORD WINAPI run(void*) {
                                     mark->brokenAt = frame.predictedDisplayTime;
                                     ++senseBroken;
                                 }
+                            }
+                            // The attack to land first, timed ones before the rest: a
+                            // blow the player takes next comes from him (the hits below).
+                            const game_sense::Threat* first{};
+                            for (uint32_t i = 0; i < std::min<uint32_t>(senseNow.count, 6); ++i) {
+                                const auto& t = senseNow.threats[i];
+                                if (t.attacker && finite(t.middle) &&
+                                    (!first || (t.timed && (!first->timed || t.toImpact < first->toImpact))))
+                                    first = &t;
+                            }
+                            if (first) {
+                                blowFrom = first->middle;
+                                blowSeen = frame.predictedDisplayTime;
                             }
                             // A counter made: its attacker's mark breaks, even one the
                             // game has taken off already.
@@ -2248,6 +2397,7 @@ DWORD WINAPI run(void*) {
                                     runtime.haptic(h, .8f, .08f);
                                     pulseUntil[h] = std::max(pulseUntil[h], until);
                                 }
+                                feel(body_haptics::Kind::counter);
                             }
                             countersBefore = counters;
                         }
@@ -2269,6 +2419,7 @@ DWORD WINAPI run(void*) {
                                 if (!fighting && punch.hands[i].punches > punchesBefore[i] && input.focused) {
                                     runtime.haptic(i, .5f + .5f * punch.hands[i].lastStrength);
                                     pulseUntil[i] = frame.predictedDisplayTime + 40'000'000;
+                                    feel(body_haptics::Kind::punch, static_cast<int>(i), punch.hands[i].lastStrength);
                                 }
                                 punchesBefore[i] = punch.hands[i].punches;
                             }
@@ -2281,6 +2432,7 @@ DWORD WINAPI run(void*) {
                                     runtime.haptic(i, .35f);
                                     pulseUntil[i] = frame.predictedDisplayTime + 25'000'000;
                                     ballShot[i] = true;
+                                    feel(body_haptics::Kind::webShot, static_cast<int>(i));
                                 }
                                 shotsBefore[i] = shots.hands[i].shots;
                             }
@@ -2367,6 +2519,7 @@ DWORD WINAPI run(void*) {
                     if (chargeJump.charges() != chargesBefore) {
                         chargesBefore = chargeJump.charges();
                         runtime.haptic(1, .3f);
+                        feel(body_haptics::Kind::leapCharge);
                     } else if (chargeJump.charging()) {
                         // It builds in both hands, and holds at full.
                         const float charge = chargeJump.charge();
@@ -2377,6 +2530,7 @@ DWORD WINAPI run(void*) {
                         leapsBefore = chargeJump.leaps();
                         runtime.haptic(0, .8f, .12f);
                         runtime.haptic(1, 1.f, .12f);
+                        feel(body_haptics::Kind::leap);
                     }
                     controls(keys);
                     askingGame = false;
@@ -2597,6 +2751,7 @@ DWORD WINAPI run(void*) {
                             pullsBefore = webPull.pulls();
                             runtime.haptic(0, 1);
                             runtime.haptic(1, 1);
+                            feel(body_haptics::Kind::webPull);
                             message(3, 0, "Web pull - the game's LB + RB, for as long as you hold both web buttons");
                         }
                         const bool pullClick =
@@ -2642,6 +2797,10 @@ DWORD WINAPI run(void*) {
                         walk.aim = zipKeys.aim;
                         if ((walk.heal && !healing) || (walk.zip && !zipping))
                             runtime.haptic(1, .2f);
+                        if (walk.heal && !healing)
+                            feel(body_haptics::Kind::heal);
+                        if (walk.zip && !zipping)
+                            feel(body_haptics::Kind::zip);
                         // The swing hears of it with the next command: the zip from its own wall
                         // too, where Y is the wall's interactions' (offerUse).
                         // And of any button the game names, pressed in flight: the
@@ -2677,8 +2836,12 @@ DWORD WINAPI run(void*) {
                         walk.scan = templePress.held() && steering;
                         // A perfect dodge: the game slows its own time within a
                         // moment of a B that went down with it at full speed.
-                        if (walk.dodge && !dodging)
+                        if (walk.dodge && !dodging) {
                             dodgeWatch = game_time::telemetry().own > .95f ? .7f : 0.f;
+                            // A whoosh across the body the way the stick sends him.
+                            dodgeFrom = walk.right > 0 ? -1.f : 1.f;
+                            feel(body_haptics::Kind::dodge, -1, 1, dodgeFrom);
+                        }
                         // A dodge while a warning stands: the answer a red mark asks for.
                         if (walk.dodge && !dodging &&
                             std::any_of(senseMarks.begin(), senseMarks.end(),
@@ -2691,6 +2854,7 @@ DWORD WINAPI run(void*) {
                                 moments.start(Moment::dodge);
                                 runtime.haptic(0, .5f);
                                 runtime.haptic(1, .5f);
+                                feel(body_haptics::Kind::perfectDodge, -1, 1, dodgeFrom);
                             }
                         }
                         auto buttons = origins.filtered(frame, mapping);
@@ -2720,12 +2884,17 @@ DWORD WINAPI run(void*) {
                                                    frame.hands[hand].grip.position, frame.head.position, places);
                             if (chosen.tap)
                                 menuTap = .1f;
-                            if (chosen.opened)
+                            if (chosen.opened) {
                                 runtime.haptic(hand, .3f);
-                            if (chosen.lit)
+                                feel(body_haptics::Kind::gadget, static_cast<int>(hand), .3f);
+                            }
+                            if (chosen.lit) {
                                 runtime.haptic(hand, .12f);
+                                feel(body_haptics::Kind::gadget, static_cast<int>(hand), .15f);
+                            }
                             if (chosen.chosen >= 0) {
                                 runtime.haptic(hand, .5f);
+                                feel(body_haptics::Kind::gadget, static_cast<int>(hand), .5f);
                                 game_shooter::GadgetCommand command;
                                 for (uint32_t g = 0; g < owned; ++g)
                                     if (listed.gadgets[g].place == chosen.chosen)
@@ -2787,6 +2956,98 @@ DWORD WINAPI run(void*) {
                         healing = walk.heal;
                         zips += walk.zip && !zipping;
                         zipping = walk.zip;
+                    }
+                    // Body haptics: what goes on, every frame, in VR play only (a
+                    // menu, a scene, the game screen: all quiet).
+                    {
+                        body_haptics::State felt;
+                        felt.live = immersive;
+                        felt.groups = hapticGroups();
+                        // The room's turn into the world: the world's head over the room's.
+                        if (validTrackedPose(frame.head) && validTrackedPose(motion.headPose))
+                            torso = facing.update(frame.head.orientation,
+                                                  motion.headPose.orientation * frame.head.orientation.conjugate(),
+                                                  frame.seconds);
+                        const bool fresh = swingStarted && swingState.status && swingState.qpc &&
+                                           static_cast<int64_t>(swingState.qpc) > now.QuadPart - frequency.QuadPart / 10 &&
+                                           finite(swingState.velocity);
+                        felt.airborne = fresh && game_swing::airborne(swingState, now.QuadPart, frequency.QuadPart);
+                        felt.onWall = fresh && swingState.wall != 0;
+                        if (fresh)
+                            felt.velocity = torso.local(swingState.velocity);
+                        for (unsigned i = 0; i < 2; ++i) {
+                            const bool grabbing = grabPhases[i] != 0;
+                            felt.webTension[i] = fresh && attachedBefore[i] && !grabbing ? swingState.webs[i].tension : 0.f;
+                            felt.grabTension[i] = grabbing ? grabState.hands[i].tension : 0.f;
+                        }
+                        felt.charge = chargeJump.charging() ? chargeJump.charge() : 0.f;
+                        felt.slowMotion = slowMotion.active();
+                        // A fall in the hero's hit points is a blow: from the attack
+                        // the game warned of last, within a second, else on the chest
+                        // and the back at once.
+                        float hitPoints = std::numeric_limits<float>::quiet_NaN();
+                        if (const auto h = players.health(); h && player.hero)
+                            read(h + game_player::hitPointsAt, &hitPoints, sizeof(hitPoints));
+                        const float lost = heroHealth.update(hitPoints);
+                        felt.health = heroHealth.fraction();
+                        if (lost > 0 && immersive) {
+                            ++hits;
+                            const float strength = std::clamp(lost * 4, 0.f, 1.f);
+                            const Vec3 to = blowFrom - (motion.headPose.position - Vec3{0, .4f, 0});
+                            if (blowSeen && frame.predictedDisplayTime - blowSeen < 1'000'000'000 && length(to) > .1f) {
+                                ++aimedHits;
+                                feelFrom(body_haptics::Kind::hit, -1, strength, to);
+                            } else {
+                                feel(body_haptics::Kind::hit, -1, strength);
+                            }
+                        }
+                        const float landed =
+                            landingWatch.update(frame.seconds, felt.airborne, fresh ? -swingState.velocity.y : 0.f);
+                        if (landed > 0 && immersive) {
+                            ++landings;
+                            feel(body_haptics::Kind::landing, -1, landed);
+                        }
+                        haptics.set(felt);
+                        // The player hears once what the devices do: on, and which; or
+                        // why not. Without a Player installed (most players), nothing.
+                        const auto told = haptics.counters();
+                        if (told.status != hapticsTold ||
+                            (told.status == bhaptics::Status::playing && told.devices != devicesTold)) {
+                            std::string text;
+                            switch (told.status) {
+                            case bhaptics::Status::playing:
+                                text = "Body haptics on: " + bhaptics::deviceNames(told.devices);
+                                break;
+                            case bhaptics::Status::connected:
+                                text = "Body haptics: the bHaptics Player has no device on - pair them in it";
+                                break;
+                            case bhaptics::Status::noLibrary:
+                                text = "Body haptics: bhaptics_library.dll is missing beside Spidy's modules";
+                                break;
+                            case bhaptics::Status::noApp:
+                                text = "Body haptics: this build of Spidy has no bHaptics app";
+                                break;
+                            case bhaptics::Status::failed:
+                                text = "Body haptics: the bHaptics SDK would not start";
+                                break;
+                            case bhaptics::Status::rejected:
+                                text = "Body haptics: the bHaptics Player did not take this build's bHaptics app";
+                                break;
+                            default:
+                                break;
+                            }
+                            if (!text.empty())
+                                message(3, 0, text.c_str());
+                            hapticsTold = told.status;
+                            devicesTold = told.devices;
+                        }
+                        // Installed but not answering for ten seconds: not running.
+                        if (told.status == bhaptics::Status::waiting && hapticsSince &&
+                            GetTickCount64() - hapticsSince > 10000) {
+                            hapticsSince = 0;
+                            message(3, 0, "Body haptics: start the bHaptics Player to feel webs, blows and "
+                                          "Spider-Sense on your vest - it connects by itself");
+                        }
                     }
                     {
                         std::lock_guard lock(telemetry);
@@ -2920,6 +3181,28 @@ DWORD WINAPI run(void*) {
                             std::memcpy(p.example, seen.example, sizeof(p.example));
                         }
                         InterlockedIncrement64(&p.sequence);
+                        {
+                            const auto felt = haptics.counters();
+                            auto& h = SpidyHapticsData;
+                            InterlockedIncrement64(&h.sequence);
+                            h.status = static_cast<uint32_t>(felt.status);
+                            h.level = static_cast<uint32_t>(values.bodyHaptics);
+                            h.devices = felt.devices;
+                            h.devicesSeen = felt.devicesSeen;
+                            h.connects = felt.connects;
+                            h.events = felt.events;
+                            h.frames = felt.frames;
+                            h.refused = felt.refused;
+                            h.hits = hits;
+                            h.aimedHits = aimedHits;
+                            h.landings = landings;
+                            h.liveTicks = felt.liveTicks;
+                            std::copy(felt.onTicks.begin(), felt.onTicks.end(), h.onTicks);
+                            std::copy(felt.peakSum.begin(), felt.peakSum.end(), h.peakSum);
+                            std::copy(felt.kinds.begin(), felt.kinds.end(), h.kinds);
+                            h.groups = hapticGroups();
+                            InterlockedIncrement64(&h.sequence);
+                        }
                         const auto controllers = runtime.controllers();
                         d.controllers[0] = static_cast<uint32_t>(controllers[0]);
                         d.controllers[1] = static_cast<uint32_t>(controllers[1]);
@@ -3829,13 +4112,13 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyXrStart(void* input) {
     if (worker)
         return 1000; // one bounded XR session per process during validation
     if (!read(reinterpret_cast<uintptr_t>(input), &config, sizeof(config)) || config.magic != 0x53585243 ||
-        config.version != 23 || config.bytes != sizeof(config) || config.pid != GetCurrentProcessId() ||
+        config.version != 24 || config.bytes != sizeof(config) || config.pid != GetCurrentProcessId() ||
         config.runtime[std::size(config.runtime) - 1] ||
         config.base != reinterpret_cast<uint64_t>(GetModuleHandleW(nullptr)) ||
         !GetModuleHandleW(L"Spider-Man.exe") || !config.queue || !config.bridgeModule || !config.rayModule ||
         !config.motionModule || config.options > 0x3fffff || config.snapTurn > 90 || config.haptics > 100 ||
         !validEyeUpscale(config.upscale) || !validMonitorRate(config.monitorRate) ||
-        config.screenSize > 2 || config.screenDepth > 3 || config.spare || config.smoothTurn > 360 ||
+        config.screenSize > 2 || config.screenDepth > 3 || config.bodyHaptics > 100 || config.smoothTurn > 360 ||
         config.hud > 3 || config.flipSpeed < 90 ||
         config.flipSpeed > 480 || !std::isfinite(config.swingSpeed) || config.swingSpeed < 1 ||
         config.swingSpeed > 65 || (config.durationMs && config.durationMs < 2000) || config.durationMs > 25000 ||

@@ -429,6 +429,20 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
         flight.handMomentum = automaticHands_.update(f, autoSettings_.handThreshold);
         rig_.tilt = automatic_.update(flight, flip.airborne, flip.surface, rig_.yaw, f.seconds, autoSettings_,
                                       controls);
+        // Where the spin leaves the player facing is the heading: the yaw
+        // takes its turn about the vertical, about the tilt's pivot, so that
+        // nothing in view moves, and the tilt keeps the lean alone, level
+        // again once landed. Kept in the tilt, the turn was none of the
+        // stick's (trackedSwingInput) or of the game's walk, which the
+        // camera turned with the view: after a landing every walk went off
+        // to the side of the look, a quarter turn to the left all one
+        // session ("moving forward would cause me to walk left", October 20).
+        if (const float heading = automatic_.takeHeading(); heading != 0) {
+            const Vec3 pivot = rig_.pivot;
+            rig_.origin += Quat::yaw(rig_.yaw).rotate(pivot) - Quat::yaw(rig_.yaw + heading).rotate(pivot);
+            rig_.yaw += heading;
+            rig_.tilt = automatic_.orientation();
+        }
     } else if (flips_) {
         automatic_.reset();
         automaticHands_.reset();

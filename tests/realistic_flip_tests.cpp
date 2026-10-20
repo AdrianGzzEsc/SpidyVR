@@ -158,9 +158,41 @@ int main() {
     for (int i = 0; i < 180; ++i)
         b.update(f, true, false, 0, 1.f / 180, s);
     check(distance(a.orientation(), b.orientation()) < .04f, "frame-rate consistency");
+    // The turn about the vertical, taken out each frame for the tracking
+    // space's yaw as GameTrackingRig does (takeHeading), changes nothing in
+    // the world: a twin that keeps it in its tilt turns just the same. The
+    // flight's velocity and pull are the world's, and the twin's yaw is none.
+    float took = 0, apart = 0, twisted = 0;
+    {
+        RealisticFlip kept, taken;
+        float yaw = 0;
+        for (int i = 0; i < 900; ++i) {
+            const float t = i * .01f;
+            RealisticFlight sample{{15 * std::sin(t), 0, -15 * std::cos(t)},
+                                   {std::sin(2 * t), std::cos(2 * t), .3f},
+                                   true,
+                                   i < 300};
+            sample.handMomentum = i >= 300 && i < 330 ? Vec3{.5f, 2, 0} : Vec3{};
+            RealisticControls controls;
+            controls.brake = i >= 500 && i < 503;
+            const bool air = i < 700;
+            const Quat world = kept.update(sample, air, false, 0, 1.f / 90, s, controls);
+            taken.update(sample, air, false, yaw, 1.f / 90, s, controls);
+            const float heading = taken.takeHeading();
+            yaw += heading;
+            took += std::abs(heading);
+            apart = std::max(apart, distance(Quat::yaw(yaw) * taken.orientation(), world));
+            if (taken.orientation().rotate({0, 1, 0}).y > 0)
+                twisted = std::max(twisted, std::abs(taken.orientation().y));
+        }
+        check(took > .5f, "the twin that takes its heading out took none");
+        check(apart < .00005f, "taking the heading out changed the turn in the world");
+        check(twisted < .0001f, "upright, the tilt kept a turn about the vertical");
+    }
     std::cout << "Momentum rotation: attach easing, rate/acceleration caps, stability, free heading, gesture "
                  "strength, full 360, no preset turn, drag, braking, sample loss, landing, common "
-                 "translation, upward arms, tracking jumps, frame rate passed\n";
+                 "translation, upward arms, tracking jumps, frame rate, heading taken into the yaw passed\n";
     std::cout << "Simulated travel: weak=" << weak << ", strong=" << strong << ", damped=" << damped
               << " radians\n";
+    std::cout << "Heading taken: " << took << " radians in all, the twins " << apart << " radians apart\n";
 }
