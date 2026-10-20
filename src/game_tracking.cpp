@@ -403,7 +403,11 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     // next face turns it on from the wall it is on; back level, what is left
     // is a turn about the vertical, which the tracking space keeps.
     const bool walks = handValid(f.hands[0]) && std::hypot(f.hands[0].stickX, f.hands[0].stickY) > .2f;
-    const bool wallRun = handClimb_ && holds && walks && !f.jump;
+    // Crossing the stick's centre to reverse must not restart the camera
+    // transition. A sustained release still returns to the close climb view.
+    runIdleSeconds_ = walks ? 0.f : std::min(.1f, runIdleSeconds_ + f.seconds);
+    const bool wallRun = handClimb_ && holds && handValid(f.hands[0]) && !f.jump &&
+                         (walks || (wallRunning_ && runIdleSeconds_ < .1f));
     if (wallRun && !wallRunning_) {
         // Capture the direction visible BEFORE the wall-floor transition
         // resets the roll. Holding up from upside down must keep going down.
@@ -417,7 +421,10 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
         runAhead_ = ahead;
         runHeadYaw_ = wallRunHeadYaw(f.head.orientation, 0);
         const Vec3 side = normalized(cross(ahead, held));
-        const Vec3 travel = normalized(ahead * f.hands[0].stickY + side * f.hands[0].stickX);
+        // Backing away keeps the forward-facing view, including on re-entry.
+        // Only forward/sideways starts align the view with the stick.
+        const Vec3 travel = f.hands[0].stickY < 0 ? ahead :
+            normalized(ahead * f.hands[0].stickY + side * f.hands[0].stickX);
         const Quat floor = arc(surfaceTurn_.rotate({0, 1, 0}), held) * surfaceTurn_;
         const Vec3 level = horizontal(floor.conjugate().rotate(travel));
         const Vec3 tracked = horizontal(f.head.orientation.rotate({0, 0, -1}));
@@ -455,7 +462,7 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     } else {
         climbNormal_ = {};
     }
-    if (!holds || !standOnWalls_ || (handClimb_ && !walks))
+    if (!holds || !standOnWalls_ || (handClimb_ && !wallRun))
         standing_ = false;
     else if (handClimb_ || surface.crawl ||
              (std::isfinite(surface.speed) && surface.speed < (walks ? wallStrideSpeed : wallStandSpeed)))
@@ -585,7 +592,7 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
         out.swing.move = surfaceTurn_.rotate(levelMove);
     if (wallRun) {
         const Vec3 side = normalized(cross(runAhead_, held));
-        out.swing.move = limited(runAhead_ * f.hands[0].stickY + side * f.hands[0].stickX, 1);
+        out.swing.move = walks ? limited(runAhead_ * f.hands[0].stickY + side * f.hands[0].stickX, 1) : Vec3{};
     }
     if (out.releaseWebs)
         for (auto& hand : out.swing.hands)

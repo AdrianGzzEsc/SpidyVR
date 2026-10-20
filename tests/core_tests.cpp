@@ -1430,11 +1430,11 @@ int main() {
         auto out = holdFor(rig, f, feet, wall, .7f);
         near(out.viewTilt, 0, .001f);
         check(!out.standing, "climbing stood the player on the wall");
-        near(out.headPose.position.x, 4.70f, .01f);
+        near(out.headPose.position.x, 4.60f, .01f);
         near(out.headPose.position.y - feet.y, 1.f, .01f);
         rig.reset();
         out = holdFor(rig, f, feet, wall, .7f);
-        near(out.headPose.position.x, 4.70f, .01f);
+        near(out.headPose.position.x, 4.60f, .01f);
         rig.handClimb(false);
         out = holdFor(rig, f, feet, {}, .8f);
         near(out.headPose.position.x, feet.x, .01f);
@@ -1819,7 +1819,7 @@ int main() {
         check(out.wallRotate, "two-grip gesture was not reserved from web actions");
         near(out.wallRoll, 1.5707963f, .003f);
         near(length(out.headPose.position - before.headPose.position), 0, .005f);
-        near(dot(out.headPose.position - wall.anchor, wall.normal), .3f, .005f);
+        near(dot(out.headPose.position - wall.anchor, wall.normal), .4f, .005f);
         near(length(out.headPose.orientation.rotate({0, 1, 0}) - Vec3{1, 0, 0}), 0, .005f);
         const Vec3 left{out.eyes[0][12], out.eyes[0][13], out.eyes[0][14]};
         const Vec3 right{out.eyes[1][12], out.eyes[1][13], out.eyes[1][14]};
@@ -1835,7 +1835,7 @@ int main() {
         f.hands[0].stickY = 0;
         out = holdFor(rig, f, feet, wall, .5f);
         near(out.wallRoll, 0, .003f);
-        near(dot(out.headPose.position - wall.anchor, wall.normal), .3f, .005f);
+        near(dot(out.headPose.position - wall.anchor, wall.normal), .4f, .005f);
         f.recentered = true;
         out = holdFor(rig, f, feet, wall, 1.f / 90);
         near(out.wallRoll, 0);
@@ -1879,7 +1879,71 @@ int main() {
             out = holdFor(rig, f, feet, wall, .7f);
             near(out.wallRoll, 0);
             near(out.headPose.orientation.rotate({0, 1, 0}).y, 1, .005f);
-            near(dot(out.headPose.position - wall.anchor, wall.normal), .3f, .01f);
+            near(dot(out.headPose.position - wall.anchor, wall.normal), .4f, .01f);
+        }
+    });
+    test("wall-run reversal keeps the camera steady through the stick centre in every roll", [] {
+        for (float angle : {0.f, 1.5707963f, 3.14159265f}) {
+            for (int neutralFrames : {0, 1, 6}) {
+                GameTrackingRig rig;
+                rig.handClimb(true);
+                auto f = trackedFrame();
+                for (auto& h : f.hands) h.squeeze = 0;
+                const Vec3 feet{0, 9, -4.1f};
+                const SurfaceHold wall{{0, 0, 1}, {0, 10, -5}, 0, false};
+                holdFor(rig, f, feet, wall, .7f);
+                for (auto& h : f.hands) h.squeeze = 1;
+                holdFor(rig, f, feet, wall, 1.f / 90);
+                for (auto& h : f.hands) h.grip.orientation = Quat::around({0, 0, -1}, .78539816f);
+                holdFor(rig, f, feet, wall, angle / 1.5707963f);
+                f.hands[0].squeeze = 0;
+                f.hands[0].stickY = 1;
+                const auto before = holdFor(rig, f, feet, wall, .5f);
+                const Vec3 ahead = before.headPose.orientation.rotate({0, 0, -1});
+                f.hands[0].stickY = .05f;
+                for (int i = 0; i < neutralFrames; ++i) {
+                    const auto neutral = holdFor(rig, f, feet, wall, 1.f / 90);
+                    check(neutral.standing, "centre crossing restarted the climbing camera");
+                    near(length(neutral.swing.move), 0);
+                    near(length(neutral.headPose.orientation.rotate({0, 0, -1}) - ahead), 0, .005f);
+                }
+                f.hands[0].stickY = -1;
+                const auto back = holdFor(rig, f, feet, wall, .3f);
+                near(dot(back.swing.move, before.swing.move), -1, .005f);
+                near(length(back.headPose.orientation.rotate({0, 0, -1}) - ahead), 0, .005f);
+                near(length(back.headPose.position - before.headPose.position), 0, .005f);
+                f.hands[0].stickY = 0;
+                const auto stopped = holdFor(rig, f, feet, wall, .7f);
+                check(!stopped.standing, "sustained release did not return to climbing");
+                near(stopped.viewTilt, 0, .005f);
+                near(dot(stopped.headPose.position - wall.anchor, wall.normal), .4f, .01f);
+            }
+        }
+    });
+    test("backward wall-run entry faces forward and moves backward even after a full stop", [] {
+        for (bool restart : {false, true}) {
+            for (float side : {-0.6f, 0.f, .6f}) {
+                GameTrackingRig rig;
+                rig.handClimb(true);
+                auto f = trackedFrame();
+                for (auto& h : f.hands) h.squeeze = 0;
+                const Vec3 feet{0, 9, -4.1f};
+                const SurfaceHold wall{{0, 0, 1}, {0, 10, -5}, 0, false};
+                auto climb = holdFor(rig, f, feet, wall, .7f);
+                if (restart) {
+                    f.hands[0].stickY = 1;
+                    holdFor(rig, f, feet, wall, .5f);
+                    f.hands[0].stickY = 0;
+                    climb = holdFor(rig, f, feet, wall, .7f);
+                }
+                const Vec3 ahead = climb.headPose.orientation.rotate({0, 1, 0});
+                const Vec3 right = normalized(cross(ahead, wall.normal));
+                f.hands[0].stickY = -1;
+                f.hands[0].stickX = side;
+                const auto back = holdFor(rig, f, feet, wall, .5f);
+                near(dot(back.headPose.orientation.rotate({0, 0, -1}), ahead), 1, .005f);
+                near(dot(normalized(back.swing.move), normalized(-ahead + right * side)), 1, .005f);
+            }
         }
     });
     test("wall running: head yaw steers while pitch cannot reverse, including sideways and upside down", [] {
@@ -2010,7 +2074,7 @@ int main() {
             check(length(out.headPose.position - before.headPose.position) < .25f, "corner jumped the camera");
         }
         near(dot(out.headPose.orientation.rotate({0, 0, -1}), -wall.normal), 1, .005f);
-        near(dot(out.headPose.position - wall.anchor, wall.normal), .3f, .01f);
+        near(dot(out.headPose.position - wall.anchor, wall.normal), .4f, .01f);
     });
     test("rolled climbing: physical pulls move sideways and upside down without gaze steering", [] {
         constexpr float dt = 1.f / 60;
@@ -2062,7 +2126,7 @@ int main() {
             auto out = holdFor(rig, f, feet, wall, .6f);
             check(!out.standing, "stick at rest kept the running view");
             near(out.viewTilt, 0, .001f);
-            near(out.headPose.position.x, 4.7f, .01f);
+            near(out.headPose.position.x, 4.6f, .01f);
             f.hands[0].stickY = 1;
             out = holdFor(rig, f, feet, wall, .6f);
             check(out.standing, "pushing the stick did not restore the original wall view");
@@ -2072,7 +2136,7 @@ int main() {
             out = holdFor(rig, f, feet, wall, .6f);
             check(!out.standing, "stick noise kept the running view");
             near(out.viewTilt, 0, .001f);
-            near(out.headPose.position.x, 4.7f, .01f);
+            near(out.headPose.position.x, 4.6f, .01f);
             near(out.headPose.position.y - feet.y, 1.f, .01f);
         }
     });
@@ -2148,7 +2212,7 @@ int main() {
     test("wall camera distance: every menu choice applies, survives reset and stays in range", [] {
         using namespace vr_settings;
         Values values;
-        check(values.wallDistance == 30, "unexpected default wall distance");
+        check(values.wallDistance == 40, "unexpected default wall distance");
         GameTrackingRig rig;
         rig.handClimb(true);
         auto f = trackedFrame();

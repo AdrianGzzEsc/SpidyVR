@@ -316,7 +316,7 @@ class GameTrackingRig {
             wallRoll_.reset();
     }
     void wallDistance(float metres) {
-        wallDistance_ = std::isfinite(metres) ? std::clamp(metres, .1f, 1.f) : .3f;
+        wallDistance_ = std::isfinite(metres) ? std::clamp(metres, .1f, 1.f) : .4f;
     }
     void reset();
 
@@ -339,12 +339,13 @@ class GameTrackingRig {
     Vec3 surfaceShift_{};
     bool standing_{}, standOnWalls_ = true;
     bool handClimb_{};
-    float wallDistance_ = .3f;
+    float wallDistance_ = .4f;
     WallRollGesture wallRoll_;
     Vec3 climbNormal_{}, runNormal_{}, runAhead_{};
     Quat climbView_{};
     float runYaw_{}, runHeadYaw_{};
     bool wallRunning_{};
+    float runIdleSeconds_{};
     float headroom_{};
     Vec3 headDrop_{};
     HeadClearance clearance_{};

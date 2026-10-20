@@ -59,7 +59,7 @@ struct Values {
     // off, you stay upright beside it.
     bool standOnWalls = true;
     bool handClimb = false;
-    int wallDistance = 30; // camera clearance in centimetres, during hand climbing
+    int wallDistance = 40; // camera clearance in centimetres, during hand climbing
     // Scenes the game plays on the game screen (cutscenes, finishers) have
     // depth there (the tab's GAME SCREEN 3D): 0 off, the game's flat frame; 1
     // low, 2 medium, 3 high (screenDepths).

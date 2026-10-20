@@ -1,11 +1,22 @@
-# Spidy Wall Climb Preview 10 — custom build
+# Spidy Wall Climb Preview 11 — custom build
 
 This modified build of Ilya Mezerowsky's Spidy VR mod is based on upstream
 0.4.0, commit c747c184dd97acaddf0db47f1a32f30cebe0d974, merged with the
 working Preview 7 changes saved at e0fcb4c. Keep the whole
 extracted preview folder together.
 
-## Head steering in Preview 10
+## Changes in Preview 11
+
+The default WALL CAMERA DISTANCE is now **40 cm**. You can still choose any
+of the existing distance options in the settings menu.
+
+Pulling the left stick backward moves you backward without turning the
+camera around. Briefly crossing the stick centre (under 100 ms) keeps the
+running view steady and produces no movement while inside the dead zone.
+A sustained release still returns to the close climbing view. Starting a
+new run backward also keeps the forward-facing view.
+
+## Head steering
 
 Wall running follows left/right head turns again. While holding the stick
 forward, look left or right to steer along the wall. Up/down head tilt does
@@ -40,17 +51,17 @@ frame remain removed.
 ## Start
 
 1. Close the game and any other Spidy session.
-2. Open **Spidy Wall Climb Preview 10.exe**, connect your headset, and start VR.
+2. Open **Spidy Wall Climb Preview 11.exe**, connect your headset, and start VR.
 3. Enable **Settings → SPIDY VR → EXPERIMENTAL → HAND WALL CLIMBING**.
    Enable it again after restarting VR; the switch lasts for the session.
 4. **WALL CAMERA DISTANCE** sets the close climbing view to 10, 15, 20, 25,
-   30, 40, 50, 60, 75 or 100 cm from the facade. Default: 30 cm. Resume play
+   30, 40, 50, 60, 75 or 100 cm from the facade. Default: 40 cm. Resume play
    to apply a change.
 
 Spidy 0.4.0's head-collision protection remains active. It can keep the
 camera at least 20 cm from solid geometry even if 10 or 15 cm is selected,
-and can push it farther out at obstructions. The default 30 cm setting is
-unchanged. Eyes, hands and body receive the same collision adjustment.
+and can push it farther out at obstructions. Eyes, hands and body receive
+the same collision adjustment.
 
 ## Grip climbing
 
@@ -83,7 +94,8 @@ per second at 45 degrees. Return toward neutral to stop, or release either
 grip to lock the angle. Sideways and upside-down hand pulls still work.
 
 Push the left stick to wall run. The starting view and joystick direction
-choose the camera's heading once, when the run begins. The running axes
+choose the camera's heading once, when a forward or sideways run begins.
+A backward start keeps the view facing forward. The running axes
 follow left/right head turns while ignoring up/down tilt. The earlier
 wall-as-floor camera transition is restored: its original up-to-wall turn,
 speed and placement calculation are used again. The extra camera steering
@@ -92,7 +104,8 @@ a held run changes movement without automatically turning the camera again.
 Physical head movement and the usual turning controls remain available.
 
 Starting a run resets your selected roll. Release the stick to return to a
-fresh, upright close climbing view on the same wall. It does not restore
+fresh, upright close climbing view on the same wall after 100 ms at rest.
+This short delay avoids a camera transition when reversing the stick. It does not restore
 the previous roll angle. Release and squeeze a grip again to resume hand
 climbing. Small stick drift remains inside the dead zone.
 
@@ -129,7 +142,7 @@ No new original-game climbing animation cycle is integrated by this update.
 
 ## Validation
 
-Windows Release build: passed. Native core: **393/393** tests. Launcher:
+Windows Release build: passed. Native core: **395/395** tests. Launcher:
 **24/24** checks. Python protocols: **137/137** tests across six suites.
 The packaged runtime imports, source whitespace, and module/source copies
 are also checked during packaging.
@@ -146,9 +159,12 @@ Upstream phone, music, sense/counter and rendering tests are retained.
 New regression coverage reproduces Preview 8's backward movement and verifies
 left/right yaw steering with pitch independence upright, sideways and upside
 down, reverse/strafe stick commands, corner transport, deliberate turns,
-continuous full head turns and pitches through vertical.
+continuous full head turns and pitches through vertical. Preview 11 also
+checks forward-to-backward reversals with zero, one and six centre frames
+in upright, sideways and upside-down views, backward and diagonal-backward
+starts after a full stop, and the return to climbing after a sustained release.
 
-**Preview 10 has not yet been played in the game or tested in a headset.**
+**Preview 11 has not yet been played in the game or tested in a headset.**
 Earlier previews were played by the user. Synthetic corner tests do not
 establish that every game building has suitable collision geometry.
 
