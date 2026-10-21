@@ -304,6 +304,8 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
             clearance_.reset();
             climbNormal_ = {};
             wallRunning_ = false;
+            ventTurn_ = {};
+            ventViewActive_ = false;
         }
         return out;
     }
@@ -381,6 +383,25 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     const bool holds = finite(held) && length(held) > .5f && finite(surface.anchor);
     const bool ventCrawl = handClimb_ && holds && surface.crawl && surface.vent;
     out.ventCrawl = ventCrawl;
+    if (!ventViewActive_ && ventCrawl) {
+        const Vec3 forward = horizontal(f.head.orientation.rotate({0, 0, -1}));
+        if (length(forward) > .5f)
+            ventForward_ = forward;
+    }
+    if (ventViewActive_ && !ventCrawl) {
+        // Keep the heading acquired around vent bends as the prone view
+        // returns upright. Facing a floor, its crown supplies the heading.
+        const Vec3 look = ventTurn_.rotate(ventForward_);
+        const Vec3 top = ventTurn_.rotate({0, 1, 0});
+        const Vec3 heading = horizontal(std::hypot(look.x, look.z) > .3f ? look : top);
+        if (length(heading) > .5f) {
+            const float yaw = std::atan2(-heading.x, -heading.z) -
+                              std::atan2(-ventForward_.x, -ventForward_.z);
+            rig_.turn(yaw, f.head.position);
+            ventTurn_ = unit(Quat::yaw(-yaw) * ventTurn_);
+        }
+    }
+    ventViewActive_ = ventCrawl;
     // A flip tilts the tracking space about the head where it began.
     FlipMotion::Sample flip;
     flip.jump = f.jump;
@@ -452,7 +473,7 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
         wallRoll_.reset();
     }
     wallRunning_ = wallRun;
-    if (handClimb_ && holds && std::abs(held.y) < .5f) {
+    if (handClimb_ && !ventCrawl && holds && std::abs(held.y) < .5f) {
         const Vec3 face = normalized(Vec3{held.x, 0, held.z});
         if (!wallRun && length(climbNormal_) > .5f) {
             // Carry the climbing view around a building's side without an
@@ -565,15 +586,32 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
         placed.tilt = unit(yaw.conjugate() * surfaceTurn_ * yaw * rig_.tilt);
         placed.pivot = {};
     }
+    {
+        // The facade camera's 4 rad/s corner turn, extended to every surface
+        // orientation. Transport the whole neutral frame by the shortest arc;
+        // a floor-to-shaft edge must pitch the view as well as yaw it.
+        const Vec3 toward = Quat::yaw(rig_.yaw).conjugate().rotate(-held);
+        Quat rest = ventCrawl ? arc(ventTurn_.rotate(ventForward_), toward) : ventTurn_.conjugate();
+        if (rest.w < 0) rest = {-rest.x, -rest.y, -rest.z, -rest.w};
+        const float angle = 2 * std::atan2(length({rest.x, rest.y, rest.z}), rest.w);
+        if (angle > 1e-5f)
+            ventTurn_ = unit(Quat::around({rest.x, rest.y, rest.z}, std::min(angle, 4.f * f.seconds)) *
+                             ventTurn_);
+        else if (!ventCrawl)
+            ventTurn_ = {};
+        const Pose before = placed.toWorld(f.head);
+        placed.tilt = unit(ventTurn_ * placed.tilt);
+        placed.origin += before.position - placed.toWorld(f.head).position;
+    }
     if (!holds || f.jump)
         wallRoll_.reset();
-    const bool rollAllowed = handClimb_ && holds && !standing_ && !walks && !f.jump &&
-                             (std::abs(held.y) < .5f || ventCrawl);
+    const bool rollView = handClimb_ && holds && !standing_ && !f.jump &&
+                          (std::abs(held.y) < .5f || ventCrawl);
+    const bool rollAllowed = rollView && !walks;
     const float rollAngle = wallRoll_.update(rollAllowed, f);
-    if (rollAllowed) {
+    if (rollView) {
         const Pose before = placed.toWorld(f.head);
-        const Vec3 rollAxis = ventCrawl && std::abs(held.y) >= .5f ?
-                             (Quat::yaw(placed.yaw) * placed.tilt).rotate(wallRoll_.axis()) :
+        const Vec3 rollAxis = ventCrawl ? placed.orientation().rotate(ventForward_) :
                              length(climbNormal_) > .5f ? -climbNormal_ : -held;
         const Quat roll = Quat::around(rollAxis, rollAngle);
         const Quat yaw = Quat::yaw(placed.yaw);
@@ -659,7 +697,20 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
         if (length(along) > 1e-3f) {
             ahead = normalized(along);
             side = cross(ahead, held);
-            const Vec3 meant = (standing_ ? surfaceTurn_ : arc({0, 1, 0}, held)).rotate(levelMove);
+            Vec3 meant;
+            if (ventCrawl) {
+                // Forward is toward the crown of the prone view, along its
+                // floor, rather than straight into the surface it looks at.
+                const Vec3 local = Quat::yaw(placed.yaw).conjugate().rotate(levelMove);
+                const Vec3 right = cross(ventForward_, {0, 1, 0});
+                const Quat crawlFrame = arc(placed.orientation().rotate(ventForward_), -held) *
+                                        placed.orientation();
+                meant = crawlFrame.rotate(right * dot(local, right) +
+                                          Vec3{0, 1, 0} * dot(local, ventForward_));
+                out.swing.move = meant;
+            } else {
+                meant = (standing_ ? surfaceTurn_ : arc({0, 1, 0}, held)).rotate(levelMove);
+            }
             move = meant - held * dot(meant, held);
         }
     }

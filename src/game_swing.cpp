@@ -321,6 +321,12 @@ void visit(const native_rays::QueryContext& world) {
             crawlNormal = currentUp;
         }
     }
+    // Native edge turns can temporarily be unsupported while their wall-state
+    // flag stays set. Keep the confirmed vent's frame through that scripted
+    // handover, including the first frames before the actor tilts off level.
+    if (length(crawlNormal) < .5f)
+        crawlNormal = ventCrawlMode.turningSurface(currentUp, motion.moverFlags,
+            focused && !owned && (motion.status == 1 || motion.status == 2));
     if (nativeFloor) ventMode = true;
     else if (owned || (supported && currentUp.y > .866f && !(motion.moverFlags & 0x81u)))
         ventMode = false;

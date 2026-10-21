@@ -1,17 +1,37 @@
-# Spidy Vent Crawl Preview
+# Spidy Vent Crawl Preview 2
 
 This modified build of Ilya Mezerowsky's Spidy VR mod is based on upstream
 0.4.0, commit c747c184dd97acaddf0db47f1a32f30cebe0d974, merged with the
 working Preview 7 changes saved at e0fcb4c. Keep the whole
 extracted preview folder together.
 
+## Preview 2: prone view and edge transitions
+
+Entering a vent now smoothly puts the camera into a prone climbing frame.
+With your physical head straight, you look into the vent floor. You can
+look around by moving your head normally; looking elsewhere does not
+choose a new body pose. The top of the neutral view points ahead along
+the duct. The view, hands and body share the same frame.
+
+The building camera's smooth corner turn now follows vent surfaces in 3D:
+floor to wall, wall to ceiling, and sideways or angled bends. It turns at
+the existing 4 radians/second limit, about the placed eyes. Native scripted
+edge turns keep the vent context even while the game temporarily reports
+the player unsupported. Collision and headroom protection remain active.
+
+Your two-grip roll carries around these edges and stays applied while
+using the left stick. The stick follows the prone view along the surface,
+and never switches the vent camera into wall running. Leaving the vent
+returns the camera upright while keeping the heading acquired in it.
+
 ## Vent crawling
 
 This local preview builds on the corner improvements at 0ebdab2. Enable
 HAND WALL CLIMBING, enter a vent using the game's usual interaction, then
 reach toward its floor or a wall and squeeze a physical grip. Pull the hand
-back toward you to crawl forward along the floor; release, reach and grip
-again to keep going. On a shaft wall, pull down to climb up. Touch alone
+opposite the direction you want to crawl; release, reach and grip again
+to keep going. Pulling toward the bottom of the neutral view crawls toward
+its top. On a shaft wall, pull down to climb up. Touch alone
 does not attach. A grip already held before contact can catch when the palm
 reaches the surface. Palms inside the surface still register.
 
@@ -131,7 +151,7 @@ frame remain removed.
 ## Start
 
 1. Close the game and any other Spidy session.
-2. Open **Spidy Vent Crawl Preview.exe**, connect your headset, and start VR.
+2. Open **Spidy Vent Crawl Preview 2.exe**, connect your headset, and start VR.
 3. Enable **Settings → SPIDY VR → EXPERIMENTAL → HAND WALL CLIMBING**.
    Enable it again after restarting VR; the switch lasts for the session.
 4. **WALL CAMERA DISTANCE** sets the close climbing view to 10, 15, 20, 25,
@@ -223,7 +243,7 @@ No new original-game climbing animation cycle is integrated by this update.
 
 ## Validation
 
-Windows Release build: passed. Native core: **413/413** tests. Launcher:
+Windows Release build: passed. Native core: **418/418** tests. Launcher:
 **24/24** checks. Python protocols: **138/138** tests across six suites.
 The packaged runtime imports, source whitespace, and module/source copies
 are also checked during packaging.
@@ -255,6 +275,10 @@ without a camera transition, held-grip contact retries, rayless/deep support
 contacts, averaged pulls and support-plane constraints, floor-to-shaft pulls,
 roll/release, tracking loss, native pad mapping of slow pulls, stale feedback,
 entry/exit, and restoration of outdoor wall running.
+Preview 2 adds neutral floor-facing view, bounded 3D edge turns, stereo
+placement during rotation, native unsupported-turn handovers, physical
+head/hand motion in the prone frame, gesture-roll transport, and stick
+movement along the selected prone heading. Outdoor corner/run checks pass.
 
 **This vent preview has not yet been played in the game or tested in a headset.**
 Earlier previews were played by the user. Synthetic corner tests do not

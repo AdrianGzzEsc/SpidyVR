@@ -1476,6 +1476,7 @@ int main() {
             holdFor(rig, frame, feet, {}, .3f);
             auto view = holdFor(rig, frame, feet, hold, 1, n);
             check(view.ventCrawl && !view.standing, "vent did not use climbing view");
+            near(length(view.headPose.orientation.rotate({0, 0, -1}) + n), 0, .002f);
             near(dot(view.headPose.position - feet, n), .4f, .02f);
             const Quat before = view.headPose.orientation;
             for (const Vec3 stick : {Vec3{0, 0, 1}, Vec3{0, 0, -1}, Vec3{1, 0, 0}, Vec3{-1, 0, 0}}) {
@@ -1485,6 +1486,117 @@ int main() {
                 check(!view.standing && view.ventCrawl, "stick switched vent into running view");
                 near(length(view.headPose.orientation.rotate({0, 0, -1}) - before.rotate({0, 0, -1})), 0);
             }
+        }
+    });
+    test("vent entry faces the floor from any standing head heading and exits facing the same way", [] {
+        for (const float yaw : {-2.1f, -.5f, 0.f, 1.5707963f, 2.8f}) {
+            GameTrackingRig rig;
+            rig.handClimb(true);
+            auto f = trackedFrame();
+            for (auto& h : f.hands) h.squeeze = 0;
+            f.head.orientation = Quat::yaw(yaw);
+            holdFor(rig, f, {}, {}, .3f);
+            const SurfaceHold floor{{0, 1, 0}, {}, 0, true, true};
+            auto view = holdFor(rig, f, {}, floor, .8f);
+            near(length(view.headPose.orientation.rotate({0, 0, -1}) - Vec3{0, -1, 0}), 0);
+            near(length(view.headPose.orientation.rotate({0, 1, 0}) - Vec3{0, 0, -1}), 0);
+            f.hands[0].stickY = 1;
+            view = holdFor(rig, f, {}, floor, .2f);
+            near(view.walkForward, 1);
+            near(view.walkRight, 0);
+            f.hands[0].stickY = 0;
+            view = holdFor(rig, f, {}, {}, 1);
+            near(length(view.headPose.orientation.rotate({0, 0, -1}) - Vec3{0, 0, -1}), 0);
+        }
+    });
+    test("vent edge handovers retain native support while outdoor air and invalid states cannot", [] {
+        VentCrawlMode mode;
+        near(length(mode.turningSurface({0, 1, 0}, 0x80, true)), 0);
+        for (int i = 0; i < 5; ++i) mode.update(true, false, false, false, .1f);
+        for (int i = 0; i < 90; ++i) {
+            const Vec3 up = Quat::around({1, 0, 0}, i * 1.5707963f / 89).rotate({0, 1, 0});
+            const Vec3 support = mode.turningSurface(up, 0x80, true);
+            near(length(support - up), 0);
+            check(mode.update(false, true, false, false, 1.f / 90), "native edge turn lost vent context");
+        }
+        near(length(mode.turningSurface({0, 1, 0}, 0x10008020, true)), 0);
+        near(length(mode.turningSurface({0, 1, 0}, 0x80000080, true)), 0);
+        near(length(mode.turningSurface({}, 0x80, true)), 0);
+        near(length(mode.turningSurface({0, 1, 0}, 0x80, false)), 0);
+    });
+    test("vent camera smoothly follows floor wall ceiling and angled edges about the eyes", [] {
+        GameTrackingRig rig;
+        rig.handClimb(true);
+        auto f = trackedFrame();
+        for (auto& h : f.hands) h.squeeze = 0;
+        holdFor(rig, f, {}, {}, .3f);
+        auto view = holdFor(rig, f, {}, {{0, 1, 0}, {}, 0, true, true}, .8f);
+        for (const Vec3 n : {Vec3{0, 0, 1}, normalized(Vec3{1, 0, 1}), Vec3{1, 0, 0},
+                             Vec3{0, -1, 0}, Vec3{0, 0, -1}, Vec3{0, 1, 0}}) {
+            const SurfaceHold hold{n, {}, 0, true, true};
+            Vec3 previous = view.headPose.orientation.rotate({0, 0, -1});
+            for (int i = 0; i < 70; ++i) {
+                view = holdFor(rig, f, {}, hold, 1.f / 90, n);
+                const Vec3 look = view.headPose.orientation.rotate({0, 0, -1});
+                check(length(look - previous) <= 4.f / 90 + .0001f, "edge camera snapped");
+                check(!view.standing && view.ventCrawl, "edge switched into wall running");
+                const Vec3 left{view.eyes[0][12], view.eyes[0][13], view.eyes[0][14]};
+                const Vec3 right{view.eyes[1][12], view.eyes[1][13], view.eyes[1][14]};
+                near(length(left - right), .064f);
+                near(length((left + right) * .5f - view.headPose.position), 0);
+                previous = look;
+            }
+            near(length(previous + n), 0, .002f);
+            near(dot(view.headPose.position, n), .4f, .002f);
+        }
+    });
+    test("prone vent frame keeps physical head and hand motion together without gaze steering the body", [] {
+        GameTrackingRig rig;
+        rig.handClimb(true);
+        auto f = trackedFrame();
+        for (auto& h : f.hands) h.squeeze = 0;
+        const SurfaceHold floor{{0, 1, 0}, {}, 0, true, true};
+        holdFor(rig, f, {}, {}, .3f);
+        const auto neutral = holdFor(rig, f, {}, floor, .8f);
+        const Quat bodyBefore = neutral.bodyTilt();
+        f.head.orientation = Quat::yaw(.4f) * Quat::around({1, 0, 0}, .3f);
+        const auto looking = holdFor(rig, f, {}, floor, .2f);
+        const Vec3 expected = (neutral.headPose.orientation * f.head.orientation).rotate({0, 0, -1});
+        near(length(looking.headPose.orientation.rotate({0, 0, -1}) - expected), 0);
+        near(length(looking.bodyTilt().rotate({0, 1, 0}) - bodyBefore.rotate({0, 1, 0})), 0);
+        f.head.orientation = {};
+        f.hands[0].grip.position.y -= .05f;
+        const auto moved = holdFor(rig, f, {}, floor, .1f);
+        const Vec3 actual = moved.grips[0].position - neutral.grips[0].position;
+        near(length(actual - neutral.headPose.orientation.rotate({0, -.05f, 0})), 0);
+    });
+    test("vent stick follows the prone crown around edges and rolling transports the selected angle", [] {
+        GameTrackingRig rig;
+        rig.handClimb(true);
+        auto f = trackedFrame();
+        for (auto& h : f.hands) h.squeeze = 0;
+        holdFor(rig, f, {}, {}, .3f);
+        const SurfaceHold floor{{0, 1, 0}, {}, 0, true, true};
+        holdFor(rig, f, {}, floor, .8f);
+        for (auto& h : f.hands) h.squeeze = 1;
+        holdFor(rig, f, {}, floor, .1f);
+        for (auto& h : f.hands) h.grip.orientation = Quat::around({0, 0, -1}, .6f);
+        auto view = holdFor(rig, f, {}, floor, .6f);
+        const float selected = view.wallRoll;
+        check(std::abs(selected) > .5f, "test roll failed");
+        for (auto& h : f.hands) h.squeeze = 0;
+        for (const Vec3 n : {Vec3{0, 1, 0}, Vec3{0, 0, 1}, Vec3{1, 0, 0}, Vec3{0, -1, 0}}) {
+            const SurfaceHold hold{n, {}, 0, true, true};
+            f.hands[0].stickY = 0;
+            view = holdFor(rig, f, {}, hold, .8f, n);
+            near(view.wallRoll, selected);
+            near(length(view.headPose.orientation.rotate({0, 0, -1}) + n), 0, .002f);
+            const Vec3 forward = view.headPose.orientation.rotate({0, 1, 0});
+            f.hands[0].stickY = 1;
+            view = holdFor(rig, f, {}, hold, .2f, n);
+            const Vec3 walked = view.walkForwardAxis * view.walkForward + view.walkRightAxis * view.walkRight;
+            near(length(walked - forward), 0, .002f);
+            near(length(view.headPose.orientation.rotate({0, 0, -1}) + n), 0, .002f);
         }
     });
     test("vent floor roll follows the wrists and locks on release while head pitch stays independent", [] {

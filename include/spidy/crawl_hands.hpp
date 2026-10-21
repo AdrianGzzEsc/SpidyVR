@@ -20,6 +20,11 @@ class VentCrawlMode {
         return active_;
     }
     bool active() const { return active_; }
+    Vec3 turningSurface(Vec3 actorUp, uint32_t flags, bool eligible) const {
+        const Vec3 up = normalized(actorUp);
+        return active_ && eligible && (flags & 0x80u) && !(flags & 0x80000000u) &&
+                       finite(up) && length(up) > .9995f ? up : Vec3{};
+    }
     void reset() { *this = {}; }
   private:
     float floorSeconds_{}, gap_{};

@@ -316,7 +316,8 @@ class GameTrackingRig {
     // After an update: the rays for the next batch, along the head's own
     // look, side and up.
     std::array<HeadClearance::Ray, HeadClearance::rays> clearanceRays(Vec3 look, Vec3 side, Vec3 up) const {
-        const bool closeClimb = handClimb_ && !standing_ && length(climbNormal_) > .5f;
+        const bool closeClimb = handClimb_ && !standing_ &&
+                                (length(climbNormal_) > .5f || ventViewActive_);
         return clearance_.next(look, side, up, closeClimb ? .75f : 0.f);
     }
     const HeadClearance& clearance() const {
@@ -355,6 +356,11 @@ class GameTrackingRig {
     WallRollGesture wallRoll_;
     Vec3 climbNormal_{}, runNormal_{}, runAhead_{};
     Quat climbView_{};
+    // Prone vent frame: neutral headset looks into native support. Its
+    // orientation follows floor/wall/ceiling changes, about the placed eyes.
+    Quat ventTurn_{};
+    Vec3 ventForward_{0, 0, -1};
+    bool ventViewActive_{};
     float runYaw_{}, runHeadYaw_{};
     bool wallRunning_{};
     float runIdleSeconds_{};

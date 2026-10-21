@@ -206,7 +206,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     windowClass.hbrBackground = CreateSolidBrush(RGB(13, 15, 20));
     windowClass.lpszClassName = kClass;
     RegisterClassExW(&windowClass);
-    HWND window = CreateWindowExW(0, kClass, L"Spidy Vent Crawl Preview - Spidy 0.4.0 (custom build)",
+    HWND window = CreateWindowExW(0, kClass, L"Spidy Vent Crawl Preview 2 - Spidy 0.4.0 (custom build)",
                                   WS_OVERLAPPEDWINDOW,
                                   info.rcWork.left + (areaWidth - width) / 2, info.rcWork.top + (areaHeight - height) / 2,
                                   width, height, nullptr, nullptr, instance, nullptr);
