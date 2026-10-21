@@ -21,6 +21,7 @@
 #include "spidy/monitor_rate.hpp"
 #include "spidy/eye_snapshot.hpp"
 #include "spidy/vr_settings.hpp"
+#include "spidy/recording_fov.hpp"
 #include "spidy/body_haptics.hpp"
 #include "spidy/web_visual.hpp"
 #include "spidy/web_pull.hpp"
@@ -11303,8 +11304,8 @@ int main() {
         // The sections (the player, October 19: "sort the options in spidy vr
         // settings ingame into nice sections"), each with a setting in the tab.
         const std::pair<size_t, const char*> sections[] = {{0, "WEBS"},     {5, "SWINGING"}, {8, "COMFORT"},
-                                                           {11, "HAPTICS"}, {18, "DISPLAY"}, {24, "BODY"},
-                                                           {26, "EXPERIMENTAL"}};
+                                                           {11, "HAPTICS"}, {18, "DISPLAY"}, {25, "BODY"},
+                                                           {27, "EXPERIMENTAL"}};
         check(headings == std::size(sections),
               "the sections: webs, swinging, comfort, haptics, display, body, experimental");
         for (const auto& [at, title] : sections) {
@@ -11314,21 +11315,21 @@ int main() {
                 ++next;
             check(next < all.size() && all[next].item != Item::none, "a section with no setting in the tab");
         }
-        check(all[27].item == Item::flips && all[27].choices.empty() && std::strcmp(all[26].title, "EXPERIMENTAL") == 0,
+        check(all[28].item == Item::flips && all[28].choices.empty() && std::strcmp(all[27].title, "EXPERIMENTAL") == 0,
               "the flips: a switch under EXPERIMENTAL");
-        check(all[28].item == Item::flipSpeed && all[28].choices.size() == std::size(flipSpeeds),
+        check(all[29].item == Item::flipSpeed && all[29].choices.size() == std::size(flipSpeeds),
               "the flip speed under the flips");
-        check(all[29].item == Item::handClimb && all[29].choices.empty() && all[30].item == Item::wallDistance &&
-                  all[30].choices.size() == std::size(wallDistances),
+        check(all[30].item == Item::handClimb && all[30].choices.empty() && all[31].item == Item::wallDistance &&
+                  all[31].choices.size() == std::size(wallDistances),
               "hand wall climbing, a switch, and its camera distance under the flips");
         const Item realistic[] = {Item::realisticFlips,        Item::automaticStrength,    Item::automaticSpeed,
                                   Item::automaticMinimumSpeed, Item::automaticReleaseFlip, Item::automaticResponse,
                                   Item::automaticHandStrength, Item::automaticFalloff,     Item::automaticHandThreshold,
                                   Item::automaticAirBrake};
-        check(all.size() == 31 + std::size(realistic), "the realistic flips' rows are not the last");
+        check(all.size() == 32 + std::size(realistic), "the realistic flips' rows are not the last");
         for (size_t i = 0; i < std::size(realistic); ++i)
-            check(all[31 + i].item == realistic[i], "the realistic flips' rows out of order");
-        check(std::strcmp(all[31].title, "REALISTIC FLIPS") == 0 && all[31].choices.empty(),
+            check(all[32 + i].item == realistic[i], "the realistic flips' rows out of order");
+        check(std::strcmp(all[32].title, "REALISTIC FLIPS") == 0 && all[32].choices.empty(),
               "realistic flips: a switch, first of its rows");
         // The wall view has no row of its own any more: it turned only while
         // Spidy held the player on a wall, so it was never a choice of its own
@@ -11347,7 +11348,11 @@ int main() {
               "the game screen's depth under its size: OFF, LOW, MEDIUM, HIGH");
         check(all[23].item == Item::nearClip && std::strcmp(all[23].title, "NEAR CLIP") == 0 &&
                   all[23].choices.size() == std::size(nearClips) && std::strcmp(all[23].choices[6], "10 CM") == 0,
-              "the near clip last under DISPLAY: 1 to 10 cm");
+              "the near clip under the HUD: 1 to 10 cm");
+        check(all[24].item == Item::recordingFov && std::strcmp(all[24].title, "RECORDING FOV") == 0 &&
+                  all[24].choices.size() == std::size(recording_fov::choices) &&
+                  std::strcmp(all[24].choices[0], "OFF") == 0 && std::strcmp(all[24].choices[3], "150\xC2\xB0") == 0,
+              "the recording FOV last under DISPLAY: OFF, then 130 to 150 degrees");
         // Webs are always physical (the user, October 15: "remove non physical web, no need for it").
         for (const auto& row : all)
             check(std::strcmp(row.title, "PHYSICAL WEBS") != 0, "webs can still be made non-physical");
@@ -11373,8 +11378,8 @@ int main() {
                   all[15].item == Item::hapticWind && all[16].item == Item::hapticCombat &&
                   all[17].item == Item::hapticMovement && all[14].choices.empty() && all[17].choices.empty(),
               "HAPTICS: the vibration, body haptics, then the web, wind, combat and movement switches");
-        check(all[25].item == Item::calibrate && all[25].choices.size() == 2 &&
-                  std::strcmp(all[25].choices[1], "ON RESUME") == 0,
+        check(all[26].item == Item::calibrate && all[26].choices.size() == 2 &&
+                  std::strcmp(all[26].choices[1], "ON RESUME") == 0,
               "the body's calibration: NO, or ON RESUME");
         // Every setting has a row but the wall view, which the launcher's one
         // "Wall running" now carries along with who holds you on the wall.
@@ -11389,6 +11394,7 @@ int main() {
                   choicesOf(Item::haptics) == std::size(hapticLevels) &&
                   choicesOf(Item::bodyHaptics) == std::size(hapticLevels) && choicesOf(Item::screenSize) == 3 &&
                   choicesOf(Item::weight) == std::size(weights) &&
+                  choicesOf(Item::recordingFov) == std::size(recording_fov::choices) &&
                   choicesOf(Item::airWebs) == 0 && choicesOf(Item::aimMarkers) == 0,
               "lists: one choice per step; switches: the game's own ON and OFF");
         check(choicesOf(Item::calibrate) == 2, "the calibration's switch names its two choices");
@@ -11411,6 +11417,45 @@ int main() {
         v.nearClipMm = 1000;
         check(sanitized(v).nearClipMm == 100, "near clip upper bound");
     });
+    test("recording FOV: off unless picked, kept with the tab's own settings, a lens that holds both eyes", [] {
+        using namespace vr_settings;
+        Values v;
+        check(v.recordingFov == 0 && defaultChoice(Item::recordingFov) == 0, "the recording view on by default");
+        for (int i = 0; i < static_cast<int>(std::size(recording_fov::choices)); ++i) {
+            choose(Item::recordingFov, i, v);
+            check(v.recordingFov == recording_fov::choices[i] && choice(Item::recordingFov, v) == i,
+                  "a recording FOV choice did not round-trip");
+            check(withTabOnly(Values{}, tabOnlyText(v)).recordingFov == v.recordingFov,
+                  "the recording FOV did not come back from the tab's own file");
+        }
+        check(!choose(Item::recordingFov, 4, v) && !choose(Item::recordingFov, -1, v), "a choice out of range taken");
+        // Off at 0 or below, else 130-150: a hand-written 100 shows as 130.
+        check(withTabOnly(Values{}, "recording_fov=-20\n").recordingFov == 0 &&
+                  withTabOnly(Values{}, "recording_fov=100\n").recordingFov == 130 &&
+                  withTabOnly(Values{}, "recording_fov=170\n").recordingFov == 150,
+              "the recording FOV's range");
+        // The window's shape, at least the angle across, centred, and never
+        // less than the eyes' lens (lopsided here, and taller than 16:9).
+        const native_eyes::Bounds eyes{-1.2f, 1.4f, -1.35f, 1.6f};
+        for (float aspect : {.3f, 1.f, 16.f / 9, 32.f / 9})
+            for (int degrees : {130, 140, 150}) {
+                const auto lens = recording_fov::covering(eyes, degrees, aspect);
+                check(lens.left <= eyes.left && lens.right >= eyes.right && lens.top <= eyes.top &&
+                          lens.bottom >= eyes.bottom,
+                      "the recording lens left out some of the eyes'");
+                near((lens.right - lens.left) / (lens.bottom - lens.top), aspect, .0001f);
+                check(lens.right >= std::tan(degrees * .00872664626f) - .0001f, "narrower than asked");
+                check(lens.left == -lens.right && lens.top == -lens.bottom, "the recording lens off centre");
+            }
+        // A Quest 3 (54 degrees out, 44 in, 48 up and down, with headView's 5%)
+        // in a 16:9 window: 130 already holds it, so each choice shows its
+        // angle. Asked for less, it would show the eyes' 128.5 degrees.
+        const float out = std::tan(54 * .0174532925f) * 1.05f, up = std::tan(48 * .0174532925f) * 1.05f;
+        const native_eyes::Bounds quest{-out, out, -up, up};
+        for (int degrees : {130, 140, 150})
+            near(recording_fov::covering(quest, degrees, 16.f / 9).right, std::tan(degrees * .00872664626f), .0001f);
+        near(2 * std::atan(recording_fov::covering(quest, 0, 16.f / 9).right) * 57.2957795f, 128.5f, .1f);
+    });
     test("VR settings only the tab offers: kept as key=value lines, read back sanitized, the rest left", [] {
         using namespace vr_settings;
         const Values defaults;
@@ -11419,9 +11464,10 @@ int main() {
                                        "swing_momentum=1\nrotation_response_ms=500\nhand_momentum=100\n"
                                        "angular_drag_ms=3000\nhand_speed_min_cm=100\nair_rotation_brake=1\n"
                                        "body_haptics_webs=1\nbody_haptics_wind=1\nbody_haptics_combat=1\n"
-                                       "body_haptics_movement=1\n",
+                                       "body_haptics_movement=1\nrecording_fov=0\n",
               "the defaults' text");
         Values changed = defaults;
+        changed.recordingFov = 140;
         changed.handClimb = true;
         changed.wallDistance = 75;
         changed.nearClipMm = 50;
