@@ -37,6 +37,11 @@ static_assert(std::size(nearClipChoices) == std::size(nearClips));
 // RECORDING FOV: the least the monitor's view shows across (recording_fov.hpp).
 constexpr const char* recordingFovChoices[] = {"OFF", "130\xC2\xB0", "140\xC2\xB0", "150\xC2\xB0"};
 static_assert(std::size(recordingFovChoices) == std::size(recording_fov::choices));
+// UI STYLE, a list (ui_style.hpp's UiStyle in order) so that a style can
+// come after them: COMIC, the printed marks, or TECH, the game's own look.
+constexpr int uiStyles[] = {0, 1};
+constexpr const char* uiStyleChoices[] = {"COMIC", "TECH"};
+static_assert(std::size(uiStyleChoices) == std::size(uiStyles));
 // The realistic flips' rows (RealisticFlipSettings).
 constexpr int automaticStrengths[] = {25, 50, 75, 100};
 constexpr const char* automaticStrengthChoices[] = {"25%", "50%", "75%", "100%"};
@@ -69,7 +74,8 @@ static_assert(std::size(swingChoices) == std::size(swingSpeeds) && std::size(sna
               std::size(weightChoices) == std::size(weights) && std::size(hudChoices) == std::size(hudSizes) &&
               std::size(flipSpeedChoices) == std::size(flipSpeeds) &&
               std::size(depthChoices) == std::size(depthSteps) && std::size(depthSteps) == std::size(screenDepths));
-// A list setting's steps, or none for a switch.
+} // namespace
+
 std::span<const int> steps(Item item) {
     switch (item) {
     case Item::swingSpeed:
@@ -97,6 +103,8 @@ std::span<const int> steps(Item item) {
         return nearClips;
     case Item::recordingFov:
         return recording_fov::choices;
+    case Item::uiStyle:
+        return uiStyles;
     case Item::automaticStrength:
         return automaticStrengths;
     case Item::automaticSpeed:
@@ -115,6 +123,7 @@ std::span<const int> steps(Item item) {
         return {};
     }
 }
+namespace {
 float numberOf(Item item, const Values& v) {
     switch (item) {
     case Item::swingSpeed:
@@ -143,6 +152,8 @@ float numberOf(Item item, const Values& v) {
         return static_cast<float>(v.nearClipMm);
     case Item::recordingFov:
         return static_cast<float>(v.recordingFov);
+    case Item::uiStyle:
+        return static_cast<float>(v.uiStyle);
     case Item::automaticStrength:
         return static_cast<float>(v.automaticStrength);
     case Item::automaticSpeed:
@@ -216,6 +227,7 @@ Values sanitized(Values v) {
     v.wallDistance = std::clamp(v.wallDistance, wallDistances[0], std::end(wallDistances)[-1]);
     v.nearClipMm = std::clamp(v.nearClipMm, nearClips[0], std::end(nearClips)[-1]);
     v.recordingFov = recording_fov::sanitized(v.recordingFov);
+    v.uiStyle = std::clamp(v.uiStyle, uiStyles[0], std::end(uiStyles)[-1]);
     // The realistic flips' ranges, as RealisticFlip takes them.
     v.automaticStrength = std::clamp(v.automaticStrength, 25, 100);
     v.automaticSpeed = std::clamp(v.automaticSpeed, 90, 360);
@@ -226,9 +238,9 @@ Values sanitized(Values v) {
     v.automaticHandThreshold = std::clamp(v.automaticHandThreshold, 50, 300);
     return v;
 }
-const std::array<Row, 42>& rows() {
+const std::array<Row, 43>& rows() {
     // The help fits the game's description column beside the rows.
-    static const std::array<Row, 42> all{{
+    static const std::array<Row, 43> all{{
         {Item::none, "WEBS", nullptr, {}},
         {Item::webStyle, "WEB STYLE",
          "Arcade: webs pass lamp posts, signs and cars, and swings stay above the street.", webStyleChoices},
@@ -268,6 +280,8 @@ const std::array<Row, 42>& rows() {
          "Cutscenes and VIEW: GAME SCREEN get depth. Higher brings them nearer. Off: flat.",
          depthChoices},
         {Item::hud, "HUD", "How large the game's HUD shows in front of you. Off: no HUD in VR.", hudChoices},
+        {Item::uiStyle, "UI STYLE",
+         "Spidy's own marks, gadget wheel and meters: comic print, or tech like the HUD.", uiStyleChoices},
         {Item::nearClip, "NEAR CLIP",
          "How near your eyes things still show. Nearer keeps your hands in view.", nearClipChoices},
         {Item::recordingFov, "RECORDING FOV",
@@ -373,6 +387,9 @@ bool choose(Item item, int index, Values& v) {
     case Item::recordingFov:
         v.recordingFov = s[index];
         break;
+    case Item::uiStyle:
+        v.uiStyle = s[index];
+        break;
     case Item::automaticStrength:
         v.automaticStrength = s[index];
         break;
@@ -428,6 +445,7 @@ constexpr TabOnly tabOnly[] = {
     {"body_haptics_combat", &Values::hapticCombat, nullptr},
     {"body_haptics_movement", &Values::hapticMovement, nullptr},
     {"recording_fov", nullptr, &Values::recordingFov},
+    {"ui_style", nullptr, &Values::uiStyle},
 };
 } // namespace
 std::string tabOnlyText(const Values& v) {

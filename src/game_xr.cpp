@@ -3456,6 +3456,7 @@ DWORD WINAPI run(void*) {
                     saved.motion = motion;
                     saved.trackingEyes = frame.eyes;
                     saved.flatScreen = flatScreen;
+                    saved.uiStyle = values.uiStyle == 1 ? UiStyle::tech : UiStyle::comic;
                     saved.screenPose = screenPose;
                     saved.screenAspect = SpidyFlatAspect();
                     saved.slow = moments.view(slowMotion.view());
@@ -3795,7 +3796,8 @@ DWORD WINAPI run(void*) {
                         });
                         std::vector<Vertex> translucent;
                         for (const auto& mark : marks)
-                            appendAimMarker(translucent, mark, viewer, pixelAngle * markerPixels);
+                            appendAimMarker(translucent, mark, viewer, pixelAngle * markerPixels,
+                                            saved->uiStyle);
                         // Slow motion's focus meter over the back of the left wrist, moved
                         // with the player to this image as the glove is.
                         if (!saved->flatScreen && saved->slow.meter > 0 && rendered.swing.hands[0].tracked) {
@@ -3803,7 +3805,7 @@ DWORD WINAPI run(void*) {
                             wrist.position += travel;
                             const double clock = std::fmod(static_cast<double>(shown) * 1e-9, 3600.);
                             appendSlowMotionMeter(translucent, saved->slow, wrist, viewer, pixelAngle,
-                                                  static_cast<float>(clock));
+                                                  static_cast<float>(clock), saved->uiStyle);
                         }
                         // The bursts where the latest blows landed: fixed in the world.
                         if (!saved->flatScreen)
@@ -3812,14 +3814,14 @@ DWORD WINAPI run(void*) {
                                     continue;
                                 auto view = burst.view;
                                 view.age = static_cast<float>(static_cast<double>(shown - burst.since) * 1e-9);
-                                appendImpact(translucent, view, viewer, pixelAngle);
+                                appendImpact(translucent, view, viewer, pixelAngle, saved->uiStyle);
                             }
                         // The called blow's arrow, over its thug.
                         if (!saved->flatScreen && cue.left > 0) {
                             auto view = cue;
                             view.age = static_cast<float>(static_cast<double>(shown - cueSince) * 1e-9);
                             if (view.age >= 0)
-                                appendCue(translucent, view, viewer, pixelAngle);
+                                appendCue(translucent, view, viewer, pixelAngle, saved->uiStyle);
                         }
                         // A knockout's lettering, where he stood.
                         if (!saved->flatScreen)
@@ -3828,7 +3830,7 @@ DWORD WINAPI run(void*) {
                                     continue;
                                 auto view = mark.view;
                                 view.age = static_cast<float>(static_cast<double>(shown - mark.since) * 1e-9);
-                                appendKnockout(translucent, view, viewer, pixelAngle);
+                                appendKnockout(translucent, view, viewer, pixelAngle, saved->uiStyle);
                             }
                         // Spider-Sense's marks: over each attacker's head, and for one out of
                         // view in the sightline as well, moved with the player as the eyes are.
@@ -3847,12 +3849,13 @@ DWORD WINAPI run(void*) {
                                 if (age < 0)
                                     continue;
                                 SenseView view{mark.head, mark.answer, mark.left, mark.timed, age, broken};
-                                appendSense(translucent, view, viewer, pixelAngle);
+                                appendSense(translucent, view, viewer, pixelAngle, saved->uiStyle);
                                 mark.sight = senseSight(eyes, mark.head, mark.sight);
                                 if (mark.sight.shown) {
                                     const SenseSightView sight{mark.answer, mark.sight, mark.left,
                                                                mark.timed,  age,        broken};
-                                    appendSenseSight(translucent, sight, eyes, pixelAngle);
+                                    appendSenseSight(translucent, sight, eyes, pixelAngle, {},
+                                                     saved->uiStyle);
                                 }
                                 marked = true;
                                 sighted |= mark.sight.shown;
@@ -3861,13 +3864,15 @@ DWORD WINAPI run(void*) {
                             senseSightFrames += sighted;
                         }
                         // The T-pose calibration's panel and controller rings, moved with
-                        // the player to this image as the hands are.
+                        // the player to this image as the hands are. The tech style's
+                        // panel is translucent, as the game's menus are.
                         if (!saved->flatScreen && saved->calibration.phase != body_calibration::Phase::idle) {
                             auto view = saved->calibration;
                             view.panel.position += travel;
                             for (auto& grip : view.grips)
                                 grip.position += travel;
-                            body_calibration::appendView(vertices, view, viewer);
+                            auto& panel = saved->uiStyle == UiStyle::tech ? translucent : vertices;
+                            body_calibration::appendView(panel, view, viewer, saved->uiStyle);
                         }
                         // The gadget wheel in front of its hand, moved with the
                         // player to this image as the hands are: printed, so
@@ -3875,7 +3880,7 @@ DWORD WINAPI run(void*) {
                         if (!saved->flatScreen && saved->gadgetWheel.open) {
                             auto view = saved->gadgetWheel;
                             view.frame.centre += travel;
-                            appendGadgetWheel(translucent, view, viewer, pixelAngle);
+                            appendGadgetWheel(translucent, view, viewer, pixelAngle, saved->uiStyle);
                         }
                         // The phone where it is now - in the hand, where the hand is
                         // now - through this image's own way into its world, and

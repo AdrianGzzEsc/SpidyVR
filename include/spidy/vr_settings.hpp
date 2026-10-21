@@ -9,8 +9,9 @@
 // the values it starts with; during play the game's own Settings change
 // them: pause, Settings, then SPIDY VR after the game's last tab (game_menu).
 // The session reports the last ones, and the launcher starts the next
-// session with them. The few only the tab offers the game module keeps
-// itself (tabOnlyText).
+// session with them. The few no launcher.ini key carries the game module
+// keeps in a file of its own (tabOnlyText), which the launcher's options
+// change too.
 namespace spidy::vr_settings {
 struct Values {
     bool aimMarkers = true;
@@ -102,6 +103,10 @@ struct Values {
     // on the devkit, asked for "one switch per effect group".
     int bodyHaptics = 100;
     bool hapticWebs = true, hapticWind = true, hapticCombat = true, hapticMovement = true;
+    // How Spidy's own marks in the headset look (the tab's UI STYLE;
+    // ui_style.hpp's UiStyle): 0 comic, printed as Spidy's videos are; 1
+    // tech, as the game's own HUD and menus are.
+    int uiStyle = 0;
     bool operator==(const Values&) const = default;
 };
 // The steps the game's Settings offer. The launcher's slider sets any swing
@@ -143,7 +148,7 @@ inline float screenDepth(int choice) {
 // run_game_vr.py accepts), snap turn 0-90 degrees, smooth turn 0-360 degrees
 // a second, vibration and body haptics 0-100%, weight 40-300%, HUD 0-3, flip
 // speed 90-480 degrees a second, the game screen's depth 0-3, near clip
-// 10-100 mm, recording FOV 0 (off) or 130-150 degrees.
+// 10-100 mm, recording FOV 0 (off) or 130-150 degrees, UI style 0-1.
 Values sanitized(Values);
 
 enum class Item : uint8_t {
@@ -184,8 +189,9 @@ enum class Item : uint8_t {
     hapticCombat,
     hapticMovement,
     recordingFov,
+    uiStyle,
 };
-inline constexpr Item lastItem = Item::recordingFov;
+inline constexpr Item lastItem = Item::uiStyle;
 // The SPIDY VR tab, top to bottom: a section's heading (item none) or a
 // setting. The sections: WEBS, SWINGING, COMFORT, HAPTICS, DISPLAY, BODY and
 // EXPERIMENTAL (the player, October 19: "sort the options in spidy vr
@@ -203,10 +209,13 @@ struct Row {
     // menu (the one with resume)").
     bool page{};
 };
-const std::array<Row, 42>& rows();
+const std::array<Row, 43>& rows();
 // The most choices a row shows (game_menu's buffers): a row with more would
 // lose its last ones.
 inline constexpr size_t maxChoices = 9;
+// The values a list setting's choices stand for, in their order; none for a
+// switch.
+std::span<const int> steps(Item);
 // The choice a setting shows for these values: a switch 0 (off) or 1 (on), a
 // list its step nearest to the value (a launcher value between two steps
 // shows the nearer one, the lower on a tie).
@@ -215,12 +224,12 @@ int choice(Item, const Values&);
 bool choose(Item, int choice, Values&);
 // What the game's RESET puts back: the choice for Spidy's defaults (Values{}).
 int defaultChoice(Item);
-// The settings only the tab offers, which no launcher option or XrConfig
-// field carries: NEAR CLIP, RECORDING FOV, HAND WALL CLIMBING, WALL CAMERA
-// DISTANCE, the realistic flips' ten rows and the body haptics' four groups.
-// The game module keeps them as these key=value lines in a file of their
-// own, beside the launcher's settings (game_xr.cpp, tabOnlyPath), and reads
-// them back when VR starts.
+// The settings no launcher.ini key or XrConfig field carries: NEAR CLIP,
+// RECORDING FOV, UI STYLE, HAND WALL CLIMBING, WALL CAMERA DISTANCE, the
+// realistic flips' ten rows and the body haptics' four groups. The game
+// module keeps them as these key=value lines in a file of their own, beside
+// the launcher's settings (game_xr.cpp, tabOnlyPath), and reads them back
+// when VR starts; the launcher's options read and write the same file.
 std::string tabOnlyText(const Values&);
 // The values with what such text holds, sanitized. A line with an unknown
 // key, or whose value is no whole number, is passed over.

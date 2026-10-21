@@ -1,6 +1,75 @@
-# Validation — 2026-10-20
+# Validation — 2026-10-21
 
-## The game's prompts read again, and pressed by name (latest build)
+## Every SPIDY VR setting in the launcher (latest build)
+
+The user: "why doesnt the new launcher include all the realstic flips stuff?",
+then "yeah lets add all". `apps/launcher/ui.cpp` (`options()`: `tabCombo`,
+`tabToggle`, the Walls and Flips cards, Reset options).
+
+| | |
+| --- | --- |
+| Build | The launcher and its tests in a scratch folder (subst drive, `-DSPIDY_BUILD_XR=OFF -DSPIDY_BUILD_LAUNCHER=ON`): no warnings. `build\windows-ninja` not rebuilt. |
+| Launcher tests | 30 passed. |
+| Looked at | PrintWindow shots at 150 % of a scratch copy beside the user's own launcher (lock and window class renamed, off the screen's edge but one column): the Options tab top to bottom; each new row showing the user's `spidy_vr.ini` (hand wall climbing on, 40 cm, near clip 2 cm, UI style Comic, swing momentum off, hand momentum 75 %, angular drag Very slow, minimum hand speed 3 m/s); the haptics switches indented under Body haptics. |
+| Writes | Realistic flips switched on: `realistic_flips=1` in `spidy_vr.ini` and its nine rows under it. Angular drag's list showed Fast, Quick, Medium, Slow, Very slow; Medium wrote `angular_drag_ms=1500`. Reset options wrote every `spidy_vr.ini` key's default. |
+| Settings | launcher.ini and `spidy_vr.ini` hash-identical to before after each run; no profile written. |
+| Not run | A VR session started after changing them in the launcher; another Windows scaling than 150 %. |
+
+## Launcher facelift (the build before)
+
+The user: "lets give the launcher a facelift with out style, better layout and
+UX", "we have a control map visual, maybe use it?", "i feel like the ui is a
+bit much with the colors and contrast". `apps/launcher` (`ui.cpp` drawn anew,
+fonts and the controls picture compiled in).
+
+| | |
+| --- | --- |
+| Build | The launcher and its tests in a scratch folder (subst drive, `-DSPIDY_BUILD_XR=OFF -DSPIDY_BUILD_LAUNCHER=ON`): `/W4` clean. `build\windows-ninja` not rebuilt. |
+| Launcher tests | 30 passed, with the UI STYLE row of the build before. |
+| Looked at | PrintWindow shots at 150 % of a scratch copy run beside the user's own launcher (its single-instance lock and window class renamed in the copy; the window off the screen's edge but one column, so it renders and covers nothing): Play, Options with the profile menu open and the Save as a profile dialog, Controls (the picture drawn pixel for pixel), About; the smallest window (980 x 700) with the shortcut bar. |
+| States | A scratch copy of `ui.cpp` with the session faked from an environment variable (not in the tree): in VR, stopping with Force stop, ended, failed with code 3, needs administrator, close the game first, could not start, not ready, checking, the update offer. In the smallest window a failure shows its error, its offers and START VR, without the steps. |
+| Picture | `docs/images/readme/controls-quest3.jpg` re-shot from its page at 3840 x 2160 and scaled to 1920: issue box PC VR, the red box "Press that one. Its LT, LB, RT, RB: your triggers." Every other binding on it checked against PLAYERS.md. |
+| Glyphs | Barlow and Comic Neue hold every character the launcher prints but the arrow of a profile's changes, which Segoe UI (merged) draws. |
+| Settings | launcher.ini and `spidy_vr.ini` hash-identical before and after; no profile written. |
+| Not run | A VR session; Windows scaling other than 150 %; Windows 10 (Segoe MDL2's icons); a real update; tooltips and hovers (posted mouse moves cannot hold a hover). |
+
+## Tech UI style
+
+The user: "lets make an optional alternative set of our custom ingame vr ui in
+more scifi techy style like the based game ui". UI STYLE in SPIDY VR (COMIC or
+TECH); the marks in `src/tech_marks.cpp`.
+
+| | |
+| --- | --- |
+| Core tests | 426 (4 new): every mark (aim marker, meter, blow, call, knockout, Spider-Sense and its sightline, wheel, panel) draws as before with no style, the same as COMIC, and anew as TECH; tech blows white, amber, red with amber, called cyan, the count's callout with COMBO in cyan, springing out and no pose held, faded by 0.72 s and gone at 0.76; the call's ring of 24 segments running down a segment at a time, its chevrons from outside the ring on the fist's side to his middle for all four ways, the finisher amber in red and larger, snapping on from wider; the knockout red with KO and its amber bar, 5-30 cm at 1.2 m, gone by its time; Spider-Sense cyan, red, amber, over his head, its ring closing, amber only at the last notch, waving, flickering on, a counter throwing it out, 4-12 degrees across at 1.5-9 m; the sightline mark 14-21 degrees off the look, the rim's arcs to 38-45, right of the view, upward for an attacker above; the wheel within 30 cm, a cyan wedge and the name in the middle when lit, the equipped one amber, at most 60,000 vertices fully charged; the meter's cyan segments, red on a refusal, a sweep in slow motion, nothing hidden, over the wrist; the panel translucent blue, nothing behind it, the hint amber, the hold cyan. The aim markers' test runs for both styles (size on screen, squeeze, shadows first, edges fading, each hand's colour, fading, a round target ring closing in, the right hand's wider). The tab's sections test with UI STYLE after the HUD; `ui_style` in `spidy_vr.ini`, read back and clamped; the choice round trip. |
+| Launcher tests | 30: profiles hold `ui_style` (tab-only, 0-1), the defaults' text with `ui_style=0` after `hud=2`, the change list's "UI STYLE COMIC → TECH". |
+| Protocol suites | Display permission, game VR, launcher, observer, runtime, stereo: all OK. No protocol change. |
+| GPU | `spidy_graphics_test` at 1536x1536: all passes, D3D12 debug layer clean. |
+| Build | Scratch build (subst drive) of every target but the launcher, whose `ui.cpp` was mid-change in a peer session; `/W4` clean in the new code. |
+| Cost | Vertices and build time per mark, comic → tech: wheel 45,582 → 22,020 (137 → 67 µs), blow with count 6,210 → 2,664, knockout 9,054 → 2,688, target ring 2,436 → 5,517, Spider-Sense 6,804 → 9,936, meter 3,504 → 7,686, calibration panel 3,996 → 24,168 (21 → 74 µs). |
+| Looked at | `tools\preview-marks.ps1 -Style Tech` and `-Style Comic` over the October 20 session's captures 0011 (street, 6 m) and 0076 (rooftops, 0.75 m): every sheet (marks, blows, sense, sense-eye, aim, wheel, meter, panel). |
+| Not run | The game and a headset; `tools/probe_menu.py` (one more Down for the new row). |
+
+## Settings profiles
+
+The user: "lets add spidy settings profiles so people can easily import and
+export and share them". The launcher's Profile row; the format in
+`launcher_profile.hpp`.
+
+| | |
+| --- | --- |
+| Launcher tests | 30 (new 6): every SPIDY VR row but VR VIEW and CALIBRATE BODY held once, `spidy_vr.ini`'s 17 keys all held and nothing else of the tab's own, wall running the one launcher option, keys unique, the tab-only ranges `vr_settings::sanitized`'s; the defaults' exact text (33 settings, in the tab's order); every setting away from its default read back, graphics and calibration untouched; a Discord message with a quoted name, `key = value`, a quoted line, `hand_climb=on` and a `flips: yes` passed over (3 settings, the rest unchanged), a session's line (4 of its 7), launcher.ini with a BOM (`gravity_percent` alone), switch words and words apart by `,` `;` and code marks, `hud=2.5` passed over, clamping, an out-of-range number passed over, texts with no setting, a 40-character name; the change list in the tab's titles and choices (`90°/S`, `1 CM`, `QUICK`); file names (refused characters, CON/COM1/LPT9, Hebrew and an emoji kept) |
+| Planted bugs | Built from a copy of `include/`, one at a time: two keys swapped, a quote's `>` kept, no clamping, device names allowed, HAND WALL CLIMBING left out, WALL CAMERA DISTANCE's range cut to 75, the nearest choice broken. Each failed at least one test (the quote only after the test's name line was quoted) |
+| The launcher, driven | `build\windows-ninja\spidy_launcher.exe` on this PC (PrintWindow shots, posted clicks and keys), launcher.ini and `spidy_vr.ini` backed up first. Save as a profile ("Claude test: mine" saved as `Claude test mine.spidy`, its `hud=1`, `hand_climb=1`, `hand_momentum=75` the player's own); Aim markers switched: the row "Claude test mine*" and "Changed since you used..."; the profile's tooltip "AIM MARKERS OFF → ON"; Copy to share: the clipboard held the code block, `aim_markers=0`, no name; Paste of an 8-setting Discord message: the preview listed the 8 and "It has 8 of the 33"; Save and use: launcher.ini changed in those (`arcade_webs=1`, `swing_speed=56`, `gravity_percent=150`, `snap_turn=0`, `smooth_turn=90`), `spidy_vr.ini` in `near_clip_mm`, `realistic_flips`, `rotation_strength` only, `Previous settings.spidy` written; a posted WM_DROPFILES of `Seated comfort.spidy` (no name line, `wall_run=off`) opened the preview named after the file; Save only left launcher.ini's hash the same; Previous settings swapped back and forth (after a fix: "Back to your previous settings...", no `*`); Export and Import through Windows' dialogs (a `.txt` holding the message, "You have a profile of that name"); Delete: in the Recycle Bin; a clipboard with no profile: "The clipboard holds no Spidy profile." in amber |
+| Put back | launcher.ini and `spidy_vr.ini` from the backup, SHA-256 `E00279B7...` and `6156FCE4...` as before; the profiles folder (new) removed, the deleted test profile out of the Recycle Bin, the clipboard's text restored |
+| Other suites | Core 422, realistic flips, all six Python suites (138). No struct changed |
+
+**Not checked.** A VR session that starts after a profile was used, its
+stereo module reading the `spidy_vr.ini` the launcher wrote. The text is
+`vr_settings::tabOnlyText`, the module's own writer, and core tests read it
+back.
+
+## The game's prompts read again, and pressed by name
 
 The user, about a helper's 50-item playthrough (October 14-19): "try to come
 up with a unified immersive fix", then "build it". Its first part: the

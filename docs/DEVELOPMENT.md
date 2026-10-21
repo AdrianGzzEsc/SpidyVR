@@ -10,8 +10,8 @@ What each build changed is in [CHANGELOG.md](CHANGELOG.md).
 `Spidy Launcher.exe` (source in `apps/launcher`, built as
 `build\windows-ninja\spidy_launcher.exe`) lets other people play without the
 development setup. It is credited to Ilya Mezerowsky in its header, its About
-tab, its file properties and the zip's README, and carries a Ko-fi button. On
-start it checks the PC and shows what it finds:
+tab, its file properties and the zip's README, and carries Discord and Ko-fi
+buttons. On start it checks the PC and shows what it finds:
 
 - **The game:** in every Steam library (Steam's registry entries, then
   `libraryfolders.vdf` and the app manifest), else where you point it with
@@ -59,6 +59,81 @@ that ends with other VR settings than it began with (the SPIDY VR tab in the
 game's Settings) prints them on its last line, "VR settings
 from the headset: ...", and the launcher saves them as its options. The
 first start offers desktop and Start menu shortcuts.
+
+### Its look
+
+The launcher wears Spidy's print, the style of its videos and README, toned
+down for a window looked at a while (October 21): a dark ground and cards,
+paper lettering, and the colours kept small. Red is the brand and the one thing
+to do (START VR, the tab you are on); yellow the narrator and what needs a
+look; cyan what is fine; violet what is switched on. The name SPIDY and white
+headlines are misprinted (a cyan ghost left, a magenta one right), the release
+shows as an issue (`No. 0.4.0`, `FREE`), and halftone dots stand where a
+gradient would. `ui.cpp` draws it with ImGui's draw lists.
+
+- **Type:** Barlow, Barlow Condensed (SemiBold, Bold, Black Italic) and, for
+  the narrator, Comic Neue Bold Italic, compiled in from `apps/launcher/fonts`
+  (`launcher.rc`; `main.cpp` loads them and merges Segoe UI for the glyphs
+  Barlow lacks, and Segoe's icons). SIL Open Font License, in `docs/licenses`.
+- **Tabs:** Play (a panel with the session's headline, the narrator's line,
+  its three steps and START VR; This PC; the session log), Options (the
+  Profile card, then the options in cards: webs, moving, walls, flips, body
+  and haptics, picture, game screen and HUD, monitor), Controls (the README's
+  picture of the controls, then each in words) and About (credits, this PC's
+  folders, updates, and the README's Ko-fi and Discord cards).
+- **The session's steps** come from the log the panel already reads: Headset
+  until "Starting Spider-Man", "Using the running game" or "Closing
+  Spider-Man", Game until "Rendering " or "Render memory:", then Play. A
+  session that fails marks the step it reached, and its error, offers (copy
+  the log, ask on the Discord, restart as administrator, close the game) and
+  the narrator's red line take the steps' place when the panel is short.
+- **The controls picture** is `docs/images/readme/controls-quest3.jpg`, the
+  README's, compiled in. `main.cpp` decodes it with WIC and scales it to the
+  pixels it is drawn at, since ImGui's DX11 sampler reads one mip level only.
+  When a control changes, the picture is re-rendered for both.
+
+### Settings profiles
+
+The Options tab's Profile card keeps named sets of settings and shares them
+(October 20). The format and everything without Windows calls is
+`include/spidy/launcher_profile.hpp`, checked by `tests/launcher_tests.cpp`;
+the files, dialogs and the card are in `apps/launcher` (`system.cpp`,
+`ui.cpp`'s `profileCard` and `profileModals`).
+
+- **What a profile holds** (`profileSettings`, in the tab's order): every row
+  of the SPIDY VR tab but VR VIEW, CALIBRATE BODY and RECORDING FOV (the
+  monitor's, which suits one PC as the graphics options do), and wall
+  running. The launcher's options among them come from `SessionOptions`; the
+  tab's own (NEAR CLIP, UI STYLE, the four body haptics switches, HAND WALL
+  CLIMBING and WALL CAMERA DISTANCE, the realistic flips' ten) from
+  `%APPDATA%\Spidy\spidy_vr.ini`, which the launcher now reads and, when a
+  profile changes one, writes as the stereo module does
+  (`vr_settings::withTabOnly`/`tabOnlyText`; whole, then renamed into place,
+  so `recording_fov` stays as it was). No graphics option and no body
+  calibration. A test holds the table to the tab's rows and to
+  `spidy_vr.ini`'s keys: a new row needs a line there, or a place among the
+  three it leaves out, with its key for good (shared profiles carry it).
+- **Text:** a `#` line, `name=`, `spidy=<version>`, then `key=value` per
+  setting, numbers (switches 0/1); the keys are launcher.ini's and
+  spidy_vr.ini's, the weight `weight`. *Copy to share* wraps it in an ```` ```ini ````
+  block for Discord. `readProfile` takes such a message back with whatever is
+  around it, quoted lines, several pairs a line (a session's "VR settings from
+  the headset" line) and launcher.ini's `gravity_percent`; switches take
+  on/off, true/false, yes/no; values are clamped. A setting a profile lacks is
+  left as it is, so an older Spidy's profile or a hand-written one only
+  changes what it names.
+- **Files:** `%APPDATA%\Spidy\profiles\<name>.spidy`, the name without what
+  Windows refuses (`profileFileName`); the list shows file names. Import (the
+  clipboard, a file, or one dropped on the window: `WM_DROPFILES`, let through
+  to an administrator's launcher with `ChangeWindowMessageFilterEx`) shows
+  `profileChanges` in the tab's words before *Save and use* or *Save only*.
+  Using a profile when no saved one holds the current settings first saves
+  them as `Previous settings`; using that one swaps the two. launcher.ini's
+  `profile=` is the profile last used or saved, for *Save changes*. Delete
+  goes to the Recycle Bin. All of it is off while VR runs.
+- **Builds:** the launcher and its tests compile `src/vr_settings.cpp`
+  themselves (the launcher's static runtime cannot link `spidy_core`), and
+  `vr_settings::steps` is public for the change list.
 
 ### Updates
 
@@ -239,11 +314,14 @@ of impact:
 - `tools/probe_game_swing.py`: a six-second native web attachment/release/landing
   test with automatic hook restoration. No headset is required.
 - `tools/preview-marks.ps1` (and `spidy_mark_preview`, `apps/mark_preview.cpp`):
-  draws the combat marks over two eye captures of a VR session, or over a
-  plain backdrop, as PNG sheets of their states and poses, and the gadget
-  wheel over the near one (`near-wheel.png`: as it lands, at rest, as a
-  gadget lights). The overlay's own vertices, one sample a pixel, at about
-  the headset's pixel density. No game and no headset.
+  draws the combat marks and the aim markers over two eye captures of a VR
+  session, or over a plain backdrop, as PNG sheets of their states and
+  poses, and the gadget wheel, slow motion's meter and the calibration
+  panel over the near one (`near-wheel.png`: as it lands, at rest, as a
+  gadget lights; `near-meter.png`, `near-panel.png`). The overlay's own
+  vertices, one sample a pixel, at about the headset's pixel density. No
+  game and no headset. `-Style Tech` draws the tech style's
+  (`reports\mark-preview-tech`); `-BuildDir` takes a build folder of its own.
 - `tools/probe_game_grab.py`: webs the nearest throwable prop in sight from where
   the player stands, reels (or with `--yank` yanks) it in, carries it and throws
   it, in a freshly started game; `--watch SECONDS` watches it land and come to
@@ -503,13 +581,17 @@ let go in the air, steers it. `GameTrackingRig::automaticFlips` switches between
 `tests/realistic_flip_tests.cpp` is its own test program (ctest
 `realistic_flips`).
 
-The SPIDY VR tab's settings that no launcher option carries (NEAR CLIP,
-RECORDING FOV, HAND WALL CLIMBING, WALL CAMERA DISTANCE, the realistic flips'
-rows) are kept by the stereo module itself:
+The SPIDY VR tab's settings that no launcher.ini key or XrConfig field
+carries (NEAR CLIP, RECORDING FOV, UI STYLE, HAND WALL CLIMBING, WALL CAMERA
+DISTANCE, the realistic flips' rows, the body haptics' groups) are kept by
+the stereo module itself:
 `vr_settings::tabOnlyText` lines in `%APPDATA%\Spidy\spidy_vr.ini`, read as VR
 starts and written when the tab changes one (`game_xr.cpp`, `tabOnlyPath`). A
 file beside the module would not do: it runs from a copy staged per build
-(`reports/stereo-modules/<sha256>/`).
+(`reports/stereo-modules/<sha256>/`). The launcher's options show and change
+them in the same file while VR is stopped (`App::options`'s `tabCombo` and
+`tabToggle`, with the tab's own choices from `vr_settings::rows()`, so a new
+step there shows in both); it reads the file again when a session ends.
 
 Webs are drawn by the game's own web-line system. If they look wrong in the
 eyes, start with `Launch Spidy VR.cmd -OverlayWebs` for Spidy's overlay strands.
@@ -603,8 +685,16 @@ are printed as the graphics of Spidy's videos are: the style system's colours
 `#ffe14d`, cyan `#12d6ff` and magenta `#ff2e93` for the misprint's two
 ghosts), a keyline round every shape, a hard drop instead of a shadow, and
 motion on twos: a pose held a twelfth of a second, then the next
-(`Print` in `src/web_visual.cpp`). To see a change to them without a
-headset, run `tools/preview-marks.ps1`. `-NoBody` hides the hero, with no hands
+(`Print` in `src/web_visual.cpp`). UI STYLE TECH in the SPIDY VR tab
+(`UiStyle`, `include/spidy/ui_style.hpp`) draws every mark of Spidy's (the
+aim markers, the fight's, Spider-Sense, the gadget wheel, slow motion's meter
+and the calibration panel) as the game's own HUD and menus draw theirs
+instead: thin lines in its line white, cyan, amber and red, translucent blue
+panels, its corner brackets, upright lettering, each shape over a soft dark
+halo, easing and fading where the print holds poses (`src/tech_marks.cpp`,
+its `Hud` drawing a mark's halo, glow and shapes; the public append
+functions take the style, and the frame carries it, `NativeEyeFrame::uiStyle`).
+To see a change to them without a headset, run `tools/preview-marks.ps1`. `-NoBody` hides the hero, with no hands
 of any kind (Spidy's own gloves went on October 15); `-NoPunch` lets fists pass
 through and switches the strike off with them. See [docs/BODY.md](BODY.md).
 
@@ -1104,7 +1194,10 @@ stands in for nothing then (`isActiveView` and `impostorQueries` act only
 while the view rests), so far buildings draw their full models within the
 game's own 145 m. The author measured it in a Quest 3 at 3032 x 3248 an eye,
 standing in one place 30 s each: 117.1 newly rendered frames a second off,
-84.5 at 130 degrees, 112.3 off again, about 3 ms a frame more.
+84.5 at 130 degrees, 112.3 off again, about 3 ms a frame more. With
+`-StockMonitorView` (the launcher's "Normal camera on the monitor") the view
+stays the stock camera and the angle does nothing. The launcher shows the
+setting in its Monitor card (`tabCombo`, the same `spidy_vr.ini` line).
 
 Some of what a resting view no longer does was done for everyone. Far
 buildings are impostors, cards standing in for the model, and which of them
@@ -1575,7 +1668,8 @@ still requires a running game or headset.
 | `src/slow_motion.cpp`, `src/game_time.cpp` | Slow motion: the left stick's click, focus and the eased time scale; the game's own time system slowed to it (its look: `D3D12Renderer::Grade`, the meter in `web_visual.cpp`) |
 | `src/game_grab.cpp`, `src/native_bodies.cpp`, `src/game_targets.cpp` | Web grab in the game: candidates, freed Havok props, flung bots |
 | `src/native_render_memory.cpp`, `tools/vr_launcher.py` | A larger per-frame render memory ring, installed while the game starts |
-| `src/web_visual.cpp` | Fallback game-style web strands for the headset overlay and lab |
+| `src/web_visual.cpp` | Fallback game-style web strands for the headset overlay and lab; the printed marks |
+| `src/tech_marks.cpp`, `include/spidy/soft_shapes.hpp` | The marks in UI STYLE TECH, the game's HUD look; the soft-edged shapes both styles draw with |
 | `src/prompt_buttons.cpp`, `include/spidy/prompt_buttons.hpp` | The game's own button vocabulary: what each icon id of its nine device families asks of the pad, the letters its prompt texts spell out, which of them VR play can send, what the player does instead, and a prompt text rewritten in those terms. Pure and covered by the core tests; `game_pad.hpp` is built on it |
 | `src/game_prompts.cpp`, `tools/probe_prompts.py` | What the game is asking for now: the prompt and QTE interface watched through `game_menu`'s hooks on the UI's call wrapper and text lookup, the live demand the interact button sends, the counters a session report carries; plus the October 11 research exports (for a game with no VR session running) |
 | `src/game_offers.cpp`, `src/game_warp.cpp`, `include/spidy/offer_pointing.hpp`, `tools/research_warp.py` | The game's interactions on Spidy's wall: the hero's offer processor, each offer's check and a vent's own check answered as the game's crawl would where the swing holds the player, and the offers it gathered near him; a hand pointing at one and the interact's use of it - the game's own crawl entry under him (`game_warp`), its pick, then its Y; the in-game check (`research_warp.py --use`) |

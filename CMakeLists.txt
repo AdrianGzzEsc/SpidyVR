@@ -37,7 +37,7 @@ add_library(spidy_core src/swing.cpp src/web_grab.cpp src/lab_world.cpp src/lab_
             src/web_visual.cpp src/body_ik.cpp src/punch.cpp src/shooter.cpp src/vr_settings.cpp
             src/body_calibration.cpp src/overlay_text.cpp src/slow_motion.cpp src/web_strike.cpp
             src/impact_sound.cpp src/prompt_buttons.cpp src/gadget_wheel.cpp src/spider_sense.cpp src/phone.cpp
-            src/body_haptics.cpp)
+            src/body_haptics.cpp src/tech_marks.cpp)
 target_include_directories(spidy_core PUBLIC include)
 if(MSVC)
   target_compile_options(spidy_core PRIVATE /W4 /permissive-)
@@ -55,7 +55,9 @@ if(WIN32)
   target_sources(spidy_tests PRIVATE src/game_targets.cpp)
 endif()
 add_test(NAME core COMMAND spidy_tests)
-add_executable(spidy_launcher_tests tests/launcher_tests.cpp)
+# Settings profiles (launcher_profile.hpp) hold the SPIDY VR tab's settings: the launcher's programs build
+# vr_settings themselves, as the launcher has the static runtime and spidy_core the DLL one.
+add_executable(spidy_launcher_tests tests/launcher_tests.cpp src/vr_settings.cpp)
 target_include_directories(spidy_launcher_tests PRIVATE include)
 add_test(NAME launcher COMMAND spidy_launcher_tests)
 add_executable(spidy_sim apps/sim.cpp)
@@ -238,7 +240,8 @@ if(SPIDY_BUILD_LAUNCHER)
     message(FATAL_ERROR "Run tools/bootstrap.ps1 to fetch the pinned Dear ImGui")
   endif()
   add_executable(spidy_launcher WIN32 apps/launcher/main.cpp apps/launcher/ui.cpp apps/launcher/system.cpp
-                 apps/launcher/update.cpp apps/launcher/launcher.rc apps/launcher/launcher.manifest
+                 apps/launcher/update.cpp src/vr_settings.cpp apps/launcher/launcher.rc
+                 apps/launcher/launcher.manifest
                  ${SPIDY_IMGUI}/imgui.cpp ${SPIDY_IMGUI}/imgui_draw.cpp ${SPIDY_IMGUI}/imgui_tables.cpp
                  ${SPIDY_IMGUI}/imgui_widgets.cpp ${SPIDY_IMGUI}/backends/imgui_impl_win32.cpp
                  ${SPIDY_IMGUI}/backends/imgui_impl_dx11.cpp)
@@ -248,8 +251,12 @@ if(SPIDY_BUILD_LAUNCHER)
                              SPIDY_VERSION_NUMBERS=${PROJECT_VERSION_MAJOR},${PROJECT_VERSION_MINOR},${PROJECT_VERSION_PATCH},0)
   set_source_files_properties(apps/launcher/main.cpp apps/launcher/ui.cpp apps/launcher/system.cpp
                               apps/launcher/update.cpp PROPERTIES COMPILE_OPTIONS "/W4;/permissive-")
+  # The resource script compiles the fonts and the controls picture in; a changed one builds it again.
+  file(GLOB SPIDY_LAUNCHER_FONTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/apps/launcher/fonts/*.ttf")
+  set_source_files_properties(apps/launcher/launcher.rc PROPERTIES OBJECT_DEPENDS
+                              "${SPIDY_LAUNCHER_FONTS};${CMAKE_CURRENT_SOURCE_DIR}/docs/images/readme/controls-quest3.jpg")
   target_link_libraries(spidy_launcher PRIVATE d3d11 dxgi d3dcompiler dwmapi bcrypt version urlmon wintrust crypt32
-                        shell32 ole32 uuid advapi32 winhttp)
+                        shell32 ole32 uuid advapi32 winhttp windowscodecs)
   # Static runtime: the launcher starts on a PC that has no Visual C++ runtime yet and offers to install it.
   set_property(TARGET spidy_launcher PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()

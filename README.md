@@ -174,7 +174,7 @@ Keep the game window in front on the desktop: the game pauses behind other
 windows. If the headset shows a still picture, click the game window once.
 
 <p align="center">
-  <img src="docs/images/launcher.png" alt="Spidy Launcher: checks for the game, VR runtime, headset and memory, VR options, and START VR" width="820">
+  <img src="docs/images/launcher.png" alt="Spidy Launcher's Play tab: Ready, the three steps of a session (headset, game, play) and START VR; the checks of this PC (the game, the VR runtime, the headset, Windows and Spidy's files) and the session log. Its other tabs hold the options, the controls and Spidy's links." width="820">
 </p>
 
 <details>
@@ -186,7 +186,7 @@ windows. If the headset shows a still picture, click the game window once.
 - Starts the game with the larger render memory VR needs, in a small window that
   saves GPU time, without frame generation, vertical sync or ray-traced reflections, and puts your settings back afterwards.
 - Gives each eye the game's own anti-aliasing and upscaling (*Upscaling* in its options; the game's DLSS setting does not reach the headset), and shows your left eye in the game window while you are in VR.
-- Remembers your options, and saves a report of every session in `reports\`.
+- Remembers your options (its Options tab, with profiles to save and share), and saves a report of every session in `reports\`.
 - Offers each new Spidy release when it starts, and updates itself in place with one click.
 
 </details>
@@ -196,7 +196,7 @@ Spidy changes nothing in the game's folder.
 ## Controls
 
 <p align="center">
-  <a href="docs/images/readme/controls-quest3.jpg"><img src="docs/images/readme/controls-quest3.jpg" alt="Spidy's controls on Quest 3 Touch Plus controllers. Left: Menu pauses; left stick walks and runs, click for slow motion; Y interacts, hold to step up to the thing; X opens the game menu, hold for the gadget wheel. Right: right stick turns, up and hold to zip to a point or into a vent, down and hold to heal, click to pull a door or grate; B dodges the way the left stick points; A jumps, hold on the ground for a charged leap. Both hands: trigger reels in, or shoots a web ball or your gadget with no web; grip shoots a web and swings, catches a prop or an enemy and throws it on release. With your hands: a sharp pull zips or yanks, a fast fist punches or flies you to an enemy up to 10 m off, a hand at your temple with the trigger scans, a free hand on the web with its grip climbs it, both sticks clicked give a whole gamepad." width="100%"></a>
+  <a href="docs/images/readme/controls-quest3.jpg"><img src="docs/images/readme/controls-quest3.jpg" alt="Spidy's controls on Quest 3 Touch Plus controllers. Left: Menu pauses; left stick walks and runs, click for slow motion; Y interacts, hold to step up to the thing; X opens the game menu, hold for the gadget wheel. Right: right stick turns, up and hold to zip to a point or into a vent, down and hold to heal, click to pull a door or grate; B dodges the way the left stick points; A jumps, hold on the ground for a charged leap. Both hands: trigger reels in, or shoots a web ball or your gadget with no web; grip shoots a web and swings, catches a prop or an enemy and throws it on release. With your hands: a sharp pull zips or yanks, a fast fist punches or flies you to an enemy up to 10 m off, a hand at your temple with the trigger scans, a free hand on the web with its grip climbs it, both sticks clicked give a whole gamepad. Where the game shows a button, press that one: its LT, LB, RT and RB are your triggers." width="100%"></a>
   <br>
   <sub>Quest 3 Touch Plus shown; Quest 2 and Quest Pro controllers have the same buttons. Steam Frame buttons are in the <a href="docs/PLAYERS.md">players' guide</a>.</sub>
 </p>

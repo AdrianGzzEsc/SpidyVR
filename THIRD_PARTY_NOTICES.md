@@ -28,6 +28,16 @@ Dear ImGui 1.92.9b, commit `f1cc2ae15e53a861a874c3034aae6798fde194ab`, from the
 MIT license, retained in the release zip as `docs/licenses/DearImGui-LICENSE.txt`.
 `tools/bootstrap.ps1` fetches it.
 
+The launcher carries unmodified fonts from the
+[Google Fonts repository](https://github.com/google/fonts) in
+`apps/launcher/fonts`, compiled into `Spidy Launcher.exe`: Barlow Medium and
+SemiBold, and Barlow Condensed SemiBold, Bold and Black Italic, Copyright 2017
+The Barlow Project Authors (https://github.com/jpt/barlow); Comic Neue Bold
+Italic, Copyright 2014 The Comic Neue Project Authors
+(https://github.com/crozynski/comicneue). Both are licensed under the SIL Open
+Font License 1.1, retained as `docs/licenses/Barlow-OFL.txt` and
+`docs/licenses/ComicNeue-OFL.txt`.
+
 Body haptics (`src/bhaptics_output.cpp`) load bHaptics' own library,
 `bhaptics_library.dll`, from the bHaptics C/C++ SDK 2.7.1
 ([tact-cpp2](https://github.com/bhaptics/tact-cpp2), commit

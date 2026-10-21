@@ -2,6 +2,18 @@
 
 1 ICON "spidy.ico"
 
+// Spidy's print, the house style of its videos and README (main.cpp loads them; SIL Open Font License,
+// docs/licenses).
+FONT_BODY RCDATA "fonts/Barlow-Medium.ttf"
+FONT_SEMIBOLD RCDATA "fonts/Barlow-SemiBold.ttf"
+FONT_LABEL RCDATA "fonts/BarlowCondensed-Bold.ttf"
+FONT_KICKER RCDATA "fonts/BarlowCondensed-SemiBold.ttf"
+FONT_DISPLAY RCDATA "fonts/BarlowCondensed-BlackItalic.ttf"
+FONT_NARRATION RCDATA "fonts/ComicNeue-BoldItalic.ttf"
+
+// The controls on Quest 3 controllers, the README's picture (the Controls tab).
+PICTURE_CONTROLS RCDATA "../../docs/images/readme/controls-quest3.jpg"
+
 VS_VERSION_INFO VERSIONINFO
 FILEVERSION SPIDY_VERSION_NUMBERS
 PRODUCTVERSION SPIDY_VERSION_NUMBERS

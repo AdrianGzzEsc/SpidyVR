@@ -184,8 +184,9 @@ def main():
         step('hud_small', dict(hud=1, body_haptics=75), changes=11)
         press('left', wait=.8)
         step('hud_off', dict(hud=0), changes=12)
-        # Down past NEAR CLIP, RECORDING FOV and the BODY heading: a calibration at the next gameplay.
-        press('down', 'down', 'down')
+        # Down past UI STYLE, NEAR CLIP, RECORDING FOV and the BODY heading: a calibration at the next
+        # gameplay.
+        press('down', 'down', 'down', 'down')
         press('right', wait=.8)
         step('calibrate_on_resume', dict(calibrate=True, hud=0), changes=13)
         # Down past the EXPERIMENTAL heading: the flips, off until switched on.

@@ -6,7 +6,11 @@
 #include <d3d11.h>
 #include <dwmapi.h>
 #include <shellapi.h>
+#include <wincodec.h>
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
+#include <vector>
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
 
@@ -65,6 +69,103 @@ void releaseDevice() {
     device = nullptr;
 }
 
+// A picture compiled into the launcher (launcher.rc), as a texture the size it is drawn at: the renderer samples
+// one level only, so a picture drawn smaller than it is would shimmer. WIC decodes it once and scales it again
+// when the size changes, at most every 0.15 s while a window is resized.
+class Picture {
+public:
+    ~Picture() {
+        if (view_) view_->Release();
+        if (source_) source_->Release();
+        if (factory_) factory_->Release();
+    }
+
+    bool load(const wchar_t* resource) {
+        const HRSRC found = FindResourceW(nullptr, resource, RT_RCDATA);
+        auto* bytes = found ? static_cast<BYTE*>(LockResource(LoadResource(nullptr, found))) : nullptr;
+        if (!bytes || FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+                                              IID_PPV_ARGS(&factory_))))
+            return false;
+        IWICStream* stream{};
+        IWICBitmapDecoder* decoder{};
+        IWICBitmapFrameDecode* frame{};
+        IWICFormatConverter* converter{};
+        IWICBitmap* bitmap{};
+        const bool ok =
+            SUCCEEDED(factory_->CreateStream(&stream)) &&
+            SUCCEEDED(stream->InitializeFromMemory(bytes, SizeofResource(nullptr, found))) &&
+            SUCCEEDED(factory_->CreateDecoderFromStream(stream, nullptr, WICDecodeMetadataCacheOnDemand, &decoder)) &&
+            SUCCEEDED(decoder->GetFrame(0, &frame)) && SUCCEEDED(factory_->CreateFormatConverter(&converter)) &&
+            SUCCEEDED(converter->Initialize(frame, GUID_WICPixelFormat32bppRGBA, WICBitmapDitherTypeNone, nullptr, 0,
+                                            WICBitmapPaletteTypeCustom)) &&
+            SUCCEEDED(factory_->CreateBitmapFromSource(converter, WICBitmapCacheOnLoad, &bitmap));
+        for (IUnknown* done : std::initializer_list<IUnknown*>{converter, frame, decoder, stream})
+            if (done)
+                done->Release();
+        if (!ok)
+            return false;
+        source_ = bitmap;
+        UINT width = 0, height = 0;
+        source_->GetSize(&width, &height);
+        size_ = ImVec2(static_cast<float>(width), static_cast<float>(height));
+        return width && height;
+    }
+
+    launcher::Picture picture() {
+        return {size_, [this](int width) { return texture(width); }};
+    }
+
+private:
+    ImTextureID texture(int width) {
+        if (!source_ || width <= 0)
+            return ImTextureID_Invalid;
+        width = std::min(width, static_cast<int>(size_.x));
+        const double now = ImGui::GetTime();
+        if (view_ && (width == viewWidth_ || now - builtAt_ < 0.15))
+            return reinterpret_cast<ImTextureID>(view_);
+        const int height = std::max(1, static_cast<int>(std::lround(width * size_.y / size_.x)));
+        std::vector<BYTE> pixels(static_cast<size_t>(width) * height * 4);
+        IWICBitmapScaler* scaler{};
+        const bool scaled =
+            SUCCEEDED(factory_->CreateBitmapScaler(&scaler)) &&
+            SUCCEEDED(scaler->Initialize(source_, width, height, WICBitmapInterpolationModeHighQualityCubic)) &&
+            SUCCEEDED(scaler->CopyPixels(nullptr, width * 4, static_cast<UINT>(pixels.size()), pixels.data()));
+        if (scaler)
+            scaler->Release();
+        builtAt_ = now;
+        D3D11_TEXTURE2D_DESC desc{};
+        desc.Width = width;
+        desc.Height = height;
+        desc.MipLevels = desc.ArraySize = 1;
+        desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        desc.SampleDesc.Count = 1;
+        desc.Usage = D3D11_USAGE_IMMUTABLE;
+        desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        const D3D11_SUBRESOURCE_DATA data{pixels.data(), static_cast<UINT>(width) * 4, 0};
+        ID3D11Texture2D* texture{};
+        ID3D11ShaderResourceView* view{};
+        if (scaled && SUCCEEDED(device->CreateTexture2D(&desc, &data, &texture))) {
+            device->CreateShaderResourceView(texture, nullptr, &view);
+            texture->Release();
+        }
+        // The frame drawn with the old one is already on screen: it can go.
+        if (view) {
+            if (view_)
+                view_->Release();
+            view_ = view;
+            viewWidth_ = width;
+        }
+        return view_ ? reinterpret_cast<ImTextureID>(view_) : ImTextureID_Invalid;
+    }
+
+    IWICImagingFactory* factory_{};
+    IWICBitmapSource* source_{};
+    ImVec2 size_{};
+    ID3D11ShaderResourceView* view_{};
+    int viewWidth_{};
+    double builtAt_ = -1;
+};
+
 void applyStyle(float scale) {
     ImGuiStyle& style = ImGui::GetStyle();
     style = ImGuiStyle();
@@ -86,33 +187,57 @@ launcher::Fonts loadFonts() {
     std::string icons = file(L"SegoeIcons.ttf"); // Windows 11
     if (icons.empty())
         icons = file(L"segmdl2.ttf"); // Windows 10
+    const std::string segoe = file(L"segoeui.ttf");
     launcher::Fonts fonts;
     fonts.icons = !icons.empty();
-    const auto load = [&](const wchar_t* name, float size, bool withIcons) -> ImFont* {
-        const std::string path = file(name);
-        if (path.empty())
-            return nullptr;
-        ImFont* font = io.Fonts->AddFontFromFileTTF(path.c_str(), size);
-        if (font && withIcons && fonts.icons) {
-            ImFontConfig merge;
-            merge.MergeMode = true;
-            merge.GlyphOffset = ImVec2(0, 2);
-            io.Fonts->AddFontFromFileTTF(icons.c_str(), size, &merge);
+    // The icons, and Segoe UI for what the font lacks (Barlow has no arrows), merged into it.
+    const auto merge = [&](ImFont* font, float size) {
+        if (!font)
+            return font;
+        ImFontConfig config;
+        config.MergeMode = true;
+        if (fonts.icons) {
+            config.GlyphOffset = ImVec2(0, 2);
+            io.Fonts->AddFontFromFileTTF(icons.c_str(), size, &config);
+        }
+        if (!segoe.empty()) {
+            config.GlyphOffset = ImVec2(0, 0);
+            io.Fonts->AddFontFromFileTTF(segoe.c_str(), size, &config);
         }
         return font;
     };
-    fonts.body = load(L"segoeui.ttf", 15, true);
+    // Spidy's print (launcher.rc); Windows' own fonts if one is missing.
+    const auto load = [&](const wchar_t* resource, const wchar_t* fallback, float size) -> ImFont* {
+        ImFont* font = nullptr;
+        if (const HRSRC found = FindResourceW(nullptr, resource, RT_RCDATA)) {
+            void* bytes = LockResource(LoadResource(nullptr, found));
+            ImFontConfig config;
+            config.FontDataOwnedByAtlas = false; // the bytes are the module's
+            if (bytes)
+                font = io.Fonts->AddFontFromMemoryTTF(bytes, static_cast<int>(SizeofResource(nullptr, found)), size,
+                                                      &config);
+        }
+        if (const std::string path = file(fallback); !font && !path.empty())
+            font = io.Fonts->AddFontFromFileTTF(path.c_str(), size);
+        return merge(font, size);
+    };
+    fonts.body = load(L"FONT_BODY", L"segoeui.ttf", 15);
     if (!fonts.body) {
         fonts.body = io.Fonts->AddFontDefault();
         fonts.icons = false;
     }
-    fonts.semibold = load(L"seguisb.ttf", 15, true);
-    fonts.bold = load(L"segoeuib.ttf", 15, true);
-    fonts.title = load(L"seguibl.ttf", 34, false);
-    fonts.mono = load(L"consola.ttf", 13, false);
+    fonts.semibold = load(L"FONT_SEMIBOLD", L"seguisb.ttf", 15);
+    fonts.label = load(L"FONT_LABEL", L"segoeuib.ttf", 15);
+    fonts.kicker = load(L"FONT_KICKER", L"seguisb.ttf", 13);
+    fonts.display = load(L"FONT_DISPLAY", L"seguibl.ttf", 34);
+    fonts.narration = load(L"FONT_NARRATION", L"segoeuib.ttf", 16);
+    if (const std::string mono = file(L"consola.ttf"); !mono.empty())
+        fonts.mono = io.Fonts->AddFontFromFileTTF(mono.c_str(), 13);
     if (!fonts.semibold) fonts.semibold = fonts.body;
-    if (!fonts.bold) fonts.bold = fonts.semibold;
-    if (!fonts.title) fonts.title = fonts.bold;
+    if (!fonts.label) fonts.label = fonts.semibold;
+    if (!fonts.kicker) fonts.kicker = fonts.label;
+    if (!fonts.display) fonts.display = fonts.label;
+    if (!fonts.narration) fonts.narration = fonts.label;
     if (!fonts.mono) fonts.mono = fonts.body;
     return fonts;
 }
@@ -138,6 +263,16 @@ LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM w, LPARAM l) {
         const auto* suggested = reinterpret_cast<RECT*>(l);
         SetWindowPos(window, nullptr, suggested->left, suggested->top, suggested->right - suggested->left,
                      suggested->bottom - suggested->top, SWP_NOZORDER | SWP_NOACTIVATE);
+        return 0;
+    }
+    case WM_DROPFILES: {
+        // A profile dropped on the window is imported.
+        const auto drop = reinterpret_cast<HDROP>(w);
+        wchar_t path[MAX_PATH * 4];
+        if (app && DragQueryFileW(drop, 0, path, static_cast<UINT>(std::size(path))))
+            app->importFile(path);
+        DragFinish(drop);
+        SetForegroundWindow(window);
         return 0;
     }
     case WM_CLOSE:
@@ -203,7 +338,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     windowClass.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(1));
     windowClass.hIconSm = windowClass.hIcon;
     windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    windowClass.hbrBackground = CreateSolidBrush(RGB(13, 15, 20));
+    windowClass.hbrBackground = CreateSolidBrush(RGB(13, 11, 28));
     windowClass.lpszClassName = kClass;
     RegisterClassExW(&windowClass);
     HWND window = CreateWindowExW(0, kClass, L"Spidy VR", WS_OVERLAPPEDWINDOW,
@@ -212,8 +347,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     // A dark title bar in the window's own colour (Windows 11 takes the colour; 10 only the dark mode).
     const BOOL dark = TRUE;
     DwmSetWindowAttribute(window, 20, &dark, sizeof(dark));
-    const COLORREF caption = RGB(13, 15, 20);
+    const COLORREF caption = RGB(13, 11, 28);
     DwmSetWindowAttribute(window, 35, &caption, sizeof(caption));
+    // Profiles dropped on the window (WM_DROPFILES), also from Explorer into a launcher that runs as
+    // administrator, which Windows otherwise keeps a drop from (0x0049: WM_COPYGLOBALDATA).
+    DragAcceptFiles(window, TRUE);
+    for (const UINT message : {static_cast<UINT>(WM_DROPFILES), static_cast<UINT>(WM_COPYDATA), 0x0049u})
+        ChangeWindowMessageFilterEx(window, message, MSGFLT_ALLOW, nullptr);
     if (!createDevice(window)) {
         releaseDevice();
         MessageBoxW(nullptr, L"Spidy's launcher needs DirectX 11 graphics, which this PC did not provide.", L"Spidy VR",
@@ -236,7 +376,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
 
     std::wstring restartFolder;
     {
-        launcher::App application(window, fonts, updatedFrom);
+        Picture controls;
+        controls.load(L"PICTURE_CONTROLS");
+        launcher::App application(window, fonts, controls.picture(), updatedFrom);
         app = &application;
         bool done = false, occluded = false;
         while (!done) {
@@ -279,7 +421,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
             ImGui::NewFrame();
             application.frame(dpiScale);
             ImGui::Render();
-            const float clear[4] = {13 / 255.f, 15 / 255.f, 20 / 255.f, 1};
+            const float clear[4] = {13 / 255.f, 11 / 255.f, 28 / 255.f, 1};
             context->OMSetRenderTargets(1, &target, nullptr);
             context->ClearRenderTargetView(target, clear);
             ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());

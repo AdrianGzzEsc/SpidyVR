@@ -1,5 +1,6 @@
 #pragma once
 #include "math.hpp"
+#include "ui_style.hpp"
 #include "vertex.hpp"
 #include <array>
 #include <cstdint>
@@ -104,6 +105,7 @@ struct GadgetWheelView {
 // across the middle. The wheel lands in three held poses as it opens, and
 // so do the lit badge and its caption each time another gadget lights; the
 // lit badge then boils, as a held drawing does. viewer: the eyes' middle;
-// pixelAngle as for appendWeb.
-void appendGadgetWheel(std::vector<Vertex>& out, const GadgetWheelView& view, Vec3 viewer, float pixelAngle);
+// pixelAngle as for appendWeb. UiStyle::tech draws tech_marks.hpp's wheel.
+void appendGadgetWheel(std::vector<Vertex>& out, const GadgetWheelView& view, Vec3 viewer, float pixelAngle,
+                       UiStyle style = UiStyle::comic);
 } // namespace spidy

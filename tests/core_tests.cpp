@@ -41,6 +41,7 @@
 #include "spidy/prompt_buttons.hpp"
 #include "spidy/xr_layers.hpp"
 #include "spidy/offer_pointing.hpp"
+#include "spidy/tech_marks.hpp"
 #include <algorithm>
 #include <cstring>
 #include <functional>
@@ -5360,89 +5361,91 @@ int main() {
         for(size_t i=taut.size();i<splat.size();++i)reach=std::max(reach,length(splat[i].position-line.end));
         check(reach>.08f && reach<.3f,"anchor splat has the wrong size");
     });
-    test("aim markers keep their size on screen and stand out on any background", [] {
+    test("aim markers keep their size on screen and stand out on any background, in either UI style", [] {
         const Vec3 viewer{0,1.7f,0};
-        // The angle a marker covers from the viewer.
-        auto spread=[&](AimMark kind,Vec3 at,float squeeze=0,float radius=0){
-            std::vector<Vertex> v;
-            AimMarker m;m.kind=kind;m.point=at;m.squeeze=squeeze;m.radius=radius;
-            appendAimMarker(v,m,viewer,.001f);
-            check(!v.empty() && v.size()%3==0,"marker produced no triangle list");
-            float widest=0;
-            for(const auto& p:v){
-                check(finite(p.position)&&finite(p.color),"non-finite marker vertex");
-                widest=std::max(widest,length(p.position-at));
-            }
-            return widest/length(at-viewer);
-        };
-        for(const auto kind:{AimMark::anchor,AimMark::air,AimMark::blocked,AimMark::target}){
-            const float close=spread(kind,{0,1.7f,-5}),far=spread(kind,{3,20,-50});
-            near(close,far,close*.02f);
-            // About 10-20 pixels across at a milliradian a pixel.
-            check(close>.005f && close<.03f,"marker size off");
-        }
-        check(spread(AimMark::anchor,{0,1.7f,-10},.6f)<spread(AimMark::anchor,{0,1.7f,-10})*.8f,
-              "squeezing the grip did not tighten the ring");
-        check(spread(AimMark::target,{0,1.7f,-10},0,1.5f)*10>1.5f,"ring inside a large target");
-        // Translucent and painted in order: a marker's soft dark shadows
-        // first, then its colours, every edge fading out.
-        auto dark=[](const Vertex& p){return p.color.x<.05f&&p.color.y<.05f&&p.color.z<.05f;};
-        for(const auto kind:{AimMark::anchor,AimMark::air,AimMark::blocked,AimMark::target})
-            for(const unsigned hand:{0u,1u}){
-                std::vector<Vertex> v;AimMarker m;m.kind=kind;m.point={0,1.7f,-10};m.hand=hand;
-                appendAimMarker(v,m,viewer,.001f);
-                size_t lastDark=0,firstColour=v.size(),faded=0;
-                for(size_t i=0;i<v.size();++i){
-                    if(dark(v[i]))lastDark=i;else firstColour=std::min(firstColour,i);
-                    check(v[i].alpha>=0&&v[i].alpha<=1,"marker opacity out of range");
-                    faded+=v[i].alpha==0;
+        for(const UiStyle style:{UiStyle::comic,UiStyle::tech}){
+            // The angle a marker covers from the viewer.
+            auto spread=[&](AimMark kind,Vec3 at,float squeeze=0,float radius=0){
+                std::vector<Vertex> v;
+                AimMarker m;m.kind=kind;m.point=at;m.squeeze=squeeze;m.radius=radius;
+                appendAimMarker(v,m,viewer,.001f,style);
+                check(!v.empty() && v.size()%3==0,"marker produced no triangle list");
+                float widest=0;
+                for(const auto& p:v){
+                    check(finite(p.position)&&finite(p.color),"non-finite marker vertex");
+                    widest=std::max(widest,length(p.position-at));
                 }
-                check(firstColour<v.size()&&lastDark<firstColour,"a shadow drawn over the marker's colour");
-                check(faded>v.size()/4,"marker edges do not fade out");
+                return widest/length(at-viewer);
+            };
+            for(const auto kind:{AimMark::anchor,AimMark::air,AimMark::blocked,AimMark::target}){
+                const float close=spread(kind,{0,1.7f,-5}),far=spread(kind,{3,20,-50});
+                near(close,far,close*.02f);
+                // About 10-20 pixels across at a milliradian a pixel.
+                check(close>.005f && close<.03f,"marker size off");
             }
-        // Each hand its own colour: the left hand's blue, the right hand's orange.
-        auto hue=[&](unsigned hand){
-            std::vector<Vertex> v;AimMarker m;m.point={0,1.7f,-10};m.hand=hand;appendAimMarker(v,m,viewer,.001f);
-            float warm=0;size_t coloured=0;
-            for(const auto& p:v)if(!dark(p)){warm+=p.color.x-p.color.z;++coloured;}
-            return warm/static_cast<float>(std::max<size_t>(coloured,1));
-        };
-        check(hue(0)<-.5f&&hue(1)>.5f,"the hands' markers share a colour");
-        // A fading marker is as translucent as it is faded; a gone one draws nothing.
-        {
-            std::vector<Vertex> v;AimMarker m;m.point={0,1.7f,-10};m.opacity=.5f;appendAimMarker(v,m,viewer,.001f);
-            float most=0;for(const auto& p:v)most=std::max(most,p.alpha);
-            near(most,.5f,1e-4f);
+            check(spread(AimMark::anchor,{0,1.7f,-10},.6f)<spread(AimMark::anchor,{0,1.7f,-10})*.8f,
+                  "squeezing the grip did not tighten the ring");
+            check(spread(AimMark::target,{0,1.7f,-10},0,1.5f)*10>1.5f,"ring inside a large target");
+            // Translucent and painted in order: a marker's soft dark shadows
+            // first, then its colours, every edge fading out.
+            auto dark=[](const Vertex& p){return p.color.x<.05f&&p.color.y<.05f&&p.color.z<.05f;};
+            for(const auto kind:{AimMark::anchor,AimMark::air,AimMark::blocked,AimMark::target})
+                for(const unsigned hand:{0u,1u}){
+                    std::vector<Vertex> v;AimMarker m;m.kind=kind;m.point={0,1.7f,-10};m.hand=hand;
+                    appendAimMarker(v,m,viewer,.001f,style);
+                    size_t lastDark=0,firstColour=v.size(),faded=0;
+                    for(size_t i=0;i<v.size();++i){
+                        if(dark(v[i]))lastDark=i;else firstColour=std::min(firstColour,i);
+                        check(v[i].alpha>=0&&v[i].alpha<=1,"marker opacity out of range");
+                        faded+=v[i].alpha==0;
+                    }
+                    check(firstColour<v.size()&&lastDark<firstColour,"a shadow drawn over the marker's colour");
+                    check(faded>v.size()/4,"marker edges do not fade out");
+                }
+            // Each hand its own colour: the left hand's blue, the right hand's orange.
+            auto hue=[&](unsigned hand){
+                std::vector<Vertex> v;AimMarker m;m.point={0,1.7f,-10};m.hand=hand;appendAimMarker(v,m,viewer,.001f,style);
+                float warm=0;size_t coloured=0;
+                for(const auto& p:v)if(!dark(p)){warm+=p.color.x-p.color.z;++coloured;}
+                return warm/static_cast<float>(std::max<size_t>(coloured,1));
+            };
+            check(hue(0)<-.5f&&hue(1)>.5f,"the hands' markers share a colour");
+            // A fading marker is as translucent as it is faded; a gone one draws nothing.
+            {
+                std::vector<Vertex> v;AimMarker m;m.point={0,1.7f,-10};m.opacity=.5f;appendAimMarker(v,m,viewer,.001f,style);
+                float most=0;for(const auto& p:v)most=std::max(most,p.alpha);
+                near(most,.5f,1e-4f);
+            }
+            // The target's ring is round: its outer edge runs along most of a
+            // circle (square corners would only reach out at four places), and
+            // it closes in from wider while it locks on. The right hand's ring
+            // is wider than the left's, so both on one target stay apart.
+            auto outerAngles=[&](AimMarker m){
+                std::vector<Vertex> v;appendAimMarker(v,m,viewer,.001f,style);
+                float widest=0;for(const auto& p:v)widest=std::max(widest,length(p.position-m.point));
+                std::array<bool,36> bins{};
+                for(const auto& p:v){
+                    const Vec3 d=p.position-m.point;
+                    if(length(d)>=widest*.97f)bins[static_cast<size_t>((std::atan2(d.y,d.x)+3.1415927f)/(2*3.1415927f)*36)%36]=true;
+                }
+                return std::count(bins.begin(),bins.end(),true);
+            };
+            AimMarker t;t.kind=AimMark::target;t.point={0,1.7f,-10};t.radius=.6f;
+            check(outerAngles(t)>=18,"the target's ring is not round");
+            auto ringSize=[&](AimMarker m){
+                std::vector<Vertex> v;appendAimMarker(v,m,viewer,.001f,style);
+                float widest=0;for(const auto& p:v)widest=std::max(widest,length(p.position-m.point));
+                return widest;
+            };
+            const float settled=ringSize(t);
+            t.lock=0;check(ringSize(t)>settled*1.5f,"the target's ring does not close in");
+            t.lock=1;t.hand=1;check(ringSize(t)>settled*1.1f,"both hands' rings on one target coincide");
+            std::vector<Vertex> v;AimMarker m;m.point=viewer;appendAimMarker(v,m,viewer,.001f,style);
+            m.point={0,std::numeric_limits<float>::quiet_NaN(),0};appendAimMarker(v,m,viewer,.001f,style);
+            m.point={0,1.7f,-10};appendAimMarker(v,m,viewer,0,style);
+            m.opacity=0;appendAimMarker(v,m,viewer,.001f,style);
+            check(v.empty(),"invalid marker drew geometry");
         }
-        // The target's ring is round: its outer edge runs along most of a
-        // circle (square corners would only reach out at four places), and
-        // it closes in from wider while it locks on. The right hand's ring
-        // is wider than the left's, so both on one target stay apart.
-        auto outerAngles=[&](AimMarker m){
-            std::vector<Vertex> v;appendAimMarker(v,m,viewer,.001f);
-            float widest=0;for(const auto& p:v)widest=std::max(widest,length(p.position-m.point));
-            std::array<bool,36> bins{};
-            for(const auto& p:v){
-                const Vec3 d=p.position-m.point;
-                if(length(d)>=widest*.97f)bins[static_cast<size_t>((std::atan2(d.y,d.x)+3.1415927f)/(2*3.1415927f)*36)%36]=true;
-            }
-            return std::count(bins.begin(),bins.end(),true);
-        };
-        AimMarker t;t.kind=AimMark::target;t.point={0,1.7f,-10};t.radius=.6f;
-        check(outerAngles(t)>=18,"the target's ring is not round");
-        auto ringSize=[&](AimMarker m){
-            std::vector<Vertex> v;appendAimMarker(v,m,viewer,.001f);
-            float widest=0;for(const auto& p:v)widest=std::max(widest,length(p.position-m.point));
-            return widest;
-        };
-        const float settled=ringSize(t);
-        t.lock=0;check(ringSize(t)>settled*1.5f,"the target's ring does not close in");
-        t.lock=1;t.hand=1;check(ringSize(t)>settled*1.1f,"both hands' rings on one target coincide");
-        std::vector<Vertex> v;AimMarker m;m.point=viewer;appendAimMarker(v,m,viewer,.001f);
-        m.point={0,std::numeric_limits<float>::quiet_NaN(),0};appendAimMarker(v,m,viewer,.001f);
-        m.point={0,1.7f,-10};appendAimMarker(v,m,viewer,0);
-        m.opacity=0;appendAimMarker(v,m,viewer,.001f);
-        check(v.empty(),"invalid marker drew geometry");
     });
     test("aim marker motion steadies hand tremor, keeps up with a sweep and ignores turns", [] {
         constexpr float dt=1.f/72,degree=3.1415927f/180;
@@ -7478,6 +7481,427 @@ int main() {
         for(int p=1;p<gadgetPlaces;++p)most.most[static_cast<size_t>(p)]=most.ammo[static_cast<size_t>(p)]=8;
         const auto heaviest=draw(most);
         check(heaviest.size()<60000 && heaviest.size()%3==0,"the wheel draws too much");
+    });
+    test("UI STYLE: every mark is comic unless tech is asked for, and tech draws each anew", [] {
+        const Vec3 viewer{0, 1.6f, 0}, point{0, 1.4f, -1.5f};
+        constexpr float pixel = .0007f;
+        const auto same = [](const std::vector<Vertex>& a, const std::vector<Vertex>& b) {
+            if (a.size() != b.size())
+                return false;
+            for (size_t i = 0; i < a.size(); ++i)
+                if (length(a[i].position - b[i].position) > 0 || length(a[i].color - b[i].color) > 0 ||
+                    a[i].alpha != b[i].alpha)
+                    return false;
+            return true;
+        };
+        // Each mark drawn as before (no style), as comic and as tech.
+        const auto three = [&](const char* what, const auto& draw) {
+            std::vector<Vertex> before, comic, tech;
+            draw(before, nullptr);
+            const UiStyle printed = UiStyle::comic, techy = UiStyle::tech;
+            draw(comic, &printed);
+            draw(tech, &techy);
+            check(!before.empty() && same(before, comic), what);
+            check(!tech.empty() && !same(comic, tech), what);
+        };
+        three("the aim marker", [&](std::vector<Vertex>& v, const UiStyle* s) {
+            AimMarker m;
+            m.kind = AimMark::target;
+            m.point = point;
+            s ? appendAimMarker(v, m, viewer, pixel, *s) : appendAimMarker(v, m, viewer, pixel);
+        });
+        three("slow motion's meter", [&](std::vector<Vertex>& v, const UiStyle* s) {
+            SlowMotionView slow;
+            slow.meter = 1;
+            slow.focus = .6f;
+            const Pose hand{{0, 1.2f, -.4f}, {}};
+            s ? appendSlowMotionMeter(v, slow, hand, viewer, pixel, 1, *s)
+              : appendSlowMotionMeter(v, slow, hand, viewer, pixel, 1);
+        });
+        three("a blow", [&](std::vector<Vertex>& v, const UiStyle* s) {
+            const ImpactView blow{point, .5f, BlowKind::Hit, 3, .1f};
+            s ? appendImpact(v, blow, viewer, pixel, *s) : appendImpact(v, blow, viewer, pixel);
+        });
+        three("a call", [&](std::vector<Vertex>& v, const UiStyle* s) {
+            const CueView call{point, CueWay::Left, false, .6f, .5f, true};
+            s ? appendCue(v, call, viewer, pixel, *s) : appendCue(v, call, viewer, pixel);
+        });
+        three("a knockout", [&](std::vector<Vertex>& v, const UiStyle* s) {
+            const KnockoutView knockout{point, .3f};
+            s ? appendKnockout(v, knockout, viewer, pixel, *s) : appendKnockout(v, knockout, viewer, pixel);
+        });
+        three("Spider-Sense", [&](std::vector<Vertex>& v, const UiStyle* s) {
+            const SenseView sense{point, SenseAnswer::Dodge, .5f, true, .5f, -1};
+            s ? appendSense(v, sense, viewer, pixel, *s) : appendSense(v, sense, viewer, pixel);
+        });
+        three("Spider-Sense in the sightline", [&](std::vector<Vertex>& v, const UiStyle* s) {
+            SenseSightView sight;
+            sight.answer = SenseAnswer::Counter;
+            sight.sight = {true, 1, 0};
+            sight.timed = true;
+            sight.left = .5f;
+            sight.age = .5f;
+            const Pose head{viewer, {}};
+            s ? appendSenseSight(v, sight, head, pixel, {}, *s) : appendSenseSight(v, sight, head, pixel);
+        });
+        three("the gadget wheel", [&](std::vector<Vertex>& v, const UiStyle* s) {
+            GadgetWheelView wheel;
+            wheel.open = true;
+            wheel.age = 1;
+            wheel.frame.centre = {0, 1.2f, -.4f};
+            wheel.places[0] = Gadget::webShooter;
+            wheel.places[2] = Gadget::impactWeb;
+            wheel.lit = 2;
+            s ? appendGadgetWheel(v, wheel, viewer, pixel, *s) : appendGadgetWheel(v, wheel, viewer, pixel);
+        });
+        three("the calibration panel", [&](std::vector<Vertex>& v, const UiStyle* s) {
+            body_calibration::View view;
+            view.phase = body_calibration::Phase::waiting;
+            view.panel = body_calibration::panelPose({viewer, {}});
+            s ? body_calibration::appendView(v, view, viewer, *s) : body_calibration::appendView(v, view, viewer);
+        });
+    });
+    test("tech combat marks: the game's colours, easing in and fading out where the printed ones hold poses", [] {
+        const Vec3 viewer{0, 1.6f, 0}, point{0, 1.4f, -1.5f};
+        constexpr float pixel = .0005f;
+        const Vec3 facing = normalized(viewer - point);
+        const auto count = [](const std::vector<Vertex>& v, Vec3 colour) {
+            size_t n{};
+            for (const auto& x : v)
+                n += length(x.color - colour) < .01f;
+            return n;
+        };
+        const auto widest = [](const std::vector<Vertex>& v, Vec3 from) {
+            float r{};
+            for (const auto& x : v)
+                r = std::max(r, length(x.position - from));
+            return r;
+        };
+        const auto strongest = [](const std::vector<Vertex>& v) {
+            float a{};
+            for (const auto& x : v)
+                a = std::max(a, x.alpha);
+            return a;
+        };
+        const auto flat = [&](const std::vector<Vertex>& v, Vec3 at, Vec3 normal) {
+            for (const auto& x : v)
+                if (!finite(x.position) || !(x.alpha >= 0 && x.alpha <= 1) ||
+                    std::abs(dot(x.position - at, normal)) > 1e-3f)
+                    return false;
+            return !v.empty() && v.size() % 3 == 0;
+        };
+        const auto same = [](const std::vector<Vertex>& a, const std::vector<Vertex>& b) {
+            if (a.size() != b.size())
+                return false;
+            for (size_t i = 0; i < a.size(); ++i)
+                if (length(a[i].position - b[i].position) > 0 || a[i].alpha != b[i].alpha)
+                    return false;
+            return true;
+        };
+        // A blow: the hit marker in the line white, a hard blow's amber, a finisher's red with an amber hexagon,
+        // a called blow's cyan ticks; the count on a callout from the second blow on, the game's COMBO in cyan.
+        const auto blow = [&](BlowKind kind, int blows, float age, bool called = false) {
+            std::vector<Vertex> v;
+            appendImpact(v, {point, .5f, kind, blows, age, called}, viewer, pixel, UiStyle::tech);
+            return v;
+        };
+        const auto jab = blow(BlowKind::Hit, 1, .1f);
+        check(flat(jab, point, facing) && count(jab, tech::line) > 0 && count(jab, tech::red) == 0,
+              "a jab is not the line white, across the line of sight");
+        check(count(blow(BlowKind::Heavy, 1, .1f), tech::amber) > 0, "a hard blow is not amber");
+        const auto finisher = blow(BlowKind::Finisher, 1, .1f);
+        check(count(finisher, tech::red) > 0 && count(finisher, tech::amber) > 0, "a finisher is not red and amber");
+        check(count(blow(BlowKind::Hit, 1, .1f, true), tech::cyan) > 0, "a called blow has no cyan");
+        const auto counted = blow(BlowKind::Hit, 3, .3f);
+        check(counted.size() > blow(BlowKind::Hit, 1, .3f).size() + 200 && count(counted, tech::cyan) > 0,
+              "the count's callout is missing");
+        // A jab's marker springs out smoothly, and its ring goes; nothing holds a pose.
+        check(widest(blow(BlowKind::Hit, 1, .02f), point) < widest(blow(BlowKind::Hit, 1, .1f), point),
+              "the hit marker does not spring out");
+        check(!same(blow(BlowKind::Hit, 1, .1f), blow(BlowKind::Hit, 1, .105f)), "the blow holds a pose");
+        check(widest(jab, point) > .05f && widest(jab, point) < .25f, "a jab is tiny, or fills the view");
+        check(strongest(blow(BlowKind::Hit, 3, .72f)) < .2f && blow(BlowKind::Hit, 3, .76f).empty(),
+              "the count does not fade out by the blow's end");
+        // The mark over him: four arcs; locked, more and bluer; a call, chevrons in cyan over the ring's
+        // segments in the line white, which run down a segment at a time; a finisher's amber in red.
+        constexpr float size = .1f * 1.5f / .9f;
+        const auto mark = [&](CueWay way, float left, bool finishing = false, float age = .52f, bool locked = true) {
+            std::vector<Vertex> v;
+            appendCue(v, {point, way, finishing, left, age, locked}, viewer, pixel, UiStyle::tech);
+            return v;
+        };
+        const auto look = mark(CueWay::None, 1, false, .52f, false), lock = mark(CueWay::None, 1);
+        check(flat(look, point, facing) && count(look, tech::line) > 0 && lock.size() > look.size(),
+              "a look's arcs, or a lock's pointers and dashes");
+        check(count(mark(CueWay::Up, 1), tech::line) > count(mark(CueWay::Up, .5f), tech::line) &&
+                  count(mark(CueWay::Up, .5f), tech::line) > count(mark(CueWay::Up, .2f), tech::line),
+              "the ring does not run down");
+        check(same(mark(CueWay::Up, .5f), mark(CueWay::Up, .49f)) && !same(mark(CueWay::Up, .5f), mark(CueWay::Up, .45f)),
+              "the ring does not run down a segment at a time");
+        // The chevrons: from outside the ring on the side the fist comes from to his middle.
+        const auto chevrons = [&](CueWay way, bool level) {
+            float least = 1e9f, most = -1e9f, sum{};
+            size_t n{};
+            for (const auto& x : mark(way, 1)) {
+                if (length(x.color - tech::cyan) >= .01f)
+                    continue;
+                const float along = level ? x.position.x - point.x : x.position.y - point.y;
+                least = std::min(least, along);
+                most = std::max(most, along);
+                sum += along;
+                ++n;
+            }
+            check(n > 0, "no chevrons");
+            return std::array<float, 3>{least, most, sum / static_cast<float>(std::max<size_t>(n, 1))};
+        };
+        const auto right = chevrons(CueWay::Right, true), left = chevrons(CueWay::Left, true);
+        check(right[0] < -1.1f * size && right[1] < .35f * size && right[2] < 0,
+              "a call to the right does not come in from the left to his middle");
+        check(left[1] > 1.1f * size && left[0] > -.35f * size && left[2] > 0,
+              "a call to the left does not come in from the right to his middle");
+        check(chevrons(CueWay::Up, false)[2] < 0 && chevrons(CueWay::Down, false)[2] > 0,
+              "up and down come in from the wrong side");
+        const auto finishing = mark(CueWay::Up, 1, true);
+        check(count(finishing, tech::amber) > 0 && count(finishing, tech::red) > 0 && count(finishing, tech::cyan) == 0,
+              "the finisher's call is not amber in red");
+        check(widest(finishing, point) > widest(mark(CueWay::Up, 1), point) * 1.2f, "the finisher's call is no larger");
+        check(widest(mark(CueWay::Up, 1, false, .01f), point) > widest(mark(CueWay::Up, 1), point) &&
+                  strongest(mark(CueWay::Up, 1, false, .01f)) < strongest(mark(CueWay::Up, 1)),
+              "a call does not snap on from wider, fading in");
+        // A knockout: a red reticle with a cross, and a tag with KO on it, an amber bar at its side; gone a
+        // little before its time.
+        const Vec3 stood{0, 1.3f, -1.2f};
+        const auto knockout = [&](float age) {
+            std::vector<Vertex> v;
+            appendKnockout(v, {stood, age}, viewer, pixel, UiStyle::tech);
+            return v;
+        };
+        const auto down = knockout(.3f);
+        check(flat(down, stood, normalized(viewer - stood)) && count(down, tech::red) > 0 &&
+                  count(down, tech::line) > 0 && count(down, tech::amber) > 0,
+              "no reticle, KO, or the tag's amber");
+        check(widest(down, stood) > .05f && widest(down, stood) < .3f, "the knockout is tiny, or fills the view");
+        check(strongest(knockout(.65f)) < .05f && knockout(KnockoutView::seconds).empty(), "the knockout stays");
+        std::vector<Vertex> none;
+        appendImpact(none, {point, .5f, BlowKind::Hit, 2, -.1f}, viewer, pixel, UiStyle::tech);
+        appendImpact(none, {{std::numeric_limits<float>::quiet_NaN(), 0, 0}, .5f, BlowKind::Hit, 2, .1f}, viewer,
+                     pixel, UiStyle::tech);
+        appendCue(none, {point, CueWay::Left, false, 0, .5f}, viewer, pixel, UiStyle::tech);
+        appendCue(none, {viewer, CueWay::Left, false, 1, .5f}, viewer, pixel, UiStyle::tech);
+        appendKnockout(none, {stood, -1}, viewer, pixel, UiStyle::tech);
+        appendKnockout(none, {stood, .3f}, viewer, 0, UiStyle::tech);
+        check(none.empty(), "a tech mark before its time, nowhere, with no time left or no pixel");
+    });
+    test("tech Spider-Sense: wavy glowing lines in what to do, a ring of dashes closing, amber at its last notch", [] {
+        const Vec3 viewer{0, 1.6f, 0}, headTop{0, 1.75f, -3};
+        constexpr float pixel = .0005f;
+        const auto draw = [&](SenseAnswer a, float left, float age = .52f, float broken = -1, bool timed = true) {
+            std::vector<Vertex> out;
+            appendSense(out, {headTop, a, left, timed, age, broken}, viewer, pixel, UiStyle::tech);
+            return out;
+        };
+        const auto count = [](const std::vector<Vertex>& v, Vec3 colour) {
+            size_t n{};
+            for (const auto& x : v)
+                n += length(x.color - colour) < .01f;
+            return n;
+        };
+        const auto centre = [](const std::vector<Vertex>& v) {
+            Vec3 c{};
+            for (const auto& x : v)
+                c += x.position;
+            return c / static_cast<float>(std::max<size_t>(v.size(), 1));
+        };
+        const auto widest = [](const std::vector<Vertex>& v, Vec3 from) {
+            float r{};
+            for (const auto& x : v)
+                r = std::max(r, length(x.position - from));
+            return r;
+        };
+        check(count(draw(SenseAnswer::Counter, .5f), tech::cyan) > 0 && count(draw(SenseAnswer::Counter, .5f), tech::red) == 0,
+              "a counter is not cyan");
+        check(count(draw(SenseAnswer::Dodge, .5f), tech::red) > 0 && count(draw(SenseAnswer::Dodge, .5f), tech::cyan) == 0,
+              "a dodge is not red");
+        check(count(draw(SenseAnswer::Jump, .5f), tech::amber) > 0, "a jump is not amber");
+        const Vec3 middle = centre(draw(SenseAnswer::Counter, 1, .52f, -1, false));
+        check(middle.y > headTop.y + .1f && middle.y < headTop.y + .4f && std::abs(middle.x) < .05f,
+              "the mark is not over his head");
+        const float lines = widest(draw(SenseAnswer::Counter, 1, .52f, -1, false), middle);
+        const float full = widest(draw(SenseAnswer::Counter, 1), middle), half = widest(draw(SenseAnswer::Counter, .5f), middle);
+        check(full > lines * 1.3f && half < full * .9f && half > lines, "the ring does not close on the blow");
+        check(count(draw(SenseAnswer::Counter, .125f), tech::amber) > 0 && count(draw(SenseAnswer::Counter, .25f), tech::amber) == 0,
+              "the last notch is not now");
+        // It waves, comes on flickering, and a counter throws it out and fades it.
+        const auto a = draw(SenseAnswer::Counter, .5f, .5f), b = draw(SenseAnswer::Counter, .5f, .52f);
+        bool moved{};
+        for (size_t i = 0; i < std::min(a.size(), b.size()); ++i)
+            moved |= length(a[i].position - b[i].position) > 1e-5f;
+        check(moved, "the lines do not wave");
+        float first{}, settled{};
+        for (const auto& x : draw(SenseAnswer::Counter, 1, .04f))
+            first = std::max(first, x.alpha);
+        for (const auto& x : draw(SenseAnswer::Counter, 1))
+            settled = std::max(settled, x.alpha);
+        check(first < settled * .5f, "it does not come on flickering");
+        const auto broken = draw(SenseAnswer::Counter, .5f, .5f, .2f);
+        float brokenMost{};
+        for (const auto& x : broken)
+            brokenMost = std::max(brokenMost, x.alpha);
+        check(!broken.empty() && brokenMost < .5f && widest(broken, middle) > lines,
+              "a counter does not throw it out, fading");
+        check(draw(SenseAnswer::Counter, .5f, .5f, SenseView::brokenSeconds).empty(), "a broken mark stays");
+        // A few degrees across at any distance.
+        for (const float d : {1.5f, 4.f, 9.f}) {
+            std::vector<Vertex> out;
+            appendSense(out, {viewer + Vec3{0, .1f, -d}, SenseAnswer::Counter, 1, false, .52f, -1}, viewer, pixel,
+                        UiStyle::tech);
+            const Vec3 c = centre(out);
+            const float degrees = 2 * std::atan(widest(out, c) / length(c - viewer)) * 180 / 3.14159265f;
+            check(degrees > 4 && degrees < 12, "the mark is too small or too big to read");
+        }
+        // In the sightline: where the printed one is, on his side, a metre off; its chevrons and the rim's arcs.
+        const Pose head{{0, 1.6f, 0}, {}};
+        const auto sight = [&](float x, float y, bool shown = true, float brokenAt = -1) {
+            std::vector<Vertex> out;
+            SenseSightView view;
+            view.answer = SenseAnswer::Dodge;
+            view.sight = {shown, x, y};
+            view.timed = true;
+            view.left = .5f;
+            view.age = .52f;
+            view.broken = brokenAt;
+            appendSenseSight(out, view, head, .001f, {}, UiStyle::tech);
+            return out;
+        };
+        const auto off = [&](const Vertex& v) {
+            return std::acos(std::clamp(dot(normalized(v.position - head.position), Vec3{0, 0, -1}), -1.f, 1.f)) * 180 /
+                   3.14159265f;
+        };
+        const auto toRight = sight(1, 0);
+        check(!toRight.empty() && count(toRight, tech::red) > 0, "no sightline mark, or not the dodge's red");
+        float least = 180, most = 0;
+        for (const auto& v : toRight) {
+            check(finite(v.position) && v.position.x > 0, "a sightline mark not to the right");
+            least = std::min(least, off(v));
+            most = std::max(most, off(v));
+            near(length(v.position - head.position), 1.f, .08f);
+        }
+        check(least > 14 && least < 21 && most > 38 && most < 45, "the mark and the rim's arcs are not where the sightline is");
+        bool up{};
+        for (const auto& v : sight(0, 1))
+            up |= v.position.y > head.position.y + .2f;
+        check(up, "an attacker above is not at the top of the view");
+        check(sight(1, 0, false).empty() && sight(0, 0).empty(), "a sightline mark not shown, or nowhere");
+        float brokenFar{};
+        for (const auto& v : sight(1, 0, true, .01f))
+            brokenFar = std::max(brokenFar, off(v));
+        check(brokenFar > 0 && brokenFar < 30, "a broken sightline mark kept its rim arcs");
+    });
+    test("the tech wheel, meter and panel: the game's translucent blue, its brackets round what is lit", [] {
+        const Vec3 viewer{0, 1.6f, 0};
+        constexpr float pixel = .0007f;
+        const auto count = [](const std::vector<Vertex>& v, Vec3 colour, Vec3 from = {}, float within = 1e9f) {
+            size_t n{};
+            for (const auto& x : v)
+                n += length(x.color - colour) < .01f && length(x.position - from) < within;
+            return n;
+        };
+        // The wheel: drawn within itself, nothing while shut or for a pixel that is no number; lit, a cyan
+        // wedge and the gadget's name in the middle; the equipped one amber.
+        GadgetWheelView wheel;
+        wheel.open = true;
+        wheel.age = 1;
+        wheel.frame.centre = {0, 1.2f, -.4f};
+        const Gadget all[] = {Gadget::webShooter,  Gadget::impactWeb,       Gadget::webBomb,
+                              Gadget::electricWeb, Gadget::tripMine,        Gadget::concussionBlast,
+                              Gadget::spiderDrone, Gadget::suspensionMatrix};
+        for (int p = 0; p < gadgetPlaces; ++p) {
+            wheel.places[static_cast<size_t>(p)] = all[p];
+            wheel.most[static_cast<size_t>(p)] = p ? 4 : 0;
+            wheel.ammo[static_cast<size_t>(p)] = static_cast<uint8_t>(p == 5 ? 0 : 3);
+        }
+        wheel.equipped = 6;
+        const auto turn = [&](const GadgetWheelView& view) {
+            std::vector<Vertex> v;
+            appendGadgetWheel(v, view, viewer, pixel, UiStyle::tech);
+            return v;
+        };
+        const auto unlit = turn(wheel);
+        auto lit = wheel;
+        lit.lit = 1;
+        lit.litAge = 1;
+        const auto chosen = turn(lit);
+        check(unlit.size() > 300 && unlit.size() % 3 == 0, "the wheel drew too little");
+        for (const auto& x : chosen)
+            check(finite(x.position) && length(x.position - wheel.frame.centre) < .3f && x.alpha >= 0 && x.alpha <= 1,
+                  "the wheel drew outside itself");
+        check(count(chosen, tech::cyan) > count(unlit, tech::cyan) + 50, "the lit place has no cyan wedge");
+        check(count(chosen, tech::line, wheel.frame.centre, .07f) > count(unlit, tech::line, wheel.frame.centre, .07f) + 300,
+              "the lit gadget's name is not in the middle");
+        check(count(unlit, tech::amber) > 0, "the equipped gadget is not amber");
+        auto most = lit;
+        most.age = .05f;
+        most.litAge = 0;
+        for (int p = 1; p < gadgetPlaces; ++p)
+            most.most[static_cast<size_t>(p)] = most.ammo[static_cast<size_t>(p)] = 8;
+        check(turn(most).size() < 60000, "the wheel draws too much");
+        auto shut = wheel;
+        shut.open = false;
+        std::vector<Vertex> none = turn(shut);
+        appendGadgetWheel(none, wheel, viewer, std::numeric_limits<float>::quiet_NaN(), UiStyle::tech);
+        appendGadgetWheel(none, wheel, {std::numeric_limits<float>::quiet_NaN(), 0, 0}, pixel, UiStyle::tech);
+        check(none.empty(), "a shut wheel, or a bad pixel or viewer, drew something");
+        // Slow motion's meter: its segments cyan for the focus left, red as a refused press flashes it, a
+        // sweep in slow motion; nothing while it is hidden.
+        const Pose hand{{0, 1.2f, -.4f}, {}};
+        const auto meter = [&](float focus, bool active, float warning, float shown = 1) {
+            SlowMotionView slow;
+            slow.meter = shown;
+            slow.focus = focus;
+            slow.active = active;
+            slow.warning = warning;
+            std::vector<Vertex> v;
+            appendSlowMotionMeter(v, slow, hand, viewer, pixel, 0, UiStyle::tech);
+            return v;
+        };
+        check(count(meter(1, false, 0), tech::cyan) > count(meter(.3f, false, 0), tech::cyan) * 2,
+              "the focus left is not its cyan segments");
+        check(count(meter(.3f, false, 1), tech::red) > 0, "a refused press does not flash it red");
+        check(meter(.5f, true, 0).size() > meter(.5f, false, 0).size(), "no sweep in slow motion");
+        check(meter(1, false, 0, 0).empty(), "a hidden meter drew something");
+        const Vec3 face = hand.position + Vec3{0, .045f, .065f};
+        for (const auto& x : meter(.5f, true, 0))
+            check(length(x.position - face) < .035f, "the meter is not over the wrist");
+        // The calibration panel: the menus' translucent blue, nothing behind it, the hint amber, the hold cyan.
+        body_calibration::View view;
+        const auto panel = [&](body_calibration::Phase phase) {
+            view.phase = phase;
+            std::vector<Vertex> v;
+            body_calibration::appendView(v, view, viewer, UiStyle::tech);
+            return v;
+        };
+        view.panel = body_calibration::panelPose({viewer, {}});
+        view.hint = body_calibration::Hint::armsOut;
+        view.handTracked = {true, true};
+        view.grips[0].position = {-.7f, 1.4f, -.1f};
+        view.grips[1].position = {.7f, 1.4f, -.1f};
+        check(panel(body_calibration::Phase::idle).empty(), "an idle calibration drew something");
+        const auto waiting = panel(body_calibration::Phase::waiting);
+        check(waiting.size() > 1000 && waiting.size() % 3 == 0, "the panel's text and figure are missing");
+        bool translucent{};
+        float farthest{};
+        for (const auto& x : waiting) {
+            check(finite(x.position) && x.alpha >= 0 && x.alpha <= 1, "a bad vertex");
+            translucent |= length(x.color - tech::panel) < .01f && x.alpha > .5f && x.alpha < 1;
+            farthest = std::min(farthest, x.position.z);
+        }
+        check(translucent && farthest > -1.401f, "the plate is not translucent blue, or something is behind it");
+        check(count(waiting, tech::amber) > 0, "the hint is not amber");
+        view.progress = .5f;
+        view.ready = {true, true};
+        const auto holding = panel(body_calibration::Phase::holding);
+        check(count(holding, tech::cyan) > count(waiting, tech::cyan), "the hold is not cyan");
+        check(!panel(body_calibration::Phase::done).empty(), "the result did not show");
     });
     test("the pad layer: a click of both sticks latches it as it is let go, a web or idleness lets it go", [] {
         using game_pad::PadLayer;
@@ -11304,8 +11728,8 @@ int main() {
         // The sections (the player, October 19: "sort the options in spidy vr
         // settings ingame into nice sections"), each with a setting in the tab.
         const std::pair<size_t, const char*> sections[] = {{0, "WEBS"},     {5, "SWINGING"}, {8, "COMFORT"},
-                                                           {11, "HAPTICS"}, {18, "DISPLAY"}, {25, "BODY"},
-                                                           {27, "EXPERIMENTAL"}};
+                                                           {11, "HAPTICS"}, {18, "DISPLAY"}, {26, "BODY"},
+                                                           {28, "EXPERIMENTAL"}};
         check(headings == std::size(sections),
               "the sections: webs, swinging, comfort, haptics, display, body, experimental");
         for (const auto& [at, title] : sections) {
@@ -11315,21 +11739,21 @@ int main() {
                 ++next;
             check(next < all.size() && all[next].item != Item::none, "a section with no setting in the tab");
         }
-        check(all[28].item == Item::flips && all[28].choices.empty() && std::strcmp(all[27].title, "EXPERIMENTAL") == 0,
+        check(all[29].item == Item::flips && all[29].choices.empty() && std::strcmp(all[28].title, "EXPERIMENTAL") == 0,
               "the flips: a switch under EXPERIMENTAL");
-        check(all[29].item == Item::flipSpeed && all[29].choices.size() == std::size(flipSpeeds),
+        check(all[30].item == Item::flipSpeed && all[30].choices.size() == std::size(flipSpeeds),
               "the flip speed under the flips");
-        check(all[30].item == Item::handClimb && all[30].choices.empty() && all[31].item == Item::wallDistance &&
-                  all[31].choices.size() == std::size(wallDistances),
+        check(all[31].item == Item::handClimb && all[31].choices.empty() && all[32].item == Item::wallDistance &&
+                  all[32].choices.size() == std::size(wallDistances),
               "hand wall climbing, a switch, and its camera distance under the flips");
         const Item realistic[] = {Item::realisticFlips,        Item::automaticStrength,    Item::automaticSpeed,
                                   Item::automaticMinimumSpeed, Item::automaticReleaseFlip, Item::automaticResponse,
                                   Item::automaticHandStrength, Item::automaticFalloff,     Item::automaticHandThreshold,
                                   Item::automaticAirBrake};
-        check(all.size() == 32 + std::size(realistic), "the realistic flips' rows are not the last");
+        check(all.size() == 33 + std::size(realistic), "the realistic flips' rows are not the last");
         for (size_t i = 0; i < std::size(realistic); ++i)
-            check(all[32 + i].item == realistic[i], "the realistic flips' rows out of order");
-        check(std::strcmp(all[32].title, "REALISTIC FLIPS") == 0 && all[32].choices.empty(),
+            check(all[33 + i].item == realistic[i], "the realistic flips' rows out of order");
+        check(std::strcmp(all[33].title, "REALISTIC FLIPS") == 0 && all[33].choices.empty(),
               "realistic flips: a switch, first of its rows");
         // The wall view has no row of its own any more: it turned only while
         // Spidy held the player on a wall, so it was never a choice of its own
@@ -11346,12 +11770,18 @@ int main() {
                   all[21].choices.size() == 4 && std::strcmp(all[21].choices[0], "OFF") == 0 &&
                   std::strcmp(all[21].choices[3], "HIGH") == 0,
               "the game screen's depth under its size: OFF, LOW, MEDIUM, HIGH");
-        check(all[23].item == Item::nearClip && std::strcmp(all[23].title, "NEAR CLIP") == 0 &&
-                  all[23].choices.size() == std::size(nearClips) && std::strcmp(all[23].choices[6], "10 CM") == 0,
-              "the near clip under the HUD: 1 to 10 cm");
-        check(all[24].item == Item::recordingFov && std::strcmp(all[24].title, "RECORDING FOV") == 0 &&
-                  all[24].choices.size() == std::size(recording_fov::choices) &&
-                  std::strcmp(all[24].choices[0], "OFF") == 0 && std::strcmp(all[24].choices[3], "150\xC2\xB0") == 0,
+        // The marks' look after the HUD (the player, October 21: "an optional alternative set of our custom
+        // ingame vr ui in more scifi techy style like the base game ui"): the printed ones first.
+        check(all[23].item == Item::uiStyle && std::strcmp(all[23].title, "UI STYLE") == 0 &&
+                  all[23].choices.size() == 2 && std::strcmp(all[23].choices[0], "COMIC") == 0 &&
+                  std::strcmp(all[23].choices[1], "TECH") == 0,
+              "the UI style after the HUD: COMIC, or TECH");
+        check(all[24].item == Item::nearClip && std::strcmp(all[24].title, "NEAR CLIP") == 0 &&
+                  all[24].choices.size() == std::size(nearClips) && std::strcmp(all[24].choices[6], "10 CM") == 0,
+              "the near clip under the UI style: 1 to 10 cm");
+        check(all[25].item == Item::recordingFov && std::strcmp(all[25].title, "RECORDING FOV") == 0 &&
+                  all[25].choices.size() == std::size(recording_fov::choices) &&
+                  std::strcmp(all[25].choices[0], "OFF") == 0 && std::strcmp(all[25].choices[3], "150\xC2\xB0") == 0,
               "the recording FOV last under DISPLAY: OFF, then 130 to 150 degrees");
         // Webs are always physical (the user, October 15: "remove non physical web, no need for it").
         for (const auto& row : all)
@@ -11378,8 +11808,8 @@ int main() {
                   all[15].item == Item::hapticWind && all[16].item == Item::hapticCombat &&
                   all[17].item == Item::hapticMovement && all[14].choices.empty() && all[17].choices.empty(),
               "HAPTICS: the vibration, body haptics, then the web, wind, combat and movement switches");
-        check(all[26].item == Item::calibrate && all[26].choices.size() == 2 &&
-                  std::strcmp(all[26].choices[1], "ON RESUME") == 0,
+        check(all[27].item == Item::calibrate && all[27].choices.size() == 2 &&
+                  std::strcmp(all[27].choices[1], "ON RESUME") == 0,
               "the body's calibration: NO, or ON RESUME");
         // Every setting has a row but the wall view, which the launcher's one
         // "Wall running" now carries along with who holds you on the wall.
@@ -11464,7 +11894,7 @@ int main() {
                                        "swing_momentum=1\nrotation_response_ms=500\nhand_momentum=100\n"
                                        "angular_drag_ms=3000\nhand_speed_min_cm=100\nair_rotation_brake=1\n"
                                        "body_haptics_webs=1\nbody_haptics_wind=1\nbody_haptics_combat=1\n"
-                                       "body_haptics_movement=1\nrecording_fov=0\n",
+                                       "body_haptics_movement=1\nrecording_fov=0\nui_style=0\n",
               "the defaults' text");
         Values changed = defaults;
         changed.recordingFov = 140;
@@ -11483,7 +11913,10 @@ int main() {
         changed.automaticAirBrake = false;
         changed.hapticWind = false;
         changed.hapticCombat = false;
+        changed.uiStyle = 1;
         check(withTabOnly(defaults, tabOnlyText(changed)) == changed, "the settings did not come back");
+        check(withTabOnly(defaults, "ui_style=7\n").uiStyle == 1 && withTabOnly(defaults, "ui_style=-2\n").uiStyle == 0,
+              "a UI style past either end");
         // Windows' line ends, a line of another build, no number, and a
         // distance out of range: the rest still counts.
         auto read = withTabOnly(defaults, "hand_climb=1\r\nfuture_row=3\nwall_distance_cm=near\n");
@@ -11569,6 +12002,10 @@ int main() {
                   choose(Item::webStyle, 1, v) && v.arcadeWebs && choice(Item::webStyle, v) == 1 &&
                   !choose(Item::webStyle, 1, v) && !choose(Item::webStyle, 2, v),
               "the web style: REALISTIC by default, ARCADE the other");
+        check(defaults.uiStyle == 0 && choice(Item::uiStyle, defaults) == 0 && defaultChoice(Item::uiStyle) == 0 &&
+                  choose(Item::uiStyle, 1, v) && v.uiStyle == 1 && choice(Item::uiStyle, v) == 1 &&
+                  !choose(Item::uiStyle, 1, v) && !choose(Item::uiStyle, 2, v) && !choose(Item::uiStyle, -1, v),
+              "the UI style: COMIC by default, TECH the other");
         check(defaults.hud == 2 && choice(Item::hud, defaults) == 2 && defaultChoice(Item::hud) == 2 &&
                   choose(Item::hud, 0, v) && v.hud == 0 && choice(Item::hud, v) == 0 && choose(Item::hud, 3, v) &&
                   v.hud == 3 && !choose(Item::hud, 4, v) && !choose(Item::hud, -1, v),

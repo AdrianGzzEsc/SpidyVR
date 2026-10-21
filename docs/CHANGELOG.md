@@ -3,8 +3,8 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 21): RECORDING FOV, optional - pull request 21
-(iplusdvr).** You: "review and fix whats needed if needed", then "it should
+**Latest build (October 21, fourth): RECORDING FOV, optional - pull request
+21 (iplusdvr).** You: "review and fix whats needed if needed", then "it should
 be an optional feature".
 
 - **RECORDING FOV, the last row under DISPLAY, OFF unless you pick 130, 140
@@ -19,6 +19,14 @@ be an optional feature".
   window needs 128.5 degrees. While it is on, far buildings draw their full
   models within the game's own 145 m, not the half as far again they get
   while the game's view rests.
+- **Settings profiles leave it out** (October 20, eighth, below), as they
+  do the monitor and the other graphics options: it suits one PC, and a
+  shared profile would cost someone else frame rate. Using a profile keeps
+  your `recording_fov` line in `spidy_vr.ini` as it was.
+- **In the launcher too:** Options, the Monitor card, "Recording FOV",
+  with the tab's own choices on the same `spidy_vr.ini` line (the build
+  before put every other SPIDY VR setting in the launcher). Reset options
+  turns it off.
 - **Measured by the author** in a Quest 3 (3032 x 3248 an eye), standing in
   one place 30 s each: 117.1 newly rendered frames a second off, 84.5 at 130
   degrees, 112.3 off again, so about 3 ms a frame while it is on. They saw
@@ -42,7 +50,221 @@ be an optional feature".
   in the tab's file, its lens holding lopsided eyes at four window shapes and
   a Quest 3's at 16:9), the launcher's, all the protocol suites. The author's
   headset check ran their version; the review's lens changes have not run in
-  the game.
+  the game, and the launcher's row was not looked at on screen.
+
+**Earlier build (October 21, third): every SPIDY VR setting in the launcher's
+options.** You: "why doesnt the new launcher include all the realstic flips
+stuff?", then "yeah lets add all".
+
+- **Why they were missing:** the settings that launcher.ini has no key for
+  (REALISTIC FLIPS and its nine rows, HAND WALL CLIMBING, WALL CAMERA
+  DISTANCE, NEAR CLIP, UI STYLE, the four body haptics switches) were only
+  in the game's SPIDY VR tab, which keeps them in `%APPDATA%\Spidy\spidy_vr.ini`.
+  The facelift laid out the options the launcher had; none of these were
+  among them.
+- **Now in Options:** "Walls and flips" is two cards. Walls: wall running,
+  hand wall climbing (experimental), wall camera distance. Flips: flips,
+  flip speed, realistic flips (experimental), and while it is on its nine
+  rows under it (rotation strength, max rotation speed, minimum flight
+  speed, swing momentum, rotation response, hand momentum, angular drag,
+  minimum hand speed, air rotation brake). Body and haptics: web, wind,
+  combat and movement haptics under Body haptics while it plays. Picture:
+  near clip. Game screen and HUD: UI style.
+- **Same file, same steps:** the launcher changes them in `spidy_vr.ini`,
+  where the game reads them as VR starts, and its lists are the tab's own
+  choices (written "Very slow", "20 cm", "90°/s"), so the two never offer
+  different steps. Reset options puts them back to Spidy's own too. Profiles
+  held them already.
+- **Checked:** the launcher and its tests built in a scratch folder, no
+  warnings; 30 launcher tests pass. In a scratch copy beside your launcher:
+  every new row showing your `spidy_vr.ini` (hand wall climbing on, swing
+  momentum off, hand momentum 75%, angular drag Very slow, minimum hand
+  speed 3 m/s); switching realistic flips on wrote `realistic_flips=1` and
+  showed the nine rows; Angular drag's list (Fast to Very slow) and picking
+  Medium wrote `angular_drag_ms=1500`; Reset options wrote the defaults.
+  launcher.ini and `spidy_vr.ini` put back byte for byte after.
+- **Not checked:** a VR session started after changing them in the
+  launcher.
+
+**Earlier build (October 21, second): the launcher in Spidy's print, laid out
+again.** You: "lets give the launcher a facelift with out style, better layout
+and UX", then "we have a control map visual, maybe use it?" and "i feel like
+the ui is a bit much with the colors and contrast".
+
+- **The look:** the print of Spidy's videos and README, toned down after your
+  third note: a dark ground and dark cards; Barlow Condensed capitals for
+  names, buttons and tabs; the narrator's Comic Neue for the one line that says
+  what to do next; the name SPIDY and white headlines misprinted (a cyan ghost
+  left, a magenta one right); the release as an issue box (`No. 0.4.0`,
+  `FREE`); halftone dots in the corners. Colour is kept small: red is START VR
+  and the tab you are on, yellow what needs a look, cyan what is fine, violet
+  a switch that is on. The fonts are compiled into the launcher (SIL Open Font
+  License, in `docs/licenses` and THIRD_PARTY_NOTICES).
+- **Play:** a panel that says what the session is doing in a headline (READY,
+  STARTING THE GAME, IN VR · 12:34, VR COULD NOT START), what to do next in the
+  narrator's line, and the session's three steps (headset, game, play), ticked
+  off from the log as they pass and the one that failed marked; START VR at
+  its foot, with the profile VR starts with. When VR fails, the error and what
+  to do about it (copy the log, ask on the Discord, restart as administrator,
+  close the game and start VR, force stop) are in the panel. This PC and the
+  session log on the right, with shorter words while nothing has run.
+- **Options have their own tab:** the Profile card (and Reset options), then
+  the options in seven cards in two columns: webs, moving, walls and flips,
+  body and haptics, picture, game screen and HUD, monitor. The two sliders
+  are gauges.
+- **Controls:** the README's picture of the controls first, then every control
+  in words. The picture was re-shot: its issue box says PC VR, not 0.3.7, and
+  its red box what is true since the prompts read by name: the game shows a
+  button? Press that one; its LT, LB, RT, RB are your triggers. The README
+  shows the same file (its alt text says that too).
+- **Ko-fi, highlighted** (you: "lets highlight kofi a bit more and maybe change
+  the copy", and you chose "Buy me a coffee"): the header's Ko-fi button is
+  yellow-keylined, "♥ BUY ME A COFFEE / ON KO-FI", beside a quiet "JOIN THE
+  DISCORD". After a session that got into VR the panel adds "Had fun? Buy me a
+  coffee: it pays for the next update." and the same button. About's Ko-fi card
+  (yellow-keylined) reads "SPIDY IS FREE. THE AI TOKENS ARE NOT. / BUY ME A
+  COFFEE / Your tip pays for updates. And the next full VR conversion.", beside
+  the Discord card.
+- **The README's launcher picture** is the new Play tab.
+- **Checked:** the launcher and its tests built in a scratch folder, `/W4`
+  clean; 30 launcher tests. Every tab looked at on this PC (150 %), in a
+  scratch copy run beside your own launcher: the profile menu, the Save as a
+  profile dialog, the controls picture drawn pixel for pixel, the smallest
+  window (980 x 700). The states a session brings, in a scratch copy with the
+  session faked: in VR, stopping, ended, failed, needs administrator, close the
+  game first, could not start, not ready, the update offer. launcher.ini and
+  `spidy_vr.ini` the same before and after.
+- **Not checked:** a VR session with it, another Windows scaling than 150 %,
+  Windows 10, a real update, tooltips.
+
+**Earlier build (October 21, first): a tech look for Spidy's marks, as the
+game's own HUD.** You: "lets make an optional alternative set of our custom
+ingame vr ui in more scifi techy style like the based game ui".
+
+- **Where:** UI STYLE in Settings > SPIDY VR, under DISPLAY after the HUD:
+  COMIC (the printed marks, as before, and still the default) or TECH. It
+  changes at once. Like NEAR CLIP it is the tab's own: Spidy keeps it in
+  `%APPDATA%\Spidy\spidy_vr.ini` (`ui_style=0` or `1`), and settings
+  profiles carry it.
+- **The look**, taken from the game's own pause menu, Settings and HUD:
+  lines a pixel or two wide in its pale line white, cyan for what is picked
+  or answers now, amber for what is equipped or finishes, red for danger,
+  translucent blue panels edged with thin rules, the menus' corner brackets
+  and diamonds, lettering upright in square strokes. Every shape has a soft
+  dark halo under it, so it reads on the sky and on a lit wall, and the lit
+  ones a faint glow. Nothing holds a pose: the marks ease in, flicker on as
+  the game's displays do, turn and fade.
+- **Each mark**, in the same place, at the same size and for the same time
+  as its comic one:
+  - aim markers: a scope's four arcs round a diamond with a tick out at each
+    gap (the left hand's cyan-blue, the right hand's amber-orange, as
+    before); faint dashes for open air; an open red cross for a miss; for a
+    target three ticked arcs with claws round a dashed ring turning the
+    other way, closing in as before;
+  - the mark over the enemy: four arcs; locked, cyan, with a pointer in at
+    each side and a dashed ring turning; a call, three chevrons the way the
+    fist must go, a light running along them, over a ring of 24 segments
+    that runs down; the finisher's amber inside a red ring with six
+    diamonds;
+  - a landed blow: a hit marker's four strokes springing out and a ring
+    going out (white; amber for a hard blow; red with an amber hexagon
+    turning for a finisher; cyan ticks for a called one), and the count on
+    a callout, "X3" under the game's COMBO;
+  - a knockout: a red reticle closing on where he stood, a cross in it, and
+    a "KO" tag drawn out beside it;
+  - Spider-Sense: five glowing wavy lines over his head, as the game draws
+    its own round the hero's, cyan, red or amber for what to do, inside a
+    ring of dashes closing on the blow, amber with pointers in at its last
+    notch; a counter throws the lines out with a ring. In the sightline:
+    the same mark, chevrons pointing to him, and three arcs pinging at the
+    rim of the view;
+  - the gadget wheel: a translucent blue ring of eight places with line
+    pictures, ticked round its edge; the lit place's wedge cyan inside the
+    menus' corner brackets; its name between two ruled lines and its
+    charges in the middle; the equipped gadget amber;
+  - slow motion's meter: a watch face over the wrist, the focus in 20
+    segments round an hourglass whose sand runs down, a sweep going round
+    in slow motion, red for a refused press;
+  - the calibration panel: one of the game's menu panels, its title on a
+    tab, the hint amber, the hold's bar in segments, the controllers' rings
+    in segments, "(B) SKIP" as the game's prompts are.
+  The phone keeps its own look, the game's FNSM app's.
+- **Its cost**, built for each image as the comic marks are: the wheel
+  22,020 vertices (the comic one 45,582), a blow with its count 2,664
+  (6,210), a target's ring 5,517 (2,436), a Spider-Sense mark 9,936
+  (6,804), the meter 7,686 (3,504), the calibration panel 24,168 (3,996),
+  each under 0.1 ms.
+- **Checked:** 426 core tests (4 new: COMIC is every mark's default and
+  TECH draws each anew; the tech marks' colours, motion, placement and
+  ends; Spider-Sense over his head and in the sightline where the comic
+  one is; the wheel, the meter and the panel, the panel translucent with
+  nothing behind it, the wheel under 60,000 vertices), the aim markers'
+  test now for both styles, 30 launcher tests (profiles hold `ui_style`,
+  the change list says "UI STYLE COMIC → TECH"), the six protocol suites,
+  the GPU overlay test (debug layer clean), and the game's modules built
+  but the launcher. Sheets of every mark's states in both styles over two
+  headset captures: `tools\preview-marks.ps1 -Style Tech`, which now draws
+  the aim markers, the meter and the panel too.
+- **Not checked:** in the game or a headset (no game launch while the PC's
+  hard resets are unexplained). `tools/probe_menu.py` takes one more Down
+  for the new row; not run.
+
+**Earlier build (October 20, eighth): settings profiles, to keep, share and
+import.** You: "lets add spidy settings profiles so people can easily import
+and export and share them".
+
+- **Where:** "Profile", the first of the launcher's options. Its menu lists
+  your profiles (pick one to use it; a tooltip says what it would change),
+  *Save as a profile...*, *Save changes to* the one you used once you have
+  changed something (the row then shows its name with a `*`), *Copy to
+  share*, *Export a file...*, *Paste a profile*, *Import a file...*, *Delete a
+  profile* (to the Recycle Bin) and *Open the profiles folder*. A `.spidy`
+  file dropped on the launcher's window is imported too.
+- **What a profile holds:** every setting of the SPIDY VR tab but VR VIEW and
+  CALIBRATE BODY, the tab's own ones too (NEAR CLIP, the four body haptics
+  switches, HAND WALL CLIMBING, WALL CAMERA DISTANCE, REALISTIC FLIPS and its
+  nine), and "Wall running": 33 settings. Not the graphics options (render
+  resolution, upscaling, the game window, the monitor, the game's depth of
+  field and sharpening), which suit one PC, and not the body calibration.
+- **The text** is what the files hold: a line saying what it is and how to
+  use it, `name=`, `spidy=0.4.0`, then a `key=value` line per setting, with
+  launcher.ini's and spidy_vr.ini's keys. *Copy to share* puts it in a Discord
+  code block. *Paste a profile* takes it back from a whole message, quoted or
+  not, and also takes a session's "VR settings from the headset" line,
+  launcher.ini, or a few lines written by hand (`hud=3`, `wall_run=off`).
+  Values out of range are clamped; anything else is passed over. A setting a
+  profile lacks stays as it is: a profile from an older Spidy, or a partial
+  one, changes only what it names.
+- **Importing shows what changes first:** each setting it would change, as
+  the tab names it ("WEB STYLE  REALISTIC → ARCADE", "NEAR CLIP  2 CM → 1 CM"),
+  and how many of the 33 it holds; then *Save and use*, *Save only* or
+  *Cancel*. A name you already have says saving replaces it.
+- **Nothing is lost by trying one:** using a profile while no saved profile
+  holds your settings first keeps them as "Previous settings"; picking that
+  goes back, and keeps what you had in its place, to switch again.
+- **Where they live:** `%APPDATA%\Spidy\profiles\<name>.spidy`, beside
+  launcher.ini. The launcher now reads `spidy_vr.ini` for the tab's own
+  settings and writes it when a profile changes one, the way the stereo
+  module does. launcher.ini gets `profile=` (the one last used or saved). All
+  of it is off while VR runs, as the options are.
+- **Checked:** 30 launcher tests (6 new: the profile holds every tab row and
+  `spidy_vr.ini`'s keys at the module's ranges, the exact text of the
+  defaults, a round trip that leaves graphics and the calibration alone, a
+  Discord message, a session's line, launcher.ini and words, the change list
+  in the tab's words, file names), and each of seven planted bugs fails one.
+  The launcher driven on this PC with your settings backed up: save, the
+  `*` after a change, the tooltip, copy (the clipboard held the code block),
+  paste of an 8-setting message (preview, then *Save and use*: launcher.ini
+  and `spidy_vr.ini` changed in those 8 only, Previous settings saved), a
+  dropped file, *Save only*, going back and forth with Previous settings,
+  export and import through Windows' dialogs, delete, a clipboard with no
+  profile. Then launcher.ini and `spidy_vr.ini` put back (same SHA-256), the
+  test profiles and the clipboard too. Core 422, realistic flips, all six
+  protocol suites (138). No protocol change: the launcher changes, and the
+  stereo module is only rebuilt (`vr_settings::steps` made public).
+- **Not checked:** a VR session started after a profile was used, reading
+  the `spidy_vr.ini` the launcher wrote (the same text the module writes;
+  core tests read it back).
 
 **Earlier build (October 20, seventh): after a realistic flip the stick walks
 where you look.** You: "i tried the new experimental locomotion and crawling

@@ -30,6 +30,8 @@ INSTALL
 3. The launcher finds the game and your VR runtime and checks this PC. Fix
    anything marked red. It can install Microsoft's Visual C++ runtime for you,
    and "Add shortcuts" puts Spidy VR on your desktop and in the Start menu.
+   Its tabs: Play (START VR, what this PC has, the session log), Options,
+   Controls (a picture of them, then each in words) and About.
 
 Spidy changes nothing in the game's folder. Some antivirus programs dislike
 tools that attach to a running game; if files go missing after extracting,
@@ -39,7 +41,7 @@ allow the Spidy folder and extract it again.
 UPDATES
 -------
 When it starts, the launcher asks GitHub whether a newer Spidy is out. If one
-is, a blue bar above the Play tab offers it. "Update now" downloads it, checks
+is, a bar at the top of the Play tab offers it. "Update now" downloads it, checks
 it, puts its files in this folder and starts the new launcher, all in a few
 seconds. Your settings and the reports folder stay. Stop VR and close the
 game first. "Later" asks again at the next start. About > UPDATES checks
@@ -60,8 +62,8 @@ PLAY
    ahead, stretch both arms straight out to the sides (a T-pose) and hold
    both triggers until the bar fills, about a second and a half. Spider-Man
    then has your height and arm length, so his hands sit on your
-   controllers. B skips it. The launcher remembers it; "Redo" under its
-   options, or CALIBRATE BODY in SPIDY VR (below), does it again.
+   controllers. B skips it. The launcher remembers it; "Redo" on its Options
+   tab, or CALIBRATE BODY in SPIDY VR (below), does it again.
 
 Keep the game window in front on the desktop: the game pauses while another
 window is in front of it, the launcher included. If the headset shows a still
@@ -530,7 +532,9 @@ in the launcher's options)
                          Settings > SPIDY VR or "Flip speed" in the launcher)
 
 Realistic flips (experimental, off until you switch REALISTIC FLIPS on in
-Settings > SPIDY VR; while it is on it takes the place of the flips above)
+Settings > SPIDY VR or "Realistic flips" in the launcher's options, where
+its nine settings show under it; while it is on it takes the place of the
+flips above)
   On a web ............. moving faster than MINIMUM FLIGHT SPEED (3 m/s), your
                          body turns toward the web's pull, as hard as
                          ROTATION STRENGTH says; where you face stays yours
@@ -548,7 +552,7 @@ Settings > SPIDY VR; while it is on it takes the place of the flips above)
   soon a turn gets there.
 
 Hand wall climbing (experimental, off until you switch HAND WALL CLIMBING on
-in Settings > SPIDY VR)
+in Settings > SPIDY VR or "Hand wall climbing" in the launcher's options)
   On a wall ............ with the left stick at rest you stay upright beside
                          the wall, a little crouched, your eyes 40 cm from
                          it (WALL CAMERA DISTANCE: 20 to 100 cm)
@@ -605,16 +609,19 @@ VR settings
                    sleeves and visor, below) and its four switches: WEB,
                    WIND, COMBAT and MOVEMENT HAPTICS.
   DISPLAY ........ the game screen's size, its 3D depth and the HUD's size
-                   (OFF hides it in VR). NEAR CLIP: how near your eyes things
-                   still show, 2 cm unless you change it (1 to 10 cm; the
-                   game's own camera keeps 10 cm, which hid hands held up
-                   before your face). RECORDING FOV (OFF unless you pick
-                   130, 140 or 150 degrees): the game window on your monitor
-                   shows a wider view to record, at least that wide across,
-                   instead of your left eye. It costs frame rate (about 3 ms
-                   a frame on its author's PC), and what Spidy draws itself
-                   (its gloves and webs, the aim markers, the combat marks)
-                   is only in the headset then.
+                   (OFF hides it in VR). UI STYLE: how Spidy's own marks,
+                   gadget wheel and meters look: COMIC, printed as Spidy's
+                   videos are, or TECH, thin lines and translucent blue
+                   panels like the game's own HUD. NEAR CLIP: how near
+                   your eyes things still show, 2 cm unless you change it
+                   (1 to 10 cm; the game's own camera keeps 10 cm, which
+                   hid hands held up before your face). RECORDING FOV (OFF
+                   unless you pick 130, 140 or 150 degrees): the game window
+                   on your monitor shows a wider view to record, at least
+                   that wide across, instead of your left eye. It costs
+                   frame rate (about 3 ms a frame on its author's PC), and
+                   what Spidy draws itself (its gloves and webs, the aim
+                   markers, the combat marks) is only in the headset then.
   BODY ........... CALIBRATE BODY: set it to ON RESUME and resume, and the
                    T-pose panel asks for your measurements again.
   EXPERIMENTAL ... FLIPS (off until you switch it on) lets the left stick
@@ -623,10 +630,12 @@ VR settings
                    and its WALL CAMERA DISTANCE. REALISTIC FLIPS (off until
                    you switch it on, above) and the nine rows that tune it.
   Changes apply at once. The launcher starts your next session with them;
-  its options show them too. NEAR CLIP, RECORDING FOV, the four body haptics
-  switches and the EXPERIMENTAL rows below FLIP SPEED are only in the tab:
-  Spidy keeps them in
-  %APPDATA%\Spidy\spidy_vr.ini, beside the launcher's own settings. Playing
+  its options show every one of them but VR VIEW too.
+  NEAR CLIP, RECORDING FOV, UI STYLE, the four body haptics switches and the
+  EXPERIMENTAL rows below FLIP SPEED Spidy keeps in
+  %APPDATA%\Spidy\spidy_vr.ini, beside the launcher's own settings; the
+  launcher shows realistic flips' nine rows while it is on, and the body
+  haptics switches while it plays. Playing
   the game on its screen instead of VR is on the pause menu itself: SWITCH
   TO GAME SCREEN, under RESUME (each session starts in VR).
   WEB STYLE: REALISTIC webs are ropes. They bend round whatever comes
@@ -641,6 +650,33 @@ VR settings
   The title screen's Options have no SPIDY VR tab: load your save first, or
   set them in the launcher.
 
+Settings profiles (share your settings, or try someone else's)
+  "Profile", at the top of the launcher's Options tab, keeps sets of settings
+  and switches between them. A profile holds every setting of the SPIDY VR
+  tab but RECORDING FOV, the ones in spidy_vr.ini too (NEAR CLIP, UI STYLE,
+  the body haptics switches, the EXPERIMENTAL rows), and "Wall running". Not
+  your graphics options (render resolution, upscaling, the game window, the
+  monitor and its RECORDING FOV, the game's depth of field and sharpening),
+  which suit your own PC, and not your body calibration: a profile leaves
+  those as they are.
+  Save as a profile ... keeps your settings under a name. Pick a profile in
+                        the list to use it; after you change a setting,
+                        Save changes puts it in that profile.
+  Copy to share ....... copies your settings as text: paste it into a
+                        Discord message.
+  Export a file ....... saves them as a .spidy file to send.
+  Paste a profile ..... takes one someone copied (from a Discord message,
+                        say); Import a file takes a .spidy file, and so does
+                        dropping one on the launcher's window. You see what
+                        it would change first; then Save and use, or Save
+                        only.
+  Before a profile changes settings that no profile holds, the launcher
+  keeps them as "Previous settings": pick that to go back. Profiles are
+  files in %APPDATA%\Spidy\profiles; Delete a profile moves one to the
+  Recycle Bin. A profile from an older Spidy, or one with only a few
+  settings in it, changes those and leaves the rest. Profiles apply to the
+  next VR session: change them while VR is stopped.
+
 bHaptics vest, sleeves and visor
   With a bHaptics TactSuit, TactSleeves or a TactVisor you feel the game on
   your body: a web taking hold and its pull in your arm and shoulder,
@@ -653,7 +689,7 @@ bHaptics vest, sleeves and visor
   it, and start it before VR: Spidy finds it by itself, and the headset says
   which devices are on. BODY HAPTICS under HAPTICS (or "Body haptics" in the
   launcher's options) sets how strongly they play; OFF stops them. Below it
-  WEB HAPTICS (shots, holds, the swing's pull, zips, grabs), WIND HAPTICS,
+  (in the launcher too, while it plays) WEB HAPTICS (shots, holds, the swing's pull, zips, grabs), WIND HAPTICS,
   COMBAT HAPTICS (punches, hits, Spider-Sense, dodges, heals, slow motion)
   and MOVEMENT HAPTICS (landings, walls, wall climbing, leaps) each switch
   their group off. Without the Player nothing changes. To feel each pattern
@@ -831,6 +867,8 @@ IF SOMETHING IS WRONG
   depth: HIGH.
 - The HUD is too small, too large or in the way: HUD in Settings > SPIDY VR
   (or "HUD" in the launcher's options): SMALL, MEDIUM, LARGE, or OFF.
+- You would like Spidy's marks, gadget wheel and meters to look like the
+  game's own HUD rather than a comic: UI STYLE in Settings > SPIDY VR, TECH.
 - The game asks for a button and nothing you press does it: press the
   button of the name it shows (WHEN THE GAME ASKS FOR A BUTTON, above). X is
   the game's X while it asks for X, your triggers its LT, LB, RT and RB,

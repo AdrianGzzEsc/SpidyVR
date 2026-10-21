@@ -1,10 +1,13 @@
 #include "spidy/web_visual.hpp"
 #include "spidy/gadget_wheel.hpp"
 #include "spidy/overlay_text.hpp"
+#include "spidy/soft_shapes.hpp"
+#include "spidy/tech_marks.hpp"
 #include <string>
 
 namespace spidy {
 namespace {
+using soft::perpendicular, soft::quad, soft::softArc, soft::softBar, soft::softTriangle;
 constexpr float pi = 3.14159265f;
 constexpr float braid = .075f; // metres per visible twist of the strand
 Vec3 mix(Vec3 a, Vec3 b, float t) {
@@ -12,12 +15,6 @@ Vec3 mix(Vec3 a, Vec3 b, float t) {
 }
 Vec3 brightest(Vec3 c) {
     return {std::min(c.x, 1.f), std::min(c.y, 1.f), std::min(c.z, 1.f)};
-}
-void quad(std::vector<Vertex>& out, const Vertex& a, const Vertex& b, const Vertex& c, const Vertex& d) {
-    out.insert(out.end(), {a, b, c, a, c, d});
-}
-Vec3 perpendicular(Vec3 d) {
-    return normalized(cross(d, std::abs(d.y) < .9f ? Vec3{0, 1, 0} : Vec3{1, 0, 0}));
 }
 float halfWidth(const WebLook& look, Vec3 viewer, Vec3 p, float pixelAngle, float radius) {
     return std::max(radius, .5f * look.minPixels * pixelAngle * length(viewer - p));
@@ -36,82 +33,6 @@ void glob(std::vector<Vertex>& out, Vec3 center, Vec3 viewer, float radius, Vec3
         const Vec3 p0 = center + (a * std::cos(t0) + b * std::sin(t0)) * radius;
         const Vec3 p1 = center + (a * std::cos(t1) + b * std::sin(t1)) * radius;
         out.insert(out.end(), {{center, color}, {p0, color * .8f}, {p1, color * .8f}});
-    }
-}
-// Soft-edged shapes for the aim markers: at `alpha` inside, fading to nothing
-// across `soft` metres at every edge, so their outlines stay smooth without
-// multisampling while they move by fractions of a pixel.
-//
-// An arc of a flat ring around c in the plane of unit axes a and b, from
-// angle t0 to t1 (a whole ring when they span 2 pi) in `segments` pieces a
-// whole turn, between radii inner and outer (0: a disc); its inner edge
-// fades across `innerSoft` instead when that is given.
-void softArc(std::vector<Vertex>& out, Vec3 c, Vec3 a, Vec3 b, float inner, float outer, float t0, float t1,
-             Vec3 color, float alpha, float soft, int segments, float innerSoft = -1) {
-    const bool whole = t1 - t0 > 2 * pi - 1e-3f;
-    const int pieces = std::max(2, static_cast<int>(std::ceil((t1 - t0) / (2 * pi) * segments)));
-    const float radii[4] = {std::max(inner - (innerSoft >= 0 ? innerSoft : soft), 0.f), inner, outer, outer + soft};
-    const float alphas[4] = {inner > 0 ? 0.f : alpha, alpha, alpha, 0};
-    const auto at = [&](float t, int k, float opacity) {
-        return Vertex{c + (a * std::cos(t) + b * std::sin(t)) * radii[k], color, opacity};
-    };
-    const int first = inner > 0 ? 0 : 1; // a disc has no inner edge
-    for (int i = 0; i < pieces; ++i) {
-        const float u0 = t0 + (t1 - t0) * i / pieces, u1 = t0 + (t1 - t0) * (i + 1) / pieces;
-        for (int k = first; k < 3; ++k)
-            quad(out, at(u0, k, alphas[k]), at(u1, k, alphas[k]), at(u1, k + 1, alphas[k + 1]),
-                 at(u0, k + 1, alphas[k + 1]));
-    }
-    if (whole)
-        return;
-    // Each end fades out along the ring.
-    const float cap = soft / std::max((inner + outer) / 2, 1e-6f);
-    for (const float end : {t0, t1}) {
-        const float beyond = end == t0 ? t0 - cap : t1 + cap;
-        for (int k = first; k < 3; ++k)
-            quad(out, at(end, k, alphas[k]), at(beyond, k, 0), at(beyond, k + 1, 0), at(end, k + 1, alphas[k + 1]));
-    }
-}
-// A flat bar from p to q across the line of sight `view`, its ends squared
-// off half its width beyond them so two bars close a corner.
-void softBar(std::vector<Vertex>& out, Vec3 p, Vec3 q, Vec3 view, float halfWidth, Vec3 color, float alpha,
-             float soft) {
-    const Vec3 along = normalized(q - p), side = normalized(cross(q - p, view));
-    const float span = length(q - p);
-    const float x[4] = {-halfWidth - soft, -halfWidth, span + halfWidth, span + halfWidth + soft};
-    const float y[4] = {-halfWidth - soft, -halfWidth, halfWidth, halfWidth + soft};
-    const auto at = [&](int i, int j) {
-        return Vertex{p + along * x[i] + side * y[j], color, i % 3 && j % 3 ? alpha : 0.f};
-    };
-    for (int i = 0; i < 3; ++i)
-        for (int j = 0; j < 3; ++j)
-            quad(out, at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1));
-}
-// A flat triangle across the line of sight `view`, grown `grow` past its
-// corners' edges and then fading out across `soft`.
-void softTriangle(std::vector<Vertex>& out, std::array<Vec3, 3> p, Vec3 view, Vec3 color, float alpha, float grow,
-                  float soft) {
-    const Vec3 centre = (p[0] + p[1] + p[2]) / 3;
-    std::array<Vec3, 3> outward{}, mitre{};
-    for (int i = 0; i < 3; ++i) {
-        const Vec3 normal = normalized(cross(p[(i + 1) % 3] - p[i], view));
-        outward[i] = dot(normal, (p[i] + p[(i + 1) % 3]) * .5f - centre) < 0 ? -normal : normal;
-    }
-    // A corner moves out along the bisector of its edges' normals, far
-    // enough to move both edges out by one unit, but no more than three.
-    for (int i = 0; i < 3; ++i) {
-        const Vec3 bisector = normalized(outward[(i + 2) % 3] + outward[i]);
-        mitre[i] = bisector / std::max(dot(bisector, outward[i]), 1.f / 3);
-    }
-    std::array<Vec3, 3> inside{}, edge{};
-    for (int i = 0; i < 3; ++i) {
-        inside[i] = p[i] + mitre[i] * grow;
-        edge[i] = p[i] + mitre[i] * (grow + soft);
-    }
-    out.insert(out.end(), {{inside[0], color, alpha}, {inside[1], color, alpha}, {inside[2], color, alpha}});
-    for (int i = 0; i < 3; ++i) {
-        const int j = (i + 1) % 3;
-        quad(out, {inside[i], color, alpha}, {inside[j], color, alpha}, {edge[j], color, 0}, {edge[i], color, 0});
     }
 }
 // Each hand's aim markers in their own colour (linear RGB): sky blue for the
@@ -395,7 +316,10 @@ void appendWeb(std::vector<Vertex>& out, const WebLine& web, Vec3 viewer, float 
     }
     glob(out, center + normal * .002f, viewer, halfWidth(look, viewer, center, pixelAngle, .026f), look.core);
 }
-void appendAimMarker(std::vector<Vertex>& out, const AimMarker& marker, Vec3 viewer, float pixelAngle) {
+void appendAimMarker(std::vector<Vertex>& out, const AimMarker& marker, Vec3 viewer, float pixelAngle,
+                     UiStyle style) {
+    if (style == UiStyle::tech)
+        return tech::appendAimMarker(out, marker, viewer, pixelAngle);
     const float distance = length(viewer - marker.point);
     const float opacity = std::isfinite(marker.opacity) ? std::clamp(marker.opacity, 0.f, 1.f) : 0.f;
     if (!finite(marker.point) || !finite(viewer) || !std::isfinite(pixelAngle) || pixelAngle <= 0 ||
@@ -501,7 +425,9 @@ Vec3 onAimLine(Vec3 point, Vec3 normal, Vec3 origin, Vec3 direction) {
                : point;
 }
 void appendSlowMotionMeter(std::vector<Vertex>& out, const SlowMotionView& view, Pose hand, Vec3 viewer,
-                           float pixelAngle, float seconds) {
+                           float pixelAngle, float seconds, UiStyle style) {
+    if (style == UiStyle::tech)
+        return tech::appendSlowMotionMeter(out, view, hand, viewer, pixelAngle, seconds);
     const float opacity = std::isfinite(view.meter) ? std::clamp(view.meter, 0.f, 1.f) : 0.f;
     if (opacity <= 0 || !finite(hand.position) || !finite(viewer) || !std::isfinite(pixelAngle) || pixelAngle <= 0)
         return;
@@ -547,7 +473,10 @@ void appendSlowMotionMeter(std::vector<Vertex>& out, const SlowMotionView& view,
             softTriangle(out, shape, view3, shadow ? shadowColor : mix(glass, fill, .35f),
                          opacity * (shadow ? .55f : .9f), shadow ? 1.2f * px : 0.f, shadow ? 1.6f * px : soft);
 }
-void appendImpact(std::vector<Vertex>& out, const ImpactView& impact, Vec3 viewer, float pixelAngle) {
+void appendImpact(std::vector<Vertex>& out, const ImpactView& impact, Vec3 viewer, float pixelAngle,
+                  UiStyle style) {
+    if (style == UiStyle::tech)
+        return tech::appendImpact(out, impact, viewer, pixelAngle);
     const float distance = length(viewer - impact.point);
     if (!finite(impact.point) || !finite(viewer) || !std::isfinite(pixelAngle) || pixelAngle <= 0 ||
         !std::isfinite(impact.age) || impact.age < 0 || impact.age > ImpactView::seconds ||
@@ -618,7 +547,9 @@ void appendImpact(std::vector<Vertex>& out, const ImpactView& impact, Vec3 viewe
                      [&] { print.text(text, {width * -.5f, height * -.5f}, height, .2f, plate::yellow); });
     }
 }
-void appendCue(std::vector<Vertex>& out, const CueView& cue, Vec3 viewer, float pixelAngle) {
+void appendCue(std::vector<Vertex>& out, const CueView& cue, Vec3 viewer, float pixelAngle, UiStyle style) {
+    if (style == UiStyle::tech)
+        return tech::appendCue(out, cue, viewer, pixelAngle);
     const float distance = length(viewer - cue.point);
     if (!finite(cue.point) || !finite(viewer) || !std::isfinite(pixelAngle) || pixelAngle <= 0 ||
         !std::isfinite(cue.left) || cue.left <= 0 || !std::isfinite(cue.age) || cue.age < 0 ||
@@ -714,7 +645,10 @@ void appendCue(std::vector<Vertex>& out, const CueView& cue, Vec3 viewer, float 
         print.line(tip, neck - across * (size * .4f), size * .085f, fill, false);
     });
 }
-void appendKnockout(std::vector<Vertex>& out, const KnockoutView& knockout, Vec3 viewer, float pixelAngle) {
+void appendKnockout(std::vector<Vertex>& out, const KnockoutView& knockout, Vec3 viewer, float pixelAngle,
+                    UiStyle style) {
+    if (style == UiStyle::tech)
+        return tech::appendKnockout(out, knockout, viewer, pixelAngle);
     const float distance = length(viewer - knockout.point);
     if (!finite(knockout.point) || !finite(viewer) || !std::isfinite(pixelAngle) || pixelAngle <= 0 ||
         !std::isfinite(knockout.age) || knockout.age < 0 || knockout.age >= KnockoutView::seconds ||
@@ -844,7 +778,10 @@ bool senseShows(SenseAnswer answer, float age, float left, float broken, float p
            pixelAngle > 0;
 }
 } // namespace
-void appendSense(std::vector<Vertex>& out, const SenseView& sense, Vec3 viewer, float pixelAngle) {
+void appendSense(std::vector<Vertex>& out, const SenseView& sense, Vec3 viewer, float pixelAngle,
+                 UiStyle style) {
+    if (style == UiStyle::tech)
+        return tech::appendSense(out, sense, viewer, pixelAngle);
     const float away = length(viewer - sense.point);
     if (!finite(sense.point) || !finite(viewer) || !(away >= .3f && away <= 60) ||
         !senseShows(sense.answer, sense.age, sense.left, sense.broken, pixelAngle))
@@ -866,7 +803,9 @@ void appendSense(std::vector<Vertex>& out, const SenseView& sense, Vec3 viewer, 
     senseMark(print, sense.answer, s, sense.left, sense.timed, sense.age, sense.broken);
 }
 void appendSenseSight(std::vector<Vertex>& out, const SenseSightView& view, Pose head, float pixelAngle,
-                      const SenseSightConfig& config) {
+                      const SenseSightConfig& config, UiStyle style) {
+    if (style == UiStyle::tech)
+        return tech::appendSenseSight(out, view, head, pixelAngle, config);
     const float across = std::sqrt(view.sight.x * view.sight.x + view.sight.y * view.sight.y);
     if (!view.sight.shown || !finite(head.position) || !(across > .5f && across < 2) ||
         !senseShows(view.answer, view.age, view.left, view.broken, pixelAngle))
@@ -1008,7 +947,10 @@ void gadgetPicture(Print& print, Gadget g, Flat at, float s, Vec3 color) {
     }
 }
 } // namespace
-void appendGadgetWheel(std::vector<Vertex>& out, const GadgetWheelView& view, Vec3 viewer, float pixelAngle) {
+void appendGadgetWheel(std::vector<Vertex>& out, const GadgetWheelView& view, Vec3 viewer, float pixelAngle,
+                       UiStyle style) {
+    if (style == UiStyle::tech)
+        return tech::appendGadgetWheel(out, view, viewer, pixelAngle);
     const WheelFrame& f = view.frame;
     const float distance = length(viewer - f.centre);
     if (!view.open || !finite(f.centre) || !finite(f.right) || !finite(f.up) || !finite(f.out) ||
