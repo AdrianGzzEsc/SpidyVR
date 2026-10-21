@@ -1,15 +1,49 @@
-# Spidy Wall Climb Corner Preview — angled and obstructed facades
+# Spidy Vent Crawl Preview
 
 This modified build of Ilya Mezerowsky's Spidy VR mod is based on upstream
 0.4.0, commit c747c184dd97acaddf0db47f1a32f30cebe0d974, merged with the
 working Preview 7 changes saved at e0fcb4c. Keep the whole
 extracted preview folder together.
 
-## Corner preview
+## Vent crawling
 
-This local preview builds on Finished 2 and improves climbing camera safety
-near pillars, projecting trim and tight inside corners. It has not been
-uploaded to the contribution branch or submitted as a pull request.
+This local preview builds on the corner improvements at 0ebdab2. Enable
+HAND WALL CLIMBING, enter a vent using the game's usual interaction, then
+reach toward its floor or a wall and squeeze a physical grip. Pull the hand
+back toward you to crawl forward along the floor; release, reach and grip
+again to keep going. On a shaft wall, pull down to climb up. Touch alone
+does not attach. A grip already held before contact can catch when the palm
+reaches the surface. Palms inside the surface still register.
+
+Vents retain a low climbing camera on floors, walls and ceilings. The left
+stick provides ordinary native crawling and never enters wall running there.
+On the floor, the default camera height is 40 cm. WALL CAMERA DISTANCE also
+sets vent clearance, limited to 25–70 cm; actual collision/headroom can
+require a different position. Keep the standing calibration: physically
+crouching is optional. Eyes, hands and body share the camera adjustment.
+
+Hands stay open and give the same short contact vibration. The two-grip
+wrist-roll gesture is retained, including rolling on a vent floor; release
+either grip to lock the angle. Its reserved hands do not pull while rolling.
+Holding the left stick overrides hand movement without switching the view.
+The game retains crawl collision, floor-to-shaft transitions and scripted
+interactions. Pulling a wall from the floor approaches the bend before the
+game turns onto the shaft. A game-authored interaction or exit still needs
+the usual button; hand movement does not bypass mission gates or grates.
+
+Enclosed native crawl activates the mode; a scripted floor with no usable
+collision rays must remain in native crawl for 0.4 seconds. Brief outdoor
+wall-top crawl does not enter vent mode. Normal ground movement and outdoor
+wall running keep their existing behavior. Releasing a grip stops its pull;
+tracking/focus loss and leaving supported crawl clear the hand holds.
+
+This replaces the earlier removed vent experiment with floor-support
+fallback, held-grip contact retries, native-stick dead-zone compensation,
+and a dedicated low climbing view. A session log entry, "Vent hand crawling
+active", records when detection engages. This build has not been tested in
+a headset yet; try a flat duct, a floor-to-shaft turn, then its normal exit.
+
+## Retained corner improvements
 
 Climbing camera safety rays now start from the native collision capsule's
 centre. The old point half a metre from the facade could itself sit inside
@@ -38,9 +72,9 @@ starts the wall-run camera alignment. The transition requires a wall or
 ceiling hold. Normal ground movement keeps the camera facing where the
 headset and the usual turning controls point, including after a wall landing.
 
-This is the finished build requested after Preview 12: the experimental vent
-hand crawling, its input/feedback path and its special camera changes have
-been removed. Vents use the behavior from before that experiment.
+This preview adds the vent behavior above to Finished 2 and the corner
+preview. It is a separate local build; the previous finished and corner
+packages remain available.
 
 The original grip rules from before the free-hand-web change are restored.
 While both grips are held on a wall, they are reserved for the camera-roll
@@ -97,7 +131,7 @@ frame remain removed.
 ## Start
 
 1. Close the game and any other Spidy session.
-2. Open **Spidy Wall Climb Corner Preview.exe**, connect your headset, and start VR.
+2. Open **Spidy Vent Crawl Preview.exe**, connect your headset, and start VR.
 3. Enable **Settings → SPIDY VR → EXPERIMENTAL → HAND WALL CLIMBING**.
    Enable it again after restarting VR; the switch lasts for the session.
 4. **WALL CAMERA DISTANCE** sets the close climbing view to 10, 15, 20, 25,
@@ -189,8 +223,8 @@ No new original-game climbing animation cycle is integrated by this update.
 
 ## Validation
 
-Windows Release build: passed. Native core: **402/402** tests. Launcher:
-**24/24** checks. Python protocols: **137/137** tests across six suites.
+Windows Release build: passed. Native core: **413/413** tests. Launcher:
+**24/24** checks. Python protocols: **138/138** tests across six suites.
 The packaged runtime imports, source whitespace, and module/source copies
 are also checked during packaging.
 
@@ -216,7 +250,13 @@ backward, diagonal and neutral stick changes on ground, walkable slopes and
 floor crawl contacts. A wall-run-to-ground test checks that walking and
 strafing after landing preserve the view while following the moving player.
 
-**This corner preview has not yet been played in the game or tested in a headset.**
+Vent checks cover low floor/wall/ceiling placement, all left-stick directions
+without a camera transition, held-grip contact retries, rayless/deep support
+contacts, averaged pulls and support-plane constraints, floor-to-shaft pulls,
+roll/release, tracking loss, native pad mapping of slow pulls, stale feedback,
+entry/exit, and restoration of outdoor wall running.
+
+**This vent preview has not yet been played in the game or tested in a headset.**
 Earlier previews were played by the user. Synthetic corner tests do not
 establish that every game building has suitable collision geometry.
 
@@ -241,5 +281,6 @@ official update's native-action requests. Swing settings are version 8
 their 0.4.0 offsets, with handClimb appended at byte 44. Official version
 3–7 settings remain accepted with their original meanings. The body command
 remains version 4 (192 bytes), and the separate sticky-palm contact report
-remains version 1 (48 bytes). Keep this preview's modules together; old custom
+is version 2 (72 bytes), adding expiring native crawl intent. The diagnostic
+reader accepts both contact-report versions. Keep this preview's modules together; old custom
 preview settings packets are not interchangeable with the updated modules.

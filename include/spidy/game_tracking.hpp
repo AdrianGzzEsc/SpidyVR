@@ -54,6 +54,7 @@ struct GameMotionFrame {
     bool standing{};
     float wallRoll{};
     bool wallRotate{};
+    bool ventCrawl{};
     float viewTilt{};
     // For the player's body: the up the view stands him along (the world's
     // until it turns onto a surface), the point of that surface under his
@@ -84,6 +85,7 @@ struct SurfaceHold {
     Vec3 anchor{}; // the point of it under the player's body, in the world
     float speed{}; // the player's speed, m/s
     bool crawl{};  // the game's wall crawl: its actor's feet are on the surface
+    bool vent{};   // enclosed native crawl: never switch into wall running
 };
 // The native collision capsule's centre is clear even when a projecting
 // pillar covers the point half a metre off the facade used by the crawl.

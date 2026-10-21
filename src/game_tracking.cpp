@@ -379,6 +379,8 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     // jump off it.
     const Vec3 held = normalized(surface.normal);
     const bool holds = finite(held) && length(held) > .5f && finite(surface.anchor);
+    const bool ventCrawl = handClimb_ && holds && surface.crawl && surface.vent;
+    out.ventCrawl = ventCrawl;
     // A flip tilts the tracking space about the head where it began.
     FlipMotion::Sample flip;
     flip.jump = f.jump;
@@ -409,7 +411,7 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     // A hold may also describe ground or a walkable slope. Only wall/ceiling
     // contact may align the camera when the left stick starts moving.
     const bool runSurface = holds && held.y < surfaceEnterCos;
-    const bool wallRun = handClimb_ && runSurface && handValid(f.hands[0]) && !f.jump &&
+    const bool wallRun = handClimb_ && !ventCrawl && runSurface && handValid(f.hands[0]) && !f.jump &&
                          (walks || (wallRunning_ && runIdleSeconds_ < .1f));
     if (wallRun && !wallRunning_) {
         // Capture the direction visible BEFORE the wall-floor transition
@@ -501,7 +503,16 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     }
     const Vec3 unplacedHead = rig_.toWorld(f.head).position;
     Vec3 target{};
-    if (handClimb_ && !standing_ && holds && std::abs(held.y) < .5f) {
+    if (ventCrawl && !standing_) {
+        // The same close climbing view on a duct floor, wall or ceiling.
+        // Height is measured from native support, not the standing headset.
+        const float distance = std::clamp(wallDistance_, .25f, .7f);
+        const Vec3 alongUp = normalized(Vec3{0, 1, 0} - held * held.y);
+        target = held * (distance - dot(unplacedHead - surface.anchor, held));
+        if (length(alongUp) > .5f)
+            target -= alongUp * std::clamp(f.head.position.y - .65f, 0.f, 1.f);
+        surfaceDepth_ = 0;
+    } else if (handClimb_ && !standing_ && holds && std::abs(held.y) < .5f) {
         // Keep the horizon upright and crouch beside the facade, hands within
         // touching distance. This shifts the tracking space, never the collider.
         const Vec3 alongUp = normalized(Vec3{0, 1, 0} - held * held.y);
@@ -556,11 +567,15 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     }
     if (!holds || f.jump)
         wallRoll_.reset();
-    const bool rollAllowed = handClimb_ && holds && !standing_ && !walks && !f.jump && std::abs(held.y) < .5f;
+    const bool rollAllowed = handClimb_ && holds && !standing_ && !walks && !f.jump &&
+                             (std::abs(held.y) < .5f || ventCrawl);
     const float rollAngle = wallRoll_.update(rollAllowed, f);
     if (rollAllowed) {
         const Pose before = placed.toWorld(f.head);
-        const Quat roll = Quat::around(length(climbNormal_) > .5f ? -climbNormal_ : -held, rollAngle);
+        const Vec3 rollAxis = ventCrawl && std::abs(held.y) >= .5f ?
+                             (Quat::yaw(placed.yaw) * placed.tilt).rotate(wallRoll_.axis()) :
+                             length(climbNormal_) > .5f ? -climbNormal_ : -held;
+        const Quat roll = Quat::around(rollAxis, rollAngle);
         const Quat yaw = Quat::yaw(placed.yaw);
         placed.tilt = unit(yaw.conjugate() * roll * yaw * placed.tilt);
         placed.origin += before.position - placed.toWorld(f.head).position;
@@ -571,7 +586,7 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     // hands, the webs and the body with them: they stay where the eyes see
     // them.
     if (finite(bodyCentre_)) {
-        const bool closeClimb = handClimb_ && holds && !standing_ && std::abs(held.y) < .5f;
+        const bool closeClimb = handClimb_ && holds && !standing_ && (std::abs(held.y) < .5f || ventCrawl);
         out.headPush = clearance_.update(f.seconds, bodyCentre_, placed.toWorld(f.head).position, closeClimb);
         placed.origin += out.headPush;
     }

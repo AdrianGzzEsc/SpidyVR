@@ -840,6 +840,7 @@ DWORD WINAPI run(void*) {
         game_swing::Bends swingBends;
         game_swing::ClimbData climbState;
         game_swing::ClimbPulses climbPulses;
+        bool ventCrawlBefore{};
         // What each hand's web holds, when it caught a thug instead of a wall.
         game_grab::Data grabState;
         uint32_t grabPhases[2]{};
@@ -1382,6 +1383,12 @@ DWORD WINAPI run(void*) {
                         ++floorCrawlFrames;
                     }
                     const bool crawlsFloor = hold.crawl && hold.normal.y > .99f;
+                    hold.vent = hold.crawl &&
+                        (climbState.status && climbState.crawl == 1 && climbState.sampleTimeNs &&
+                         frame.predictedDisplayTime > 0 &&
+                         static_cast<uint64_t>(frame.predictedDisplayTime) >= climbState.sampleTimeNs &&
+                         static_cast<uint64_t>(frame.predictedDisplayTime) - climbState.sampleTimeNs <=
+                             100'000'000);
                     floorCrawlSeconds =
                         crawlsFloor ? floorCrawlSeconds + (std::isfinite(frame.seconds)
                                                                ? std::clamp(frame.seconds, 0.f, .1f)
@@ -1405,9 +1412,10 @@ DWORD WINAPI run(void*) {
                         holdGapSeconds = held ? 0.f : holdGapSeconds + seconds;
                         if (held) {
                             lastHold = hold;
-                        } else if (motion.standing && length(n) > .5f && holdGapSeconds < holdGrace &&
+                        } else if ((motion.standing || motion.ventCrawl) && length(n) > .5f &&
+                                   holdGapSeconds < holdGrace &&
                                    std::abs(dot(feet - lastHold.anchor, n)) < 1.5f &&
-                                   length(v - n * dot(v, n)) < holdGraceSpeed) {
+                                   length(v - n * dot(v, n)) < (motion.ventCrawl ? 3.f : holdGraceSpeed)) {
                             // On the plane it stood on, with the feet: kept
                             // where it was while the game took a player over
                             // a shaft's lip at 1.3 m/s, the view stayed on
@@ -1820,7 +1828,7 @@ DWORD WINAPI run(void*) {
                         check(submitSwing(&input), "Tracked swing input");
                         check(sampleSwing(&swingState), "Native swing feedback");
                         if (!sampleClimb || sampleClimb(&climbState) || climbState.magic != 0x53434c44 ||
-                            climbState.version != 1 || climbState.bytes != sizeof(climbState))
+                            climbState.version != 2 || climbState.bytes != sizeof(climbState))
                             climbState = {};
                         const unsigned wallPulses = climbPulses.update(climbState, input.focused && values.handClimb);
                         for (unsigned i = 0; i < 2; ++i)
@@ -2301,6 +2309,25 @@ DWORD WINAPI run(void*) {
                         if (playing) {
                             walk.right = mounting ? 0 : motion.walkRight;
                             walk.forward = mounting ? 0 : motion.walkForward;
+                            // Hand pulls become ordinary native crawl input. The
+                            // game keeps vent collision and its supported state.
+                            const bool handCrawl = motion.ventCrawl && values.handClimb && motion.active &&
+                                !flatScreen && !calibrationInput && !layerOn && !mounting &&
+                                std::hypot(motion.walkRight, motion.walkForward) <= .2f;
+                            const Vec3 pull =
+                                game_swing::crawlPull(climbState, handCrawl, frame.predictedDisplayTime);
+                            if (handCrawl && climbState.crawl && climbState.hands) {
+                                const Vec3 stick =
+                                    game_swing::crawlStick(pull, motion.walkForwardAxis, motion.walkRightAxis);
+                                walk.right = stick.x;
+                                walk.forward = stick.z;
+                            }
+                            if (motion.ventCrawl != ventCrawlBefore) {
+                                ventCrawlBefore = motion.ventCrawl;
+                                message(1, 0, ventCrawlBefore ?
+                                                  "Vent hand crawling active (native crawl, close view)" :
+                                                  "Vent hand crawling ended");
+                            }
                             // On the game's own crawl, with the view turned
                             // onto the wall, what the game makes of that stick
                             // is the one thing no session has measured.
@@ -2451,7 +2478,8 @@ DWORD WINAPI run(void*) {
                         for (unsigned i = 0; i < 2; ++i) {
                             const auto& hand = motion.swing.hands[i];
                             const auto& aim = aimed.hands[i];
-                            free = free && !swingState.webs[i].attached && !grabPhases[i];
+                            free = free && !swingState.webs[i].attached && !grabPhases[i] &&
+                                   !(motion.ventCrawl && climbState.status && (climbState.hands & (1u << i)));
                             pulling[i] = {hand.tracked && hand.grip > .5f,
                                           aim.kind == static_cast<uint32_t>(game_swing::AimKind::blocked), aim.point,
                                           hand.aim.position, hand.gripRelativeToHead};
@@ -2529,7 +2557,7 @@ DWORD WINAPI run(void*) {
                             const bool onCrawl = swingState.status &&
                                                  swingState.wall == static_cast<uint32_t>(game_swing::Surface::game);
                             const bool webbed = swingState.webs[0].attached || swingState.webs[1].attached;
-                            walk.parkour = onCrawl && (walk.jump || webbed);
+                            walk.parkour = onCrawl && (walk.jump || (!motion.ventCrawl && webbed));
                         }
                         walk.scan = templePress.held() && steering;
                         // A perfect dodge: the game slows its own time within a

@@ -66,6 +66,19 @@ class ProtocolTests(unittest.TestCase):
         result = climb_snapshot(Reader(raw, struct.pack('<Q', 2)), 0)
         self.assertEqual(result, dict(status=1, contacts=[7, 9], hands=3))
 
+    def test_native_vent_crawl_snapshot_reads_intent_and_rejects_invalid_vectors(self):
+        head = struct.pack('<4IQ2Q2I', 0x53434c44, 2, 72, 1, 2, 7, 9, 1, 0)
+        tail = struct.pack('<3fIQ', 0, 0, -.5, 1, 1_000_000_000)
+        data = climb_snapshot(Reader(head, tail, struct.pack('<Q', 2)), 0)
+        self.assertEqual(data['crawl'], 1)
+        self.assertEqual(data['crawl_move'], (0, 0, -.5))
+        self.assertEqual(data['sample_time_ns'], 1_000_000_000)
+        for vector, flag in (((math.nan, 0, 0), 1), ((2, 0, 0), 1), ((0, 0, 0), 2)):
+            bad = struct.pack('<3fIQ', *vector, flag, 1_000_000_000)
+            with self.assertRaisesRegex(RuntimeError, 'Invalid vent crawl'):
+                climb_snapshot(Reader(head, bad, struct.pack('<Q', 2)), 0)
+        self.assertIsNone(climb_snapshot(Reader(head, tail[:8]), 0))
+
     def test_wall_contact_snapshot_rejects_incompatible_and_torn_data(self):
         raw = struct.pack('<4IQ2Q2I', 0x53434c44, 2, 48, 1, 2, 7, 9, 3, 0)
         with self.assertRaisesRegex(RuntimeError, 'protocol mismatch'):

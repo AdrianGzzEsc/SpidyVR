@@ -415,6 +415,7 @@ class Swing {
         if (!on)
             climbing_ = {};
     }
+    bool handClimbEnabled() const { return handClimb_; }
     // A near-wall squeeze belongs to climbing before other actions.
     bool wallHand(int hand, const Input&, const WorldQueries&) const;
     unsigned climbingHands() const {

@@ -27,6 +27,7 @@
 #include "spidy/lab_props.hpp"
 #include "spidy/body_ik.hpp"
 #include "spidy/crawl_stick.hpp"
+#include "spidy/crawl_hands.hpp"
 #include "spidy/body_calibration.hpp"
 #include "spidy/overlay_text.hpp"
 #include "spidy/punch.hpp"
@@ -1320,6 +1321,237 @@ int main() {
         hanging(0);     // its hold 0.3 m of slack below
         hanging(-.2f);  // moved further down the web: the hold would have been 0.2 m too short
         hanging(.25f);  // moved up beside the other
+    });
+    test("vent detection ignores roof crests, enters rayless ducts, follows shafts and exits onto ground", [] {
+        VentCrawlMode mode;
+        for (int i = 0; i < 3; ++i)
+            check(!mode.update(true, false, false, false, .1f), "a brief roof crest became a vent");
+        check(!mode.update(false, false, false, true, .02f), "standing did not exit crawl");
+        for (int i = 0; i < 5; ++i) mode.update(true, false, false, false, .1f);
+        check(mode.active(), "rayless duct floor did not become a vent");
+        check(mode.update(false, true, false, false, .02f), "shaft lost vent mode");
+        check(!mode.update(false, false, false, true, .02f) && !mode.active(), "ground retained vent mode");
+        check(mode.update(false, true, true, false, .02f), "enclosed wall entry needed a floor first");
+        for (int i = 0; i < 4; ++i) mode.update(false, false, false, false, .1f);
+        check(!mode.active(), "flight retained vent mode");
+    });
+    test("vent grips catch after squeezing before contact, pull and stop on a rayless floor", [] {
+        TestWorld world;
+        world.enabled = false;
+        CrawlHands hands;
+        Input in;
+        in.focused = true;
+        auto& h = in.hands[0];
+        h.tracked = true;
+        h.wallGrip = 1;
+        h.wallPosition = {0, .8f, -.3f};
+        const auto step = [&] { hands.update(true, 1.f / 90, in, {0, 1, 0}, {0, .4f, 0}, world); };
+        step();
+        check(!hands.hands(), "a remote floor grip attached");
+        h.wallPosition.y = .1f;
+        step();
+        check(hands.hands() == 1 && hands.contacts() == 1, "held grip did not catch on reaching floor");
+        near(length(hands.move()), 0);
+        h.gripRelativeToHead.z += .01f;
+        step();
+        check(hands.move().z < -.3f && !hands.contacts(), "pull or single contact pulse failed");
+        step();
+        near(length(hands.move()), 0);
+        h.wallGrip = 0;
+        step();
+        check(!hands.hands(), "released vent grip stayed attached");
+    });
+    test("vent support registers palms inside floor wall and ceiling, within reach only", [] {
+        TestWorld world;
+        world.enabled = false;
+        for (const Vec3 normal : {Vec3{0, 1, 0}, Vec3{0, 0, 1}, Vec3{0, -1, 0}}) {
+            for (const float depth : {.15f, -.1f, -.8f, .5f, -1.5f}) {
+                CrawlHands hands;
+                Input in;
+                in.focused = true;
+                in.hands[0].tracked = true;
+                in.hands[0].wallGrip = 1;
+                const Vec3 support{10, 20, 30};
+                in.hands[0].wallPosition = support + normal * depth;
+                hands.update(true, 1.f / 90, in, normal, support + normal * .4f, world, 0, support);
+                check(bool(hands.hands()) == (depth <= .22f && depth >= -1.2f),
+                      "inside support contact failed");
+                hands.update(true, 1.f / 90, in, normal, support + normal * .4f, world, 0, support);
+                check(!hands.contacts(), "rayless support repeated its vibration");
+            }
+        }
+    });
+    test("vent hands average pulls, reject motion into support and preserve held grips during stick use", [] {
+        TestWorld world;
+        CrawlHands hands;
+        Input in;
+        in.focused = true;
+        for (auto& h : in.hands) { h.tracked = true; h.wallGrip = 1; h.wallPosition = {0, .1f, 0}; }
+        const auto step = [&] { hands.update(true, .02f, in, {0, 1, 0}, {0, .4f, 0}, world); };
+        step();
+        for (auto& h : in.hands) h.gripRelativeToHead = {0, -.5f, .02f};
+        step();
+        near(hands.move().z, -1.f / 2.6f);
+        near(hands.move().y, 0);
+        in.move = {1, 0, 0};
+        in.hands[0].gripRelativeToHead.z += .3f;
+        step();
+        check(hands.hands() == 3 && !hands.contacts(), "stick use dropped the hands");
+        near(length(hands.move()), 0);
+        in.move = {};
+        step();
+        near(length(hands.move()), 0);
+    });
+    test("a vent wall pull approaches a floor-to-shaft bend and continues up after the native turn", [] {
+        struct Shaft : TestWorld {
+            std::optional<RayHit> raycast(Vec3 origin, Vec3 direction, float distance) const override {
+                if (origin.z > 0 && direction.z < -.01f) {
+                    const float at = -origin.z / direction.z;
+                    if (at <= distance) return RayHit{origin + direction * at, {0, 0, 1}, 1, true};
+                }
+                return {};
+            }
+        } world;
+        CrawlHands hands;
+        Input in;
+        in.focused = true;
+        auto& h = in.hands[0];
+        h.tracked = true; h.wallGrip = 1;
+        h.wallPosition = {0, .6f, .05f};
+        hands.update(true, .02f, in, {0, 1, 0}, {0, .4f, .4f}, world);
+        check(hands.hands() == 1, "next shaft wall was not grippable from the floor");
+        h.gripRelativeToHead.y -= .02f;
+        hands.update(true, .02f, in, {0, 1, 0}, {0, .4f, .4f}, world);
+        check(hands.move().z < -.3f, "wall pull was discarded instead of approaching the bend");
+        near(hands.move().y, 0);
+        h.gripRelativeToHead.y -= .02f;
+        hands.update(true, .02f, in, {0, 0, 1}, {0, .4f, .4f}, world);
+        check(hands.move().y > .3f && !hands.contacts(), "native turn broke the held pull");
+        near(hands.move().z, 0);
+    });
+    test("vent wrist rolls never create a pull or leave accumulated displacement", [] {
+        TestWorld world;
+        CrawlHands hands;
+        Input in;
+        in.focused = true;
+        auto& h = in.hands[0];
+        h.tracked = true; h.wallGrip = 1; h.wallPosition = {0, .1f, 0};
+        const auto step = [&] { hands.update(true, .02f, in, {0, 1, 0}, {0, .4f, 0}, world); };
+        step();
+        in.wallRotate = true;
+        h.gripRelativeToHead.z += .5f;
+        step();
+        near(length(hands.move()), 0);
+        in.wallRotate = false;
+        step();
+        near(length(hands.move()), 0);
+        check(hands.hands() == 1, "rolling dropped a held palm");
+    });
+    test("vent holds release on focus tracking and context loss, and cannot use a web hand", [] {
+        TestWorld world;
+        for (int loss = 0; loss < 6; ++loss) {
+            CrawlHands hands;
+            Input in;
+            in.focused = true;
+            auto& h = in.hands[0];
+            h.tracked = true; h.wallGrip = 1; h.wallPosition = {0, .1f, 0};
+            hands.update(true, .02f, in, {0, 1, 0}, {0, .4f, 0}, world);
+            check(hands.hands() == 1, "initial hold failed");
+            if (loss == 0) in.focused = false;
+            if (loss == 1) h.tracked = false;
+            if (loss == 2) in.jump = true;
+            if (loss == 3) h.wallPosition.x = std::numeric_limits<float>::quiet_NaN();
+            hands.update(loss != 4, .02f, in, {0, 1, 0}, {0, .4f, 0}, world, loss == 5 ? 1 : 0);
+            check(!hands.hands() && length(hands.move()) == 0, "invalid vent hold survived");
+        }
+    });
+    test("vent camera stays low on floor and never enters wall running for any stick direction", [] {
+        for (const Vec3 n : {Vec3{0, 1, 0}, Vec3{0, 0, 1}, Vec3{0, -1, 0}}) {
+            GameTrackingRig rig;
+            rig.handClimb(true);
+            auto frame = trackedFrame();
+            for (auto& h : frame.hands) h.squeeze = 0;
+            const Vec3 feet{10, 20, 30};
+            const SurfaceHold hold{n, feet, 0, true, true};
+            holdFor(rig, frame, feet, {}, .3f);
+            auto view = holdFor(rig, frame, feet, hold, 1, n);
+            check(view.ventCrawl && !view.standing, "vent did not use climbing view");
+            near(dot(view.headPose.position - feet, n), .4f, .02f);
+            const Quat before = view.headPose.orientation;
+            for (const Vec3 stick : {Vec3{0, 0, 1}, Vec3{0, 0, -1}, Vec3{1, 0, 0}, Vec3{-1, 0, 0}}) {
+                frame.hands[0].stickX = stick.x;
+                frame.hands[0].stickY = stick.z;
+                view = holdFor(rig, frame, feet, hold, .3f, n);
+                check(!view.standing && view.ventCrawl, "stick switched vent into running view");
+                near(length(view.headPose.orientation.rotate({0, 0, -1}) - before.rotate({0, 0, -1})), 0);
+            }
+        }
+    });
+    test("vent floor roll follows the wrists and locks on release while head pitch stays independent", [] {
+        GameTrackingRig rig;
+        rig.handClimb(true);
+        auto f = trackedFrame();
+        for (auto& h : f.hands) h.squeeze = 0;
+        const SurfaceHold vent{{0, 1, 0}, {}, 0, true, true};
+        holdFor(rig, f, {}, {}, .3f);
+        holdFor(rig, f, {}, vent, .7f);
+        for (auto& h : f.hands) h.squeeze = 1;
+        holdFor(rig, f, {}, vent, .1f);
+        for (auto& h : f.hands) h.grip.orientation = Quat::around({0, 0, -1}, .6f);
+        auto view = holdFor(rig, f, {}, vent, .8f);
+        check(std::abs(view.wallRoll) > .5f && view.wallRotate, "vent floor wrist roll failed");
+        const float locked = view.wallRoll;
+        f.hands[0].squeeze = 0;
+        view = holdFor(rig, f, {}, vent, .2f);
+        near(view.wallRoll, locked);
+        check(!view.wallRotate, "one grip release did not lock roll");
+        f.head.orientation = Quat::around({1, 0, 0}, .7f);
+        view = holdFor(rig, f, {}, vent, .3f);
+        near(view.wallRoll, locked);
+        near(view.headPose.position.y, .4f, .02f);
+        check(!view.standing, "head pitch switched the vent view");
+    });
+    test("vent crawl exits restore outdoor wall-run transitions and normal floor camera", [] {
+        GameTrackingRig rig;
+        rig.handClimb(true);
+        auto f = trackedFrame();
+        for (auto& h : f.hands) h.squeeze = 0;
+        holdFor(rig, f, {}, {}, .3f);
+        const SurfaceHold vent{{0, 1, 0}, {}, 0, true, true};
+        auto view = holdFor(rig, f, {}, vent, .7f);
+        near(view.headPose.position.y, .4f, .02f);
+        view = holdFor(rig, f, {}, {}, 1);
+        check(!view.ventCrawl && !view.standing, "floor retained vent mode");
+        near(view.headPose.position.y, 1.7f, .02f);
+        f.hands[0].stickY = 1;
+        const SurfaceHold wall{{0, 0, 1}, {0, 0, -1}, 0, false};
+        view = holdFor(rig, f, {}, wall, 1);
+        check(view.standing && !view.ventCrawl, "outdoor wall running was disabled");
+    });
+    test("slow vent hand pulls reach native pad axes and expire safely", [] {
+        for (const Vec3 n : {Vec3{0, 1, 0}, Vec3{0, 0, 1}, Vec3{0, -1, 0}}) {
+            GameTrackingRig rig;
+            rig.handClimb(true);
+            auto f = trackedFrame();
+            for (auto& h : f.hands) h.squeeze = 0;
+            const SurfaceHold hold{n, {}, 0, true, true};
+            holdFor(rig, f, {}, {}, .3f);
+            const auto view = holdFor(rig, f, {}, hold, 1, n);
+            game_swing::ClimbData d;
+            d.status = d.crawl = d.hands = 1;
+            d.sampleTimeNs = 1'000'000'000;
+            d.crawlMove = view.walkForwardAxis * .08f; // 21 cm/s pull
+            const Vec3 pull = game_swing::crawlPull(d, view.ventCrawl, d.sampleTimeNs + 10'000'000);
+            const Vec3 stick = game_swing::crawlStick(pull, view.walkForwardAxis, view.walkRightAxis);
+            game_pad::Walk walk;
+            walk.right = stick.x; walk.forward = stick.z;
+            const auto pad = game_pad::fromControllers(f, game_pad::Mapping::gameplay, walk);
+            check(pad.thumbLY > 7849 && pad.rightTrigger == 0, "slow pull hit dead zone or started running");
+            near(static_cast<float>(pad.thumbLX), 0, 1);
+            near(length(game_swing::crawlPull(d, true, d.sampleTimeNs + 100'000'001)), 0);
+            near(length(game_swing::crawlPull(d, false, d.sampleTimeNs)), 0);
+            near(length(game_swing::crawlStick({}, view.walkForwardAxis, view.walkRightAxis)), 0);
+        }
     });
     test("hand climbing: either grip pulls up, sideways and down without firing webs", [] {
         constexpr float dt = 1.f / 60;
