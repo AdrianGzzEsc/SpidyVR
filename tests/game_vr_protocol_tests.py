@@ -12,7 +12,8 @@ from probe_stereo_gpu import snapshot as gpu_snapshot, save_eye_images
 from run_game_vr import (snapshot as xr_snapshot, accepted as accepted_xr, timing_snapshot, frame_rates,
                          appearance_snapshot, eye_snapshot, save_eye_snapshot, rgb_rows, crop_origin,
                          game_memory, keep_game_log, body_snapshot,
-                         punch_snapshot, strike_snapshot, shooter_snapshot, rope_snapshot, start_settings,
+                         punch_snapshot, strike_snapshot, focus_snapshot, shooter_snapshot, rope_snapshot,
+                         start_settings,
                          settings_line,
                          SETTINGS_LINE,
                          scaled_eye_size, rendering_line, eye_render_size, eye_reflections, XR_STAGES,
@@ -329,6 +330,20 @@ class ProtocolTests(unittest.TestCase):
         torn = bytearray(raw)
         struct.pack_into('<q', torn, 16, 9)
         self.assertIsNone(strike_snapshot(Reader(*([torn, struct.pack('<q', 9)]*8)), 0))
+
+    def test_focus_decodes_the_blows_that_asked_the_ones_given_and_the_meter(self):
+        raw = bytearray(56)
+        struct.pack_into('<4Iq', raw, 0, 0x53464344, 1, 56, 2, 6)
+        # Eleven blows asked for the game's Focus, nine were given, two found no meter; the meter at 1.5 of 3.
+        struct.pack_into('<3Q2f', raw, 24, 11, 9, 2, 1.5, 3)
+        self.assertEqual(focus_snapshot(Reader(raw, struct.pack('<q', 6)), 0),
+                         dict(status='running', asked=11, given=9, missed=2, now=1.5, most=3))
+        # Another build of the game: the module checked it and gives nothing.
+        struct.pack_into('<I', raw, 12, 3)
+        self.assertEqual(focus_snapshot(Reader(raw, struct.pack('<q', 6)), 0)['status'], 'another build')
+        torn = bytearray(raw)
+        struct.pack_into('<q', torn, 16, 7)
+        self.assertIsNone(focus_snapshot(Reader(*([torn, struct.pack('<q', 7)]*8)), 0))
 
     def test_spider_sense_decodes_the_warnings_the_counters_and_the_census(self):
         raw = bytearray(632)
@@ -1131,7 +1146,7 @@ class ProtocolTests(unittest.TestCase):
                                      (appearance_snapshot,0x53415044,360),(eye_snapshot,0x53455353,112),
                                      (grab_snapshot,0x53475244,368),(body_snapshot,0x53424453,144),
                                      (punch_snapshot,0x53505544,168),(shooter_snapshot,0x53484f44,296),
-                                     (strike_snapshot,0x53535452,328)):
+                                     (strike_snapshot,0x53535452,328),(focus_snapshot,0x53464344,56)):
             raw = bytearray(size)
             struct.pack_into('<4IQ', raw, 0, magic, 99, size, 2, 4)
             with self.assertRaisesRegex(RuntimeError, 'protocol mismatch'):
@@ -1439,15 +1454,28 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual((prompts['beyond_play'], prompts['keyboard_texts']), (5, 2))
         self.assertEqual((prompts['context_presses'], prompts['pad_entries']), (4, 1))
         self.assertTrue(prompts['pad_layer'])
-        # Both bumpers together is a control VR play has: the log says so plainly.
+        # Both bumpers together is a control VR play has; named, each trigger sends its own.
         self.assertTrue(reachable_in_play(pull))
-        self.assertIn('The game is asking for LB + RB (hold)', prompts_line(pull))
-        self.assertNotIn('no button of its own', prompts_line(pull))
-        # The game's X alone, and each bumper alone, are what play never had.
-        for word, name in ((0x4000, 'X'), (0x100, 'LB'), (1 << 16, 'LT'), (0x1, 'D-pad up'), (0x40, 'L3')):
+        self.assertIn('The game is asking for LB + RB (hold) - in VR: the left trigger + the right trigger, held.',
+                      prompts_line(pull))
+        # The game's X alone, and each bumper alone, are what play never had on its own: the log names the
+        # control that sends each while the game names it (game_pad::NamedPress), not the interact button.
+        for word, name, control in ((0x4000, 'X', 'X'), (0x100, 'LB', 'the left trigger'),
+                                    (1 << 16, 'LT', 'the left trigger'), (0x1, 'D-pad up', 'the right stick pushed up'),
+                                    (0x40, 'L3', 'a click of the left stick')):
             self.assertEqual(demand_name(word), name)
             self.assertFalse(reachable_in_play(word))
-            self.assertIn('no button of its own', prompts_line(word))
+            self.assertIn(f'The game is asking for {name} - in VR: {control}.', prompts_line(word))
+            self.assertNotIn('interact button', prompts_line(word))
+        # The leaks' line: LT held and RB, each trigger its own. The game's camera out (prompt_buttons::cameraDemand:
+        # D-pad up, RB, LT): the stick up puts it away, the right trigger shoots, the left aims.
+        self.assertIn('in VR: the right trigger + the left trigger', prompts_line(0x200 | 1 << 16))
+        self.assertIn('The game is asking for D-pad up + RB + LT - in VR: the right stick pushed up + the right '
+                      'trigger + the left trigger.', prompts_line(0x1 | 0x200 | 1 << 16))
+        # The right stick turns the player in VR play: the log sends that moment to the game screen.
+        self.assertIn('SWITCH TO GAME SCREEN', prompts_line(1 << 23))
+        self.assertNotIn('in VR:', prompts_line(1 << 23))
+        self.assertIn('press something on the controllers', prompts_line(1 << 29))
         # A vent's LT and RT together, and a stick-motion QTE.
         self.assertEqual(demand_name(3 << 16), 'LT + RT')
         self.assertTrue(reachable_in_play(3 << 16))

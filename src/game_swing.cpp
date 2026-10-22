@@ -1,6 +1,7 @@
 // Swing prediction runs inside a native world-query lease. MoverStandard remains
 // responsible for body collision and committing the resulting position.
 #include "spidy/game_swing.hpp"
+#include "spidy/game_focus.hpp"
 #include "spidy/game_grab.hpp"
 #include "spidy/game_offers.hpp"
 #include "spidy/game_punch.hpp"
@@ -861,6 +862,9 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingStart(void* input) {
         // game's thread. Without them the swing keeps the wall itself.
         if (!game_warp::start(config.base))
             game_warp::target(config.record);
+        // The game's Focus for the punches' and the web's blows (game_focus):
+        // without it they earn none, as before.
+        game_focus::start(config.base);
         // The game's own interactions where the swing's wall holds the
         // player (game_offers): without them that wall offers nothing.
         game_offers::start(config.base);
@@ -1106,6 +1110,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingStop(void*) {
     // Punches started the main-thread damage hook when the grab did not.
     game_punch::stop();
     game_shooter::stop();
+    game_focus::stop();
     native_bodies::stop();
     game_offers::stop();
     ReleaseSRWLockExclusive(&simulation);

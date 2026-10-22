@@ -537,8 +537,13 @@ a web held in both hands.
 **Hand wall climbing** (HAND WALL CLIMBING, experimental and off by default;
 Adrian's pull request 24). `Swing::allowHandClimb` (the swing's settings
 version 8, `handClimb`). On the swing's own wall, with the stick at rest, a
-hand squeezed within 18 cm of the wall holds it where a ray from 35 cm out,
-back along the wall's normal, finds fixed geometry (`Swing::wallContact`);
+hand squeezed within 18 cm of the wall and pointed at it - its aim meets the
+wall within `SwingConfig::gripAim` (0.5 m) of the palm (`pointsAtWall`) -
+holds it where a ray from 35 cm out, back along the wall's normal, finds
+fixed geometry (`Swing::wallContact`); a squeeze pointed away from the wall
+or along it shoots its web, from at least `shotOutOfWall` (15 cm) out of the
+wall (`Swing::shot`), since the web shooter on the forearm is inside the
+wall when the palm is at it;
 the body then moves by that hand's motion relative to the head, turned into
 the world and flattened onto the wall, two hands averaged, at most 3 m/s
 (`climbInputs`, `wallMotion`). A held hand shoots no web and grabs nothing
@@ -550,9 +555,10 @@ version 5 carries each grip's place and the controller's own squeeze
 which hands hold, for open palms (`HandPoseInput::wallContact`). The view:
 `GameTrackingRig::handClimb` keeps it upright beside the wall, the head
 lowered up to 0.7 m and `wallDistance` (WALL CAMERA DISTANCE, at least
-`HeadClearance::margin`) out from it; both grips roll it about the view's
-axis (`WallRollGesture`: 10 degrees of play, full speed, 90 degrees a second,
-from 45); the stick runs along the wall with the heading taken once and then
+`HeadClearance::margin`) out from it; both grips, while both hands hold the
+wall (`GameTrackingRig::wallHands`, from `ClimbData::hands`), roll it about
+the view's axis (`WallRollGesture`: 10 degrees of play, full speed, 90
+degrees a second, from 45); the stick runs along the wall with the heading taken once and then
 steered by the head's yaw only (`wallRunHeadYaw`); round an outside corner
 the view turns onto the next face at 4 radians a second and the swing carries
 the body 0.85 m on along it. Head clearance casts 0.75 m further and takes up
@@ -1494,6 +1500,16 @@ request ids (each listed twice, a single frame's too), a second's resolution;
 its legacy socket (`ws://127.0.0.1:15881/v2/feedbacks`) reports connected
 devices but not the SDK's dots, and `isPlayingByRequestId` stuck on after some
 streams, so none of them tells what a motor does.
+
+**bHaptics' notes** (October 22, their haptics team, after playing it; they
+singled out the web traversal, the wind, Spider-Sense and the hard landings as
+working). Six changes, each in the core tests: a landing under 0.4 (a jump: the
+game's comes down at about 9.4 m/s, 0.34) plays the vest's bottom row alone,
+the rows above and the arms coming in up to 0.6; a charged leap's charging 30%
+gentler; the heart a row higher; the player's attacks (heavy blows, finishers,
+a web strike's rush, knockouts, counters) on the shoulders' two rows; a dodge
+20% lighter (a perfect dodge as it was); a grab's pull also in its shoulder, at
+40% of the arm's.
 
 **The bHaptics app.** The Player knows an app by the workspace ID and API key
 of an app on the [bHaptics Developer Portal](https://developer.bhaptics.com):

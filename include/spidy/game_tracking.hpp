@@ -331,6 +331,14 @@ class GameTrackingRig {
         if (!on)
             wallRoll_.reset();
     }
+    // Which hands hold the wall, as the swing last had them (bit 0 the left;
+    // game_swing::ClimbData): the wall roll turns the view only while both
+    // do. Two grips held otherwise are webs, and the roll took both of them,
+    // the second web's press and the first web with it (October 22). Zero
+    // until set; reset() clears it.
+    void wallHands(unsigned hands) {
+        wallHands_ = hands;
+    }
     void wallDistance(float metres) {
         wallDistance_ = std::isfinite(metres) ? std::clamp(metres, HeadClearance::margin, 1.f) : .4f;
     }
@@ -369,6 +377,7 @@ class GameTrackingRig {
     Vec3 surfaceShift_{};
     bool standing_{}, standOnWalls_ = true;
     bool handClimb_{};
+    unsigned wallHands_{};
     float wallDistance_ = .4f;
     WallRollGesture wallRoll_;
     Vec3 climbNormal_{}, runNormal_{}, runAhead_{};

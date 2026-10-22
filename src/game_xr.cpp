@@ -767,11 +767,12 @@ DWORD WINAPI run(void*) {
         game_pad::NamedPress namedPress;
         game_pad::State namedPad{};
         bool namedFists{}, fistsBlows{};
-        uint32_t namedPressesBefore{};
+        uint32_t namedPressesBefore{}, slamsBefore{};
         // The gadget wheel (X held; gadget_wheel.hpp): the player's gadgets
         // as the shooter last listed them, whether the free hand's trigger
-        // fires the equipped one (off: the web shooter's ball, as before the
-        // wheel), and a tap of X let go of, the game menu, held this long.
+        // fires the equipped one (off: web balls, the game's own Web Shooter's
+        // while it is the one equipped: game_shooter.hpp), and a tap of X let
+        // go of, the game menu, held this long.
         GadgetWheel gadgetWheel;
         game_shooter::Data listed{};
         bool gadgetFire{};
@@ -803,6 +804,10 @@ DWORD WINAPI run(void*) {
         PhoneView phoneShown;
         bool phoneBlows{};
         float menuTap{};
+        // The phone's CAMERA: the game's D-pad up, which takes its camera out
+        // (and puts it away again), sent this long.
+        constexpr float cameraTapSeconds = .2f;
+        float cameraTap{};
         // The game played on its screen (VIEW: GAME SCREEN): Back and the
         // D-pad, which the VR controllers lack, besides the Xbox controller's.
         game_pad::ScreenControls screenControls;
@@ -1381,6 +1386,9 @@ DWORD WINAPI run(void*) {
                         case PhoneAction::autoplay:
                             phoneMusic.setAutoplay(!phoneMusic.status().autoplay);
                             break;
+                        case PhoneAction::camera:
+                            cameraTap = cameraTapSeconds;
+                            break;
                         case PhoneAction::none:
                         case PhoneAction::close:
                             break;
@@ -1390,6 +1398,9 @@ DWORD WINAPI run(void*) {
                         if (use.action == PhoneAction::close) {
                             runtime.haptic(1, .15f);
                             message(3, 0, "Phone away - each control is the game's again once let go of");
+                        } else if (use.action == PhoneAction::camera) {
+                            message(3, 0, "The game's camera - left trigger aims, right trigger takes the photo, "
+                                          "right stick up puts it away");
                         }
                     }
                     uint64_t changes{};
@@ -1509,6 +1520,7 @@ DWORD WINAPI run(void*) {
                         named.stickX = frame.hands[1].stickX;
                         named.stickY = frame.hands[1].stickY;
                         named.airborne = game_swing::airborne(swingState, now.QuadPart, frequency.QuadPart);
+                        named.slams = !values.realisticFlips;
                         const bool namedPlay =
                             gesturesPlay && !padLayer.latched() && !phone.open() && !gadgetWheel.open();
                         namedPad = namedPress.update(frame.seconds, namedPlay, named, asked);
@@ -1699,6 +1711,7 @@ DWORD WINAPI run(void*) {
                             flight.ropeLength = ropes / static_cast<float>(attached);
                     }
                     rig.flight(flight);
+                    rig.wallHands(climbState.status ? climbState.hands : 0u);
                     motion = rig.update(controller, feet, {camera[8], camera[9], camera[10]}, gameplay,
                                         swingState.owned ? Vec3{0, 1, 0} : heroUp,
                                         game_swing::airborne(swingState, now.QuadPart, frequency.QuadPart), hold,
@@ -2915,16 +2928,27 @@ DWORD WINAPI run(void*) {
                         }
                         if (namedPress.presses() != namedPressesBefore) {
                             namedPressesBefore = namedPress.presses();
+                            const bool slam = namedPress.slams() != slamsBefore;
+                            slamsBefore = namedPress.slams();
                             char line[96];
                             sprintf_s(line, "the player's press of a button the game names -> 0x%04x%s%s%s",
                                       namedPad.buttons, namedPad.leftTrigger ? " LT" : "",
                                       namedPad.rightTrigger ? " RT" : "",
-                                      named & game_pad::NamedPress::fist ? ", a thrown fist" : "");
+                                      slam ? ", both fists slammed down"
+                                      : named & game_pad::NamedPress::fist ? ", a thrown fist"
+                                                                           : "");
                             game_prompts::note(line);
                         }
                         if (menuTap > 0) {
                             pad.buttons |= game_pad::back;
                             menuTap -= std::isfinite(frame.seconds) ? std::clamp(frame.seconds, 0.f, .1f) : .1f;
+                        }
+                        // The phone's CAMERA, as its own D-pad up would: the
+                        // game's camera out (its overlay up, the triggers then
+                        // its aim and shutter: prompt_buttons::cameraDemand).
+                        if (cameraTap > 0) {
+                            pad.buttons |= game_pad::dpadUp;
+                            cameraTap -= std::isfinite(frame.seconds) ? std::clamp(frame.seconds, 0.f, .1f) : .1f;
                         }
                         screenControls.apply(frame.seconds,
                                              flatScreen && motion.active && mapping == game_pad::Mapping::menus,

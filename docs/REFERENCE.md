@@ -313,6 +313,32 @@ consumes the charges itself for the usual fire modes. Spidy's game_shooter
 reads the gadget list (Data v3); equipping and firing from the hand wait for
 a run in the game.
 
+The game's Web Shooter from the hand (October 22, `tools/probe_gadgets.py
+--only-web-shooter`, free roam on your save): with it equipped (slot 0 the
+weapon no wheel item names, 40076 there), 12 pulls fired 10 of its own shots
+and, its 10 charges spent, 2 of the built-in web shooter's balls; the game's
+HUD showed its Web Shooter. The game's camera, with the virtual pad in free
+roam: D-pad up equips a weapon of its own in slot 0 (40079 there, owned, on
+no wheel item) and the UI calls `ShowCameraOverlay()` (name literal
+`0x3894818`) and `CameraRefresh(-1, 'No Subject In View', ...)`
+(`0x38948a8`); LT held raises the first-person viewfinder (`SetReticle`,
+`ShowReticle`); RB takes the photo (the frame flashes white), RT takes none;
+D-pad up again gives slot 0 back to the gadget before and calls
+`HideCameraOverlay()` (`0x3894830`). A load's `ShowLoadingIcon` is at
+`0x4f44a68`, `ForceHUDShutdown` at `0x38946c8`.
+
+The game's Focus (October 22, read from the exe with capstone, then
+measured with `tools/probe_focus.py`):
+
+| Fact | RVA | Verification |
+|---|---:|---|
+| `Hero::HeroSpiderAssaultManager`, the Focus meter: segments of {current, most} floats from +0x110, their count at +0x128, the segment filling at +0x12c | vtable `0x38b3f10` (slot 0 its event setup `0x960a60`), component type `0x6dd79c0` | 47 of the type's 52 code references are component lookups; on your save 3 segments, most 300 |
+| Its events: DamageDealtEvent `0x962a00`, DamageEvent, HealthChangedEvent, HeroSpiderAssaultAddEnergyEvent (an amount at +0x138), HeroCombatActionEvent `0x963aa0` (dodges by action bits), HeroWebYankToHeroEvent, HeroTimedImpactEvent, TargetWebbedEvent, TargetElectrifiedEvent, Bot{Ground,Wall}StuckEvent | registered in `0x960a60` through `0x1676070` | Event classes by their factories' vtables (RTTI) |
+| AddEnergy (manager, amount, flags); energy for a kind (manager, kind, flags); both (`961e90`) | `0x961890`, `0x962210`, `0x961e90` | `0x962210` switches on the kind (jump table `0x962570`) to the config's float from +0x90 |
+| Energy kinds (enum names at `0x5ee1400`): 0 kNone, 1 kMeleeDefault, 2 kMeleeAir, 3 kStealthKill, 4 kDodgeAccurate, 5 kDodgePerfect, 6 kOtherDamage, 7 kElectricWeb, 8 kImpactWeb, 9 kWebBombShot, 10 kProximityMine, 11 kWebBlast, 12 kAirLauncher, 13 kShockerBlast, 14 kSpiderDroneShot, 15 kYankBot, 16 kYankBotIntoAirBonus, 17 kThrowBot, 18 kThrowObject, 19 kThrowObjectIntoBot, 20 kYankEnviro, 21 kYankEnviroOnBot, 22 kBotFlungIntoBot, 23 kElectrified, 24 kWebStunned, 25 kWebbedToGround, 26 kWebbedToWall, 27 kJustFrameHit, 28 kWingedStriker, 29 kAirTrick | | kOtherDamage has no case: 0. Measured on your save: kMeleeDefault 1.25, kMeleeAir 4, kYankBot 4 |
+| DamageDealtEvent's fields: the request's own at their offsets (DamageHash +0x19c, amount +0x144, victim handle +0x1a8), and a list of named custom data an attack attaches (count +0x188; an entry's name hash +0x28, data +0x30, size +0x38), read by name hash | `0x1ed2620` | Spidy's requests carry none, and fall to kOtherDamage |
+| `Hero::HeroComboCounter`: its events in `0x918db0`; dealt damage `0x9197b0`, damage taken `0x9197f0` (resets), combat actions `0x919850`; add a hit (counter, victim): count +0x58, live +0x60, the game's benchmarks at 25 and 35; its tier (+0x68) scales Focus in AddEnergy (`0x919700`) | vtable `0x38b22b8`, `0x919450` | Read, not run |
+
 ## OpenXR
 
 Dependency: [Khronos OpenXR SDK 1.1.49](https://github.com/KhronosGroup/OpenXR-SDK/tree/977f6675bc0057d5a54ed290cb5c71c699b1c0ab),

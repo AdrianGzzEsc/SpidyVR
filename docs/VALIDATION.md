@@ -1,6 +1,55 @@
-# Validation — 2026-10-21
+# Validation — 2026-10-22
 
-## Every SPIDY VR setting in the launcher (latest build)
+## Webs off a wall with hand wall climbing on (latest build)
+
+The user: "webbing from a wall with current settings doesnt work, i need to
+jump down to do it". `src/swing.cpp` (`inputs`: a web off the wall;
+`pointsAtWall`, `wallHand`, `shot`), `include/spidy/swing.hpp`
+(`SwingConfig::gripAim`), `include/spidy/game_tracking.hpp` and
+`src/game_tracking.cpp` (`wallHands`, the roll), `src/game_xr.cpp`.
+
+| | |
+| --- | --- |
+| Read | The user's session game-vr-20261022-174832 (0.4.1 + the Oct 22 work; physical webs, `hand_climb=1`, 40 cm). Swing samples: webs attached on the wall at rest, 83.95-88.80 s (six) and 617.99-630.59 s (three), position unchanged, tension at most 0.0001 and 2.3, zips unchanged; each rest ended in a wall jump (velocity 6 out, 4.6-4.9 up). 18 attaches on walls in all, 12 of 18 wall stretches over 0.4 s attached none, 0 misses on a wall; haptics `wall_grip` 17. XR samples (hand rows: x, the turned -y, the turned -z = forward): head 0.40 m off the wall; palms within 18 cm of it aimed 10-66 degrees into it along the web shooter (`aim * (0, -0.5, -0.866)`), except 617.99-646 s left palm 0.15-0.18 m off aimed 5-18 degrees away and down. Grips are not in the report |
+| Build | `tools/build.ps1 -Observer`: ctest 3/3, 434 core tests (new: a web out from a wall at rest swings the body off it, one up the wall keeps it there; squeezes at the wall away, up, along and a hair into it shoot webs, three reaches into it hold; a shot from a web shooter inside a two-sided wall leaves it; two grips roll the view only with both hands holding), the six Python suites |
+| Not run | The game and a headset: the swing off a wall's feel, how far into the wall players point a real reach, whether 0.5 m catches every hold |
+
+## Spidy's blows fill the game's Focus (the build before)
+
+The user: "also check our combat is filling up focus for healing".
+`src/game_focus.cpp`, `include/spidy/game_focus.hpp`, the blows in
+`src/game_punch.cpp` (`land`) and `src/game_grab.cpp` (yank, throw, struck),
+the main-thread frame in `src/game_shooter.cpp`, `tools/run_game_vr.py`
+(`focus_snapshot`), `tools/probe_focus.py`.
+
+| | |
+| --- | --- |
+| Read | Spider-Man.exe with capstone: the meter's class and component type, its event handlers, the energy per kind and the enum's values; DamageDealtEvent's handler files a request with no attack data and no known DamageHash under kOtherDamage (6), which `0x962210` leaves at 0 |
+| Build | `tools/build.ps1 -Observer`: no warnings, ctest 3/3, 430 core tests, the six Python suites (a Focus reader test: decode, another build, a torn read; the reader's refusal of another version) |
+| In the game | Your save, free roam on a roof, no headset, `probe_focus.py`: meter 0 of 300; kOtherDamage twice, 0 and 0; kMeleeDefault six times, 1.25 each to 7.5; kMeleeAir +4, kYankBot +4, to 15.5; 10 asked, 10 given, 0 missed; hooks restored, stops 0 |
+| Saves | 18 byte-identical, `-userprefs.save` rewritten by the load |
+| Not run | Blows on a real thug; the HUD's bar in a fight; the game's combo counter (Spidy's blows still do not raise its tier, read from the code) |
+
+## hantop's research stations (October 22, second)
+
+hantop's list in #mod-chat (eight research stations in Harlem) and his session
+report of October 22 on 0.4.1. `src/game_shooter.cpp` (`gameWebShooter`),
+`src/game_prompts.cpp` (census, any call's text, the camera's overlay),
+`include/spidy/prompt_buttons.hpp` (`LiveDemands::other`, `stand`,
+`cameraDemand`), `include/spidy/game_pad.hpp` (`NamedPress`'s slam),
+`src/phone.cpp` (CAMERA), `src/game_xr.cpp`, `tools/run_game_vr.py`
+(`prompts_line`).
+
+| | |
+| --- | --- |
+| Build | `tools/build.ps1 -Observer`: no warnings, ctest 3/3, 430 core tests, the six Python suites. |
+| His report | 723 web balls, 718 collisions, `webbed` 0; about 190 of them struck the same three actors in two bursts (641-671 s, 1050-1070 s). The equipped weapon was 40070 (the game's Web Shooter, no wheel item) in 1099 of 1125 shooter samples, 40078 in 25 (413-448 s). Prompts: 13 texts named buttons, the census full (48 names), no ask of LT + RB, D-pad up or X + A; the pad layer never entered. |
+| In the game, first run | Your save, CONTINUE, free roam on a roof, no headset. `probe_prompt_load.py --seconds 45`: the game lived through CONTINUE and 45 s of free roam with the new census. `probe_gadgets.py --only-web-shooter`: 12 pulls, 12 fired, 10 the game's Web Shooter's own (its 10 charges), 2 balls, 0 dropped; the HUD showed its Web Shooter; hooks restored. Virtual pad: D-pad up equipped weapon 40079 (`ShowCameraOverlay()`, `CameraRefresh(-1, 'No Subject In View', ...)`), LT held the viewfinder, RB the photo (a white flash), RT nothing, D-pad up again 40076 (`HideCameraOverlay()`). |
+| In the game, second run | The rebuilt module, reading on: the live demand 0 before, `0x10201` (LT, RB, D-pad up) with the camera out, 0 once D-pad up put it away; the timeline has both overlay calls. |
+| Saves | 19 files backed up before; after both runs 18 byte-identical, `-userprefs.save` rewritten by the load as always. |
+| Not run | A headset session: the phone's CAMERA, the camera's triggers and the slam in VR play; a station's leak or vent sealed by the Web Shooter's shot. |
+
+## Every SPIDY VR setting in the launcher (October 21, third)
 
 The user: "why doesnt the new launcher include all the realstic flips stuff?",
 then "yeah lets add all". `apps/launcher/ui.cpp` (`options()`: `tabCombo`,

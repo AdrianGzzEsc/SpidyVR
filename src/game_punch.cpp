@@ -2,6 +2,7 @@
 // target watch, blows as the game's own damage; and fighting across the
 // room, the web strike and the flow (game_punch.hpp).
 #include "spidy/game_punch.hpp"
+#include "spidy/game_focus.hpp"
 #include "spidy/game_grab.hpp"
 #include "spidy/game_sense.hpp"
 #include "spidy/game_targets.hpp"
@@ -458,7 +459,11 @@ void land(PunchEvent e, bool byStrike) {
         request.knockback = static_cast<int32_t>(d.knockback);
         request.knockbackAmount = 2 + 6 * e.strength;
     }
-    native_bodies::damage(request);
+    // The Focus the game's own blow earns, in the air its air blow's: the
+    // request alone earns none (game_focus.hpp).
+    if (native_bodies::damage(request))
+        game_focus::earn(fighter.record,
+                         fighter.grounded ? game_focus::Kind::meleeDefault : game_focus::Kind::meleeAir);
     if (d.fly && machine) {
         const auto waiting = std::find_if(launches.begin(), launches.end(),
                                           [&](const Launch& l) { return l.record == e.target; });

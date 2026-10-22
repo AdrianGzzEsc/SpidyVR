@@ -75,7 +75,9 @@ struct SwingConfig {
     // second, and below the walk's speed the body stops and stays.
     float wallCarry = .35f, wallWalkSpeed = 6, wallAcceleration = 24, wallBrake = 3;
     // A jump leaves the wall: out from it and up, on top of the speed along
-    // it; no wall takes the body again within wallJumpPause.
+    // it; no wall takes the body again within wallJumpPause. Nor after a web
+    // shot from the wall takes the body off it (one whose end is further out
+    // than the body).
     float wallJumpOut = 6, wallJumpUp = 5, wallJumpPause = .3f;
     // A wall the ray misses for wallGrace is gone (a recess, the wall's end).
     // Lost while the body went up it, the body hops over its top edge and is
@@ -92,6 +94,14 @@ struct SwingConfig {
     // above the body too. In the air the stick takes a wall within mountReach
     // the same way, with no speed into it.
     float mountReach = 1.3f, mountSeconds = .1f, mountHold = .5f, mountHeight = 1.2f;
+    // Hand climbing (Swing::allowHandClimb): a squeeze with the palm at the
+    // wall holds it only where the hand points at the wall - its aim meets
+    // the wall's face within gripAim of the palm, where a web it shot would
+    // end too near the body to hold it. One that points up the wall, along
+    // it or away from it shoots its web, as anywhere else. Until October 22
+    // every squeeze that near held the wall, and the climbing view keeps the
+    // eyes 40 cm off it, so a hand raised to web up the wall was that near.
+    float gripAim = .5f;
     // A standing body the stick walks at a wall mounts it: the game's jump,
     // then the swing's wall (mountWall). On by default since October 15, the
     // player: "use our locomotion system only and override the games state to
@@ -416,7 +426,8 @@ class Swing {
         if (!on)
             climbing_ = {};
     }
-    // A near-wall squeeze belongs to climbing before other actions.
+    // A near-wall squeeze that points at the wall (SwingConfig::gripAim)
+    // belongs to climbing before other actions.
     bool wallHand(int hand, const Input&, const WorldQueries&) const;
     unsigned climbingHands() const {
         return (climbing_[0].attached ? 1u : 0u) | (climbing_[1].attached ? 2u : 0u);
@@ -557,8 +568,11 @@ class Swing {
     float climbSeconds_{};
     void climbInputs(const Input&, const WorldQueries&);
     std::optional<RayHit> wallContact(const HandInput&, const WorldQueries&) const;
-    // Time the wall's ray has missed, time since a wall jump, and what is
-    // left of the push over a wall's top edge, against crestNormal_.
+    // The hand's aim meets the wall the body is on within gripAim of its palm.
+    bool pointsAtWall(const HandInput&) const;
+    // Time the wall's ray has missed, time since a wall jump (or a web took
+    // the body off its wall), and what is left of the push over a wall's top
+    // edge, against crestNormal_.
     float wallLost_{}, sinceWallJump_ = 100, crest_{};
     // Whether a wall the body comes into is taken (takeNewWalls). The wall it
     // is already on is kept either way, corners of that wall included.

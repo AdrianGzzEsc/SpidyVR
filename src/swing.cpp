@@ -8,6 +8,13 @@ namespace {
 // millimetre at game world coordinates; an exact comparison let rounding
 // choose which of two ropes acted on the velocity in a step.
 constexpr float nearlyTaut = .005f;
+// A web shot from a hand on the wall the body is on starts at least this far
+// out of the wall's face. The web shooter sits on the forearm, 10 cm behind
+// the grip, and with the eyes 40 cm off the wall (hand climbing's view) a
+// shot aimed away from the wall from a palm at it begins inside the wall: the
+// game's rays meet a face from behind too, so it would meet the wall it left,
+// too near the body for a web.
+constexpr float shotOutOfWall = .15f;
 Vec3 projectBall(Vec3 p, Vec3 center, float radius) {
     return center + limited(p - center, radius);
 }
@@ -54,7 +61,7 @@ Swing::Swing(SwingConfig c) : config_(c) {
         c.anchorClearance,  c.wallStep,        c.wallCarry,       c.wallWalkSpeed,   c.wallAcceleration,   c.wallBrake,
         c.wallJumpOut,      c.wallJumpUp,      c.wallJumpPause,   c.wallGrace,          c.crestSeconds,
         c.crestPush,        c.crestHop,        c.strandReach,     c.handSlack,          c.groundClearance,
-        c.groundTurn,       c.arcadeClearance};
+        c.groundTurn,       c.arcadeClearance, c.gripAim};
     for (float v : nonnegative)
         if (!std::isfinite(v) || v < 0)
             throw std::invalid_argument("Invalid swing configuration");
@@ -591,7 +598,16 @@ bool Swing::wallHand(int i, const Input& in, const WorldQueries& world) const {
         return false;
     if (climbing_[i].attached)
         return true;
-    return wallContact(h, world).has_value();
+    return pointsAtWall(h) && wallContact(h, world).has_value();
+}
+bool Swing::pointsAtWall(const HandInput& hand) const {
+    const Vec3 forward = normalized(hand.aim.orientation.rotate({0, 0, -1}));
+    const float into = -dot(forward, wall_.normal);
+    if (!finite(forward) || !(into > 0))
+        return false;
+    // Along its aim from the palm to the wall's face; none from a palm in it.
+    const float out = std::max(0.f, dot(hand.wallPosition - wall_.point, wall_.normal));
+    return out <= config_.gripAim * into;
 }
 void Swing::climbInputs(const Input& in, const WorldQueries& world) {
     for (int i = 0; i < 2; ++i) {
@@ -823,6 +839,12 @@ WebShot Swing::shot(Pose aim, Vec3 from, const WorldQueries& world) const {
     const Vec3 forward = aim.orientation.rotate({0, 0, -1});
     if (!finite(aim.position) || !finite(from) || !finite(forward) || length(forward) < .9f || length(forward) > 1.1f)
         return out;
+    if (wall_.on) {
+        // Out of the wall the body is on (shotOutOfWall).
+        const float depth = dot(aim.position - wall_.point, wall_.normal);
+        if (depth < shotOutOfWall)
+            aim.position += wall_.normal * (shotOutOfWall - depth);
+    }
     const Vec3 direction = normalized(forward);
     out.hit = solid(aim.position, direction, config_.maxRange, world, &out.passed);
     const bool airAnchor = !out.hit && config_.airAnchors;
@@ -947,6 +969,18 @@ void Swing::inputs(float dt, const Input& in, const WorldQueries& world) {
                 events_.push_back({EventKind::Attach, i, .65f});
                 if (fired.passed)
                     events_.push_back({EventKind::Pass, i, 0});
+                // From a wall, a web whose end is further out than the body
+                // takes it off the wall, to hang and swing from the web. The
+                // wall holds a body with no gravity, and a web is shot taut:
+                // at rest there nothing pulled, and every web shot from a
+                // wall hung there until a jump (October 22: nine webs in two
+                // rests, no tension, then A each time). One up the wall
+                // keeps it there, for a zip or the reel up it.
+                if (wall_.on && dot(w.anchor - body_.position, wall_.normal) > 0) {
+                    leaveWall();
+                    sinceWallJump_ = 0;
+                    mountLeft_ = 0;
+                }
             } else {
                 events_.push_back({EventKind::Miss, i, .15f});
             }

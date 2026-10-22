@@ -611,7 +611,8 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     }
     if (!holds || f.jump)
         wallRoll_.reset();
-    const bool rollAllowed = handClimb_ && holds && !standing_ && !walks && !f.jump && std::abs(held.y) < .5f;
+    const bool rollAllowed = handClimb_ && holds && !standing_ && !walks && !f.jump && std::abs(held.y) < .5f &&
+                             (wallHands_ & 3u) == 3u;
     const float rollAngle = wallRoll_.update(rollAllowed, f);
     if (rollAllowed) {
         const Pose before = placed.toWorld(f.head);

@@ -11,7 +11,9 @@
 // damage against the bot it hit (native_bodies::damage): DamageType kMelee,
 // as much damage as the fist's speed gave it, the hit reaction the punch's
 // strength calls for (punch.hpp's Knockback), the hero as the damager. The
-// bot reacts, loses health and is knocked out as the game has it.
+// bot reacts, loses health and is knocked out as the game has it. The blow
+// also earns the Focus the game's own melee blow earns (game_focus.hpp): the
+// damage alone earns none.
 //
 // Fighting across the room (web_strike.hpp) runs here too. A fist thrown at
 // an enemy out of reach opens a web strike: the swing moves the player to

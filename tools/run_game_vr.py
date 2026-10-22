@@ -689,14 +689,52 @@ def reachable_in_play(word):
     return not word & 0xffff & ~PLAY_BUTTONS
 
 
+# The VR control that sends each named button while the game names it (game_pad::NamedPress: press what you
+# see), in PAD_BUTTONS' order; LT and RT are the triggers' own.
+NAMED_CONTROLS = ((0x1, 'the right stick pushed up'), (0x2, 'the right stick pushed down'),
+                  (0x4, 'the right stick pushed left'), (0x8, 'the right stick pushed right'), (0x10, 'Menu'),
+                  (0x20, 'a tap of X'), (0x40, 'a click of the left stick'), (0x80, 'a click of the right stick'),
+                  (0x100, 'the left trigger'), (0x200, 'the right trigger'), (0x1000, 'A'), (0x2000, 'B'),
+                  (0x4000, 'X'), (0x8000, 'Y'))
+
+
+def named_controls(word):
+    """What a player in a headset presses for a packed demand, or None for nothing. The game's right stick is
+    not among them: in VR play that stick turns the player."""
+    controls = []
+    for bit, control in NAMED_CONTROLS:
+        if word & bit and control not in controls:
+            controls.append(control)
+    for shift, control in ((16, 'the left trigger'), (17, 'the right trigger')):
+        if word >> shift & 1 and control not in controls:
+            controls.append(control)
+    for shift, back, forward in PAD_STICKS[:2]:
+        way = word >> shift & 3
+        if way:
+            controls.append(back if way == 1 else forward)
+    if word >> 27 & 1:
+        controls.append('the left stick (any way)')
+    if not controls:
+        return None
+    return ' + '.join(controls) + (', held' if word >> 18 & 1 else '')
+
+
 def prompts_line(word):
     """What the session log says when the game asks a player for a button, or None for nothing."""
     asked = demand_name(word)
     if not asked:
         return None
-    own = '' if reachable_in_play(word) else ' (VR play has no button of its own for it)'
-    return (f'The game is asking for {asked}{own}: the interact button sends it, and clicking both '
-            'thumbsticks latches the whole pad.')
+    notes = []
+    press = named_controls(word)
+    if press:
+        notes.append(f'in VR: {press}')
+    if word >> 23 & 15 or word >> 28 & 1:
+        notes.append("the game's right stick is not sent in VR play, where it turns you: SWITCH TO GAME "
+                     'SCREEN in the pause menu plays the moment with the controllers as an Xbox controller')
+    if word >> 29 & 1:
+        notes.append('it shows a key or a mouse button: press something on the controllers so it shows the pad')
+    return (f"The game is asking for {asked} - {'; '.join(notes)}. While the game names a button, the control "
+            'of that name sends it; clicking both thumbsticks latches the whole pad.')
 
 
 # The T-pose calibration's phases and what its panel asks for (body_calibration.hpp Phase, Hint).
@@ -1043,6 +1081,30 @@ def strike_snapshot(game, address):
                     last_strength=round(strength, 3), last_damage=round(damage, 1),
                     last_kind=BLOW_KINDS[kind] if kind < len(BLOW_KINDS) else kind, last_count=count,
                     last_hand=last_hand, last_by_strike=bool(by_strike))
+    return None
+
+
+FOCUS_STATUS = {0: 'off', 2: 'running', 3: 'another build'}
+
+
+def focus_snapshot(game, address):
+    """The game's Focus for Spidy's blows (game_focus.hpp): the punches', strikes' and counters' and the web's
+    yanks and throws, which the damage alone never earned. `asked` blows that asked for it, `given` those the game
+    was given (its own amount for its own kind of blow), `missed` those that found no meter; `now` and `most` the
+    meter after the latest given (its segments' fill and their most)."""
+    for _ in range(8):
+        raw = game.read(address, 56)
+        if len(raw) != 56:
+            return None
+        if struct.unpack_from('<3I', raw) != (0x53464344, 1, 56):
+            raise RuntimeError('Focus protocol mismatch')
+        if struct.unpack_from('<Q', raw, 16)[0] & 1 or raw[16:24] != game.read(address+16, 8):
+            continue
+        status, = struct.unpack_from('<I', raw, 12)
+        asked, given, missed = struct.unpack_from('<3Q', raw, 24)
+        now, most = struct.unpack_from('<2f', raw, 48)
+        return dict(status=FOCUS_STATUS.get(status, status), asked=asked, given=given, missed=missed,
+                    now=round(now, 2), most=round(most, 2))
     return None
 
 
@@ -2020,7 +2082,7 @@ def session(a, startup):
             ROOT/'reports/ray-modules', ('SpidyRayStart', 'SpidyRaySubmit', 'SpidyRayStop',
                                        'SpidyRaySample', 'SpidyRayData', 'SpidySwingData', 'SpidyGrabData',
                                        'SpidyPunchData', 'SpidyStrikeData', 'SpidyShooterData', 'SpidyRopeData',
-                                       'SpidySenseData'))
+                                       'SpidySenseData', 'SpidyFocusData'))
         # Imported here: probe_game_grab imports from this module.
         from probe_game_grab import grab_snapshot
         ray_module = next(m['base'] for m in modules(game.pid) if m['name'].lower() == 'spidy_ray_bridge.dll')
@@ -2083,6 +2145,8 @@ def session(a, startup):
         punch_samples = deque(maxlen=2000)
         strikes, strike_samples = None, deque(maxlen=2000)
         sense, sense_samples = None, deque(maxlen=2000)
+        # The game's Focus for those blows: the latest.
+        focus = None
         # Read while the game runs: a session that ends with the game has nothing to read them from.
         ropes = steam = None
         # The web shooter: the latest, and a sample when a shot is asked for, fired or dropped.
@@ -2156,7 +2220,7 @@ def session(a, startup):
                         swing_samples=list(swing_samples), motion_samples=list(motion_samples),
                         grab_samples=list(grab_samples), body=body, punch=punch,
                         punch_samples=list(punch_samples), strikes=strikes, strike_samples=list(strike_samples),
-                        sense=sense, sense_samples=list(sense_samples),
+                        focus=focus, sense=sense, sense_samples=list(sense_samples),
                         ropes=ropes, steam_guard=steam,
                         shooter=shooter, shooter_samples=list(shooter_samples),
                         slow_motion=slow_motion, slow_motion_samples=list(slow_motion_samples), hud=hud_last,
@@ -2246,6 +2310,7 @@ def session(a, startup):
                                          'passed_over')):
                             strike_samples.append(dict(fight, seconds=round(time.monotonic()-started, 3)))
                         strikes = fight
+                    focus = focus_snapshot(game, rays['SpidyFocusData']) or focus
                     senses = sense_snapshot(game, rays['SpidySenseData'])
                     if senses and 'protocol_mismatch' in senses:
                         sense = senses
@@ -2435,6 +2500,7 @@ def session(a, startup):
             body=body_snapshot(game, xr['SpidyBodyData']) or body,
             punch=punch_snapshot(game, rays['SpidyPunchData']) or punch, punch_samples=list(punch_samples),
             strikes=strike_snapshot(game, rays['SpidyStrikeData']) or strikes, strike_samples=list(strike_samples),
+            focus=focus_snapshot(game, rays['SpidyFocusData']) or focus,
             sense=sense_snapshot(game, rays['SpidySenseData']) or sense, sense_samples=list(sense_samples),
             ropes=rope_snapshot(game, rays['SpidyRopeData']) or ropes,
             steam_guard=steam_snapshot(game, xr['SpidySteamData']) or steam,

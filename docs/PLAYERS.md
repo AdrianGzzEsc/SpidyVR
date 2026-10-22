@@ -186,6 +186,13 @@ Web shooter
                            first thing in its way. One ball per pull; the
                            other hand can shoot while one hand swings.
                            Three quick hits web a thug up.
+                           It is the game's Web Shooter's shot, as its RB
+                           fires it, while that gadget is the one equipped
+                           and has a charge: it seals a research station's
+                           leaks and vents and webs up turrets and thugs as
+                           the game made them. Out of charges, the ball
+                           still flies but does nothing to those until the
+                           charges come back.
 
 Aim markers (where each hand's web would go if you pressed its web button
 now; the left hand's are blue, the right hand's orange)
@@ -367,7 +374,12 @@ Moving
   Right stick down ..... heal: the game's D-pad down. Push the stick
                          straight down and hold it a moment; the right
                          controller ticks when the game gets it. In the air
-                         too
+                         too. It spends the game's Focus, which your
+                         punches, web strikes, yanks and throws fill as
+                         the game's own do (since October 22; before,
+                         none of them filled it).
+                         An air blow or a yank fills about three times
+                         what a punch on the ground does
   Right stick up ....... the game's LT + RT: its zip to a point. Where the
                          game shows LT + RT (a perch, a vent to enter),
                          look at it, push the stick straight up and hold
@@ -399,6 +411,12 @@ Moving
                          gadget is the one you have now. The web shooter
                          at the top gives you web balls again. Back in
                          the middle and let go: nothing changes
+  Phone ................ squeeze a grip with that hand behind your hip and
+                         bring it up in front, still squeezed: your phone
+                         opens in that hand. The stick picks an app, A
+                         opens it, B goes back or puts the phone away.
+                         CAMERA puts it away and takes the game's camera
+                         out (THE GAME'S CAMERA, below)
   Click both sticks .... the pad layer, as you let go: your controllers
                          become the whole Xbox controller for a moment
                          (held on, both sticks pause instead). Your grips
@@ -437,6 +455,17 @@ Moving
   fist thrown down is both: the Ground Strike. A button you were already
   holding as the prompt came up goes on doing what it did, and the grips
   stay your webs, so you can still swing.
+  The Ground Strike also needs no prompt: in the air, throw both fists
+  down together, hard (no web in either hand). That is the game's X and A
+  held, and it takes you from your webs for its move. One fist alone stays
+  a punch. Not with REALISTIC FLIPS on, where both arms swung down flip you.
+
+  THE GAME'S CAMERA (the research stations' photos)
+  Phone, CAMERA ........ takes the game's camera out, as its D-pad up does
+  Left trigger, held ... its viewfinder
+  Right trigger ........ takes the photo
+  Right stick up ....... puts the camera away
+  While the camera is out your triggers are its own, not web balls.
 
   The pad layer above is the way out if a moment still asks for something
   none of this reaches.
@@ -471,7 +500,8 @@ vent or a door you ask for, and inside vents and ducts)
   Left stick ........... walks the wall where you look along it, and steers a
                          run
   A .................... jumps off the wall, out and up
-  A web ................ pulls you off the wall, or along it
+  A web ................ out from the wall swings you off it; one up the
+                         wall holds you there for a zip or the reel up it
   The wall's top ....... go up over it and you hop onto the roof; at a walk
                          you step round a corner onto the next wall
   A vent or a door ..... point a hand at it. A turning ring round it, in that
@@ -556,15 +586,17 @@ in Settings > SPIDY VR or "Hand wall climbing" in the launcher's options)
   On a wall ............ with the left stick at rest you stay upright beside
                          the wall, a little crouched, your eyes 40 cm from
                          it (WALL CAMERA DISTANCE: 20 to 100 cm)
-  Squeeze a grip ....... with that hand within about 18 cm of the wall: the
-                         palm holds on, open, with a short buzz. Pull it down
-                         to climb, sideways to go along, up to go down; two
-                         hands share the pull. Let go and squeeze again for
-                         a new hold. The grips do this whichever WEB BUTTON
-                         you chose
-  Both grips held ...... roll both controllers the same way to turn your
-                         view along the wall, up to 90 degrees a second; they
-                         shoot no webs until you let go
+  Squeeze a grip ....... with that hand within about 18 cm of the wall and
+                         pointed at it: the palm holds on, open, with a
+                         short buzz. Pull it down to climb, sideways to go
+                         along, up to go down; two hands share the pull. Let
+                         go and squeeze again for a new hold. The grips do
+                         this whichever WEB BUTTON you chose. Pointed away
+                         from the wall, along it or up it, the web button
+                         shoots a web as anywhere else, and a web out from
+                         the wall swings you off it
+  Both hands holding ... roll both controllers the same way to turn your
+                         view along the wall, up to 90 degrees a second
   Left stick ........... runs along the wall, steered by turning your head
                          left or right; let go to climb again
   A .................... jumps off the wall
@@ -876,10 +908,13 @@ IF SOMETHING IS WRONG
   Spidy read none of the game's prompts (the reading closed the game as a
   save loaded, and was off from October 13): "press X" opened the map, and
   the Oscorp stations' leaks, vaccine and camera could only be done on the
-  game screen. If a moment still asks for something none of this reaches,
-  click both thumbsticks for the pad layer, where your grips are the game's
-  LB and RB, your triggers its LT and RT, X its X and the right stick its
-  D-pad; click both again to leave it.
+  game screen. Since October 22 a station's leaks and vents take your
+  trigger's web (the game's Web Shooter, while it has charges), the phone's
+  CAMERA takes the game's camera out, and both fists slammed down in the
+  air are the Ground Strike. If a moment still asks for something none of
+  this reaches, click both thumbsticks for the pad layer, where your grips
+  are the game's LB and RB, your triggers its LT and RT, X its X and the
+  right stick its D-pad; click both again to leave it.
 - A prompt shows keyboard keys ("click F to decipher") and no button works:
   the game shows the icons of the device it last saw. Press something on
   the controllers so it sees the pad again, then Y. If it keeps happening,

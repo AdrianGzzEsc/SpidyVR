@@ -68,6 +68,12 @@ struct Demand {
         return *this;
     }
 };
+// The game's camera, out from D-pad up until D-pad up puts it away: LT held
+// raises its viewfinder and RB takes the photo (measured in the game on
+// October 22: the screen flashed white at RB; RT took none). Once a research
+// station's hint has gone nothing names them, so while the camera's overlay
+// is up (game_prompts) this is what the game asks for.
+constexpr Demand cameraDemand{padRightShoulder | padDpadUp, true};
 // One icon id of any family ("XBButtonBothShoulders", "PSButtonCircle",
 // "SteamButtonRightTrigger", "RightStickUp"), with its family's prefix or
 // without it: what it asks of the pad. An id that asks nothing of a
@@ -121,11 +127,15 @@ Demand unpack(uint32_t);
 // that channel or another text on it, channelMs at most: the help line "Hold
 // [BTN_L2] and tap [BTN_R1] to fire webs and seal the leaks" stood on screen
 // through its mission's whole timer, and a subtitle's HideText is its own
-// channel's.
+// channel's. A text any other call of the UI's passes that names a button (a
+// prompt this knows by no name) lives otherMs after its latest call: no Hide
+// of its own is known to end it. And a state of the game's that asks for
+// buttons with no text at all - its camera out, its overlay up - stands
+// until the call that ends it, standMs at most.
 class LiveDemands {
   public:
     static constexpr unsigned channels = 16;
-    static constexpr uint64_t liveMs = 2000, channelMs = 60000;
+    static constexpr uint64_t liveMs = 2000, channelMs = 60000, otherMs = 8000, standMs = 600000;
     // A prompt call: `word` what its text named (pack; 0 for none), `clears`
     // its manager taking a prompt away.
     void call(uint64_t now, uint32_t word, bool clears) {
@@ -145,6 +155,18 @@ class LiveDemands {
         texts_[channel] = clears ? 0 : word;
         at_[channel] = now;
     }
+    // Another call's text that named `word` (0: nothing, which changes nothing).
+    void other(uint64_t now, uint32_t word) {
+        if (!word)
+            return;
+        other_ = word;
+        otherAt_ = now;
+    }
+    // A state that asks for `word` begins (clears false) or ends (true).
+    void stand(uint64_t now, uint32_t word, bool clears) {
+        stand_ = clears ? 0 : word;
+        standAt_ = now;
+    }
     // Everything live at `now`, together; what has run out is dropped.
     Demand demand(uint64_t now) {
         Demand out;
@@ -152,6 +174,14 @@ class LiveDemands {
             live_ = 0;
         if (live_)
             out |= unpack(live_);
+        if (other_ && now - otherAt_ > otherMs)
+            other_ = 0;
+        if (other_)
+            out |= unpack(other_);
+        if (stand_ && now - standAt_ > standMs)
+            stand_ = 0;
+        if (stand_)
+            out |= unpack(stand_);
         for (unsigned c = 0; c < channels; ++c) {
             if (texts_[c] && now - at_[c] > channelMs)
                 texts_[c] = 0;
@@ -165,8 +195,8 @@ class LiveDemands {
     }
 
   private:
-    uint32_t live_{}, texts_[channels]{};
-    uint64_t fresh_{}, at_[channels]{};
+    uint32_t live_{}, texts_[channels]{}, other_{}, stand_{};
+    uint64_t fresh_{}, at_[channels]{}, otherAt_{}, standAt_{};
 };
 // Every control of the pad the game can ask for, so a check can cover them
 // all instead of the ones a player has reported.

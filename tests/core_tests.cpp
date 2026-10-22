@@ -1342,6 +1342,7 @@ int main() {
             auto& h = in.hands[hand];
             h.tracked = true;
             h.wallPosition = {4.95f, 10, 0};
+            h.aim.orientation = arc({0, 0, -1}, {1, 0, 0}); // reaching for the wall
             h.gripRelativeToHead = {.4f, 0, 0};
             advance(); // release once after coming onto the wall
             h.wallGrip = h.grip = 1;
@@ -1391,6 +1392,7 @@ int main() {
         for (auto& h : in.hands) {
             h.tracked = true;
             h.wallPosition = {4.95f, 10, 0};
+            h.aim.orientation = arc({0, 0, -1}, {1, 0, 0});
         }
         advance();
         for (auto& h : in.hands)
@@ -1429,6 +1431,7 @@ int main() {
         auto& h = in.hands[0];
         h.tracked = true;
         h.wallGrip = 1;
+        h.aim.orientation = arc({0, 0, -1}, {1, 0, 0});
         h.wallPosition = {4, 10, 0};
         check(!s.wallHand(0, in, w), "a distant grip caught the wall");
         h.wallPosition.x = 5.2f;
@@ -1492,6 +1495,7 @@ int main() {
             auto& h = in.hands[0];
             h.tracked = true;
             h.wallPosition = {4.95f, 10, 0};
+            h.aim.orientation = arc({0, 0, -1}, {1, 0, 0});
             in.look = direction;
             step();
             h.wallGrip = h.grip = 1;
@@ -1522,6 +1526,7 @@ int main() {
         auto& hand = in.hands[0];
         hand.tracked = true;
         hand.wallPosition = {5.2f, 10, 0};
+        hand.aim.orientation = arc({0, 0, -1}, {1, 0, 0});
         const Vec3 from = body.position;
         for (int i = 0; i < 30; ++i) {
             hand.gripRelativeToHead.y -= .01f;
@@ -1566,6 +1571,7 @@ int main() {
                     auto& hand = in.hands[0];
                     hand.tracked = true;
                     hand.wallPosition = {4.95f, 10, body.position.z};
+                    hand.aim.orientation = arc({0, 0, -1}, {1, 0, 0});
                     step();
                     hand.wallGrip = 1;
                     step();
@@ -1654,6 +1660,7 @@ int main() {
                 auto& hand = in.hands[0];
                 hand.tracked = true;
                 hand.wallPosition = {4.95f, 10, body.position.z};
+                hand.aim.orientation = arc({0, 0, -1}, {1, 0, 0});
                 step();
                 hand.wallGrip = 1;
                 step();
@@ -1754,6 +1761,7 @@ int main() {
             auto& h = in.hands[0];
             h.tracked = true;
             h.wallPosition = {4.95f, 10, body.position.z};
+            h.aim.orientation = arc({0, 0, -1}, {1, 0, 0});
             step();
             h.wallGrip = 1;
             step();
@@ -1846,6 +1854,7 @@ int main() {
             auto& hand = in.hands[0];
             hand.tracked = true;
             hand.wallPosition = {5.1f, 10, 0};
+            hand.aim.orientation = arc({0, 0, -1}, {1, 0, 0});
             step();
             hand.wallGrip = 1;
             step();
@@ -1864,6 +1873,7 @@ int main() {
         for (float distance : {.1f, .3f, .75f}) {
             GameTrackingRig rig;
             rig.handClimb(true);
+            rig.wallHands(3); // both hands hold the wall
             rig.wallDistance(distance);
             auto f = trackedFrame();
             for (auto& hand : f.hands) hand.squeeze = 0;
@@ -1909,6 +1919,7 @@ int main() {
             auto& h = in.hands[0];
             h.tracked = true;
             h.wallPosition = {4.95f, 10, body.position.z};
+            h.aim.orientation = arc({0, 0, -1}, {1, 0, 0});
             step();
             h.wallGrip = 1;
             step();
@@ -1941,6 +1952,8 @@ int main() {
         f.hands[1].valid = false;
         f.hands[0].squeeze = 0;
         f.hands[0].grip.position.x = .55f;
+        // The fist ahead, at the wall (the web shooter aims along the grip's -y).
+        f.hands[0].grip.orientation = Quat::around({1, 0, 0}, 1.5707963f);
         GameMotionFrame placed;
         for (int i = 0; i < 450; ++i) {
             const auto wall = s.wall();
@@ -2039,6 +2052,7 @@ int main() {
     test("wall roll rig: eyes pivot in place, distance stays fixed, release locks and recenter resets", [] {
         GameTrackingRig rig;
         rig.handClimb(true);
+        rig.wallHands(3); // both hands hold the wall
         auto f = trackedFrame();
         for (auto& h : f.hands)
             h.squeeze = 0;
@@ -2083,6 +2097,7 @@ int main() {
         for (float angle : {0.f, 1.5707963f, 3.14159265f, -1.5707963f}) {
             GameTrackingRig rig;
             rig.handClimb(true);
+            rig.wallHands(3); // both hands hold the wall
             auto f = trackedFrame();
             for (auto& h : f.hands) h.squeeze = 0;
             const Vec3 feet{0, 9, -4.1f};
@@ -2177,6 +2192,7 @@ int main() {
             for (int neutralFrames : {0, 1, 6}) {
                 GameTrackingRig rig;
                 rig.handClimb(true);
+                rig.wallHands(3); // both hands hold the wall
                 auto f = trackedFrame();
                 for (auto& h : f.hands) h.squeeze = 0;
                 const Vec3 feet{0, 9, -4.1f};
@@ -2240,6 +2256,7 @@ int main() {
         for (float angle : {0.f, 1.5707963f, 3.14159265f}) {
             GameTrackingRig rig;
             rig.handClimb(true);
+            rig.wallHands(3); // both hands hold the wall
             auto f = trackedFrame();
             for (auto& h : f.hands) h.squeeze = 0;
             const Vec3 feet{0, 9, -4.1f};
@@ -2343,6 +2360,7 @@ int main() {
     test("climb camera follows the next building face smoothly with roll retained", [] {
         GameTrackingRig rig;
         rig.handClimb(true);
+        rig.wallHands(3); // both hands hold the wall
         auto f = trackedFrame();
         for (auto& h : f.hands) h.squeeze = 0;
         const Vec3 feet{4.1f, 9, -4.1f};
@@ -2445,6 +2463,7 @@ int main() {
         auto& hand = in.hands[0];
         hand.tracked = true;
         hand.wallPosition = {4.95f, 10, 0};
+        hand.aim.orientation = arc({0, 0, -1}, {1, 0, 0});
         step();
         hand.wallGrip = hand.grip = 1;
         step();
@@ -2464,6 +2483,143 @@ int main() {
         hand.wallGrip = hand.grip = 1;
         step();
         check(s.climbingHands() == 1, "fresh wall touch after running failed");
+    });
+    test("hand climbing: a squeeze at the wall shoots a web where the hand points away or along it", [] {
+        constexpr float dt = 1.f / 60;
+        // The palm 10 cm off the wall. Away from it and up, up the facade,
+        // along it, up it a hair into it (its aim meets the wall 2 m up):
+        // webs. Into it, as a reach for a hold: holds.
+        const auto squeeze = [&](Vec3 way, bool web) {
+            Building w;
+            Swing s(walled());
+            s.allowHandClimb(true);
+            Input in;
+            Body body{{4.1f, 10, 0}, {1, 0, 0}, false};
+            const auto advance = [&] {
+                const auto motion = s.predictNativeStep(dt, in, w, body);
+                body = {motion.target, motion.velocity, false};
+            };
+            advance();
+            check(s.wall().on, "the test body did not reach the wall");
+            auto& h = in.hands[0];
+            h.tracked = true;
+            h.wallPosition = {4.9f, 10, 0};
+            h.aim = {h.wallPosition, arc({0, 0, -1}, way)};
+            advance();
+            h.wallGrip = h.grip = 1;
+            check(s.wallHand(0, in, w) == !web, web ? "a web's squeeze was kept for climbing"
+                                                     : "a reach into the wall was not kept for climbing");
+            advance();
+            if (web)
+                check(!s.climbingHands() && s.webs()[0].attached, "a squeeze pointed off the wall shot no web");
+            else
+                check(s.climbingHands() == 1 && !s.webs()[0].attached, "a reach into the wall did not hold it");
+        };
+        for (const Vec3 way : {normalized(Vec3{-1, 1, 0}), Vec3{0, 1, 0}, Vec3{0, 0, 1}, normalized(Vec3{.05f, 1, 0})})
+            squeeze(way, true);
+        for (const Vec3 way : {Vec3{1, 0, 0}, normalized(Vec3{1, 1, 0}), normalized(Vec3{.3f, 1, 0})})
+            squeeze(way, false);
+    });
+    test("a web shot from a wall at rest takes the body off it to swing; one up the wall keeps it there", [] {
+        constexpr float dt = 1.f / 60;
+        for (const bool out : {true, false}) {
+            Building w;
+            Swing s(walled());
+            Input in;
+            Body body{{4.1f, 10, 0}, {1, 0, 0}, false};
+            const auto advance = [&] {
+                const auto motion = s.predictNativeStep(dt, in, w, body);
+                body = {motion.target, motion.velocity, false};
+            };
+            for (int i = 0; i < 30; ++i)
+                advance();
+            check(s.wall().on && length(body.velocity) < .05f, "the test body did not come to rest on the wall");
+            // Out from the wall and up, at the sky; or up the wall, at it 6 m up.
+            auto& h = in.hands[0];
+            h.tracked = true;
+            h.aim = {body.position + Vec3{.3f, .3f, 0},
+                     arc({0, 0, -1}, out ? normalized(Vec3{-1, 1, 0}) : normalized(Vec3{.1f, 1, 0}))};
+            advance();
+            h.grip = 1;
+            advance();
+            check(s.webs()[0].attached, "the web from the wall did not attach");
+            const Vec3 from = body.position;
+            for (int i = 0; i < 30; ++i)
+                advance();
+            if (out) {
+                check(!s.wall().on, "a web out from the wall left the body on it");
+                check(from.x - body.position.x > .3f && body.velocity.x < -1, "the body did not swing off the wall");
+            } else {
+                check(s.wall().on && length(body.position - from) < .05f, "a web up the wall took the body off it");
+            }
+        }
+    });
+    test("a web shot from a hand inside the wall starts out of it", [] {
+        // The game's rays meet a face from inside too: one from inside the
+        // building leaves through its facade and meets it there.
+        struct Solid : Building {
+            std::optional<RayHit> raycast(Vec3 o, Vec3 d, float distance) const override {
+                const bool inside = o.x > low.x && o.x < high.x && o.y > low.y && o.y < high.y && o.z > low.z &&
+                                    o.z < high.z;
+                if (!inside)
+                    return Building::raycast(o, d, distance);
+                if (!(d.x < 0) || (low.x - o.x) / d.x > distance)
+                    return {};
+                return RayHit{o + d * ((low.x - o.x) / d.x), {-1, 0, 0}, 7, true};
+            }
+        };
+        constexpr float dt = 1.f / 60;
+        Solid w;
+        Swing s(walled());
+        s.allowHandClimb(true);
+        Input in;
+        Body body{{4.1f, 10, 0}, {1, 0, 0}, false};
+        const auto advance = [&] {
+            const auto motion = s.predictNativeStep(dt, in, w, body);
+            body = {motion.target, motion.velocity, false};
+        };
+        advance();
+        check(s.wall().on, "the test body did not reach the wall");
+        // The palm at the wall, the web shooter behind it inside the wall,
+        // aimed away from it and up.
+        auto& h = in.hands[0];
+        h.tracked = true;
+        h.wallPosition = {4.98f, 10, 0};
+        h.aim = {{5.06f, 9.93f, 0}, arc({0, 0, -1}, normalized(Vec3{-1, 1, 0}))};
+        advance();
+        h.wallGrip = h.grip = 1;
+        advance();
+        check(s.webs()[0].attached && s.webs()[0].anchor.x < 4.f, "the shot met the wall it started inside");
+    });
+    test("wall roll: two grips that do not both hold the wall are webs, not a roll", [] {
+        GameTrackingRig rig;
+        rig.handClimb(true);
+        auto f = trackedFrame();
+        for (auto& h : f.hands)
+            h.squeeze = 0;
+        const Vec3 feet{0, 9, -4.1f};
+        const SurfaceHold wall{{0, 0, 1}, {0, 10, -5}, 0, false};
+        holdFor(rig, f, feet, wall, .7f);
+        for (const unsigned holding : {0u, 1u, 2u, 3u}) {
+            rig.wallHands(holding);
+            for (auto& h : f.hands)
+                h.squeeze = 1;
+            holdFor(rig, f, feet, wall, 1.f / 90);
+            for (auto& h : f.hands)
+                h.grip.orientation = Quat::around({0, 0, -1}, .78539816f);
+            const auto out = holdFor(rig, f, feet, wall, .5f);
+            if (holding == 3)
+                check(out.wallRotate && out.wallRoll > .5f, "both hands on the wall did not roll the view");
+            else {
+                check(!out.wallRotate, "two web grips were kept for the wall roll");
+                near(out.wallRoll, 0);
+            }
+            for (auto& h : f.hands) {
+                h.squeeze = 0;
+                h.grip.orientation = {};
+            }
+            holdFor(rig, f, feet, wall, .1f);
+        }
     });
     test("climb haptics: one pulse per hand contact, no repeat while holding or on missing samples", [] {
         game_swing::ClimbData data;
@@ -2543,6 +2699,7 @@ int main() {
             auto& hand = in.hands[0];
             hand.tracked = true;
             hand.wallPosition = {5 + depth, 10, 0};
+            hand.aim.orientation = arc({0, 0, -1}, {1, 0, 0});
             step();
             hand.wallGrip = hand.grip = 1;
             step();
@@ -4146,6 +4303,14 @@ int main() {
         f.buttons=buttonB;
         check(p.take(f,0).action==PhoneAction::close&&!p.open()&&!p.live(),"B on the home screen did not put it away");
         check(!(f.buttons&buttonB),"the B that put the phone away reached the game");
+        // A on CAMERA (up from MUSIC) puts it away too, for the game's camera, and that A reaches nothing either.
+        check(p.update(frame,true,head,grips,tracked,0,grips[0].position)&&p.live(),"the phone did not open again");
+        f=XrFrame{};p.take(f,0);
+        f=XrFrame{};f.hands[1].stickY=1;p.take(f,0);
+        f=XrFrame{};p.take(f,0);
+        f=XrFrame{};f.buttons=buttonA;f.jump=true;
+        check(p.take(f,0).action==PhoneAction::camera&&!p.open()&&!p.live(),"A on CAMERA did not put the phone away");
+        check(!(f.buttons&buttonA)&&!f.jump,"the A that took the game's camera out reached the game as a jump");
     });
     test("phone: home screen apps, MUSIC's buttons, GEAR's scroll; A, B, stick and triggers once per press", [] {
         PhoneControls c;
@@ -4187,7 +4352,12 @@ int main() {
         step(E{0,-1});
         check(ui.app()==1,"down did not pick MAP");
         step(E{0,1});step(E{0,1});
-        check(ui.app()==2,"up from MUSIC did not wrap to GEAR");
+        check(ui.app()==phoneCameraApp,"up from MUSIC did not wrap to CAMERA");
+        // CAMERA has no screen: A on it is the game's camera, the home screen left as it is.
+        check(step(E{0,0,true})==PhoneAction::camera&&ui.screen()==PhoneScreen::home,
+              "A on CAMERA did not ask for the game's camera");
+        step(E{0,1});
+        check(ui.app()==2,"up from CAMERA did not pick GEAR");
         step(E{0,0,true});
         check(ui.screen()==PhoneScreen::gear,"A did not open GEAR");
         step(E{0,-1},9);step(E{0,-1},9);step(E{0,-1},9);step(E{0,-1},9);
@@ -8133,6 +8303,68 @@ int main() {
         P::Input untracked;untracked.hands[0]={0,0,-3};
         check(lost.update(dt,true,untracked,takedown)==State{} && !lost.blows(),"an untracked hand threw an X");
     });
+    test("both free fists slammed down together in the air are the game's Ground Strike with nothing named; the "
+         "game's camera out, the triggers are its aim and shutter and the stick up puts it away", [] {
+        using namespace game_pad;
+        using prompt_buttons::Demand;
+        using P=NamedPress;
+        const float dt=1.f/90;
+        P::Input in;
+        Vec3 at[2]{};
+        // Both hands at rest by the body; then each thrown along `way` at 3.5 m/s for 0.1 s, the right `lag`
+        // seconds after the left. What went out meanwhile, together.
+        const auto slam=[&](P& p,Vec3 way,float lag,bool airborne=true,bool slams=true,bool busy=false){
+            in=P::Input{};in.tracked[0]=in.tracked[1]=true;in.airborne=airborne;in.slams=slams;in.busy[1]=busy;
+            at[0]={-.2f,-.35f,-.2f};at[1]={.2f,-.35f,-.2f};
+            for(float t=0;t<.2f;t+=dt){in.hands[0]=at[0];in.hands[1]=at[1];p.update(dt,true,in,{});}
+            State most;
+            for(float t=0;t<lag+.1f-1e-4f;t+=dt){
+                for(int h=0;h<2;++h){
+                    const float start=h?lag:0.f;
+                    if(t>=start&&t<start+.1f-1e-4f)at[h]=at[h]+way*(3.5f*dt);
+                }
+                in.hands[0]=at[0];in.hands[1]=at[1];
+                most.buttons|=p.update(dt,true,in,{}).buttons;
+            }
+            return most;
+        };
+        const auto rest=[&](P& p,float seconds){
+            State last;
+            for(float t=0;t<seconds-1e-4f;t+=dt)last=p.update(dt,true,in,{});
+            return last;
+        };
+        const State strike{static_cast<uint16_t>(x|a)};
+        P both;
+        check(slam(both,{0,-1,0},0)==strike && both.slams()==1 && both.blows()==1 && both.presses()==1,
+              "both fists slammed down in the air were not the Ground Strike, once");
+        check((both.claimed()&P::fist)!=0,"the slam's X + A went out unclaimed: the swing would not yield");
+        check(rest(both,P::holdSeconds-.2f)==strike,"the Ground Strike's X + A let go early");
+        check(rest(both,.3f)==State{},"the Ground Strike's X + A never let go");
+        P lagged;
+        check(slam(lagged,{0,-1,0},.2f)==strike,"the second fist a moment after the first was no slam");
+        // Not one fist alone (the other too late), nor on the ground, nor while REALISTIC FLIPS turns the player
+        // by his arms, nor with a hand on its web, nor thrown level.
+        P late;
+        check(slam(late,{0,-1,0},.4f)==State{} && !late.slams(),"two fists far apart were a slam");
+        P ground;
+        check(slam(ground,{0,-1,0},0,false)==State{} && !ground.slams(),"a slam on the ground was the Ground Strike");
+        P flips;
+        check(slam(flips,{0,-1,0},0,true,false)==State{},"both arms swung down for a realistic flip were a slam");
+        P webbed;
+        check(slam(webbed,{0,-1,0},0,true,true,true)==State{},"a hand on its web made half a slam");
+        P level;
+        check(slam(level,{0,0,-1},0)==State{},"both fists thrown level were a slam");
+        // The game's camera, its overlay up: LT held raises the viewfinder, RB takes the photo, D-pad up puts
+        // it away. The left web-ball button, the right one and the right stick up send them; X is not taken.
+        const Demand camera=prompt_buttons::cameraDemand;
+        const auto aim=P::sends(P::leftBall,camera),shutter=P::sends(P::rightBall,camera);
+        check(aim.leftTrigger==255 && !aim.buttons,"the left trigger did not aim the game's camera (its LT)");
+        check(shutter.buttons==rightShoulder && !shutter.rightTrigger,"the right trigger was not the camera's RB");
+        check(P::sends(P::stickUp,camera).buttons==dpadUp,"the stick up did not put the camera away");
+        check(P::sends(P::controlX,camera)==State{} && P::sends(P::controlA,camera)==State{},
+              "the camera took a button it does not ask for");
+        check(prompt_buttons::unpack(prompt_buttons::pack(camera))==camera,"the camera's demand did not pack");
+    });
     test("every button the game can name is sent in VR play: by its own control while it is named, or as play sends "
          "it anyway", [] {
         using namespace game_pad;
@@ -8341,6 +8573,40 @@ int main() {
         check(both.buttons==(padX|padY)&&!both.leftTrigger,"the two together, or a channel out of range taken");
         d.clear();
         check(!d.demand(200600).any(),"clear left something live");
+    });
+    test("a button another of the UI's calls names stays live otherMs after that call, beside the prompts' own",
+         [] {
+        using namespace prompt_buttons;
+        LiveDemands d;
+        const auto camera=forText("Press [DPAD_UP] to equip the camera.");
+        const uint32_t x=pack(Demand{padX});
+        d.other(1000,pack(camera));
+        check(d.demand(1000+LiveDemands::otherMs)==camera,"another call's text went before otherMs");
+        check(!d.demand(1001+LiveDemands::otherMs).any(),"another call's text outlived otherMs");
+        // Its next call keeps it; a call that names nothing changes nothing.
+        d.other(20000,pack(camera));d.other(26000,pack(camera));d.other(27000,0);
+        check(d.demand(26000+LiveDemands::otherMs)==camera,"a later call did not keep it");
+        check(!d.demand(26001+LiveDemands::otherMs).any(),"a call that named nothing kept it");
+        // A prompt call's clear and a channel's HideText are theirs alone.
+        d.other(40000,pack(camera));d.call(40000,x,false);d.call(40100,0,true);d.text(40100,7,0,true);
+        check(d.demand(40200)==camera,"a prompt call's clear or a HideText ended another call's text");
+        // Together with a channel's text; clear ends it too.
+        d.text(41000,7,x,false);
+        const auto both=d.demand(41000);
+        check(both.buttons==(padX|padDpadUp),"another call's text and a channel's were not both live");
+        d.clear();
+        check(!d.demand(41001).any(),"clear left another call's text");
+        // A state that asks for buttons with no text, the game's camera out: until its own end, standMs at most,
+        // whatever the prompts' calls and channels do meanwhile.
+        d.stand(50000,pack(cameraDemand),false);
+        d.call(50000,x,false);d.call(50100,0,true);d.text(50100,7,0,true);d.other(50100,0);
+        check(d.demand(50000+LiveDemands::liveMs+LiveDemands::otherMs+1)==cameraDemand,
+              "the camera's demand went before its overlay did");
+        d.stand(400000,0,true);
+        check(!d.demand(400001).any(),"the camera put away left its demand standing");
+        d.stand(500000,pack(cameraDemand),false);
+        check(d.demand(500000+LiveDemands::standMs)==cameraDemand && !d.demand(500001+LiveDemands::standMs).any(),
+              "a camera whose end never came stood past standMs");
     });
     test("the QTE's own handles: the D-pad, a stick to move, and the keyboard's keys", [] {
         using namespace prompt_buttons;
@@ -10165,6 +10431,7 @@ int main() {
     test("body: the controller wall-roll gesture turns hips and legs; gaze alone does not", [] {
         GameTrackingRig rig;
         rig.handClimb(true);
+        rig.wallHands(3); // both hands hold the wall
         auto f = trackedFrame();
         for (auto& h : f.hands) h.squeeze = 0;
         const Vec3 feet{0, 9, -4.1f};
@@ -13347,7 +13614,7 @@ int main() {
                 for (unsigned i = 0; i < maxMotors; ++i)
                     check(f.motors[d][i] >= 0 && f.motors[d][i] <= 1, "a motor past full strength");
         }
-        // Low health: a beat within every period of it, on the front, left of the middle.
+        // Low health: a beat within every period of it, high on the front, left of the middle.
         Mixer heart;
         State low;
         low.live = true;
@@ -13356,10 +13623,11 @@ int main() {
         bool beat = false, elsewhere = false;
         for (double t = 0; t < .6; t += .01) {
             const Frame f = heart.render(t);
-            beat = beat || f.at(Device::vest, vestMotor(false, 1, 1)) > .2f;
-            elsewhere = elsewhere || f.at(Device::vest, vestMotor(false, 1, 3)) > 0 || f.any(Device::head);
+            beat = beat || f.at(Device::vest, vestMotor(false, 0, 1)) > .2f;
+            elsewhere = elsewhere || f.at(Device::vest, vestMotor(false, 0, 3)) > 0 ||
+                        f.at(Device::vest, vestMotor(false, 2, 1)) > 0 || f.any(Device::head);
         }
-        check(beat && !elsewhere, "no heartbeat at 10% health, or one on the right of the chest");
+        check(beat && !elsewhere, "no heartbeat at 10% health, or one on the right of the chest or below it");
         low.health = .9f;
         heart.set(low);
         bool calm = true;
@@ -13403,6 +13671,73 @@ int main() {
         health.reset();
         check(health.fraction() == 1 && health.update(50) == 0 && health.fraction() == 1,
               "a new hero measured by the last");
+    });
+    test("body haptics: jumps land on the waist, blows on the upper torso, grabs pull the shoulder", [] {
+        // bHaptics' haptics team's notes of October 22.
+        using body_haptics::Device, body_haptics::Event, body_haptics::Frame, body_haptics::Kind,
+            body_haptics::Mixer, body_haptics::State, body_haptics::vestMotor, body_haptics::deviceCount,
+            body_haptics::maxMotors;
+        // The most each motor reached over a second of a pattern, or of a state.
+        const auto peak = [](const Event* e, State s) {
+            Mixer m;
+            s.live = true;
+            m.set(s);
+            if (e)
+                m.post(*e, 0);
+            Frame most;
+            for (double t = 0; t < 1; t += .01) {
+                const Frame f = m.render(t);
+                for (unsigned d = 0; d < deviceCount; ++d)
+                    for (unsigned i = 0; i < maxMotors; ++i)
+                        most.motors[d][i] = std::max(most.motors[d][i], f.motors[d][i]);
+            }
+            return most;
+        };
+        const auto of = [&](const Event& e) { return peak(&e, {}); };
+        const auto row = [](const Frame& f, unsigned r) {
+            float total = 0;
+            for (unsigned side = 0; side < 4; ++side)
+                total += f.at(Device::vest, vestMotor(false, r, side)) + f.at(Device::vest, vestMotor(true, r, side));
+            return total;
+        };
+        const auto most = [](const Frame& f, Device d) {
+            return *std::max_element(f.motors[static_cast<unsigned>(d)].begin(),
+                                     f.motors[static_cast<unsigned>(d)].end());
+        };
+        // A jump's landing (it comes down at about 0.34): the waist's row alone.
+        const Frame jump = of({Kind::landing, -1, .34f});
+        check(row(jump, 3) > 0 && row(jump, 0) + row(jump, 1) + row(jump, 2) == 0 && !jump.any(Device::leftArm) &&
+                  !jump.any(Device::rightArm) && !jump.any(Device::head),
+              "a jump's landing past the waist's row");
+        const Frame roof = of({Kind::landing, -1, 1});
+        check(row(roof, 0) > 0 && roof.any(Device::leftArm) && roof.any(Device::head),
+              "a fall from a roof landed on the waist alone");
+        // A charged leap 30% gentler: the charge's start, and its building at full.
+        near(most(of({Kind::leapCharge}), Device::vest), .105f, .002f);
+        State charging;
+        charging.charge = 1;
+        const Frame built = peak(nullptr, charging);
+        check(most(built, Device::vest) > .15f && most(built, Device::vest) <= .183f &&
+                  most(built, Device::leftArm) <= .113f,
+              "a charged leap building past 70% of its old strength");
+        // The player's attacks on the shoulders' two rows only.
+        for (const auto kind : {Kind::heavyBlow, Kind::finisher, Kind::strikeRush, Kind::knockout, Kind::counter}) {
+            const Frame f = of({kind, 1, 1});
+            check(row(f, 0) > 0 && row(f, 2) + row(f, 3) == 0, "an attack below the upper torso");
+        }
+        // A dodge 20% lighter; a perfect one as it was.
+        near(most(of({Kind::dodge, -1, 1, -1}), Device::vest), .16f, .002f);
+        near(most(of({Kind::perfectDodge, -1, 1, -1}), Device::vest), .35f, .002f);
+        // A grab pulling in the left hand: the left sleeve, and faintly the left shoulder.
+        State pulling;
+        pulling.grabTension = {1, 0};
+        const Frame pulled = peak(nullptr, pulling);
+        const float shoulder = pulled.at(Device::vest, vestMotor(false, 0, 0));
+        check(shoulder > .05f && shoulder < .5f * most(pulled, Device::leftArm) &&
+                  pulled.at(Device::vest, vestMotor(true, 0, 0)) > 0 &&
+                  pulled.at(Device::vest, vestMotor(false, 0, 3)) == 0 && row(pulled, 1) == 0 &&
+                  !pulled.any(Device::rightArm),
+              "a grab's pull not faintly in its own shoulder");
     });
 #ifdef _WIN32
     test("the target scan knows a game class by what it derives from", [] {

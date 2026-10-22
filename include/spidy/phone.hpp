@@ -20,7 +20,12 @@ constexpr int phoneButtons = 4;
 // player, October 17: "a home screen with apps on it ... look more like the
 // fnsm app from the 2nd game").
 enum class PhoneScreen : int { home, music, map, gear };
-constexpr int phoneApps = 3; // music, map, gear, in that order on the home screen
+// The apps on the home screen in their order: music, map, gear, and the
+// camera, which has no screen of its own. It puts the phone away and takes
+// the game's own camera out, its D-pad up (hantop, October 22, for the
+// research stations that ask for photos: "add a camera option to the in-game
+// phone"); VR play has no D-pad up of its own.
+constexpr int phoneApps = 4, phoneCameraApp = 3;
 // The controllers while the phone is out, as steps: the stick pushed one way
 // (x: -1 left, 1 right; y: -1 down, 1 up), A, B, and the volume from the
 // triggers, a pull of the left one a step down and of the right one a step up
@@ -48,8 +53,8 @@ class PhoneControls {
 // What the phone's screens make of those steps. On the home screen the stick
 // picks an app and A opens it, B puts the phone away; in an app B goes home.
 // In MUSIC left and right pick a button and A presses it; in GEAR up and down
-// scroll the list.
-enum class PhoneAction : int { none, close, previous, play, next, autoplay };
+// scroll the list. A on CAMERA puts the phone away, its own action.
+enum class PhoneAction : int { none, close, previous, play, next, autoplay, camera };
 class PhoneUi {
   public:
     // Rows GEAR shows at once.
@@ -162,7 +167,9 @@ class Phone {
     };
     // First thing each frame: the phone takes its controls out of `frame`
     // (PhoneHold) and, live, works its screens with them. gearRows: how many
-    // rows GEAR has. B on the home screen puts the phone away at once.
+    // rows GEAR has. B on the home screen puts the phone away at once, and so
+    // does A on CAMERA (PhoneAction::camera: the caller takes the game's
+    // camera out).
     Use take(XrFrame& frame, int gearRows);
     // Once the frame knows. play: VR shows play and no calibration has the
     // controllers. head, grips: tracking space; tracked: each grip's.

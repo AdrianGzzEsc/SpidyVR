@@ -3,7 +3,208 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 21, fourth): RECORDING FOV, optional - pull request
+**Latest build (October 22, fourth): webs off a wall with hand wall
+climbing on.** You: "webbing from a wall with current settings doesnt work,
+i need to jump down to do it".
+
+- **Why, from your 17:48 session.** Your webs did attach on walls - six
+  between 84 and 89 s, three between 618 and 623 s - and you did not move:
+  at rest on the wall, tension 0, no zip, until A jumped you off each time.
+  Since October 10 Spidy's wall holds you with no gravity along it, and a
+  web is shot taut, so at rest nothing pulled: a web from a wall moved you
+  only with a zip, the reel or a jump.
+- **Now a web whose end is further out than you takes you off the wall**,
+  to hang and swing from it, the way a web shot off a ledge does; no wall
+  takes you back for the wall jump's 0.3 s. A web up the wall you are on
+  keeps you on it, for a zip or the reel up it.
+- **Two more ways a web press on a wall went nowhere with HAND WALL
+  CLIMBING on** (on in your `spidy_vr.ini`; neither shows in the report,
+  which keeps no grips):
+  - It took any grip squeezed within 18 cm of the wall as a hold, and its
+    view keeps your eyes 40 cm from the wall, so a hand raised to web up
+    the wall was that near. A squeeze there now holds the wall only where
+    the hand points at it - its aim meets the wall within 50 cm of the
+    palm, where a web would end too near you to hold (`SwingConfig::gripAim`,
+    `Swing::pointsAtWall`); pointed up the wall, along it or away, it
+    shoots its web. Your hands at the wall in this session pointed into it
+    10 to 66 degrees, which still holds.
+  - Both grips held started the view roll, which took both grips from the
+    webs: a second web's press let go of the first web and shot nothing.
+    The roll now starts only while both hands hold the wall
+    (`GameTrackingRig::wallHands`, from the swing's climbing hands).
+- **A web shot from a hand at the wall starts outside it.** The web shooter
+  sits on the forearm 10 cm behind the grip, so a hand at the wall aimed
+  away has it inside the wall, and the game's rays meet a face from behind
+  too: the shot would meet the wall it started in. It now starts at least
+  15 cm out of the wall you are on (`shotOutOfWall`); the aim markers show
+  the same shot.
+- **Checked:** core tests (434; new: a web out from a wall swings you off
+  it and one up the wall keeps you on it, squeezes at the wall by where the
+  hand points, a shot from a hand inside the wall, the roll only with both
+  hands on it; the climbing tests' hands now point at the wall as a reach
+  does), the launcher's, the six Python suites. Not run in the game or a
+  headset. No struct the modules share changed.
+
+**Earlier build (October 22, third): Spidy's blows fill the game's Focus.**
+You: "also check our combat is filling up focus for healing". It was not,
+for any blow of Spidy's.
+
+- **Why, read out of Spider-Man.exe.** Focus is the hero's "spider assault"
+  meter (`Hero::HeroSpiderAssaultManager`): three segments of 100 on your
+  save. The game fills it from its own events, and for a blow from the
+  hero's DamageDealtEvent, by the damage's DamageHash and the attack data
+  its own attacks attach to the request. Spidy's punches, web strikes,
+  counters, yanks and throws are plain requests to the game's DamageSystem
+  with neither, so the handler files every one under `kOtherDamage`, a kind
+  its config gives 0. Only the game's own moves filled it in VR: its dodge,
+  and since the build before the game's Web Shooter.
+- **Now each blow of Spidy's on an enemy asks the game for the Focus its
+  own blow of that kind earns**, through its own function (961e90: the
+  config's amount for the kind, the difficulty, the perks): a fist's, a
+  strike's or a counter's blow `kMeleeDefault` on the ground and
+  `kMeleeAir` in the air; the web's yank `kYankBot`, with the game's
+  `kYankBotIntoAirBonus` when you are in the air; a throw `kThrowBot`; a
+  thug flung into another `kBotFlungIntoBot`; a thrown prop into a thug
+  `kThrowObjectIntoBot`. Earned on the blow's thread, given on the game's
+  main thread after the hero's update (`game_focus.cpp`), only for a blow
+  the game took. The heal (right stick down) spends it as ever.
+- **Measured in the game here** (your save, free roam, no headset;
+  `tools/probe_focus.py`, new, through the new probe export
+  `SpidyFocusTest`): the meter at 0 of 300; `kOtherDamage` twice left it at
+  0; six `kMeleeDefault` raised it 1.25 each, to 7.5; `kMeleeAir` +4,
+  `kYankBot` +4, to 15.5. The game read and changed its own meter, the
+  module's hooks came off clean. Not measured: blows on a real thug (no
+  enemy near that roof), the HUD's bar (the game hides it out of a fight).
+- **Still short of the flat game:** those are the amounts at the bottom of
+  the game's combo. Its `Hero::HeroComboCounter` scales Focus by its tier
+  (AddEnergy multiplies by it), and it counts a hit only from the same
+  attack data (its handler 9197b0, its add-a-hit 919450), so Spidy's blows
+  should not raise it (read from the code; not seen in a fight). A thug of
+  six punches fills
+  under a tenth of a segment; air blows and yanks three times as much. Next
+  step, not done: Spidy's blows into the game's combo the same way, which
+  wants a fight to measure.
+- **Session reports** carry `focus`: blows that asked, given, missed, and
+  the meter (`SpidyFocusData`, version 1, 56 bytes; a new export of
+  `spidy_ray_bridge.dll`, read by `tools/run_game_vr.py`).
+- **Checked:** core tests (430), the six Python suites (a new Focus reader
+  test), the game run above. No struct the two modules share changed.
+
+**Earlier build (October 22, second): hantop's research stations - the
+game's own web from the trigger, its camera on the phone, the Ground Strike
+by a slam.** You: "check the bug and save files hantop sent in mod chat and
+fix it". His list in #mod-chat named eight of Harry's research stations in
+Harlem that VR could not finish, with one session's report (0.4.1, 45
+minutes, five loads); no save files were posted. Then your picks: run the
+game here, a CAMERA app on the phone, both fists slammed down for the Ground
+Strike.
+
+- **The trigger's web ball is the game's own Web Shooter shot** (Under
+  Pressure's leaks, Chemical Leak's and Ventilate the Problem's vents). His
+  report: 723 balls, 718 of them struck something; in two bursts about 190
+  struck the same three actors again and again, and `webbed` stayed 0.
+  The ball is the hero's built-in web shooter fired at its fire event, and
+  that shot carries no damage of any kind (game_shooter.hpp, October 8).
+  The game's RB fires the gadget equipped - every player's Web Shooter
+  unless a wheel chose another - and its shots carry the game's web. Since
+  October 15 the hand fired the gadget equipped for every gadget but that
+  one, which got the built-in ball instead. Now a pull fires the game's Web
+  Shooter from the hand whenever the game has it equipped, as the wheel's
+  other gadgets go out, and the ball only once it has no charge left, so no
+  pull goes unanswered.
+- **Measured in the game here** (your save, CONTINUE, free roam on a roof,
+  no headset; `tools/probe_gadgets.py --only-web-shooter`, new): 12 pulls,
+  12 shots, the first 10 the Web Shooter's own and the last 2 balls once its
+  10 charges were spent, none dropped; the game's HUD showed its Web
+  Shooter. Not measured: a leak or a vent sealed by it (no station on that
+  roof).
+- **CAMERA on the phone** (Smog Alert and Snapping Up Smog; hantop's own
+  suggestion). Measured here with the virtual pad: the game's D-pad up
+  takes its camera out (the equipped weapon changes and the UI calls
+  ShowCameraOverlay()), LT held raises the viewfinder, RB takes the photo
+  (the screen flashes white; RT takes none), D-pad up again puts it away
+  (HideCameraOverlay()). VR play has no D-pad up of its own, and nothing
+  names these buttons once a station's hint has gone. The phone's home
+  screen has a fourth app, CAMERA: A on it puts the phone away and sends the
+  game's D-pad up. While the camera's overlay is up the game counts as
+  asking for LT, RB and D-pad up (`prompt_buttons::cameraDemand`), so press
+  what you see does the rest: the left trigger aims, the right trigger takes
+  the photo, the right stick up puts it away. A load or the HUD's shutdown
+  ends that too, ten minutes at most.
+- **The Ground Strike by a slam** (Shaking Harlem). His session read no ask
+  for X and A in 45 minutes: the hint that names them shows once a save,
+  and the downward fist of October 20 needed it. Both free fists thrown down
+  together in the air (within a quarter of a second, each at a punch's
+  speed and steeply) are now the game's X and A held 0.6 s, its Ground
+  Strike, named or not; the swing lets the game have its move as for any
+  named press. One fist stays a punch. Not while REALISTIC FLIPS is on,
+  where both arms swung down are a flip.
+- **The prompts read from any of the UI's calls.** The session read 13
+  texts naming buttons in 45 minutes, none of them a station's, and its
+  census had all 48 places taken by the map's, the menus' and the HUD's
+  calls, so it could not show where a station's hint came from. Any call
+  whose text names a button now counts as a prompt for 8 s after its latest
+  call, and the census keeps its last 8 places for calls that prompt. Still
+  open: whether the stations' hints come that way, or name their buttons in
+  `[ACTION_*]` words Spidy does not read. The next report says.
+- **The session log names the control, not the interact button.** Every ask
+  since October 20 said "the interact button sends it" and, for X or a
+  trigger alone, "VR play has no button of its own for it", both untrue
+  since press what you see. Now: "The game is asking for LT + RB - in VR:
+  the left trigger + the right trigger."
+- **Still open from his list:** Dive and Dash (a web swing while falling
+  does not count: the game watches its own swing, and Spidy's is not it) and
+  Visibly Shaken (drones not destroyed while invisible: in that stretch the
+  report has no drone within reach of a fist and the balls struck no actor,
+  so the cause is not known). From October 21: stealth in the vents, and
+  Fisk.
+- **Checked:** core tests (430; new: another call's text and the camera's
+  standing demand, the slam and the camera's controls, the phone's CAMERA),
+  the six Python suites, and in the game: the reading through CONTINUE and
+  free roam, the Web Shooter from the hand, the camera's calls and buttons.
+  Not in a headset. `spidy_ray_bridge.dll`, `spidy_stereo_probe.dll` and
+  `tools/run_game_vr.py` change; no protocol changed.
+
+**Earlier build (October 22, first): body haptics after bHaptics' notes.**
+You: "add there bhaptics changes", with the six notes of bHaptics' haptics
+team. They singled out the web traversal, the wind, Spider-Sense and the
+high-impact landings; these six change, the rest plays as it did.
+
+- **A jump lands on the waist alone.** Their note: a low landing, as after
+  a regular jump, felt slightly stronger than expected; the vest's bottom
+  row alone would set it apart from a hard one. The game's jump comes down
+  at about 9.4 m/s, which the landing's strength makes 0.34. Under 0.4 a
+  landing now plays the bottom row only, front and back, without the arms;
+  the rows above and the arms come in between 0.4 and 0.6 (about 11 to 16
+  m/s down), so a fall from a roof plays up the vest as before.
+- **A charged leap's charging 30% gentler:** its start 10.5% (was 15%),
+  its building round the waist 4-18% (was 6-26%) and in the arms 3-11%
+  (was 4-16%). The leap itself is unchanged.
+- **The heart a row higher,** nearer where it is: the shoulders' row and
+  the one under it, left of the chest's middle (it was the second and
+  third rows).
+- **Your attacks on the upper torso,** the shoulders' two rows: a heavy
+  blow on the front's (it was the whole front), a finisher on the front's
+  and the back's (the whole vest), a web strike's rush on the front's (the
+  whole front), a knockout and a counter on the upper chest's middle (a row
+  lower). Punches already played in the arm and shoulder. Strengths are
+  unchanged.
+- **A dodge 20% lighter:** 16% (was 20%). A perfect dodge plays as it did.
+- **A grab's pull in the shoulder too.** While a web pulls a thug or a prop,
+  its sleeve had it alone; now the shoulder on that side (the shoulders'
+  row, front and back, the outer motor most) feels it at 40% of the arm's,
+  12% at most. A yank already played there.
+- **Checked:** core tests (428; new: a jump's landing on the bottom row
+  alone and a roof's up the vest, the charge's start and build under 70% of
+  before, the five attacks nowhere below the second row, the dodges'
+  strengths, a grab's pull in its own shoulder only; the heartbeat's test
+  moved up a row) and `spidy_haptics_test.exe --dry` (each pattern's frames
+  as text). `spidy_haptics_test.exe effects --only landing` (or leap,
+  punches, fight, dodges, low_health, grab) plays them on the devices
+  without the game. Not felt on the devices, not run in the game. Only the
+  stereo module and the test tool change; no protocol change.
+
+**Earlier build (October 21, fourth): RECORDING FOV, optional - pull request
 21 (iplusdvr).** You: "review and fix whats needed if needed", then "it should
 be an optional feature".
 

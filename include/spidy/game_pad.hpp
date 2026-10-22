@@ -969,6 +969,13 @@ class ScreenControls {
 // held, where the prompt says hold: the Air Launch), and with X and A named in
 // the air a fist thrown down is both (the Ground Strike).
 //
+// The Ground Strike also needs no prompt: both free fists thrown down together
+// in the air are its X and A, held. Its hint shows once a save, and hantop's
+// Shaking Harlem (October 22) asked for Ground Strikes with none on screen.
+// Two hands at once (chosen that day), so no single punch makes one; not
+// while REALISTIC FLIPS turns the player by his arms' swings (Input::slams),
+// where both arms swung down is a flip.
+//
 // A control is the game's only when it goes down while the game names it, and
 // it stays the game's, sending what it began with, until it is let go: a web
 // button held into a prompt still holds its web, and a prompt that ends under
@@ -989,6 +996,8 @@ class NamedPress {
     // sends its buttons for tapSeconds, or holdSeconds for a hold or two at once.
     static constexpr float blowSpeed = 2.2f, rearmSpeed = 1.2f, rearmSeconds = .45f, smoothing = .01f,
                            inward = .7f, steep = .6f, tapSeconds = .15f, holdSeconds = .6f;
+    // Both fists thrown down within this of each other in the air: a slam.
+    static constexpr float slamSeconds = .25f;
     // The VR controls a named button can claim, a bit each.
     enum Control : uint32_t {
         controlA = 1u << 0,
@@ -1022,6 +1031,8 @@ class NamedPress {
         Vec3 hands[2]{};
         bool tracked[2]{}, busy[2]{};
         bool airborne{};
+        // Both fists thrown down in the air are the Ground Strike's.
+        bool slams = true;
     };
     // seconds: since the previous update. play: the controllers play VR, the
     // pad layer off. demand: what the game names now, {} for nothing. Returns
@@ -1087,6 +1098,10 @@ class NamedPress {
     }
     uint32_t blows() const {
         return blows_;
+    }
+    // Slams of both fists in the air (the Ground Strike with no prompt), among blows.
+    uint32_t slams() const {
+        return slams_;
     }
     // What `control` sends while the game names what `demand` holds: {} where
     // the game names nothing of its.
@@ -1178,12 +1193,18 @@ class NamedPress {
             hand.at = in.hands[h];
             hand.seen = true;
             hand.since += dt;
+            hand.down += dt;
             const float speed = length(hand.velocity);
             if (speed < rearmSpeed || hand.since >= rearmSeconds)
                 hand.armed = true;
-            if (!askedX || in.busy[h] || !hand.armed || speed < blowSpeed)
+            if (in.busy[h] || !hand.armed || speed < blowSpeed)
                 continue;
             const bool thrownDown = hand.velocity.y <= -steep * speed;
+            // Half a slam, whatever the game names.
+            if (thrownDown && in.airborne)
+                hand.down = 0;
+            if (!askedX)
+                continue;
             const float reach = length(hand.at);
             const bool pulledIn = reach > 1e-3f && -dot(hand.velocity, hand.at) >= inward * speed * reach;
             if (strike ? !thrownDown : pulledIn)
@@ -1196,15 +1217,32 @@ class NamedPress {
             ++blows_;
             ++presses_;
         }
+        // Both fists down together in the air: the game's X and A, held, as
+        // its Ground Strike asks; one blow, both hands spent.
+        if (in.slams && in.airborne && fistLeft_ <= 0 && hands_[0].down < slamSeconds &&
+            hands_[1].down < slamSeconds) {
+            for (auto& hand : hands_) {
+                hand.armed = false;
+                hand.since = 0;
+                hand.down = slamSeconds;
+            }
+            fistSent_ = {};
+            fistSent_.buttons = static_cast<uint16_t>(x | a);
+            fistLeft_ = holdSeconds;
+            ++slams_;
+            ++blows_;
+            ++presses_;
+        }
     }
     struct Hand {
         Vec3 at{}, velocity{};
-        float since = rearmSeconds;
+        // since: its latest blow; down: since it was last thrown down in the air.
+        float since = rearmSeconds, down = slamSeconds;
         bool seen{}, armed = true;
     };
     std::array<Hand, 2> hands_{};
     State sent_[buttonControls]{}, fistSent_{};
-    uint32_t down_{}, claimed_{}, presses_{}, blows_{};
+    uint32_t down_{}, claimed_{}, presses_{}, blows_{}, slams_{};
     float fistLeft_{};
 };
 // Handing the player back to the game for an interact.
