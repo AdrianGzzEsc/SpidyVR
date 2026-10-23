@@ -750,10 +750,10 @@ TRACKING_GAP_REASONS = ((1, 'not_playing'), (2, 'unfocused'), (4, 'no_head'), (8
 
 def snapshot(game, address):
     for _ in range(8):
-        raw = game.read(address, 1176)
-        if len(raw) != 1176:
+        raw = game.read(address, 1192)
+        if len(raw) != 1192:
             return None
-        if struct.unpack_from('<3I', raw) != (0x53585244, 39, 1176):
+        if struct.unpack_from('<3I', raw) != (0x53585244, 40, 1192):
             raise RuntimeError('Game XR protocol mismatch')
         if struct.unpack_from('<Q', raw, 16)[0] & 1 or raw[16:24] != game.read(address+16, 8):
             continue
@@ -892,6 +892,12 @@ def snapshot(game, address):
         s_shown, s_frames, s_sight, s_tingles, s_broken, s_dodges = struct.unpack_from('<6I', raw, 1152)
         result.update(sense_headset=dict(shown=s_shown, mark_frames=s_frames, sight_frames=s_sight,
                                          tingles=s_tingles, broken=s_broken, dodges=s_dodges))
+        # Version 40: suit powers asked for with both hands at the chest, dodges made by moving out of a warned
+        # attack's way, dives (the player's own flight into the marked enemy, feet first), and the blows whose
+        # sound the headset played itself because the game's own was not there (game_sound.hpp).
+        c_suit, c_moved, c_dives, c_own = struct.unpack_from('<4I', raw, 1176)
+        result.update(combat_headset=dict(suit_powers=c_suit, move_dodges=c_moved, dives=c_dives,
+                                          own_sounds=c_own))
         result.update(crawl=dict(frames=crawl_frames, stood=crawl_stood, stick_samples=crawl_stick,
                                  stick_turn_degrees=round(math.degrees(crawl_turn), 1),
                                  stick_agreement=round(crawl_agreement, 3),
@@ -1105,6 +1111,31 @@ def focus_snapshot(game, address):
         now, most = struct.unpack_from('<2f', raw, 48)
         return dict(status=FOCUS_STATUS.get(status, status), asked=asked, given=given, missed=missed,
                     now=round(now, 2), most=round(most, 2))
+    return None
+
+
+SOUND_STATUS = {0: 'off', 2: 'running', 3: 'another build'}
+
+
+def sound_snapshot(game, address):
+    """The game's own melee impact sounds for Spidy's blows (game_sound.hpp): `asked` blows that asked for one,
+    `played` those the game played, `refused` those it gave no sound back for, `dropped` those that never reached
+    it (nobody to sound it on, a full queue); `on_player` blows sounded on the player's own sound sources, the one
+    struck having none; the sound sources the latest blow's switches were set on and the switches that took; `live`
+    while the headset leaves the blows' sound to the game."""
+    for _ in range(8):
+        raw = game.read(address, 72)
+        if len(raw) != 72:
+            return None
+        if struct.unpack_from('<3I', raw) != (0x53534e44, 1, 72):
+            raise RuntimeError('Sound protocol mismatch')
+        if struct.unpack_from('<Q', raw, 16)[0] & 1 or raw[16:24] != game.read(address+16, 8):
+            continue
+        status, = struct.unpack_from('<I', raw, 12)
+        asked, played, refused, dropped = struct.unpack_from('<4Q', raw, 24)
+        on_player, sources, live, switches = struct.unpack_from('<4I', raw, 56)
+        return dict(status=SOUND_STATUS.get(status, status), asked=asked, played=played, refused=refused,
+                    dropped=dropped, on_player=on_player, sources=sources, switches=switches, live=bool(live))
     return None
 
 
@@ -2082,7 +2113,7 @@ def session(a, startup):
             ROOT/'reports/ray-modules', ('SpidyRayStart', 'SpidyRaySubmit', 'SpidyRayStop',
                                        'SpidyRaySample', 'SpidyRayData', 'SpidySwingData', 'SpidyGrabData',
                                        'SpidyPunchData', 'SpidyStrikeData', 'SpidyShooterData', 'SpidyRopeData',
-                                       'SpidySenseData', 'SpidyFocusData'))
+                                       'SpidySenseData', 'SpidyFocusData', 'SpidySoundData'))
         # Imported here: probe_game_grab imports from this module.
         from probe_game_grab import grab_snapshot
         ray_module = next(m['base'] for m in modules(game.pid) if m['name'].lower() == 'spidy_ray_bridge.dll')
@@ -2147,6 +2178,7 @@ def session(a, startup):
         sense, sense_samples = None, deque(maxlen=2000)
         # The game's Focus for those blows: the latest.
         focus = None
+        sound = None
         # Read while the game runs: a session that ends with the game has nothing to read them from.
         ropes = steam = None
         # The web shooter: the latest, and a sample when a shot is asked for, fired or dropped.
@@ -2311,6 +2343,7 @@ def session(a, startup):
                             strike_samples.append(dict(fight, seconds=round(time.monotonic()-started, 3)))
                         strikes = fight
                     focus = focus_snapshot(game, rays['SpidyFocusData']) or focus
+                    sound = sound_snapshot(game, rays['SpidySoundData']) or sound
                     senses = sense_snapshot(game, rays['SpidySenseData'])
                     if senses and 'protocol_mismatch' in senses:
                         sense = senses
@@ -2501,6 +2534,7 @@ def session(a, startup):
             punch=punch_snapshot(game, rays['SpidyPunchData']) or punch, punch_samples=list(punch_samples),
             strikes=strike_snapshot(game, rays['SpidyStrikeData']) or strikes, strike_samples=list(strike_samples),
             focus=focus_snapshot(game, rays['SpidyFocusData']) or focus,
+            sound=sound_snapshot(game, rays['SpidySoundData']) or sound,
             sense=sense_snapshot(game, rays['SpidySenseData']) or sense, sense_samples=list(sense_samples),
             ropes=rope_snapshot(game, rays['SpidyRopeData']) or ropes,
             steam_guard=steam_snapshot(game, xr['SpidySteamData']) or steam,

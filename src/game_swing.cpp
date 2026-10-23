@@ -2,6 +2,7 @@
 // responsible for body collision and committing the resulting position.
 #include "spidy/game_swing.hpp"
 #include "spidy/game_focus.hpp"
+#include "spidy/game_sound.hpp"
 #include "spidy/game_grab.hpp"
 #include "spidy/game_offers.hpp"
 #include "spidy/game_punch.hpp"
@@ -322,6 +323,9 @@ void visit(const native_rays::QueryContext& world) {
             fighter.record = config.record;
             fighter.feet = at;
             fighter.grounded = motion.grounded != 0;
+            // The mover's velocity is in the game's time: in real m/s, as
+            // the strikes' speeds are.
+            fighter.velocity = player.velocity * game_punch::worldScale();
             fighter.busy = noBlows.load(std::memory_order_relaxed);
             for (unsigned i = 0; i < 2; ++i) {
                 const bool carried = solver.webs()[i].attached && (owned || !motion.grounded);
@@ -863,8 +867,11 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingStart(void* input) {
         if (!game_warp::start(config.base))
             game_warp::target(config.record);
         // The game's Focus for the punches' and the web's blows (game_focus):
-        // without it they earn none, as before.
+        // without it they earn none, as before. And the game's own impact
+        // sounds for the punches' blows (game_sound): without them the
+        // headset plays its own.
         game_focus::start(config.base);
+        game_sound::start(config.base);
         // The game's own interactions where the swing's wall holds the
         // player (game_offers): without them that wall offers nothing.
         game_offers::start(config.base);
@@ -1111,6 +1118,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingStop(void*) {
     game_punch::stop();
     game_shooter::stop();
     game_focus::stop();
+    game_sound::stop();
     native_bodies::stop();
     game_offers::stop();
     ReleaseSRWLockExclusive(&simulation);

@@ -22,6 +22,7 @@
 #include "spidy/phone.hpp"
 #include "spidy/phone_music.hpp"
 #include "spidy/game_shooter.hpp"
+#include "spidy/game_sound.hpp"
 #include "spidy/game_steam.hpp"
 #include "spidy/game_swing.hpp"
 #include "spidy/game_time.hpp"
@@ -139,7 +140,7 @@ enum GateReason : uint32_t {
     gateTracking = 16,    // the headset's pose or timing was not usable
 };
 struct XrData {
-    uint32_t magic = 0x53585244, version = 39, bytes = sizeof(XrData), status{};
+    uint32_t magic = 0x53585244, version = 40, bytes = sizeof(XrData), status{};
     int64_t sequence{};
     uint64_t frames{}, tracked{}, submitted{}, dropped{}, leftHands{}, rightHands{}, serial{}, generation{};
     uint32_t nativeKeys{}, error{};
@@ -357,8 +358,13 @@ struct XrData {
     // for an attacker out of view, tingles sent to the controllers, marks a
     // counter broke, and the game's dodge (B) pressed while a warning stood.
     uint32_t senseShown{}, senseFrames{}, senseSightFrames{}, senseTingles{}, senseBroken{}, senseDodges{};
+    // Version 40: suit powers asked for with both hands at the chest
+    // (game_pad::SuitPowerPress), dodges made by moving (MoveDodge), dives
+    // (WebStrike::dive) and the blows whose sound the headset played itself,
+    // the game's own not being there (game_sound.hpp).
+    uint32_t suitPowers{}, moveDodges{}, dives{}, ownSounds{};
 };
-static_assert(sizeof(XrData) == 1176);
+static_assert(sizeof(XrData) == 1192);
 // The game's own prompt and QTE calls, for one play session to say what their
 // arguments hold (game_prompts.hpp). The eight names matched the game on
 // October 13 - 107 of 630 calls into Flash in a 224 s session - but no prompt
@@ -461,6 +467,11 @@ BridgeCall startRays{}, submitRays{}, stopRays{};
 // The world rays' results, read where they are written: the bridge exports the
 // struct itself, and the session is in the same process as it.
 const native_rays::Data* rayResults{};
+// The game's own blow sounds (game_sound.hpp), read in place; null from an
+// older ray module, whose blows sound as the headset makes them.
+const game_sound::Data* soundResults{};
+// The tab's BLOW SOUNDS to the ray module (SpidySoundMode; optional).
+DWORD(WINAPI* soundMode)(void*){};
 BridgeCall startSwing{}, submitSwing{}, sampleSwing{}, stopSwing{}, retargetSwing{}, sampleGrab{}, sampleAim{};
 // Each web's edges (game_swing::Bends): optional, without it a web round an
 // edge is drawn to that edge.
@@ -864,6 +875,10 @@ DWORD WINAPI run(void*) {
         game_pad::ChargeJump chargeJump;
         game_pad::TemplePress templePress;
         uint32_t chargesBefore{}, leapsBefore{}, scansBefore{};
+        // Both hands at the chest with both triggers pulled: the game's suit
+        // power (L3 + R3).
+        game_pad::SuitPowerPress suitPress;
+        uint32_t suitPowersBefore{};
         float leapOut{};
         // The game's camera follows the head's pitch too: it offers a thing
         // at the player's feet or overhead only with that camera on it.
@@ -875,6 +890,15 @@ DWORD WINAPI run(void*) {
         // moment after B went down with the game's time at full speed. The
         // side its whoosh starts on (body_haptics' azimuth: + the right).
         float dodgeWatch{}, dodgeFrom{};
+        // A dodge by moving (spider_sense.hpp's MoveDodge): the head out of a
+        // warned attack's way is the game's B, the way it went.
+        MoveDodge moveDodge;
+        // A dive (WebStrike::dive): the legs kick out at the one it flies at,
+        // from its start until a moment after its blow. And the dives and the
+        // blows whose sound the headset played itself, for the report.
+        Vec3 diveAt{};
+        int64_t kickUntil{};
+        uint32_t dives{}, ownSounds{};
         // The VR settings: the launch options, then the SPIDY VR tab in the
         // game's Settings during play.
         vr_settings::Values values;
@@ -1206,6 +1230,9 @@ DWORD WINAPI run(void*) {
         // and both while the game names its X, whose press a thrown fist is
         // then (NamedPress) - a blow of Spidy's on top would hit as well.
         auto sendSwingSettings = [&] {
+            // BLOW SOUNDS: the game's own impacts only on GAME.
+            if (soundMode)
+                soundMode(reinterpret_cast<void*>(static_cast<uintptr_t>(values.blowSounds)));
             if (!swingStarted || !swingSettings)
                 return;
             game_swing::Settings s;
@@ -1480,6 +1507,24 @@ DWORD WINAPI run(void*) {
                             feel(body_haptics::Kind::scan);
                         }
                     }
+                    // Both hands at the chest with both triggers pulled is the
+                    // game's suit power (its L3 + R3, which VR play had no way
+                    // to), and those triggers shoot nothing meanwhile.
+                    {
+                        const float triggers[2]{frame.hands[0].trigger, frame.hands[1].trigger};
+                        suitPress.update(frame.seconds, gesturesPlay, frame.head, grips, gripsTracked, triggers);
+                        for (unsigned i = 0; i < 2; ++i)
+                            if (suitPress.hands() & (1u << i))
+                                controller.hands[i].trigger = 0;
+                        if (suitPress.powers() != suitPowersBefore) {
+                            suitPowersBefore = suitPress.powers();
+                            runtime.haptic(0, .9f, .12f);
+                            runtime.haptic(1, .9f, .12f);
+                            feel(body_haptics::Kind::leap);
+                            game_prompts::note("both hands at the chest, both triggers -> the game's L3 + R3 (its suit "
+                                               "power)");
+                        }
+                    }
                     // A grip squeezed at a back pocket draws the phone, and shoots
                     // no web until it is let go. Not with the phone out, nor in the
                     // pad layer, where the grips are the game's bumpers (October
@@ -1507,7 +1552,7 @@ DWORD WINAPI run(void*) {
                         named.buttons = frame.buttons;
                         // The temple's scan has a trigger, the pocket's draw a grip.
                         const uint32_t gestures =
-                            values.triggerWebs ? pocketDraw.hands() : templePress.hands();
+                            values.triggerWebs ? pocketDraw.hands() : templePress.hands() | suitPress.hands();
                         for (unsigned i = 0; i < 2; ++i) {
                             const auto& hand = frame.hands[i];
                             named.balls[i] = values.triggerWebs ? hand.squeeze : hand.trigger;
@@ -2238,12 +2283,30 @@ DWORD WINAPI run(void*) {
                             blowsBefore = std::min(blowsBefore, strikes.blows);
                             strikesBefore = std::min(strikesBefore, strikes.opened);
                             knockoutsBefore = std::min(knockoutsBefore, strikes.knockouts);
+                            const bool diving =
+                                strikes.phase == static_cast<uint32_t>(WebStrike::Phase::Flying) &&
+                                strikes.hand == static_cast<uint32_t>(WebStrike::diveHand);
                             if (strikes.opened > strikesBefore && input.focused) {
-                                // Off to him: a tick in both hands, and the rush.
-                                runtime.haptic(0, .35f, .05f);
-                                runtime.haptic(1, .35f, .05f);
+                                // Off to him: a tick in both hands, and the rush. A
+                                // dive's is harder, and the last of its way slows.
+                                runtime.haptic(0, diving ? .7f : .35f, diving ? .08f : .05f);
+                                runtime.haptic(1, diving ? .7f : .35f, diving ? .08f : .05f);
                                 feel(body_haptics::Kind::strikeRush);
-                                play(ImpactSound::Rush);
+                                // BLOW SOUNDS: OFF silences the rush as well.
+                                if (values.blowSounds != 2)
+                                    play(ImpactSound::Rush);
+                                if (diving) {
+                                    moments.start(Moment::dive);
+                                    ++dives;
+                                }
+                            }
+                            // The dive's legs kick out at the one it flies at (his
+                            // chest, where the lock's mark is), and a moment after.
+                            if (diving) {
+                                diveAt = strikes.cueTarget == strikes.target && finite(strikes.cuePoint)
+                                             ? strikes.cuePoint
+                                             : strikes.destination;
+                                kickUntil = frame.predictedDisplayTime + 250'000'000;
                             }
                             if (strikes.blows > blowsBefore && input.focused) {
                                 const auto kind = static_cast<BlowKind>(strikes.lastKind);
@@ -2280,10 +2343,19 @@ DWORD WINAPI run(void*) {
                                                   static_cast<int>(std::min(strikes.lastCount, 999u)), 0, called};
                                     burst.since = frame.predictedDisplayTime;
                                 }
-                                play(finisher ? ImpactSound::Finisher
-                                     : heavy ? ImpactSound::Heavy
-                                     : strength >= .35f ? ImpactSound::Firm
-                                                        : ImpactSound::Light);
+                                // BLOW SOUNDS: the game's own impact plays on him
+                                // while it can (game_sound.hpp), then none of the
+                                // headset's; SPIDY, the headset's; OFF, none.
+                                const bool gameSounds =
+                                    values.blowSounds == 0 && soundResults &&
+                                    *static_cast<const volatile uint32_t*>(&soundResults->live) == 1;
+                                if (values.blowSounds != 2 && !gameSounds) {
+                                    play(finisher ? ImpactSound::Finisher
+                                         : heavy ? ImpactSound::Heavy
+                                         : strength >= .35f ? ImpactSound::Firm
+                                                            : ImpactSound::Light);
+                                    ++ownSounds;
+                                }
                             }
                             // A knockout of the player's: time eases for an instant, both
                             // hands feel it, and it is lettered where he stood. This one is
@@ -2849,6 +2921,26 @@ DWORD WINAPI run(void*) {
                             walk.parkour = onCrawl && (walk.jump || webbed);
                         }
                         walk.scan = templePress.held() && steering;
+                        // Out of a warned attack's way by moving: a quick step or
+                        // lean across the attacker's line, a step back or a duck is
+                        // the game's B, the way the head went (a duck: the game's
+                        // own way). Where B may go out, as B itself.
+                        {
+                            std::array<DodgeThreat, 6> warned{};
+                            size_t count{};
+                            for (const auto& m : senseMarks)
+                                if (m.attacker && m.live && !m.brokenAt && count < warned.size())
+                                    warned[count++] = {m.attacker, m.head, m.answer};
+                            const Quat roomToWorld = motion.headPose.orientation * frame.head.orientation.conjugate();
+                            const bool dodgePlay = playing && !calibrationInput && validTrackedPose(frame.head);
+                            if (moveDodge.update(frame.seconds, dodgePlay, motion.headPose.position, frame.head.position,
+                                                 roomToWorld, {warned.data(), count})) {
+                                const Vec3 way = moveDodge.way();
+                                walk.dodge = true;
+                                walk.right = dot(way, motion.walkRightAxis);
+                                walk.forward = dot(way, motion.walkForwardAxis);
+                            }
+                        }
                         // A perfect dodge: the game slows its own time within a
                         // moment of a B that went down with it at full speed.
                         if (walk.dodge && !dodging) {
@@ -3174,6 +3266,10 @@ DWORD WINAPI run(void*) {
                         d.senseTingles = senseTingles;
                         d.senseBroken = senseBroken;
                         d.senseDodges = senseDodges;
+                        d.suitPowers = suitPress.powers();
+                        d.moveDodges = moveDodge.dodges();
+                        d.dives = dives;
+                        d.ownSounds = ownSounds;
                         for (unsigned i = 0; i < 3; ++i) {
                             d.cameraForward[i] = camera[8 + i];
                             d.cameraUp[i] = camera[4 + i];
@@ -3409,6 +3505,11 @@ DWORD WINAPI run(void*) {
                                      (kneels ? native_body::kneel : 0u);
                         pose.standUp = motion.standUp;
                         pose.floor = motion.floor;
+                        // A dive: the legs kick out at him (body::Targets::kick).
+                        if (kickUntil > frame.predictedDisplayTime && finite(diveAt)) {
+                            pose.flags |= native_body::kick;
+                            pose.kick = diveAt - motion.anchor;
+                        }
                         pose.eyes = Vec3{(motion.eyes[0][12] + motion.eyes[1][12]) / 2,
                                          (motion.eyes[0][13] + motion.eyes[1][13]) / 2,
                                          (motion.eyes[0][14] + motion.eyes[1][14]) / 2} -
@@ -4190,6 +4291,12 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyXrStart(void* input) {
     // Optional: an older ray module has no web strike, and a punch only its short pulse.
     sampleStrike = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidyStrikeSample"));
     sampleSense = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidySenseSample"));
+    soundResults = reinterpret_cast<const game_sound::Data*>(GetProcAddress(rays, "SpidySoundData"));
+    soundMode = reinterpret_cast<DWORD(WINAPI*)(void*)>(GetProcAddress(rays, "SpidySoundMode"));
+    if (const game_sound::Data expected; soundResults && (soundResults->magic != expected.magic ||
+                                                          soundResults->version != expected.version ||
+                                                          soundResults->bytes != expected.bytes))
+        soundResults = nullptr;
     swingSettings = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidySwingSettings"));
     // Optional: an older ray module has no web shooter.
     startShooter = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidyShooterStart"));

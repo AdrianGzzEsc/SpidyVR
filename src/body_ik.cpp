@@ -526,7 +526,24 @@ Result solve(Pose& pose, const Rig& rig, const Targets& targets, const Config& c
     r.headError = length(pose.position(rig.head) - headTarget);
     // 5. Feet the game stands on stay on the ground, turned with the body,
     // and follow the hips once they wander off; the knees bend forward.
-    if (r.grounded && t.plant) {
+    if (t.kick && finite(t.kickAt)) {
+        // A dive: both feet out at him from the hips, the toes along the
+        // kick, whatever the game's air pose does.
+        for (int i = 0; i < 2; ++i) {
+            const auto& leg = legs[i];
+            const Vec3 hip = pose.position(leg.upper);
+            Vec3 out = t.kickAt - hip;
+            out = length(out) > .05f * s ? normalized(out) : forward;
+            const float extend = i == 1 ? .97f : .8f;
+            const Vec3 foot = hip + out * ((rig.thigh[i] + rig.shin[i]) * s * extend);
+            limb(pose, rig, leg.upper, leg.lower, leg.foot, foot, up, w);
+            Vec3 top = up - out * dot(up, out);
+            top = length(top) > .1f ? normalized(top) : forward;
+            const Quat along = between(pose.direction(leg.foot, rig.footForward[i]),
+                                       pose.direction(leg.foot, rig.footUp[i]), out, top);
+            pose.turn(rig.below[leg.foot], partial(along, w), pose.position(leg.foot));
+        }
+    } else if (r.grounded && t.plant) {
         // Planted: under each hip on the floor, the ankle at its rest height,
         // the foot flat and facing the body's way. The game's pose has nothing
         // to say about these legs.

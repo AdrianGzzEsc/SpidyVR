@@ -295,6 +295,83 @@ class TemplePress {
     uint32_t hands_{}, scans_{};
     float left_{};
 };
+// Both hands at the chest with both triggers pulled: the game's L3 + R3, its
+// suit power. A player's idea, October 15 ("both your hands to your chest and
+// hit trigger like the scan"): VR play had no way to it at all, as clicking
+// both sticks is the pad layer and only the game screen sent the game its L3
+// + R3. The chest: a point `below` the headset and `ahead` of it, level with
+// where it looks; a hand counts within `reach` of it as its trigger goes down,
+// and the two triggers must go down within `together` of each other. Each
+// such trigger is the gesture's alone until it is let go: no web ball, no
+// reel (hands()). Outside VR play nothing holds, and a trigger held through
+// that must be let go first.
+class SuitPowerPress {
+  public:
+    static constexpr float below = .38f, ahead = .15f, reach = .22f, together = .4f, pressed = .6f,
+                           released = .3f, holdSeconds = .15f;
+    // seconds: since the previous update. play: the controllers play VR.
+    // head and grips: the headset's and each hand's grip pose, in one space;
+    // tracked and triggers: each hand's. Returns the game's L3 + R3: down or not.
+    bool update(float seconds, bool play, const Pose& head, const Pose grips[2], const bool tracked[2],
+                const float triggers[2]) {
+        const float dt = std::isfinite(seconds) ? std::clamp(seconds, 0.f, .1f) : 0.f;
+        left_ = std::max(0.f, left_ - dt);
+        Vec3 chest{};
+        bool placed = play && finite(head.position);
+        if (placed) {
+            Vec3 look = head.orientation.rotate({0, 0, -1});
+            look.y = 0;
+            look = length(look) > .1f ? normalized(look) : Vec3{0, 0, -1};
+            chest = head.position + Vec3{0, -below, 0} + look * ahead;
+            placed = finite(chest);
+        }
+        for (unsigned i = 0; i < 2; ++i) {
+            const float trigger = std::isfinite(triggers[i]) ? triggers[i] : 0.f;
+            const bool down = tracked[i] && trigger > (down_[i] ? released : pressed);
+            const bool press = down && !down_[i];
+            down_[i] = down;
+            since_[i] += dt;
+            const uint32_t bit = 1u << i;
+            if (!down || !play) {
+                hands_ &= ~bit;
+                continue;
+            }
+            if (press && placed && finite(grips[i].position) && length(grips[i].position - chest) <= reach) {
+                hands_ |= bit;
+                since_[i] = 0;
+                spent_ &= ~bit;
+            }
+        }
+        // Both triggers pulled at the chest, close together and not spent
+        // on a power already: the power.
+        if (hands_ == 3 && !spent_ && std::abs(since_[0] - since_[1]) <= together) {
+            spent_ = 3;
+            ++powers_;
+            left_ = holdSeconds;
+        }
+        if (!play)
+            left_ = 0;
+        held_ = left_ > 0;
+        return held_;
+    }
+    bool held() const {
+        return held_;
+    }
+    // A bit per hand whose trigger is the gesture's.
+    uint32_t hands() const {
+        return hands_;
+    }
+    // Suit powers asked for so far.
+    uint32_t powers() const {
+        return powers_;
+    }
+
+  private:
+    bool down_[2]{}, held_{};
+    float since_[2]{100, 100};
+    uint32_t hands_{}, spent_{}, powers_{};
+    float left_{};
+};
 // The right thumbstick pushed straight down or up, as Walk::heal and
 // Walk::zip. In VR play that stick turns the player with its left and right;
 // its down and up did nothing. A push counts from the stick at rest, once it

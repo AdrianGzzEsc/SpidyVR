@@ -231,10 +231,12 @@ Your body and fists
 
 Fighting (web strikes: punching across the room, as in Batman: Arkham Shadow)
   Punch a thug ......... a fist that meets him fast lands a blow, as hard as
-                         it moved. Every blow kicks in your hand, sounds,
-                         bursts where it landed (a comic's star: yellow for
-                         a jab, red for a harder blow) and stops time for a
-                         moment
+                         it moved. Every blow kicks in your hand, sounds as
+                         the game's own blows do (its hit on him, as hard as
+                         yours was; BLOW SOUNDS in Settings > SPIDY VR picks
+                         Spidy's own tones or none instead), bursts where it
+                         landed (a comic's star: yellow for a jab, red for a
+                         harder blow) and stops time for a moment
   Punch at a thug ...... web strike: you fly to him and the blow lands as
   out of reach           you arrive. He can be 10 m away, anywhere you can
                          see him: across the street, below you, in the air.
@@ -244,6 +246,15 @@ Fighting (web strikes: punching across the room, as in Batman: Arkham Shadow)
   Punch along your ..... the same: you go to him, and the web lets go. A
   web at the thug        sharp pull still yanks him to you instead
   it holds
+  Swing, zip or fall ... a dive: come at the thug the ring marks fast (9 m/s
+  into a thug            or more) off the ground - a swing, a zip, a jump, a
+                         fall - and a third of a second from him you go the
+                         rest of the way feet first, time slowing, and kick
+                         him: a heavy blow as hard as you were fast, that
+                         sends him flying the way you came. Your webs let go,
+                         and in the air you hang beside him for the next
+                         blow. Only at the ringed one, and only on course for
+                         him: a swing past a crowd kicks nobody
   A hard punch ......... sends him flying, the harder the farther
   Uppercut ............. lifts him into the air. Strike up after him: you
                          hang beside him for a moment after every blow you
@@ -319,6 +330,12 @@ Fighting (web strikes: punching across the room, as in Batman: Arkham Shadow)
                          lands on him while his lines show counts too
   Red lines ............ dodge: B. The game says nothing breaks this attack
                          (a heavy's charge, a blow from too far to counter)
+  Out of the way ....... while red or blue lines show, step or lean quickly
+                         to a side (17 cm), step back (20 cm) or duck (15
+                         cm): that is the game's dodge, the way you moved (a
+                         duck: the way the game picks), its perfect dodge and
+                         its slowed time too. A lean toward him is none (a
+                         counter leans in). Not while a web carries you
   Yellow lines ......... under a white chevron: jump over it, A
   Out of view .......... an enemy behind you or to the side: his mark shows
                          small near the middle of your view on his side,
@@ -393,6 +410,11 @@ Moving
   trigger                hand beside your head and pull its trigger there;
                          it holds for as long as you hold the trigger. No
                          web ball from that pull
+  Both hands at your ... the game's suit power (its L3 + R3, which nothing
+  chest, both triggers   sent in VR before): both hands before your chest,
+                         pull both triggers together (within half a second
+                         or so). No web balls from those pulls. The game uses
+                         its power when its meter is full, as in the flat game
   Menu button .......... pause
   Hold both sticks in .. pause too, after a moment (both hands buzz). Under
                          SteamVR the Quest's menu button is SteamVR's own:
@@ -637,9 +659,12 @@ VR settings
                    within 100 m holds there; off, it misses).
   SWINGING ....... the swing speed limit and your weight.
   COMFORT ........ snap turn and smooth turn.
-  HAPTICS ........ controller vibration; BODY HAPTICS (a bHaptics vest,
-                   sleeves and visor, below) and its four switches: WEB,
-                   WIND, COMBAT and MOVEMENT HAPTICS.
+  HAPTICS ........ controller vibration; BLOW SOUNDS (GAME: your blows
+                   sound as the game's own do, its hits on the one you
+                   struck; SPIDY: Spidy's own tones, as before October 22;
+                   OFF: none, nor a web strike's rush); BODY HAPTICS (a bHaptics vest, sleeves and
+                   visor, below) and its four switches: WEB, WIND, COMBAT
+                   and MOVEMENT HAPTICS.
   DISPLAY ........ the game screen's size, its 3D depth and the HUD's size
                    (OFF hides it in VR). UI STYLE: how Spidy's own marks,
                    gadget wheel and meters look: COMIC, printed as Spidy's
@@ -663,8 +688,8 @@ VR settings
                    you switch it on, above) and the nine rows that tune it.
   Changes apply at once. The launcher starts your next session with them;
   its options show every one of them but VR VIEW too.
-  NEAR CLIP, RECORDING FOV, UI STYLE, the four body haptics switches and the
-  EXPERIMENTAL rows below FLIP SPEED Spidy keeps in
+  NEAR CLIP, RECORDING FOV, UI STYLE, BLOW SOUNDS, the four body haptics
+  switches and the EXPERIMENTAL rows below FLIP SPEED Spidy keeps in
   %APPDATA%\Spidy\spidy_vr.ini, beside the launcher's own settings; the
   launcher shows realistic flips' nine rows while it is on, and the body
   haptics switches while it plays. Playing
@@ -686,7 +711,8 @@ Settings profiles (share your settings, or try someone else's)
   "Profile", at the top of the launcher's Options tab, keeps sets of settings
   and switches between them. A profile holds every setting of the SPIDY VR
   tab but RECORDING FOV, the ones in spidy_vr.ini too (NEAR CLIP, UI STYLE,
-  the body haptics switches, the EXPERIMENTAL rows), and "Wall running". Not
+  BLOW SOUNDS, the body haptics switches, the EXPERIMENTAL rows), and "Wall
+  running". Not
   your graphics options (render resolution, upscaling, the game window, the
   monitor and its RECORDING FOV, the game's depth of field and sharpening),
   which suit your own PC, and not your body calibration: a profile leaves

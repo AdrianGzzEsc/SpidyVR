@@ -42,6 +42,10 @@ static_assert(std::size(recordingFovChoices) == std::size(recording_fov::choices
 constexpr int uiStyles[] = {0, 1};
 constexpr const char* uiStyleChoices[] = {"COMIC", "TECH"};
 static_assert(std::size(uiStyleChoices) == std::size(uiStyles));
+// BLOW SOUNDS: the game's own melee impacts, Spidy's own tones, or none.
+constexpr int blowSoundSteps[] = {0, 1, 2};
+constexpr const char* blowSoundChoices[] = {"GAME", "SPIDY", "OFF"};
+static_assert(std::size(blowSoundChoices) == std::size(blowSoundSteps));
 // The realistic flips' rows (RealisticFlipSettings).
 constexpr int automaticStrengths[] = {25, 50, 75, 100};
 constexpr const char* automaticStrengthChoices[] = {"25%", "50%", "75%", "100%"};
@@ -105,6 +109,8 @@ std::span<const int> steps(Item item) {
         return recording_fov::choices;
     case Item::uiStyle:
         return uiStyles;
+    case Item::blowSounds:
+        return blowSoundSteps;
     case Item::automaticStrength:
         return automaticStrengths;
     case Item::automaticSpeed:
@@ -154,6 +160,8 @@ float numberOf(Item item, const Values& v) {
         return static_cast<float>(v.recordingFov);
     case Item::uiStyle:
         return static_cast<float>(v.uiStyle);
+    case Item::blowSounds:
+        return static_cast<float>(v.blowSounds);
     case Item::automaticStrength:
         return static_cast<float>(v.automaticStrength);
     case Item::automaticSpeed:
@@ -228,6 +236,7 @@ Values sanitized(Values v) {
     v.nearClipMm = std::clamp(v.nearClipMm, nearClips[0], std::end(nearClips)[-1]);
     v.recordingFov = recording_fov::sanitized(v.recordingFov);
     v.uiStyle = std::clamp(v.uiStyle, uiStyles[0], std::end(uiStyles)[-1]);
+    v.blowSounds = std::clamp(v.blowSounds, blowSoundSteps[0], std::end(blowSoundSteps)[-1]);
     // The realistic flips' ranges, as RealisticFlip takes them.
     v.automaticStrength = std::clamp(v.automaticStrength, 25, 100);
     v.automaticSpeed = std::clamp(v.automaticSpeed, 90, 360);
@@ -238,9 +247,9 @@ Values sanitized(Values v) {
     v.automaticHandThreshold = std::clamp(v.automaticHandThreshold, 50, 300);
     return v;
 }
-const std::array<Row, 43>& rows() {
+const std::array<Row, 44>& rows() {
     // The help fits the game's description column beside the rows.
-    static const std::array<Row, 43> all{{
+    static const std::array<Row, 44> all{{
         {Item::none, "WEBS", nullptr, {}},
         {Item::webStyle, "WEB STYLE",
          "Arcade: webs pass lamp posts, signs and cars, and swings stay above the street.", webStyleChoices},
@@ -261,6 +270,8 @@ const std::array<Row, 43>& rows() {
         {Item::none, "HAPTICS", nullptr, {}},
         {Item::haptics, "CONTROLLER VIBRATION", "How strongly webs, grabs and punches buzz in your hands.",
          hapticChoices},
+        {Item::blowSounds, "BLOW SOUNDS", "What your blows sound like: the game's own hits, Spidy's tones, or none.",
+         blowSoundChoices},
         {Item::bodyHaptics, "BODY HAPTICS",
          "How strongly bHaptics vest, sleeves and visor play webs, hits and Spider-Sense.", hapticChoices},
         {Item::hapticWebs, "WEB HAPTICS",
@@ -390,6 +401,9 @@ bool choose(Item item, int index, Values& v) {
     case Item::uiStyle:
         v.uiStyle = s[index];
         break;
+    case Item::blowSounds:
+        v.blowSounds = s[index];
+        break;
     case Item::automaticStrength:
         v.automaticStrength = s[index];
         break;
@@ -446,6 +460,7 @@ constexpr TabOnly tabOnly[] = {
     {"body_haptics_movement", &Values::hapticMovement, nullptr},
     {"recording_fov", nullptr, &Values::recordingFov},
     {"ui_style", nullptr, &Values::uiStyle},
+    {"blow_sounds", nullptr, &Values::blowSounds},
 };
 } // namespace
 std::string tabOnlyText(const Values& v) {

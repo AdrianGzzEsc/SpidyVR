@@ -50,9 +50,11 @@ enum Flags : uint32_t {
     // Standing so, the view holds the head below the player's own under a
     // roof (a vent, a duct): the legs kneel (body::Targets::kneel).
     kneel = 64,
+    // A dive: the legs kick out at Command::kick (body::Targets::kick).
+    kick = 128,
 };
 struct Command {
-    uint32_t magic = 0x53424443, version = 4, bytes = sizeof(Command), flags{};
+    uint32_t magic = 0x53424443, version = 5, bytes = sizeof(Command), flags{};
     uint64_t serial{};
     uint32_t leaseMs = 250, reserved{};
     Vec3 eyes{};   // between the eyes, relative to the feet
@@ -81,10 +83,14 @@ struct Command {
     // (commandBytesV3) ends before them: the world's floor.
     Vec3 standUp{};
     Vec3 floor{};
+    // Version 5, with Flags::kick: the point the legs kick out at, relative
+    // to the feet, world axes. Version 4 (commandBytesV4) ends before it.
+    Vec3 kick{};
 };
-constexpr uint32_t commandBytesV1 = 144, commandBytesV2 = 160, commandBytesV3 = 168;
-static_assert(sizeof(Hand) == 36 && sizeof(Command) == 192 && offsetof(Command, tilt) == commandBytesV1 &&
-              offsetof(Command, shoot) == commandBytesV2 && offsetof(Command, standUp) == commandBytesV3);
+constexpr uint32_t commandBytesV1 = 144, commandBytesV2 = 160, commandBytesV3 = 168, commandBytesV4 = 192;
+static_assert(sizeof(Hand) == 36 && sizeof(Command) == 208 && offsetof(Command, tilt) == commandBytesV1 &&
+              offsetof(Command, shoot) == commandBytesV2 && offsetof(Command, standUp) == commandBytesV3 &&
+              offsetof(Command, kick) == commandBytesV4);
 
 enum State : uint32_t { off = 0, waiting = 1, active = 2, failed = 3 };
 // Why the body is not on the hero (Status::problem).

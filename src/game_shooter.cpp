@@ -3,6 +3,7 @@
 // thread, and what they do where they land (game_shooter.hpp).
 #include "spidy/game_shooter.hpp"
 #include "spidy/game_focus.hpp"
+#include "spidy/game_sound.hpp"
 #include "spidy/game_warp.hpp"
 #include "spidy/game_targets.hpp"
 #include "spidy/native_bodies.hpp"
@@ -859,11 +860,12 @@ void fireQueued() {
 }
 uint64_t frame(void* self, float seconds, uint64_t a, uint64_t b) {
     const auto result = originalFrame(self, seconds, a, b);
-    // The hero's own transitions Spidy asked for (game_warp), and the Focus
-    // its blows earned (game_focus): this is the main thread, after the
-    // hero's update.
+    // The hero's own transitions Spidy asked for (game_warp), the Focus its
+    // blows earned (game_focus) and their sounds (game_sound): this is the
+    // main thread, after the hero's update.
     game_warp::frame();
     game_focus::frame();
+    game_sound::frame();
     if (!enabled.load(std::memory_order_relaxed))
         return result;
     ++active;

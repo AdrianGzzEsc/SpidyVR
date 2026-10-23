@@ -101,7 +101,7 @@ SlowMoments::SlowMoments(const MomentTuning& tuning) : tuning_(tuning) {
 bool SlowMoments::start(Moment kind) {
     const unsigned k = static_cast<unsigned>(kind) % momentKinds;
     const bool going = left_ > 0;
-    if (!going && kind != Moment::dodge && sinceEnd_ < tuning_.rest)
+    if (!going && kind != Moment::dodge && kind != Moment::dive && sinceEnd_ < tuning_.rest)
         return false;
     if (!going)
         sinceStart_ = 0;

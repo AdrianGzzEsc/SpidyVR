@@ -107,6 +107,11 @@ struct Values {
     // ui_style.hpp's UiStyle): 0 comic, printed as Spidy's videos are; 1
     // tech, as the game's own HUD and menus are.
     int uiStyle = 0;
+    // What Spidy's blows sound like (the tab's BLOW SOUNDS; game_sound.hpp):
+    // 0 the game's own melee impacts, 1 Spidy's own tones (impact_sound.hpp),
+    // as before October 22, 2 none. Players asked for both (October 13: "pls
+    // an option to remove the sfx when punching", 12 reactions).
+    int blowSounds = 0;
     bool operator==(const Values&) const = default;
 };
 // The steps the game's Settings offer. The launcher's slider sets any swing
@@ -148,7 +153,8 @@ inline float screenDepth(int choice) {
 // run_game_vr.py accepts), snap turn 0-90 degrees, smooth turn 0-360 degrees
 // a second, vibration and body haptics 0-100%, weight 40-300%, HUD 0-3, flip
 // speed 90-480 degrees a second, the game screen's depth 0-3, near clip
-// 10-100 mm, recording FOV 0 (off) or 130-150 degrees, UI style 0-1.
+// 10-100 mm, recording FOV 0 (off) or 130-150 degrees, UI style 0-1, blow
+// sounds 0-2.
 Values sanitized(Values);
 
 enum class Item : uint8_t {
@@ -190,8 +196,9 @@ enum class Item : uint8_t {
     hapticMovement,
     recordingFov,
     uiStyle,
+    blowSounds,
 };
-inline constexpr Item lastItem = Item::uiStyle;
+inline constexpr Item lastItem = Item::blowSounds;
 // The SPIDY VR tab, top to bottom: a section's heading (item none) or a
 // setting. The sections: WEBS, SWINGING, COMFORT, HAPTICS, DISPLAY, BODY and
 // EXPERIMENTAL (the player, October 19: "sort the options in spidy vr
@@ -209,7 +216,7 @@ struct Row {
     // menu (the one with resume)").
     bool page{};
 };
-const std::array<Row, 43>& rows();
+const std::array<Row, 44>& rows();
 // The most choices a row shows (game_menu's buffers): a row with more would
 // lose its last ones.
 inline constexpr size_t maxChoices = 9;
@@ -225,7 +232,7 @@ bool choose(Item, int choice, Values&);
 // What the game's RESET puts back: the choice for Spidy's defaults (Values{}).
 int defaultChoice(Item);
 // The settings no launcher.ini key or XrConfig field carries: NEAR CLIP,
-// RECORDING FOV, UI STYLE, HAND WALL CLIMBING, WALL CAMERA DISTANCE, the
+// RECORDING FOV, UI STYLE, BLOW SOUNDS, HAND WALL CLIMBING, WALL CAMERA DISTANCE, the
 // realistic flips' ten rows and the body haptics' four groups. The game
 // module keeps them as these key=value lines in a file of their own, beside
 // the launcher's settings (game_xr.cpp, tabOnlyPath), and reads them back

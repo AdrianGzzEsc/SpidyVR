@@ -5,6 +5,7 @@
 #include "spidy/game_focus.hpp"
 #include "spidy/game_grab.hpp"
 #include "spidy/game_sense.hpp"
+#include "spidy/game_sound.hpp"
 #include "spidy/game_targets.hpp"
 #include "spidy/game_time.hpp"
 #include "spidy/native_bodies.hpp"
@@ -460,10 +461,26 @@ void land(PunchEvent e, bool byStrike) {
         request.knockbackAmount = 2 + 6 * e.strength;
     }
     // The Focus the game's own blow earns, in the air its air blow's: the
-    // request alone earns none (game_focus.hpp).
-    if (native_bodies::damage(request))
+    // request alone earns none (game_focus.hpp). And the game's own melee
+    // impact on him (game_sound.hpp): where it landed, as hard as the headset
+    // grades it (a jab light, a firm blow medium, heavy, a finisher extreme),
+    // the flow's count, in the air or not, a fist or a web strike.
+    if (native_bodies::damage(request)) {
         game_focus::earn(fighter.record,
                          fighter.grounded ? game_focus::Kind::meleeDefault : game_focus::Kind::meleeAir);
+        game_sound::Blow sound;
+        sound.intensity = d.kind == BlowKind::Finisher        ? 4
+                          : d.kind != BlowKind::Hit || called ? 3
+                          : e.strength >= .35f                ? 2
+                                                              : 1;
+        for (const auto& enemy : enemies)
+            if (enemy.id == e.target)
+                sound.location = game_sound::locationOf(e.point.y - enemy.feet.y, enemy.height);
+        sound.combo = static_cast<uint8_t>(std::clamp(count - 1, 0, 5));
+        sound.air = !fighter.grounded;
+        sound.webStrike = byStrike;
+        game_sound::blow(fighter.record, e.target, sound);
+    }
     if (d.fly && machine) {
         const auto waiting = std::find_if(launches.begin(), launches.end(),
                                           [&](const Launch& l) { return l.record == e.target; });
@@ -691,6 +708,15 @@ Opened game_punch::update(float seconds, const Input& in, const Player& player, 
         tally.swung += strikeOpened->called;
         tally.held += strikeOpened->held;
         tally.distance = strikeOpened->distance;
+    } else if (const auto dove = strike.dive(player.velocity, player.grounded, head, player.feet, enemies, world,
+                                             wish.target, punches.config())) {
+        // His own flight into the marked enemy: a swing, a zip, a jump or a
+        // fall that takes him at him fast, feet first (WebStrike::dive). The
+        // webs let go; the rest of the way is the strike's.
+        lock.take(dove->target);
+        opened = {true, false};
+        ++tally.opened;
+        tally.distance = dove->distance;
     } else if (flying && strike.phase() == WebStrike::Phase::Idle) {
         ++tally.missed; // the player took no steps: perched, or held by the game
     }
@@ -749,7 +775,7 @@ Flight game_punch::fly(float seconds, Vec3 feet, bool grounded, bool waiting) {
     for (const auto& e : enemies)
         if (e.id == strike.target())
             target = &e;
-    const bool flying = strike.phase() == WebStrike::Phase::Flying;
+    const bool flying = strike.phase() == WebStrike::Phase::Flying, diving = strike.diving();
     const int hand = strike.hand();
     const auto step = strike.step(seconds, feet, grounded, flying ? target : nullptr);
     out.drive = step.drive;
@@ -759,7 +785,8 @@ Flight game_punch::fly(float seconds, Vec3 feet, bool grounded, bool waiting) {
         // the fist that opened the strike, and no weaker than a strike's.
         const Vec3 chest = feet + Vec3{0, strike.config().chest, 0};
         Vec3 way = normalized(target->middle() - chest);
-        if (length(way) < .5f)
+        // A dive's: along the dive, the way the player came at him.
+        if (length(way) < .5f || diving)
             way = strike.direction();
         auto e = punches.blow(way, std::max(strike.fistSpeed(),
                                             speedOf(punches.config(), strike.config().minStrength)));

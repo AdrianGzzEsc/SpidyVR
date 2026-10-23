@@ -3,7 +3,90 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 22, fourth): webs off a wall with hand wall
+**Latest build (October 22, fifth): four ideas from the Discord - dodging
+by moving, the suit power at your chest, the dive, the game's own blow
+sounds.** You: "commit current dif and do all 4", the four picked from the
+ideas forum.
+
+- **Dodging by moving** (arturonomin, October 15: "IRL dodging mechanics,
+  similar to Batman: Arkham Shadow"; Armie, October 14, 4 votes: "when you
+  Flip, Web-zip, you dodge enemies"). While a red or blue Spider-Sense
+  warning stands, a quick step or lean across the attacker's line (17 cm),
+  a step back from him (20 cm) or a duck (15 cm), within 0.3 s, is the
+  game's own B, the way the head went (a duck: the way the game picks), so
+  its perfect dodge and slowed time come with it as they do with B. A lean
+  toward him is none (a counter leans in), nor a yellow warning (A's). The
+  head is measured in the tracking space, so walking with the stick and a
+  snap turn move nothing; one dodge answers the warnings standing, and a
+  jump of the tracking (the view re-placed) starts the measure over. Not
+  while a web carries you, as B (`MoveDodge`, spider_sense.hpp). Flips and
+  zips carry you on a web or Spidy's own flight, where the game's dodge
+  cannot go out: they dodge nothing yet.
+- **The suit power at your chest** (Tru, October 15, 4 votes; ItzWadde:
+  "both your hands to your chest and hit trigger like the scan"). VR play
+  had no way to the game's L3 + R3 at all: clicking both sticks is the pad
+  layer, and only the game screen sent it. Both hands before the chest (38
+  cm under the eyes, 15 cm ahead, 22 cm round it) with both triggers pulled
+  within 0.4 s of each other are now its L3 + R3, a 0.15 s press, both hands
+  buzzing; those triggers shoot no web ball until let go
+  (`game_pad::SuitPowerPress`, beside the temple's scan). The game uses its
+  power when its meter is full.
+- **The dive** (grundy_chumbo, October 21-22: swing kicks, slow motion at
+  the end of a zip; Armie, October 21: launching yourself into an enemy
+  should hit like two punches). A web strike's blow was the fist's alone:
+  swinging through a crowd did nothing. Now the player's own flight - a
+  swing, a zip, a jump, a fall, 9 m/s or faster, off the ground - on course
+  for the enemy the ring marks (his line passing within 1.1 m of his middle,
+  there within 0.35 s, 7 m at most) opens a strike: the webs let go, the
+  last of the way flies on at the player's own speed (12 m/s at least), feet
+  first, the world slowed for it (`Moment::dive`, which a moment before does
+  not hold back), and the blow is as hard as he was fast - a heavy one from 9
+  m/s, the hardest from 20 - sending him flying the way the player came. In
+  the air the player then hangs beside him for the next blow
+  (`WebStrike::dive`; `game_punch::Player::velocity`). The legs kick out at
+  him from the hips, the right one straight, instead of keeping the game's
+  air pose (`body::Targets::kick`, the body Command's version 5). Only at
+  the ringed one and only on course: a swing past a crowd kicks nobody.
+- **The game's own blow sounds** (FEDI, October 13, 12 reactions: "pls an
+  option to remove the sfx when punching"; Stoinked: "add multiple punch
+  sounds"; Tru: "less like popping balloons"). The headset played four
+  tones of its own. The game sounds its own melee through the attacker's
+  `AnimImpactEventManager`, which Spidy's blows never reach: on the one
+  struck it sets five switches of its "Melee Impact Event" and plays a hit
+  sound. Each blow of Spidy's on an enemy now does the same from the game's
+  main thread (`game_sound.cpp`): where it landed (head, torso, leg), how
+  hard (a jab light, a firm blow medium, a heavy one heavy, a finisher
+  extreme), the flow's count, in the air or not, a fist or a web strike, on
+  his sound sources - or the player's, at arm's length, when he has none -
+  and the first of its three hit sounds, the impact's plain case (which one
+  the game's own punches name could not be read: the hero has impact entries
+  only while the flat game's own attack runs). While the game plays them the
+  headset plays none of its own. **BLOW SOUNDS** under HAPTICS:
+  GAME (the default), SPIDY (the old tones) or OFF.
+- **Measured in the game here** (your save, a sign over a plaza at night,
+  no headset; `tools/probe_sound.py`, new): the sound call gave a sound back
+  for every one of over 200 plays from Spidy's frame hook; the player's 3
+  sound sources took all 15 switches; actors with no sound sources of their
+  own had the blow sounded on the player's (8 of 8). A street crime's thugs
+  80 m off, in its opening scene, had no sound sources at all. **Not heard:**
+  a recording of the PC's output while the game played, the plays lined up
+  and compared with as many moments of nothing, showed neither these sounds
+  nor the game's own Spider-Sense sound played the same way, nor the game's
+  own air punches, out of the plaza's noise. If blows are silent in the
+  headset, BLOW SOUNDS: SPIDY brings the old tones back - and tell me.
+- **Session reports** carry `sound` (`SpidySoundData`, version 1, 72 bytes:
+  blows asked, played, refused, dropped, sounded on the player, the sound
+  sources and switches, live) and `combat_headset` (XrData version 40: suit
+  powers, dodges by moving, dives, blows the headset sounded itself).
+- **Checked:** core tests (440; new: dodging by moving, the suit power, the
+  dive, the kick's legs, the dive's moment, the sound engine's ids, the BLOW
+  SOUNDS row), the launcher's, the six Python suites, the GPU test, the game
+  runs above; your 19 save files byte-identical after them. Not in a
+  headset. `spidy_ray_bridge.dll`, `spidy_stereo_probe.dll`,
+  `tools/run_game_vr.py` and the launcher change, and XrData's version: the
+  whole package goes together.
+
+**Earlier build (October 22, fourth): webs off a wall with hand wall
 climbing on.** You: "webbing from a wall with current settings doesnt work,
 i need to jump down to do it".
 

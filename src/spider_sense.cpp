@@ -172,6 +172,91 @@ void SpiderSense::reset() {
     thrownAt_ = {};
     spent_ = {};
 }
+MoveDodge::MoveDodge(MoveDodgeConfig c) : config_(c) {
+    const auto bad = [](float v) { return !std::isfinite(v) || v <= 0; };
+    if (bad(c.window) || bad(c.aside) || bad(c.back) || bad(c.duck) || !std::isfinite(c.toward) || bad(c.jump) ||
+        bad(c.press) || !std::isfinite(c.rest) || c.rest < 0)
+        throw std::invalid_argument("Invalid move dodge configuration");
+}
+void MoveDodge::reset() {
+    first_ = count_ = 0;
+    way_ = {};
+    pressLeft_ = restLeft_ = 0;
+    dodged_ = {};
+}
+bool MoveDodge::update(float seconds, bool play, Vec3 head, Vec3 room, Quat roomToWorld,
+                       std::span<const DodgeThreat> threats) {
+    const float dt = std::isfinite(seconds) ? std::clamp(seconds, 0.f, .1f) : 0.f;
+    pressLeft_ = std::max(0.f, pressLeft_ - dt);
+    restLeft_ = std::max(0.f, restLeft_ - dt);
+    // An answered warning is forgotten once the game takes it off.
+    for (auto& d : dodged_)
+        if (d && std::none_of(threats.begin(), threats.end(), [&](const DodgeThreat& t) { return t.attacker == d; }))
+            d = 0;
+    const float turn = roomToWorld.x * roomToWorld.x + roomToWorld.y * roomToWorld.y +
+                       roomToWorld.z * roomToWorld.z + roomToWorld.w * roomToWorld.w;
+    if (!finite(head) || !finite(room) || !std::isfinite(turn) || std::abs(turn - 1) > .01f) {
+        count_ = 0;
+        pressLeft_ = 0;
+        return false;
+    }
+    const auto at = [&](std::size_t i) -> Sample& { return samples_[(first_ + i) % samples_.size()]; };
+    if (count_ && length(room - at(count_ - 1).room) > config_.jump)
+        count_ = 0;
+    for (std::size_t i = 0; i < count_; ++i)
+        at(i).age += dt;
+    while (count_ && at(0).age > config_.window) {
+        first_ = (first_ + 1) % samples_.size();
+        --count_;
+    }
+    if (count_ == samples_.size()) {
+        first_ = (first_ + 1) % samples_.size();
+        --count_;
+    }
+    at(count_++) = {room, 0};
+    if (!play) {
+        pressLeft_ = 0;
+        return false;
+    }
+    if (pressLeft_ > 0 || restLeft_ > 0)
+        return pressLeft_ > 0;
+    for (const auto& t : threats) {
+        if ((t.answer != SenseAnswer::Counter && t.answer != SenseAnswer::Dodge) || !t.attacker || !finite(t.at) ||
+            std::find(dodged_.begin(), dodged_.end(), t.attacker) != dodged_.end())
+            continue;
+        Vec3 to = t.at - head;
+        to.y = 0;
+        if (length(to) < .1f)
+            continue;
+        const Vec3 line = normalized(to);
+        // The head's move since each place in the window, in the world's axes.
+        for (std::size_t i = 0; i + 1 < count_; ++i) {
+            const Vec3 moved = roomToWorld.rotate(room - at(i).room);
+            const Vec3 level{moved.x, 0, moved.z};
+            const float along = dot(level, line), aside = length(level - line * along);
+            if (along > config_.toward)
+                continue;
+            const bool across = aside >= config_.aside || -along >= config_.back;
+            if (!across && -moved.y < config_.duck)
+                continue;
+            way_ = across && length(level) > .05f ? normalized(level) : Vec3{};
+            pressLeft_ = config_.press;
+            restLeft_ = config_.press + config_.rest;
+            ++dodges_;
+            // One dodge answers every warning standing now.
+            for (const auto& other : threats)
+                if (other.attacker &&
+                    std::find(dodged_.begin(), dodged_.end(), other.attacker) == dodged_.end()) {
+                    const auto free = std::find(dodged_.begin(), dodged_.end(), 0ull);
+                    if (free != dodged_.end())
+                        *free = other.attacker;
+                }
+            count_ = 0;
+            return true;
+        }
+    }
+    return false;
+}
 SenseSight senseSight(Pose head, Vec3 target, SenseSight before, const SenseSightConfig& config) {
     SenseSight sight = before;
     const Vec3 to = target - head.position;

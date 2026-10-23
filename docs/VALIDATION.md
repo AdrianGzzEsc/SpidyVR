@@ -1,6 +1,32 @@
 # Validation — 2026-10-22
 
-## Webs off a wall with hand wall climbing on (latest build)
+## Four combat ideas from the Discord: dodging by moving, the suit power, the dive, the game's own blow sounds (latest build)
+
+The user: "commit current dif and do all 4" - the four picked from the ideas
+forum. `include/spidy/spider_sense.hpp` and `src/spider_sense.cpp`
+(`MoveDodge`), `include/spidy/game_pad.hpp` (`SuitPowerPress`),
+`include/spidy/web_strike.hpp` and `src/web_strike.cpp` (`WebStrike::dive`),
+`include/spidy/game_punch.hpp` and `src/game_punch.cpp` (the player's
+velocity, the dive, the blow's sound), `src/game_swing.cpp`,
+`include/spidy/slow_motion.hpp` (`Moment::dive`), `include/spidy/body_ik.hpp`,
+`src/body_ik.cpp`, `include/spidy/native_body.hpp` and `src/native_body.cpp`
+(the kick; Command version 5), `include/spidy/game_sound.hpp` and
+`src/game_sound.cpp` (new), `src/game_shooter.cpp` (its frame),
+`include/spidy/vr_settings.hpp`, `src/vr_settings.cpp` and
+`include/spidy/launcher_profile.hpp` (BLOW SOUNDS), `src/game_xr.cpp`
+(XrData version 40), `tools/run_game_vr.py` (`sound`, `combat_headset`),
+`tools/probe_sound.py` (new).
+
+| | |
+| --- | --- |
+| Read | Spider-Man.exe with capstone: the sound call `0x16d5e80` (system `0x7475690`) from the Spider-Sense warning; the 73 uses of DamageDealtEvent's type, the handlers that reach the sound call (bosses' hurt sounds, a perk's `0x940ce0` in `Hero::HeroMeleeManager`, `AnimImpactEventManager`'s `0x69e5d0`); its impact `0x69c730` and melee impact `0x69ceb0`: five switches of the "Melee Impact Event" set on the one struck's `SoundSourceComponent`, value names read from the game's own tables, three hit sounds (docs/REFERENCE.md) |
+| Build | `tools/build.ps1 -Observer`: ctest 3/3, 440 core tests (new: dodging by moving - a step aside, a step back, a duck, the warning answered once, none for a lean in, a jump's warning, a slow drift, out of play, a re-placed view, a turned tracking space; the suit power - both triggers at the chest, the press's length, held, again, half a second apart, at the belt, a turned head's chest, out of play, an untracked hand; the dive - on course, its strength and flight, the hang after it, none unmarked, from the ground, slow, off course, too far, going away, flying already; the kick's legs; the dive's moment after another; the sound engine's ids and a blow's place on him; the tab's BLOW SOUNDS row and its spidy_vr.ini line), the launcher's (a profile's BLOW SOUNDS), the six Python suites (XrData 40, 1192 bytes; a sound reader: decode, another build, a torn read), the GPU test |
+| In the game | Your save, free roam on a sign over a plaza at night, no headset, three games. The sound call from Spidy's main-thread frame: every one of over 200 plays gave a sound back. The player has a `SoundSourceComponent` with 3 sound sources; a blow sounded on him set all 15 switches. His `AnimImpactEventManager` appeared only while the flat game's own punches ran (references 0xc0b00000 then 0x80101000, variant 0 then 1; entries with data, +0x4c 1), none while he stood or perched. Thugs of a street crime 80 m off, in its opening scene: no `SoundSourceComponent` (result -1); actors without one have the blow sounded on the player's sources (8 of 8) |
+| Heard | Not established. A loopback recording of the PC's output while the game played, the plays time-locked, compared trial by trial (median of 12 or 25) with as many moments of nothing: none of the three hit sounds, 0x6845dc9d with variants 0-3, nor the game's own Spider-Sense sound played from the same call stood out of the plaza's noise for certain (medians: the first hit sound 2.9, the second 2.1, the third 2.4, nothing 2.2; one run's x6 average for the second was one loud trial); 20 plays back to back, three times each, raised nothing either. The game's own air punches did not show in it either. The blows take the first hit sound, the impact's plain case. Whether they sound, and how, is the headset's to tell; BLOW SOUNDS: SPIDY plays the old tones |
+| Saves | 19 byte-identical after the three games |
+| Not run | A headset: the dodge by moving (thresholds 17 cm aside, 20 cm back, 15 cm down within 0.3 s), the suit power gesture and the game's answer to its L3 + R3 (its meter must be full), the dive's feel and its kick pose, a fight's blows with the game's own sound on thugs that have sound sources. Which hit sound the game's own punches name (their impact entries' +0x3c): the hero, perched on that save, punched nothing, and the virtual stick does not take him off a perch |
+
+## Webs off a wall with hand wall climbing on (the build before)
 
 The user: "webbing from a wall with current settings doesnt work, i need to
 jump down to do it". `src/swing.cpp` (`inputs`: a web off the wall;

@@ -411,6 +411,8 @@ void solveHero(float* out, uintptr_t job, uintptr_t instance) {
             t.plant = standing;
             t.floor = standing ? toModel.rotate(wanted.floor) : Vec3{};
             t.kneel = standing && (wanted.flags & native_body::kneel);
+            t.kick = (wanted.flags & native_body::kick) && finite(wanted.kick);
+            t.kickAt = t.kick ? toModel.rotate(wanted.kick) : Vec3{};
             t.eyes = toModel.rotate(wanted.eyes);
             t.facing = toModel * wanted.facing;
             if (const Quat tilt = wanted.tilt; tilt.x != 0 || tilt.y != 0 || tilt.z != 0)
@@ -648,7 +650,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyBodyStart(void* input) {
     return native_body::start(c.base);
 }
 extern "C" __declspec(dllexport) DWORD WINAPI SpidyBodySubmit(void* input) {
-    // A version 1, 2 or 3 command (the probe's) is shorter: read as many bytes as it says.
+    // A version 1 to 4 command (the probe's) is shorter: read as many bytes as it says.
     Command c{};
     uint32_t header[3]{};
     const auto at = reinterpret_cast<uintptr_t>(input);
@@ -656,7 +658,8 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyBodySubmit(void* input) {
         !((header[1] == 1 && header[2] == native_body::commandBytesV1) ||
           (header[1] == 2 && header[2] == native_body::commandBytesV2) ||
           (header[1] == 3 && header[2] == native_body::commandBytesV3) ||
-          (header[1] == 4 && header[2] == sizeof(c))) ||
+          (header[1] == 4 && header[2] == native_body::commandBytesV4) ||
+          (header[1] == 5 && header[2] == sizeof(c))) ||
         !read(at, &c, header[2]) || c.leaseMs > 500 || !finite(c.eyes) || !std::isfinite(c.height) ||
         !(c.armLength >= 0 && c.armLength <= 2))
         return 7502;

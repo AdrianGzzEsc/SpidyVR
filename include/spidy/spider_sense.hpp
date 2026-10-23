@@ -160,6 +160,75 @@ class SpiderSense {
     std::array<bool, 2> spent_{};
     std::uint64_t warnings_{};
 };
+// Dodging by moving. Players asked for it on October 14 and 15 ("IRL dodging
+// mechanics, similar to Batman: Arkham Shadow"; "make it so when you flip,
+// web-zip, you dodge enemies"): a warning stood, and the one answer that took
+// the player out of the way was B. Now moving out of the way answers it too:
+// while the game warns of an attack a counter or a dodge answers (a jump's is
+// A), a quick step or lean across the attacker's line, a step back from him
+// or a duck is the game's own dodge, the way the head went (a duck: the way
+// the game chooses), so the game's perfect dodge and its slowed time come
+// with it as they do with B. A lean toward him is none: a counter leans in.
+// The head's move is measured in the tracking space, so walking with the
+// stick and a snap turn move nothing.
+struct MoveDodgeConfig {
+    // The move: within `window` real seconds, `aside` across his line, `back`
+    // away from him or `duck` down, and no more than `toward` toward him.
+    float window = .3f, aside = .17f, back = .2f, duck = .15f, toward = .08f;
+    // A move larger than this between two frames is not the player's (the
+    // view re-placed, a lost and found headset): the measure starts over.
+    float jump = .1f;
+    // The game's B held this long, and none for `rest` after.
+    float press = .12f, rest = .6f;
+};
+// A warning the headset shows, not countered yet.
+struct DodgeThreat {
+    std::uint64_t attacker{};
+    Vec3 at{}; // where he is in the world (his head)
+    SenseAnswer answer{};
+};
+class MoveDodge {
+  public:
+    explicit MoveDodge(MoveDodgeConfig config = {});
+    // One headset frame, `seconds` (real) after the one before. play: the
+    // game's B may go out (VR play, no web carrying the player). head: the
+    // headset in the world; room: the headset in the tracking space, and
+    // roomToWorld the turn from that space's axes to the world's. True while
+    // the game's B is to be held.
+    bool update(float seconds, bool play, Vec3 head, Vec3 room, Quat roomToWorld,
+                std::span<const DodgeThreat> threats);
+    // Which way the dodge goes: level, in the world, unit; zero for a duck,
+    // whose way the game chooses.
+    Vec3 way() const {
+        return way_;
+    }
+    bool pressing() const {
+        return pressLeft_ > 0;
+    }
+    // Dodges made so far.
+    std::uint32_t dodges() const {
+        return dodges_;
+    }
+    void reset();
+    const MoveDodgeConfig& config() const {
+        return config_;
+    }
+
+  private:
+    struct Sample {
+        Vec3 room{};
+        float age{};
+    };
+    MoveDodgeConfig config_;
+    // The head's places over the last window, oldest at `first_`.
+    std::array<Sample, 128> samples_{};
+    std::size_t first_{}, count_{};
+    Vec3 way_{};
+    float pressLeft_{}, restLeft_{};
+    // The attackers whose warnings a dodge answered, until they are gone.
+    std::array<std::uint64_t, 8> dodged_{};
+    std::uint32_t dodges_{};
+};
 // Where the warning of an attacker out of the player's view shows instead,
 // as Arkham Shadow's icon in the sightline: on the circle `angle` (radians)
 // round the middle of his view, on the attacker's side, and the rim's lines

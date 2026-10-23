@@ -38,6 +38,7 @@
 #include "spidy/impact_sound.hpp"
 #include "spidy/web_strike.hpp"
 #include "spidy/spider_sense.hpp"
+#include "spidy/game_sound.hpp"
 #include "spidy/prompt_buttons.hpp"
 #include "spidy/xr_layers.hpp"
 #include "spidy/offer_pointing.hpp"
@@ -6504,6 +6505,64 @@ int main() {
         check(game_pad::fromControllers(XrFrame{},game_pad::Mapping::gameplay,walk).buttons==game_pad::rightThumb,
               "the scan is not the game's R3");
     });
+    test("both hands at the chest with both triggers pulled are the game's suit power, those triggers the gesture's", [] {
+        using game_pad::SuitPowerPress;
+        const float dt=1.f/90;
+        const Pose head{{0,1.7f,0},{}};
+        const bool both[2]{true,true};
+        // Both hands a fist's width apart before the chest: 38 cm under the eyes, 15 cm ahead.
+        Pose grips[2]{{{-.06f,1.33f,-.15f},{}},{{.06f,1.33f,-.15f},{}}};
+        float triggers[2]{};
+        SuitPowerPress power;
+        check(!power.update(dt,true,head,grips,both,triggers),"hands at the chest alone were the suit power");
+        triggers[0]=1;
+        check(!power.update(dt,true,head,grips,both,triggers)&&power.hands()==1,
+              "one trigger at the chest was the suit power, or not the gesture's");
+        for(int i=0;i<9;++i)power.update(dt,true,head,grips,both,triggers);
+        triggers[1]=1;
+        check(power.update(dt,true,head,grips,both,triggers)&&power.hands()==3&&power.powers()==1,
+              "both triggers at the chest were no suit power");
+        int frames{1};
+        while(power.update(dt,true,head,grips,both,triggers))++frames;
+        check(frames>=13&&frames<=15,"the suit power's L3 + R3 was not a press");
+        check(power.hands()==3,"the gesture let go of triggers still held");
+        // Held on, no second power; let go and pulled again, another.
+        for(int i=0;i<30;++i)power.update(dt,true,head,grips,both,triggers);
+        check(power.powers()==1,"a held gesture asked twice");
+        triggers[0]=triggers[1]=0;power.update(dt,true,head,grips,both,triggers);
+        check(!power.hands(),"released triggers are still the gesture's");
+        triggers[0]=triggers[1]=1;
+        check(power.update(dt,true,head,grips,both,triggers)&&power.powers()==2,"a second gesture asked for nothing");
+        // Half a second apart: none, though each trigger at the chest stays the gesture's.
+        SuitPowerPress slow;
+        float late[2]{1,0};
+        for(int i=0;i<46;++i)slow.update(dt,true,head,grips,both,late);
+        late[1]=1;
+        check(!slow.update(dt,true,head,grips,both,late)&&!slow.powers()&&slow.hands()==3,
+              "triggers half a second apart were the suit power");
+        // Hands at the belt are not at the chest; a turned head's chest is where it looks, level.
+        SuitPowerPress low;
+        Pose belt[2]{{{-.06f,1.f,-.15f},{}},{{.06f,1.f,-.15f},{}}};
+        float pull[2]{1,1};
+        check(!low.update(dt,true,head,belt,both,pull)&&!low.hands(),"hands at the belt were the suit power");
+        SuitPowerPress turned;
+        const Pose looking{{0,1.7f,0},Quat::yaw(1.5708f)};
+        Vec3 ahead=looking.orientation.rotate({0,0,-1});ahead.y=0;ahead=normalized(ahead);
+        const Vec3 at=looking.position+Vec3{0,-.38f,0}+ahead*.15f;
+        Pose chest[2]{{at,{}},{at,{}}};
+        check(turned.update(dt,true,looking,chest,both,pull),"no suit power at a turned head's chest");
+        // Not outside VR play, and triggers held into play must be let go first.
+        SuitPowerPress menu;
+        check(!menu.update(dt,false,head,grips,both,pull),"a suit power on the game screen");
+        check(!menu.update(dt,true,head,grips,both,pull),"triggers held into play were the suit power");
+        // An untracked hand counts for nothing.
+        SuitPowerPress lost;
+        const bool one[2]{true,false};
+        check(!lost.update(dt,true,head,grips,one,pull),"an untracked hand made the suit power");
+        game_pad::Walk walk;
+        auto pad=game_pad::fromControllers(XrFrame{},game_pad::Mapping::gameplay,walk);
+        check(!(pad.buttons&(game_pad::leftThumb|game_pad::rightThumb)),"the pad clicks both sticks by itself");
+    });
     test("called blows: the flow calls its next blow, and the call stands until a fist answers it", [] {
         Cues cues;
         const Vec3 ahead{0,0,-1}; // the player looks down -z at him: his right is +x
@@ -6777,6 +6836,67 @@ int main() {
         for(int i=0;i<10;++i)waits.update(dt,warned,throwAt({0,1,-3},3.5f),head,chest);
         for(int i=0;i<120;++i)waits.update(dt,{},{},head,chest);
         check(!waits.blow(7,{},chest,byBlow)&&!waits.countered(7),"a counter's blow two seconds on");
+    });
+    test("dodging by moving: a quick step or lean out of a warned attack's way, a step back or a duck is the game's B, that way", [] {
+        const float dt=1.f/90;
+        const Quat level{};
+        // The player at the origin looks down -z; the attacker three metres ahead.
+        const DodgeThreat red{9,{0,1.8f,-3},SenseAnswer::Dodge},blue{8,{0,1.8f,-3},SenseAnswer::Counter},
+                          yellow{7,{0,1.8f,-3},SenseAnswer::Jump};
+        // Half a second at rest, then the head moves `by` over `seconds` (the world's axes those of the
+        // tracking space turned by `turn`): true once the game's B went out.
+        const auto move=[&](MoveDodge& d,const DodgeThreat& t,Vec3 by,float seconds,Quat turn=Quat{},bool play=true){
+            Vec3 room{0,1.7f,0};
+            for(int i=0;i<45;++i)d.update(dt,play,turn.rotate(room),room,turn,{&t,1});
+            const int steps=std::max(1,static_cast<int>(std::lround(seconds*90)));
+            for(int i=0;i<steps;++i){
+                room+=by/static_cast<float>(steps);
+                if(d.update(dt,play,turn.rotate(room),room,turn,{&t,1}))return true;
+            }
+            return false;
+        };
+        MoveDodge right;
+        check(move(right,red,{.22f,0,0},.2f)&&right.dodges()==1,"a quick step aside out of a red warning's way was no dodge");
+        check(right.way().x>.99f&&std::abs(right.way().y)<1e-4f,"the dodge did not go the way the step went");
+        int held{1};
+        while(right.update(dt,true,{.22f,1.7f,0},{.22f,1.7f,0},level,{&red,1}))++held;
+        check(held>=9&&held<=12,"the dodge's B was not a press");
+        // That warning is answered: a second step at it is no second dodge, a new one after it is.
+        for(int i=0;i<90;++i)right.update(dt,true,{.22f,1.7f,0},{.22f,1.7f,0},level,{&red,1});
+        check(!move(right,red,{-.22f,0,0},.2f),"a warning a dodge answered was dodged again");
+        right.update(dt,true,{0,1.7f,0},{0,1.7f,0},level,{});
+        check(move(right,red,{-.22f,0,0},.2f)&&right.way().x<-.99f&&right.dodges()==2,"the next warning went undodged");
+        // A blue warning too: a step back from him.
+        MoveDodge back;
+        check(move(back,blue,{0,0,.25f},.2f)&&back.way().z>.99f,"a step back from a blue warning was no dodge");
+        // A duck: the game chooses the way.
+        MoveDodge duck;
+        check(move(duck,red,{0,-.2f,0},.2f)&&length(duck.way())==0,"a duck was no dodge, or chose a way");
+        // None: a lean toward him (a counter leans in), a yellow warning (A's), a slow drift, out of play.
+        MoveDodge in,jump,drift,menu;
+        check(!move(in,red,{0,0,-.3f},.2f),"a lean toward him dodged");
+        check(!move(jump,yellow,{.25f,0,0},.2f),"a step from a jump's warning dodged");
+        check(!move(drift,red,{.2f,0,0},1.f),"a slow drift aside dodged");
+        check(!move(menu,red,{.25f,0,0},.2f,Quat{},false)&&!menu.pressing(),"a step out of VR play dodged");
+        // The tracking space turned: the way is the world's, and so is his line.
+        MoveDodge turnedRoom;
+        const Quat turn=Quat::yaw(1.f);
+        const Vec3 world=turn.rotate({1,0,0});
+        const Vec3 aside=normalized(cross(Vec3{0,1,0},world));
+        const DodgeThreat ahead{6,Vec3{0,1.8f,0}+aside*3.f,SenseAnswer::Dodge};
+        check(move(turnedRoom,ahead,{.22f,0,0},.2f,turn)&&dot(turnedRoom.way(),world)>.99f,
+              "a step in a turned tracking space dodged the wrong way");
+        // A jump of the tracking (the view re-placed) is no move of the player's.
+        MoveDodge placed;
+        Vec3 room{0,1.7f,0};
+        for(int i=0;i<45;++i)placed.update(dt,true,room,room,level,{&red,1});
+        room.x+=.3f;
+        bool dodged=placed.update(dt,true,room,room,level,{&red,1});
+        for(int i=0;i<20;++i)dodged|=placed.update(dt,true,room,room,level,{&red,1});
+        check(!dodged,"the view re-placed was taken for a dodge");
+        bool refused{};
+        try{MoveDodgeConfig c;c.window=0;MoveDodge bad(c);}catch(const std::invalid_argument&){refused=true;}
+        check(refused,"a move measured over no time accepted");
     });
     test("spider-sense's sightline: an attacker over 31 degrees off the look, kept to 26, on his side, behind too", [] {
         const Pose head{{0,1.6f,0},{}};
@@ -10635,6 +10755,30 @@ int main() {
             }
         }
     });
+    test("body: a dive's legs kick out at him from the hips, whatever the game's air pose", [] {
+        for(const bool odd:{false,true}){
+            auto b=testBody(odd);
+            body::Targets t;t.head=true;t.airborne=true;
+            t.eyes={0,1.6f,0};t.facing={};
+            t.kick=true;t.kickAt={0,.4f,-1.6f};
+            body::State s;body::Result r;
+            const auto kicked=solved(b,t,s,{},1,&r);
+            check(r.solved,"the kicking body was not solved");
+            for(int i=0;i<2;++i){
+                const auto& leg=b.rig.legs[i];
+                const Vec3 hip=b.at(kicked,leg.upper),foot=b.at(kicked,leg.foot);
+                check(dot(normalized(foot-hip),normalized(t.kickAt-hip))>.97f,"a kicking leg does not point at him");
+                check(length(foot-hip)>(b.rig.thigh[i]+b.rig.shin[i])*(i==1?.9f:.7f),"a kicking leg is folded");
+            }
+            // Without it the air pose is the game's.
+            body::State q;
+            t.kick=false;
+            const auto air=solved(b,t,q,{},1,&r);
+            const auto& leg=b.rig.legs[1];
+            check(dot(normalized(b.at(air,leg.foot)-b.at(air,leg.upper)),normalized(t.kickAt-b.at(air,leg.upper)))<.97f,
+                  "the game's air pose already kicked");
+        }
+    });
     test("body: on a wall the body stands up in the world and plants no feet", [] {
         auto b=testBody(true);
         // The hero crawls up a wall: the world's up is the model's -z.
@@ -11724,6 +11868,59 @@ int main() {
         try{HitStopTuning t;t.scale=0;HitStop bad(t);}catch(const std::invalid_argument&){refused=true;}
         check(refused,"a stop that halts the game accepted");
     });
+    test("web strike: a dive - the player's own flight on course for the marked enemy - flies him there, the blow his speed's", [] {
+        const PunchConfig punch;
+        // Swinging down at the thug six metres off, from 2 m up and 2.5 m out: 14 m/s at his middle.
+        const auto diver=[]{Fight f;f.feet={0,2,-2.5f};f.wish.target=7;return f;};
+        const auto at=[](const Fight& f,float speed){
+            const Vec3 chest=f.feet+Vec3{0,f.strike.config().chest,0};
+            return normalized(f.targets[0].middle()-chest)*speed;
+        };
+        const auto dive=[&](Fight& f,Vec3 v,bool grounded=false,std::uint64_t marked=7){
+            f.rest(.2f);
+            return f.strike.dive(v,grounded,f.head(),f.feet,f.targets,f.open,marked,punch);
+        };
+        Fight f=diver();
+        const auto opened=dive(f,at(f,14));
+        check(opened&&opened->hand==WebStrike::diveHand&&opened->target==7&&f.strike.diving(),"a dive on course opened no strike");
+        near(f.strike.fistSpeed(),speedOf(punch,f.strike.diveStrength(14)),.001f);
+        check(f.strike.diveStrength(14)>=.85f,"a dive's blow is not a heavy one");
+        const auto flown=f.fly(false);
+        check(flown.landed&&!flown.missed,"the dive's blow did not land");
+        near(length(Vec3{f.feet.x,0,f.feet.z+6}),.95f,.1f);
+        check(flown.fastest>=13&&flown.fastest<=26*1.25f+.01f,"the dive did not keep the player's speed");
+        check(f.strike.phase()==WebStrike::Phase::Hanging,"after a dive's blow in the air the player did not hang");
+        // None: nobody marked, on the ground, too slow, off course, too far yet, going away, or flying already.
+        Fight none=diver();
+        check(!dive(none,at(none,14),false,0),"a dive with nobody marked");
+        check(!dive(none,at(none,14),true),"a dive from the ground");
+        check(!dive(none,at(none,8)),"a dive at 8 m/s");
+        check(!dive(none,at(none,14)+Vec3{6,0,0}),"a dive that would pass him by");
+        Fight far;far.feet={0,2.5f,1};far.wish.target=7;
+        check(!dive(far,at(far,14)),"a dive half a second off");
+        check(!dive(none,at(none,14)*-1.f),"a dive going away from him");
+        Fight busy=diver();
+        dive(busy,at(busy,14));
+        check(!busy.strike.dive(at(busy,14),false,busy.head(),busy.feet,busy.targets,busy.open,7,punch),
+              "a second dive during the first");
+        // As hard as it was fast.
+        WebStrike s;
+        near(s.diveStrength(9),.85f);
+        near(s.diveStrength(20),1);
+        near(s.diveStrength(40),1);
+        check(s.diveStrength(8.9f)==0,"a slow flight has a dive's strength");
+        bool refused{};
+        try{WebStrikeConfig c;c.diveFull=c.diveSpeed;WebStrike bad(c);}catch(const std::invalid_argument&){refused=true;}
+        check(refused,"a dive whose hardest blow is its slowest accepted");
+    });
+    test("moments: a dive's slows the last of its way, even straight after another", [] {
+        SlowMoments m;
+        check(m.start(Moment::blow),"no moment for a blow");
+        for(int i=0;i<70;++i)m.update(1.f/90,true);
+        check(!m.start(Moment::called),"a moment straight after another");
+        check(m.start(Moment::dive)&&m.count(Moment::dive)==1,"a dive straight after a moment was refused");
+        check(m.timeScale()<=1,"the dive's moment sped the game up");
+    });
     test("web strike configuration rejects invalid tuning", [] {
         auto bad=[](auto change){WebStrikeConfig c;change(c);try{WebStrike s(c);return false;}catch(const std::invalid_argument&){return true;}};
         check(bad([](WebStrikeConfig& c){c.maxDistance=1;}),"a reach inside the fist's own accepted");
@@ -11732,6 +11929,16 @@ int main() {
         check(bad([](WebStrikeConfig& c){c.aim=std::numeric_limits<float>::quiet_NaN();}),"NaN aim accepted");
         check(bad([](WebStrikeConfig& c){c.heldAim=.9f;}),"a held thug harder to aim at than a free one accepted");
         check(!bad([](WebStrikeConfig&){}),"defaults rejected");
+    });
+    test("the game's own blow sounds: its sound engine's ids, and where on him a blow lands", [] {
+        // FNV-1, 32 bits, of the lowercased name, as the game's 1bb8a10 makes them.
+        check(game_sound::audioId("")==0x811c9dc5u&&game_sound::audioId("a")==0x050c5d7eu,"the ids are not FNV-1");
+        check(game_sound::audioId("Hero_Combo_Depth")==game_sound::audioId("hero_combo_depth"),
+              "the ids are not of the lowercased name");
+        check(game_sound::locationOf(1.6f,1.8f)==0&&game_sound::locationOf(1.f,1.8f)==1&&
+              game_sound::locationOf(.4f,1.8f)==2,"a blow's place on him");
+        check(game_sound::locationOf(1.f,0)==1&&game_sound::locationOf(std::numeric_limits<float>::quiet_NaN(),1.8f)==1,
+              "no height to place it by is not the torso");
     });
     test("impact sounds: each a WAV in memory, the harder the blow the longer and louder", [] {
         const auto samples=[](const std::vector<std::uint8_t>& wave){
@@ -11995,8 +12202,8 @@ int main() {
         // The sections (the player, October 19: "sort the options in spidy vr
         // settings ingame into nice sections"), each with a setting in the tab.
         const std::pair<size_t, const char*> sections[] = {{0, "WEBS"},     {5, "SWINGING"}, {8, "COMFORT"},
-                                                           {11, "HAPTICS"}, {18, "DISPLAY"}, {26, "BODY"},
-                                                           {28, "EXPERIMENTAL"}};
+                                                           {11, "HAPTICS"}, {19, "DISPLAY"}, {27, "BODY"},
+                                                           {29, "EXPERIMENTAL"}};
         check(headings == std::size(sections),
               "the sections: webs, swinging, comfort, haptics, display, body, experimental");
         for (const auto& [at, title] : sections) {
@@ -12006,21 +12213,21 @@ int main() {
                 ++next;
             check(next < all.size() && all[next].item != Item::none, "a section with no setting in the tab");
         }
-        check(all[29].item == Item::flips && all[29].choices.empty() && std::strcmp(all[28].title, "EXPERIMENTAL") == 0,
+        check(all[30].item == Item::flips && all[30].choices.empty() && std::strcmp(all[29].title, "EXPERIMENTAL") == 0,
               "the flips: a switch under EXPERIMENTAL");
-        check(all[30].item == Item::flipSpeed && all[30].choices.size() == std::size(flipSpeeds),
+        check(all[31].item == Item::flipSpeed && all[31].choices.size() == std::size(flipSpeeds),
               "the flip speed under the flips");
-        check(all[31].item == Item::handClimb && all[31].choices.empty() && all[32].item == Item::wallDistance &&
-                  all[32].choices.size() == std::size(wallDistances),
+        check(all[32].item == Item::handClimb && all[32].choices.empty() && all[33].item == Item::wallDistance &&
+                  all[33].choices.size() == std::size(wallDistances),
               "hand wall climbing, a switch, and its camera distance under the flips");
         const Item realistic[] = {Item::realisticFlips,        Item::automaticStrength,    Item::automaticSpeed,
                                   Item::automaticMinimumSpeed, Item::automaticReleaseFlip, Item::automaticResponse,
                                   Item::automaticHandStrength, Item::automaticFalloff,     Item::automaticHandThreshold,
                                   Item::automaticAirBrake};
-        check(all.size() == 33 + std::size(realistic), "the realistic flips' rows are not the last");
+        check(all.size() == 34 + std::size(realistic), "the realistic flips' rows are not the last");
         for (size_t i = 0; i < std::size(realistic); ++i)
-            check(all[33 + i].item == realistic[i], "the realistic flips' rows out of order");
-        check(std::strcmp(all[33].title, "REALISTIC FLIPS") == 0 && all[33].choices.empty(),
+            check(all[34 + i].item == realistic[i], "the realistic flips' rows out of order");
+        check(std::strcmp(all[34].title, "REALISTIC FLIPS") == 0 && all[34].choices.empty(),
               "realistic flips: a switch, first of its rows");
         // The wall view has no row of its own any more: it turned only while
         // Spidy held the player on a wall, so it was never a choice of its own
@@ -12030,31 +12237,31 @@ int main() {
         // then "also merge the two options").
         for (const auto& row : all)
             check(row.item != Item::standOnWalls, "the wall view still has a row of its own");
-        check(all[20].item == Item::screenSize && all[22].item == Item::hud && all[22].choices.size() == 4 &&
-                  std::strcmp(all[22].choices[0], "OFF") == 0 && std::strcmp(all[22].choices[3], "LARGE") == 0,
+        check(all[21].item == Item::screenSize && all[23].item == Item::hud && all[23].choices.size() == 4 &&
+                  std::strcmp(all[23].choices[0], "OFF") == 0 && std::strcmp(all[23].choices[3], "LARGE") == 0,
               "the HUD after the game screen's rows: OFF, SMALL, MEDIUM, LARGE");
-        check(all[21].item == Item::screenDepth && std::strcmp(all[21].title, "GAME SCREEN 3D") == 0 &&
-                  all[21].choices.size() == 4 && std::strcmp(all[21].choices[0], "OFF") == 0 &&
-                  std::strcmp(all[21].choices[3], "HIGH") == 0,
+        check(all[22].item == Item::screenDepth && std::strcmp(all[22].title, "GAME SCREEN 3D") == 0 &&
+                  all[22].choices.size() == 4 && std::strcmp(all[22].choices[0], "OFF") == 0 &&
+                  std::strcmp(all[22].choices[3], "HIGH") == 0,
               "the game screen's depth under its size: OFF, LOW, MEDIUM, HIGH");
         // The marks' look after the HUD (the player, October 21: "an optional alternative set of our custom
         // ingame vr ui in more scifi techy style like the base game ui"): the printed ones first.
-        check(all[23].item == Item::uiStyle && std::strcmp(all[23].title, "UI STYLE") == 0 &&
-                  all[23].choices.size() == 2 && std::strcmp(all[23].choices[0], "COMIC") == 0 &&
-                  std::strcmp(all[23].choices[1], "TECH") == 0,
+        check(all[24].item == Item::uiStyle && std::strcmp(all[24].title, "UI STYLE") == 0 &&
+                  all[24].choices.size() == 2 && std::strcmp(all[24].choices[0], "COMIC") == 0 &&
+                  std::strcmp(all[24].choices[1], "TECH") == 0,
               "the UI style after the HUD: COMIC, or TECH");
-        check(all[24].item == Item::nearClip && std::strcmp(all[24].title, "NEAR CLIP") == 0 &&
-                  all[24].choices.size() == std::size(nearClips) && std::strcmp(all[24].choices[6], "10 CM") == 0,
+        check(all[25].item == Item::nearClip && std::strcmp(all[25].title, "NEAR CLIP") == 0 &&
+                  all[25].choices.size() == std::size(nearClips) && std::strcmp(all[25].choices[6], "10 CM") == 0,
               "the near clip under the UI style: 1 to 10 cm");
-        check(all[25].item == Item::recordingFov && std::strcmp(all[25].title, "RECORDING FOV") == 0 &&
-                  all[25].choices.size() == std::size(recording_fov::choices) &&
-                  std::strcmp(all[25].choices[0], "OFF") == 0 && std::strcmp(all[25].choices[3], "150\xC2\xB0") == 0,
+        check(all[26].item == Item::recordingFov && std::strcmp(all[26].title, "RECORDING FOV") == 0 &&
+                  all[26].choices.size() == std::size(recording_fov::choices) &&
+                  std::strcmp(all[26].choices[0], "OFF") == 0 && std::strcmp(all[26].choices[3], "150\xC2\xB0") == 0,
               "the recording FOV last under DISPLAY: OFF, then 130 to 150 degrees");
         // Webs are always physical (the user, October 15: "remove non physical web, no need for it").
         for (const auto& row : all)
             check(std::strcmp(row.title, "PHYSICAL WEBS") != 0, "webs can still be made non-physical");
-        check(all[19].item == Item::view && std::strcmp(all[19].title, "VR VIEW") == 0 && all[19].choices.size() == 2 &&
-                  std::strcmp(all[19].choices[0], "VR") == 0 && std::strcmp(all[19].choices[1], "GAME SCREEN") == 0,
+        check(all[20].item == Item::view && std::strcmp(all[20].title, "VR VIEW") == 0 && all[20].choices.size() == 2 &&
+                  std::strcmp(all[20].choices[0], "VR") == 0 && std::strcmp(all[20].choices[1], "GAME SCREEN") == 0,
               "the view above the game screen's rows: VR, or GAME SCREEN");
         // VR VIEW is on the pause menu's first page, beside RESUME, and no other row is.
         for (const auto& row : all)
@@ -12070,13 +12277,17 @@ int main() {
         check(all[6].item == Item::swingSpeed && all[7].item == Item::weight, "SWINGING: the swing speed, the weight");
         check(all[9].item == Item::snapTurn && all[10].item == Item::smoothTurn, "COMFORT: snap and smooth turning");
         // HAPTICS (October 20): the controllers' vibration, the bHaptics level and its four groups' switches.
-        check(all[12].item == Item::haptics && all[13].item == Item::bodyHaptics &&
-                  std::strcmp(all[13].title, "BODY HAPTICS") == 0 && all[14].item == Item::hapticWebs &&
-                  all[15].item == Item::hapticWind && all[16].item == Item::hapticCombat &&
-                  all[17].item == Item::hapticMovement && all[14].choices.empty() && all[17].choices.empty(),
+        check(all[13].item == Item::blowSounds && std::strcmp(all[13].title, "BLOW SOUNDS") == 0 &&
+                  all[13].choices.size() == 3 && std::strcmp(all[13].choices[0], "GAME") == 0 &&
+                  std::strcmp(all[13].choices[2], "OFF") == 0,
+              "BLOW SOUNDS under the vibration: GAME, SPIDY or OFF");
+        check(all[12].item == Item::haptics && all[14].item == Item::bodyHaptics &&
+                  std::strcmp(all[14].title, "BODY HAPTICS") == 0 && all[15].item == Item::hapticWebs &&
+                  all[16].item == Item::hapticWind && all[17].item == Item::hapticCombat &&
+                  all[18].item == Item::hapticMovement && all[15].choices.empty() && all[18].choices.empty(),
               "HAPTICS: the vibration, body haptics, then the web, wind, combat and movement switches");
-        check(all[27].item == Item::calibrate && all[27].choices.size() == 2 &&
-                  std::strcmp(all[27].choices[1], "ON RESUME") == 0,
+        check(all[28].item == Item::calibrate && all[28].choices.size() == 2 &&
+                  std::strcmp(all[28].choices[1], "ON RESUME") == 0,
               "the body's calibration: NO, or ON RESUME");
         // Every setting has a row but the wall view, which the launcher's one
         // "Wall running" now carries along with who holds you on the wall.
@@ -12161,7 +12372,7 @@ int main() {
                                        "swing_momentum=1\nrotation_response_ms=500\nhand_momentum=100\n"
                                        "angular_drag_ms=3000\nhand_speed_min_cm=100\nair_rotation_brake=1\n"
                                        "body_haptics_webs=1\nbody_haptics_wind=1\nbody_haptics_combat=1\n"
-                                       "body_haptics_movement=1\nrecording_fov=0\nui_style=0\n",
+                                       "body_haptics_movement=1\nrecording_fov=0\nui_style=0\nblow_sounds=0\n",
               "the defaults' text");
         Values changed = defaults;
         changed.recordingFov = 140;
@@ -12181,7 +12392,11 @@ int main() {
         changed.hapticWind = false;
         changed.hapticCombat = false;
         changed.uiStyle = 1;
+        changed.blowSounds = 2;
         check(withTabOnly(defaults, tabOnlyText(changed)) == changed, "the settings did not come back");
+        check(withTabOnly(defaults, "blow_sounds=9\n").blowSounds == 2 &&
+                  withTabOnly(defaults, "blow_sounds=-1\n").blowSounds == 0,
+              "blow sounds past either end");
         check(withTabOnly(defaults, "ui_style=7\n").uiStyle == 1 && withTabOnly(defaults, "ui_style=-2\n").uiStyle == 0,
               "a UI style past either end");
         // Windows' line ends, a line of another build, no number, and a

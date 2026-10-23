@@ -87,17 +87,20 @@ enum class Moment : std::uint8_t {
     // this one is done. (The user, October 12: "its not clear when they're
     // dead (maybe a light slow motion or visual)".)
     knockout,
+    // The player's own flight took him at an enemy feet first (a dive,
+    // web_strike.hpp): the last of the way, until the blow.
+    dive,
 };
-inline constexpr unsigned momentKinds = 5;
+inline constexpr unsigned momentKinds = 6;
 struct MomentTuning {
     // The game's time in a moment, per real second (a knockout's: `light`);
     // real seconds easing into it and back out.
     float scale = .3f, light = .55f, in = .07f, out = .35f;
     // Real seconds each kind holds (Moment's order).
     // A thug brought to a player in the air: long enough to land a blow.
-    float hold[momentKinds] = {.3f, .35f, 1.2f, .6f, .2f};
+    float hold[momentKinds] = {.3f, .35f, 1.2f, .6f, .2f, .4f};
     // No moment starts this soon after the last one ended: a flurry of blows
-    // is not one long slow motion. A dodge's starts all the same.
+    // is not one long slow motion. A dodge's and a dive's start all the same.
     float rest = 1.5f;
 };
 class SlowMoments {

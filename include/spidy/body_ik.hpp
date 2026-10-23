@@ -196,6 +196,12 @@ struct Targets {
     // along the floor behind him, where a squat folded them up in front of
     // his eyes. Standing tall enough, kneeling is standing.
     bool kneel{};
+    // A dive (web_strike.hpp's): the player's flight takes him at an enemy
+    // feet first. The legs kick out from the hips toward `kickAt` (model
+    // space), the right one straight and the left a little bent, the knees
+    // toward his up - instead of keeping the game's pose in the air.
+    bool kick{};
+    Vec3 kickAt{};
 };
 struct Config {
     // Where the wrist joint sits from the grip point of a right hand, in its

@@ -353,6 +353,17 @@ of impact:
   throws a scripted fist at each warning asking for a counter and reads the
   counter, the break, the attacker's states and the player's health across
   the blow. Writes `reports/sense-probe.json`.
+- `tools/probe_sound.py`: the game's own melee impact sound for Spidy's
+  blows (`game_sound.hpp`) in a freshly started game, no enemy needed: the
+  hero punches the air with the virtual controller's X while his
+  AnimImpactEventManager's impact entries are read (which hit sound, location
+  and intensity the game's own punches give), then blows are sounded on the
+  player as on one struck - the Melee Impact Event's switches set on his sound
+  sources, the hit sound played - each of the three hit sounds `--repeats`
+  times, 0.6 s apart and each followed by nothing, with the game's
+  Spider-Sense sound as many times for comparison. Every row has the
+  wall-clock time it was asked, to line up with a recording of the PC's
+  output. Writes `reports/sound-probe.json`.
 - `tools/probe_combat.py`: Spidy's web balls, fists and web pulls on the
   game's enemies, flying ones included. `--list` reads the game only: every
   bot as Spidy's scan sees it (the same RTTI rules: mover manager, traits,
@@ -1676,9 +1687,11 @@ still requires a running game or headset.
 | `src/body_ik.cpp`, `src/native_body.cpp` | The player's body: the solver, and the hero's joints turned after the game's pose writer |
 | `src/body_calibration.cpp`, `src/overlay_text.cpp` | The T-pose calibration (the player's eye height and arm length, and its panel in the headset); the overlay's stroke font |
 | `src/punch.cpp`, `src/game_punch.cpp` | Punching: fists against characters, and the game's own melee damage for each punch |
-| `src/web_strike.cpp` | Fighting across the room: the web strike that flies the player to the thug a fist is thrown at, the flow's count and finisher, how each blow is delivered (melee, or the kinetic blow that sends him flying), and the hit stop; `game_punch.cpp` runs it and `game_swing.cpp` flies the player |
-| `src/spider_sense.cpp`, `src/game_sense.cpp` | Spider-Sense: the game's own warnings of an attack about to land, read from the hero's `HeroDodgeManager` (`game_sense`), what each asks for, the counter a fist thrown at the attacker makes and the blow after it (`spider_sense`); `game_punch.cpp` runs it, `game_xr.cpp` tingles and draws the marks (`web_visual.cpp`'s `appendSense`, `appendSenseSight`) |
-| `src/impact_sound.cpp` | The blows' sounds and a strike's rush, synthesized as WAVs in memory |
+| `src/web_strike.cpp` | Fighting across the room: the web strike that flies the player to the thug a fist is thrown at, and the dive (`WebStrike::dive`), the player's own flight on course for the marked one that takes him the rest of the way feet first with a blow as hard as he was fast; the flow's count and finisher, how each blow is delivered (melee, or the kinetic blow that sends him flying), and the hit stop; `game_punch.cpp` runs it (the player's velocity in `game_punch::Player`), `game_swing.cpp` flies the player, `game_xr.cpp` slows the dive's last moment (`Moment::dive`) and kicks the legs out (`body::Targets::kick`) |
+| `src/spider_sense.cpp`, `src/game_sense.cpp` | Spider-Sense: the game's own warnings of an attack about to land, read from the hero's `HeroDodgeManager` (`game_sense`), what each asks for, the counter a fist thrown at the attacker makes and the blow after it (`spider_sense`); `game_punch.cpp` runs it, `game_xr.cpp` tingles and draws the marks (`web_visual.cpp`'s `appendSense`, `appendSenseSight`) and dodges by moving (`MoveDodge`: the head's move in the tracking space out of a warned attack's way is the game's B, that way) |
+| `src/impact_sound.cpp` | The headset's own blow sounds (BLOW SOUNDS: SPIDY, and GAME while the game's are not there) and a strike's rush, synthesized as WAVs in memory |
+| `src/game_sound.cpp`, `tools/probe_sound.py` | The game's own melee impact for Spidy's blows: the Melee Impact Event's five switches (where on him, how hard, the flow's count, in the air, a fist or a web strike) set on the one struck's sound sources (the player's when he has none) and its hit sound played on him, on the game's main thread; the BLOW SOUNDS row says whether (`SpidySoundMode`), `SpidySoundData` whether the game plays them (`live`) |
+| `include/spidy/game_pad.hpp` (`TemplePress`, `SuitPowerPress`, `NamedPress`) | The VR gestures that press the virtual controller: a hand at the temple with its trigger (the game's R3, its scan), both hands at the chest with both triggers (its L3 + R3, the suit power), the controls of the names the game shows (its prompts) |
 | `src/body_haptics.cpp`, `src/bhaptics_output.cpp`, `apps/haptics_test.cpp` | Body haptics on a bHaptics vest, sleeves and visor: the patterns (pure, in the core tests), the bHaptics SDK on a thread of its own, and the test tool without the game ([Body haptics](#body-haptics-bhaptics)) |
 | `src/shooter.cpp`, `src/game_shooter.cpp` | The web shooter: trigger pulls and their aim, and the game's own web-shooter shot fired from the hand |
 | `src/slow_motion.cpp`, `src/game_time.cpp` | Slow motion: the left stick's click, focus and the eased time scale; the game's own time system slowed to it (its look: `D3D12Renderer::Grade`, the meter in `web_visual.cpp`) |

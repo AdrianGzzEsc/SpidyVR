@@ -115,6 +115,10 @@ struct Player {
     // (an actor record, 0 for none): a punch at him with that hand strikes.
     uint32_t busy{};
     uint64_t holds[2]{};
+    // His own motion, real m/s in the world (zero while the mover gives
+    // none): a flight of his into the marked enemy dives at him
+    // (WebStrike::dive).
+    Vec3 velocity{};
 };
 // What a sample opened: a web strike, at the enemy the hand's own web held.
 // The swing lets its webs go, and the grab his.
