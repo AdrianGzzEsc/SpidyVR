@@ -1660,11 +1660,14 @@ DWORD WINAPI run(void*) {
                          static_cast<uint64_t>(frame.predictedDisplayTime) >= climbState.sampleTimeNs &&
                          static_cast<uint64_t>(frame.predictedDisplayTime) - climbState.sampleTimeNs <=
                              100'000'000);
+                    // The game's crawl on a floor keeps the head under the
+                    // roof (below) whether or not the vent view takes it.
+                    const bool gameFloorCrawl = hold.crawl && hold.normal.y > .99f;
                     hold = crawlCameraGate.update(frame.seconds, gameplay && values.handClimb,
                         (origins.play() & buttonB) != 0, swingFresh && swingState.grounded, hold);
                     const bool crawlsFloor = hold.crawl && hold.normal.y > .99f;
                     floorCrawlSeconds =
-                        crawlsFloor ? floorCrawlSeconds + (std::isfinite(frame.seconds)
+                        gameFloorCrawl ? floorCrawlSeconds + (std::isfinite(frame.seconds)
                                                                ? std::clamp(frame.seconds, 0.f, .1f)
                                                                : 0.f)
                                     : 0.f;
