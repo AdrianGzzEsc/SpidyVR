@@ -105,6 +105,20 @@ const char* vrControl(Demand);
 // replaced or the text would not fit in `capacity`, and `out` is then no
 // text to use.
 size_t pairOnX(std::string_view text, char* out, size_t capacity);
+// The HUD's marker over a thing in the world: HUD.managers::POIManager's
+// AddPOI(id, category, subtype) in POIs.gfx, read from the movie's bytecode in
+// the game's memory on October 24. An interact point (category 9) with the
+// throwable's subtype (7) is a POIDefault that draws the icons the game gives
+// it for [ACTION_WEB_YANK], LB . RB beside a diamond; the same class draws the
+// generic left face button's subtype (13) as that one button, X - the button
+// that sends the game's LB + RB in VR play. The subtype VR play draws a marker
+// with: `subtype` itself for every other one. Measured in the game on October
+// 24: the marker over a mailbox drew X. It loses the throwable's ring and its
+// fill for a held throw, which only that subtype draws.
+constexpr double poiInteract = 9, poiThrowable = 7, poiLeftFace = 13;
+constexpr double markerSubtype(double category, double subtype) {
+    return category == poiInteract && subtype == poiThrowable ? poiLeftFace : subtype;
+}
 // `text` with the buttons it spells out replaced by the VR controls for
 // them: "LB + RB (Hold) Throw" becomes "X (Hold) Throw".
 // `interactServes` (the interact button sending what a live prompt asks for,

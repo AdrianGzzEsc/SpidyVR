@@ -4170,11 +4170,27 @@ DWORD WINAPI run(void*) {
                             view.frame.centre += travel;
                             appendGadgetWheel(translucent, view, viewer, pixelAngle, saved->uiStyle);
                         }
+                        // From here on the overlay is drawn about the eyes' middle,
+                        // not the world's origin. The city is kilometres across, and
+                        // a vertex there taken through the eye's view-projection in
+                        // single floats was off by a tenth of a millimetre or so,
+                        // each by its own amount and anew every frame: the phone's
+                        // screen, 0.3 mm over its glass, lost to the glass at a
+                        // fifth of its points 1158 m out (the user, October 24:
+                        // "still z-fighting between screen and its body"). About
+                        // the eyes the error is a thousandth of that.
+                        const Vec3 about = viewer;
+                        for (auto& v : vertices)
+                            v.position = v.position - about;
+                        for (auto& v : translucent)
+                            v.position = v.position - about;
                         // The phone where it is now - in the hand, where the hand is
                         // now - through this image's own way into its world, and
                         // moved with the player to this image as the wheel is: its
                         // body lit as it turns, its screen a picture of its own
-                        // (D3D12Renderer::Picture) on the glass.
+                        // (D3D12Renderer::Picture) on the glass. Built about the
+                        // eyes from the start, its parts a tenth of a millimetre
+                        // apart stay so.
                         std::vector<Vertex> phoneScreen;
                         D3D12Renderer::Picture phonePicture;
                         if (!saved->flatScreen && saved->phone.open) {
@@ -4184,9 +4200,9 @@ DWORD WINAPI run(void*) {
                             view.open = true;
                             view.age = phone.age();
                             const Quat turn = toWorld.orientation;
-                            view.frame = {compose(toWorld, Pose{f.centre, {}}).position + travel,
+                            view.frame = {compose(toWorld, Pose{f.centre, {}}).position + travel - about,
                                           turn.rotate(f.right), turn.rotate(f.up), turn.rotate(f.out)};
-                            appendPhone(vertices, view, viewer);
+                            appendPhone(vertices, view, viewer - about);
                             appendPhoneScreen(phoneScreen, view);
                             phonePicture = {phoneScreen, phoneScreenHalfWidth, phoneScreenHalfHeight,
                                             phoneScreenCorners(view), phoneScreenGlass()};
@@ -4206,10 +4222,11 @@ DWORD WINAPI run(void*) {
                         for (unsigned eye = 0; eye < 2; ++eye) {
                             const auto& target = targets[eye];
                             const auto& f = rendered.fovs[eye];
+                            // The eye about the eyes' middle, as the overlay is.
                             auto pose = rendered.eyes[eye];
-                            pose[12] += travel.x;
-                            pose[13] += travel.y;
-                            pose[14] += travel.z;
+                            pose[12] += travel.x - about.x;
+                            pose[13] += travel.y - about.y;
+                            pose[14] += travel.z - about.z;
                             const auto vp = multiply(projection(f.left, f.right, f.down, f.up, .03f, 200.f),
                                                      native_view::view(pose));
                             overlayViews[eye] = {target.texture, target.format, target.width, target.height,

@@ -423,7 +423,8 @@ Moving
                          LB + RB (a prop to throw, a door or a grate to
                          tear off), X is both: press it, or hold it for as
                          long as the game wants the two held; its prompt
-                         shows X there. Otherwise a tap of it does nothing.
+                         and the marker over the thing show X there.
+                         Otherwise a tap of it does nothing.
                          The game menu is your phone's MENU since October 23
   Hold X ............... the gadget wheel, in front of that hand (the
                          right one on a Steam Frame): move the hand toward
@@ -471,7 +472,7 @@ Moving
   them under those names:
     A, B, X, Y ......... the button of that letter. X is then the game's
                          X, not the gadget wheel
-    LB + RB ............ X (the prompt shows X for them)
+    LB + RB ............ X (the prompt and the marker show X for them)
     Back or View ....... your phone's MENU
     LT or LB ........... your left trigger
     RT or RB ........... your right trigger
@@ -1010,9 +1011,9 @@ IF SOMETHING IS WRONG
   grip squeezed behind your hip, brought up in front) and press A on MENU.
   Held, X still opens the gadget wheel.
 - The right stick's click no longer pulls a door or a grate (since October
-  24): X does where the game shows LB + RB, and its prompt shows X there.
-  The marker the game sets on a thing you can throw still shows its LB and
-  RB icons: press X for it all the same.
+  24): X does where the game shows LB + RB, and its prompt shows X there,
+  as does the marker over a thing you can throw. That marker no longer
+  fills as you hold X.
 - Holding X opened nothing early in a new game (builds before October 24):
   the game had given you no gadget yet. The wheel opens now, with the web
   shooter alone.

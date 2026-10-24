@@ -3,7 +3,50 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 24, third): X is the game's LB + RB, the wheel opens
+**Latest build (October 24, fourth): the phone's screen stays over its glass,
+and the marker over a prop says X.** You: "phone still z-fighting between
+screen and its body i think. rb+lm still appears over the object together
+with the static places press x indicator - can we have the press x appear
+instead of the rb+lb over the relevant object".
+
+- **The phone's screen no longer flickers through its glass.** The cause
+  was the size of the city. The overlay drew everything in the game's world
+  coordinates, and your 19:06 session was 2 km from the world's origin, at
+  (319, 1, 2004), where a single float resolves only 0.12 mm. Put through
+  the eye's view-projection there, every point of the phone was off by about
+  a tenth of a millimetre, each by its own amount and anew every frame; the
+  screen lies 0.3 mm over the glass. A simulation of those floats put the
+  screen behind the glass at 11% to 27% of its points, at three places 0.6
+  to 1.7 km from the origin. The GPU test, with an eye at (1158, 9, -360)
+  looking off the world's axes, put it there at 293 of 8242 points. The
+  overlay is drawn about the middle of your
+  eyes now, where the same test finds none. The preview and the earlier GPU
+  check drew the phone at the origin, which is why they showed nothing.
+  Everything else the overlay draws (the aim markers, the fight's marks, the
+  wheel, the calibration panel) gains the same precision.
+- **The marker over a prop says X.** The HUD draws that marker from its own
+  Flash. Its throwable marker asks the game for the icons of the web yank
+  (LB and RB, on Spidy's virtual pad) and sets them either side of its
+  diamond. The same kind of marker has a subtype that draws the left face
+  button, X, alone. In VR play Spidy now hands the HUD that subtype for every
+  throwable. In the game, without a headset, a research build making the
+  same change drew a circled X over a mailbox where LB • RB had been. The
+  marker loses the throwable's ring and the fill that grows while you hold.
+  Read this time from the HUD's own bytecode in the game's memory
+  (REFERENCE.md); the October 24 tries below had the call wrong: the subtype
+  changed then (1) is a pedestrian's talk marker, the throwable's is 7.
+- **Checked:** 568 core tests (new: the throw marker drawn as X, and no other
+  marker changed). The GPU test has a new check: the phone at (1158, 9,
+  -360), drawn about the eye, its screen over its glass at all 8242 points
+  (in the world's coordinates the glass showed at 293). The launcher's tests and the
+  six Python suites pass. In the game: the marker, with the research build
+  above. Spidy's own build makes the same call; the game passes `AddPOI`'s
+  name from the literal Spidy compares (`lea rdx` at 0x1f07f98, before the
+  call the research build logged), but this build has not run in the game,
+  and the phone has not been seen in a headset. No protocol change: the
+  markers count with the rewritten texts (the report's `prompts` `rewrites`).
+
+**Earlier build (October 24, third): X is the game's LB + RB, the wheel opens
 with no gadgets, the street without the duct's crouch, a phone with depth.**
 Your list after the 14:04 and 14:05 sessions.
 

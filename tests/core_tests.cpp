@@ -9920,6 +9920,15 @@ int main() {
         }
         check(missing.empty(),("VR play cannot send what the game names: "+missing).c_str());
     });
+    test("the HUD's throw marker over a prop is drawn as X, and no other marker changes", [] {
+        using namespace prompt_buttons;
+        // AddPOI(id, category, subtype) as the game made them by the trash cans of
+        // the user's second profile on October 24.
+        check(markerSubtype(poiInteract, poiThrowable)==poiLeftFace,"a throwable's marker");
+        check(markerSubtype(poiInteract, 1)==1&&markerSubtype(poiInteract, 0)==0,"a pedestrian's talk marker");
+        check(markerSubtype(poiInteract, poiLeftFace)==poiLeftFace,"a marker that is X already");
+        check(markerSubtype(3, poiThrowable)==poiThrowable,"an objective's marker of the same number");
+    });
     test("the game's action words say their buttons, and its LB + RB is put as X", [] {
         using namespace prompt_buttons;
         const Demand pair{padLeftShoulder|padRightShoulder};

@@ -1,6 +1,27 @@
 # Validation — 2026-10-24
 
-## X for the game's LB + RB, the wheel with no gadgets, the duct's roof, the phone's body and picture (latest build)
+## The overlay drawn about the eyes; the throw marker drawn as X (latest build)
+
+The user: "phone still z-fighting between screen and its body i think.
+rb+lm still appears over the object together with the static places press
+x indicator - can we have the press x appear instead of the rb+lb over the
+relevant object" (CHANGELOG, October 24, fourth). `src/game_xr.cpp` (the
+overlay about `viewer`, the phone built about it), `tests/graphics_test.cpp`,
+`include/spidy/prompt_buttons.hpp` (`markerSubtype`),
+`include/spidy/game_prompts.hpp` and `src/game_prompts.cpp`
+(`rewriteCall`), `src/game_menu.cpp`, `apps/launcher/ui.cpp`.
+
+| | |
+| --- | --- |
+| Read | The user's game-vr-20261024-190631: the player at (319, 1, 2004). A float there resolves 0.12 mm. |
+| Simulated | Single-float arithmetic as the overlay's (`math.hpp`'s projection, near 0.03 m, the view matrix, the positions built on the CPU, the GPU's view-projection), the phone 0.4 m before an eye at random headings: in the world's coordinates the screen was behind or level with its glass at 0 of 1800 points at the origin, 481 at (438, 1.6, -414), 324 at (-1158, 9, -360), 191 at (1700, 5, -10); about the eye at 0 everywhere. Geometry built in the world and only then moved about the eye: 0 everywhere too, so the GPU's view-projection is the error's main part. |
+| In the game (research build) | Profile 2's CONTINUE, the mailbox below its lamp post. A scratchpad MinHook DLL on the UI's call wrapper, chained after Spidy's: `AddPOI(id, 9, 7)` made `AddPOI(id, 9, 13)` drew a circled X over the mailbox (screenshot) where `LB • RB` had been. The tries before it in the same game changed a pedestrian's talk marker (subtype 1, taken for the throwable's since the morning): a text in its `POIInteractAvailable`, its subtype made 7. The HUD's AS3 bytecode was read from the game's memory (`POIManager`, `POI`, `POIDefault`; REFERENCE.md); saves: only `-userprefs.save` changed. |
+| Static | `AddPOI`'s name literal `0x38a02a0` has two references in Spider-Man.exe; `lea rdx` at `0x1f07f98` passes it to the wrapper call at `0x1f07fa6`, the caller the research build logged. |
+| Build | `tools/build.ps1 -Observer`, ctest 3/3. 568 core tests (new: the throw marker drawn as X and no other marker changed). The GPU test passes its 15 checks; new: the phone at (1158, 9, -360) before an eye looking off the world's axes, drawn about the eye, its screen over its glass at all 8242 points; in the world's coordinates the glass showed at 293 (with the eye on the world's axes, at 0, which the first version of the check used). |
+| Python | The six protocol suites. |
+| Not run | This build in the game (it was not started again while the user may have been at the PC) and in a headset: the marker through Spidy's own hook, the phone and the rest of the overlay about the eyes. |
+
+## X for the game's LB + RB, the wheel with no gadgets, the duct's roof, the phone's body and picture (the build before)
 
 The user's list after the 14:04 and 14:05 sessions (CHANGELOG, October 24,
 third). `include/spidy/game_pad.hpp` (`NamedPress`: X for LB + RB;

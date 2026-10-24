@@ -123,6 +123,15 @@ void setRewriting(bool);
 // `args` its Scaleform values (game_menu's GfxValue, the same layout) and
 // `count` how many.
 void observeCall(uintptr_t imageBase, const char* name, const void* args, uint32_t count);
+// A call the same hook makes otherwise in VR play (while rewriting): the
+// throw marker the HUD sets over a prop, AddPOI of an interact point with the
+// throwable's subtype, takes the left face button's instead and draws X, the
+// button that sends the game's LB + RB there (prompt_buttons::markerSubtype).
+// Fills `copy`, room for `count` values, with the call to make and returns
+// true; false to make the call as it came. The copy is the caller's values
+// as they are, nothing taken or released, for the length of the one call.
+// Counted with the rewritten texts (Live::rewritten).
+bool rewriteCall(uintptr_t imageBase, const char* name, const void* args, uint32_t count, void* copy);
 // The eight names of the prompt and QTE interface, and the room kept for the
 // newest of their calls and for the census of every name the game uses.
 constexpr unsigned callNames = 10, callLines = 32, callChars = 128;
@@ -187,7 +196,8 @@ struct Live {
     // among them: the ones that raised a prompt and the ones that took one
     // away. `calls` at 0 with `invokes` rising says the names are wrong.
     uint64_t invokes{}, calls{}, raised{}, cleared{};
-    // Texts that named a button, and texts rewritten for a VR player.
+    // Texts that named a button, and texts rewritten for a VR player (with
+    // the throw markers drawn as X since October 24: rewriteCall).
     uint64_t named{}, rewritten{};
     // The demand now and the last one named (prompt_buttons::pack).
     uint32_t demand{}, lastDemand{};

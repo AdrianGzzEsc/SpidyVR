@@ -587,6 +587,31 @@ const char* game_prompts::observeText(const char* text) {
     return copy ? copy->text.c_str() : text;
 }
 
+namespace {
+// AddPOI's name, as the game hands it to the wrapper (its literal).
+constexpr uintptr_t addPoiName = 0x38a02a0;
+} // namespace
+
+bool game_prompts::rewriteCall(uintptr_t imageBase, const char* name, const void* args, uint32_t count,
+                               void* copy) {
+    if (!imageBase || reinterpret_cast<uintptr_t>(name) != imageBase + addPoiName || !args || !copy ||
+        count < 3 || !rewriting.load(std::memory_order_relaxed))
+        return false;
+    auto* out = static_cast<GfxValue*>(copy);
+    if (!read(reinterpret_cast<uintptr_t>(args), out, sizeof(GfxValue) * count) || (out[1].type & 0x8f) != 5 ||
+        (out[2].type & 0x8f) != 5)
+        return false;
+    double category, subtype;
+    std::memcpy(&category, &out[1].data, sizeof(category));
+    std::memcpy(&subtype, &out[2].data, sizeof(subtype));
+    const double drawn = prompt_buttons::markerSubtype(category, subtype);
+    if (drawn == subtype)
+        return false;
+    std::memcpy(&out[2].data, &drawn, sizeof(drawn));
+    rewrote.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
+
 const char* game_prompts::promptShown(unsigned kind, const char* text) {
     if (!reading.load(std::memory_order_relaxed) || kind >= prompt_buttons::LiveDemands::kinds ||
         reinterpret_cast<uintptr_t>(text) < 0x10000)

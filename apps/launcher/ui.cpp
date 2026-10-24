@@ -2483,7 +2483,8 @@ void App::controls(ImVec2 origin, ImVec2 size) {
                 "fight, while you swing too (a car in a chase). Hold it and you step up to the thing, until "
                 "the game takes it"},
           {"X where the game shows LB + RB", "The game's LB + RB: throw a prop, pull a door or a grate; hold "
-                                             "it as long as the game wants the two held. Its prompt shows X"},
+                                             "it as long as the game wants the two held. Its prompt and marker "
+                                             "show X"},
           {"Right stick down", "Heal: the game's D-pad down. Push it right down and hold it a moment"},
           {"Right stick up", "The game's LT + RT: zip to a point, enter a vent, where the game shows the "
                              "two; while you swing too. No point? Keep holding (time slows as the game "

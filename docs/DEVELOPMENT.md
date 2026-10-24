@@ -816,11 +816,15 @@ context prompts take their text from the text lookup (`0x1749970`, game_menu's
 prompt widget's show (`0x7793d0`: the widget, the prompt's kind 0 to 20, its
 text) and hide (`0x77a1e0`) are hooked too: a shown kind's demand stays
 live while it is up (`LiveDemands::prompt`), and the session's timeline
-gets a `HUD prompt` line. The marker the game sets on a throwable thing in
-the world (its HUD POI, `POISetButton` with the hash of `kInteract`, then
-`AddPOI` of subtype 1) still draws its own LB and RB. Until October 24 the
-right thumbstick's click was the game's LB + RB (`game_pad::PullPress`), and
-players clicked it by accident. The right stick pushed straight down is the game's D-pad down, its heal (the
+gets a `HUD prompt` line. The marker over a thing to throw says X too:
+the HUD's `AddPOI(id, category, subtype)` (POIs.gfx's
+`HUD.managers::POIManager`) of an interact point (9) with the throwable's
+subtype (7) makes a `POIDefault`, which draws whatever icons the game hands
+it for `[ACTION_WEB_YANK]` (LB . RB); `game_menu`'s hook makes that call
+with the generic left face button's subtype (13) instead
+(`game_prompts::rewriteCall`, `prompt_buttons::markerSubtype`), which the
+same class draws as X. Until October 24 the right thumbstick's click was the
+game's LB + RB (`game_pad::PullPress`), and players clicked it by accident. The right stick pushed straight down is the game's D-pad down, its heal (the
 controllers have no D-pad), in the air too; pushed straight up it is the
 game's LT + RT together, its zip to a point and into a vent, while a web
 carries you too since October 18 (`game_swing::AirYield`). A push counts
@@ -1757,7 +1761,7 @@ still requires a running game or headset.
 | `src/impact_sound.cpp` | The headset's own blow sounds (BLOW SOUNDS: SPIDY, and GAME while the game's are not there) and a strike's rush, synthesized as WAVs in memory |
 | `src/game_sound.cpp`, `tools/probe_sound.py` | The game's own melee impact for Spidy's blows: the Melee Impact Event's five switches (where on him, how hard, the flow's count, in the air, a fist or a web strike) set on the one struck's sound sources (the player's when he has none) and its hit sound played on him, on the game's main thread; the BLOW SOUNDS row says whether (`SpidySoundMode`), `SpidySoundData` whether the game plays them (`live`) |
 | `include/spidy/game_pad.hpp` (`TemplePress`, `SuitPowerPress`, `NamedPress`) | The VR gestures that press the virtual controller: a hand at the temple with its trigger (the game's R3, its scan), both hands at the chest with both triggers (its L3 + R3, the suit power), the controls of the names the game shows (its prompts) |
-| `src/phone.cpp`, `src/phone_music.cpp`, `apps/phone_preview.cpp` | Spidy's phone, drawn from a back pocket: MUSIC (the songs in the Music folder), MENU (the game's Back, its menu of the map, suits and skills; `Walk::menu`), GEAR (the gadgets) and CAMERA (its D-pad up, its camera). Its body (`appendPhone`: a rounded slab 9 mm deep, the frame, the back, the camera bump, the side buttons, lit as it turns) is overlay geometry; its screen (`appendPhoneScreen`, drawn flat) is rendered once a frame into a picture of its own and laid on the glass (`D3D12Renderer::Picture`: 960 x 2048, sRGB, its layers by depth, 6 mip levels, sampled anisotropically on a quad at `phoneScreenCorners`). Until October 24 every layer of the screen was its own sheet in the scene, a fraction of a millimetre over the last, and they fought for depth at arm's length |
+| `src/phone.cpp`, `src/phone_music.cpp`, `apps/phone_preview.cpp` | Spidy's phone, drawn from a back pocket: MUSIC (the songs in the Music folder), MENU (the game's Back, its menu of the map, suits and skills; `Walk::menu`), GEAR (the gadgets) and CAMERA (its D-pad up, its camera). Its body (`appendPhone`: a rounded slab 9 mm deep, the frame, the back, the camera bump, the side buttons, lit as it turns) is overlay geometry; its screen (`appendPhoneScreen`, drawn flat) is rendered once a frame into a picture of its own and laid on the glass (`D3D12Renderer::Picture`: 960 x 2048, sRGB, its layers by depth, 6 mip levels, sampled anisotropically on a quad at `phoneScreenCorners`). Until October 24 every layer of the screen was its own sheet in the scene, a fraction of a millimetre over the last, and they fought for depth at arm's length. `game_xr.cpp` draws the whole overlay about the eyes' middle (`about`), not the world's origin: 1-2 km out in the city, the eye's view-projection in single floats is off by a tenth of a millimetre per vertex, and the screen, 0.3 mm over the glass, lost to it at 293 of 8242 points in the GPU test's check (none about the eye) |
 | `src/body_haptics.cpp`, `src/bhaptics_output.cpp`, `apps/haptics_test.cpp` | Body haptics on a bHaptics vest, sleeves and visor: the patterns (pure, in the core tests), the bHaptics SDK on a thread of its own, and the test tool without the game ([Body haptics](#body-haptics-bhaptics)) |
 | `src/shooter.cpp`, `src/game_shooter.cpp` | The web shooter: trigger pulls and their aim, and the game's own web-shooter shot fired from the hand |
 | `src/slow_motion.cpp`, `src/game_time.cpp` | Slow motion: the left stick's click, focus and the eased time scale; the game's own time system slowed to it (its look: `D3D12Renderer::Grade`, the meter in `web_visual.cpp`) |
