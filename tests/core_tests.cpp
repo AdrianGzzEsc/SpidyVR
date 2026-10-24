@@ -610,6 +610,17 @@ int main() {
         s.tick();
         check(!s.fired(), "held release repeated the launch");
     });
+    test("slingshot on, a web's reel still counts as one (it lifts a standing body)", [] {
+        Sling s;
+        check(!s.solver.reeling(), "webs reeled with no trigger pulled");
+        s.in.hands[0].trigger = 1;
+        s.tick();
+        check(s.solver.reeling(), "a pulled trigger did not reel");
+        check(s.last.target.y > s.body.position.y, "the reel did not lift");
+        s.in.hands[0].trigger = 0;
+        s.tick();
+        check(!s.solver.reeling(), "a let-go trigger still reeled");
+    });
     test("slingshot off, no arm draw, or only one web never charges", [] {
         Sling off(false);
         off.draw(); off.release();

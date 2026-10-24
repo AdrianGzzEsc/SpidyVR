@@ -332,6 +332,11 @@ class Swing {
     float slingshotCharge() const {
         return slingshotCharge_;
     }
+    // A hand reels its web in (its trigger). A reel lifts a standing body
+    // off the ground even while the slingshot keeps a web shot there down.
+    bool reeling() const {
+        return (webs_[0].attached && hands_[0].reeling) || (webs_[1].attached && hands_[1].reeling);
+    }
     // A new speed limit during play (the VR settings). A body
     // faster than it slows to it in the next step.
     void limitSpeed(float maxSpeed);

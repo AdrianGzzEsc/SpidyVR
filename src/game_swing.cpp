@@ -554,8 +554,11 @@ void visit(const native_rays::QueryContext& world) {
     bool overhead{};
     for (const auto& web : solver.webs())
         overhead |= web.attached && web.anchor.y > body.position.y + .5f;
+    // With the slingshot on, a web shot on the ground lifts nothing by
+    // itself; the reel still does.
     const bool wantsLift = in.jump || pointLaunched ||
-        (!solver.slingshotEnabled() && (requested.y > .25f || (newAttachment && overhead)));
+        ((!solver.slingshotEnabled() || solver.reeling()) && requested.y > .25f) ||
+        (!solver.slingshotEnabled() && newAttachment && overhead);
     // A web strike that goes up from the ground (at a thug an uppercut
     // lifted, at one on a ledge) leaves it as a web does: by the game's jump.
     const bool strikeLift = body.grounded && game_punch::lifting(body.position - Vec3{0, 1, 0});
