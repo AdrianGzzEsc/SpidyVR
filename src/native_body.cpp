@@ -66,6 +66,9 @@ uint64_t cacheUses{};
 std::atomic<uint32_t> rolesSerial{1};
 body::State state;
 body::Targets lastTargets;
+// The body's turn away from the wall at the last solve (crawlOutwardWeight),
+// for the XR thread, which must not wait out a solve for it.
+std::atomic<float> outwardWeight{};
 // The hero's instance and rig at the previous hero job (solveLock): another
 // instance is another actor, and the body starts over on it.
 uintptr_t lastInstance{}, lastRig{};
@@ -491,6 +494,9 @@ void solveHero(float* out, uintptr_t job, uintptr_t instance) {
     }
     if (result.solved && on)
         lastDrawn = GetTickCount64();
+    outwardWeight = lastTargets.crawl && lastTargets.crawlTurnAway && state.crawlTurn.ready()
+                        ? state.crawlTurn.outwardWeight(state.crawlTurn.angle())
+                        : 0.f;
     latestSolved = result.solved && on;
     const uint32_t switches = rigSwitches;
     LARGE_INTEGER finished{};
@@ -565,6 +571,7 @@ uint32_t native_body::start(uintptr_t gameBase) {
         AcquireSRWLockExclusive(&solveLock);
         caches.fill({});
         state = {};
+        outwardWeight = 0;
         lastInstance = lastRig = 0;
         rigSwitches = 0;
         lastSolve = {};
@@ -638,12 +645,7 @@ native_body::Status native_body::status() {
     return out;
 }
 float native_body::crawlOutwardWeight() {
-    if (!drawn()) return 0;
-    AcquireSRWLockShared(&solveLock);
-    const float weight = lastTargets.crawl && lastTargets.crawlTurnAway && state.crawlTurn.ready() ?
-        state.crawlTurn.outwardWeight(state.crawlTurn.angle()) : 0.f;
-    ReleaseSRWLockShared(&solveLock);
-    return weight;
+    return drawn() ? outwardWeight.load() : 0.f;
 }
 bool native_body::proportions(body_calibration::Proportions& out) {
     AcquireSRWLockShared(&solveLock);
