@@ -185,6 +185,21 @@ does in a headset):
 | The game's clock: seconds of game time, the manager's times on it | double `0x7a7fbd0` | Disassembly (RegisterAttack adds a time to it); its scale `0x7a7fb90` (game_time.hpp) |
 | `Hero::HeroSpiderSenseManager` answers `HeroCounterableDodgeWindowOpenEvent` / `CloseEvent` (the flat game's mask lines, a material value 0x9402b89e set to 1, then 0) and `BotConfirmTimerIncreasing` (the stealth Spider-Sense) | vtable `0x38b4028`; handlers `0x966dd0`, `0x966d80`, `0x966c70` | Disassembly of its registrations at `0x966590` |
 
+For the button icons in the game's prompts (October 24;
+`include/spidy/prompt_buttons.hpp`, `include/spidy/game_prompts.hpp`),
+found from disassembly and measured in the running game with scratchpad
+MinHook builds:
+
+| Fact | RVA | Verification |
+|---|---:|---|
+| The HUD's context prompts: a manager of 50 slots that looks a prompt's text up by hash as it makes the prompt (`[ACTION_WEB_YANK] (Hold) Throw`, hash `0x9e608aeb`, from `0xe363cb`; `[BTN_Y] Interact`, `0xc77e6208`, from `0x6b2223` every frame) | `0xe36300` | In the game: the text written in the lookup before the prompt is made drew "(X) (Hold) Throw"; once made, a prompt keeps its text |
+| The prompt widget: show (widget, kind 0-20, text, float, four more) / hide (widget, kind, text, flag) | `0x7793d0` / `0x77a1e0` | Hooked by `game_menu.cpp` (10 prologue bytes each checked) |
+| `IconMarkupSystem` (static): +0x19 loaded, +0x40 dirty (sends Flash `setIconMarkups`, `0x1d299b0`), +0xa8 all cached, +0x20 `UIIconMarkupConfig` (+0x28 icons, 72 bytes x 183; +0x38 bindings, 64 bytes x 115: +8 name, +0x14 hash); its cache map at +0x78 | `0x5d98750` (vtable `0x3899a20`) | In the game; a binding's hash is the game's name hash (CRC table seeded `0xedb88320`, no final xor) of the token with its brackets. Patching the cache and the dirty flag changed neither prompt nor marker: the HUD keeps what it was sent |
+| Resolve an image markup (subtitles and tokens; only direct caller `0x800350`) | `0x7a2330` | Disassembly |
+| The virtual pad's icons are the Generic family. Its action words: `WEB_YANK` LB + RB, `WEB_YANK_BOT` Y, `ACTIVE_FINISHER` B + Y, `SUIT_POWER` L3 + R3, `PING` R3, `ZIP_TO_POINT` LT + RT, `WEB_ZIP_OBJ1` LT, `WEB_ZIP_OBJ2` RT, `TRICKMODE` X, `WEAPON_WHEEL` LB, `WEAPON_WHEEL_ALT` RB, `LS_*` the left stick | | Read from the cache in the game |
+| The world marker on a throwable thing: the HUD POI, `POISetButton(id, 0x85920BAD)` (the name hash of `kInteract`, not an icon) then `AddPOI(id, 9, 1, ...)` (1 a throw target, 0 untargeted, 7 a pedestrian's Y with `POIInteractAvailable(id, 1, '')`); `ClearPOI(id)` ends it | | Logged through the UI's call wrapper. Neither another hash nor subtype 2 or 3 made it show X (2 hid it) |
+| A bumped pedestrian: `ShowText(1, 'Spider-Man: Sorry about that.')` | | Logged |
+
 The camera-related entry was temporarily hooked by the independently written
 Spidy observer. Local disassembly showed RCX as the object, XMM1 as the float
 delta, and the low bytes of R8/R9 as flags. A live 30-second test produced 3,362

@@ -3,6 +3,7 @@
 #include "math.hpp"
 #include "tracking.hpp"
 #include "vertex.hpp"
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -16,16 +17,20 @@
 namespace spidy {
 enum class PhoneButton : int { previous, play, next, autoplay };
 constexpr int phoneButtons = 4;
-// The phone's screens: its home with an app for each of the others (the
-// player, October 17: "a home screen with apps on it ... look more like the
-// fnsm app from the 2nd game").
-enum class PhoneScreen : int { home, music, map, gear };
-// The apps on the home screen in their order: music, map, gear, and the
-// camera, which has no screen of its own. It puts the phone away and takes
-// the game's own camera out, its D-pad up (hantop, October 22, for the
-// research stations that ask for photos: "add a camera option to the in-game
-// phone"); VR play has no D-pad up of its own.
-constexpr int phoneApps = 4, phoneCameraApp = 3;
+// The phone's screens: its home and the apps that have one (the player,
+// October 17: "a home screen with apps on it ... look more like the fnsm app
+// from the 2nd game").
+enum class PhoneScreen : int { home, music, gear };
+// The apps on the home screen in their order: music, the game's menu, gear
+// and the camera. The menu and the camera have no screen of their own: each
+// puts the phone away and opens the game's own. MENU is the game's Back, its
+// menu of the map, suits and skills (the user, October 23: "lets move the
+// menu we open with x to the phone"; a tap of X was it until then, and MENU
+// took the place of MAP, a screen of hideouts that said COMING SOON). CAMERA
+// is its D-pad up, its camera (hantop, October 22, for the research stations
+// that ask for photos: "add a camera option to the in-game phone"). VR play
+// has no Back or D-pad up of its own.
+constexpr int phoneApps = 4, phoneMenuApp = 1, phoneCameraApp = 3;
 // The controllers while the phone is out, as steps: the stick pushed one way
 // (x: -1 left, 1 right; y: -1 down, 1 up), A, B, and the volume from the
 // triggers, a pull of the left one a step down and of the right one a step up
@@ -53,8 +58,9 @@ class PhoneControls {
 // What the phone's screens make of those steps. On the home screen the stick
 // picks an app and A opens it, B puts the phone away; in an app B goes home.
 // In MUSIC left and right pick a button and A presses it; in GEAR up and down
-// scroll the list. A on CAMERA puts the phone away, its own action.
-enum class PhoneAction : int { none, close, previous, play, next, autoplay, camera };
+// scroll the list. A on MENU or CAMERA puts the phone away, each its own
+// action.
+enum class PhoneAction : int { none, close, previous, play, next, autoplay, camera, menu };
 class PhoneUi {
   public:
     // Rows GEAR shows at once.
@@ -168,8 +174,8 @@ class Phone {
     // First thing each frame: the phone takes its controls out of `frame`
     // (PhoneHold) and, live, works its screens with them. gearRows: how many
     // rows GEAR has. B on the home screen puts the phone away at once, and so
-    // does A on CAMERA (PhoneAction::camera: the caller takes the game's
-    // camera out).
+    // does A on MENU or CAMERA (PhoneAction::menu, PhoneAction::camera: the
+    // caller opens the game's menu, or takes its camera out).
     Use take(XrFrame& frame, int gearRows);
     // Once the frame knows. play: VR shows play and no calibration has the
     // controllers. head, grips: tracking space; tracked: each grip's.
@@ -273,7 +279,29 @@ class PocketDraw {
     float time_{}, yaw_{}, lost_[2]{lostSeconds + 1, lostSeconds + 1};
     Vec3 hand_{}, seen_[2]{};
 };
-void appendPhone(std::vector<Vertex>& out, const PhoneView& view);
+// The phone as the eyes see it (the user, October 24: "currently its very
+// flat with tons of zfighting"): a body 9 mm deep with rounded corners and
+// edges - black glass on its face, a graphite frame round it with its
+// buttons, a red back with the camera's bump - lit as from above and behind
+// the player, so its edges catch the light as it turns in the hand. Back,
+// sides and then face, in that order, so a drawing without a depth buffer
+// (the preview) shows it right from the front. viewer: the eyes' middle.
+// Its screen is a picture of its own (appendPhoneScreen), not part of it.
+void appendPhone(std::vector<Vertex>& out, const PhoneView& view, Vec3 viewer);
+// The screen's picture: half its size in metres, and what it is cleared to
+// (the glass's black, which its rounded corners show).
+constexpr float phoneScreenHalfWidth = .0375f, phoneScreenHalfHeight = .08f;
+Vec3 phoneScreenGlass();
+// What the screen shows, in the screen's own plane: x right and y up in
+// metres from its middle, z out of it, a layer further out covering one
+// further in (D3D12Renderer::Picture).
+void appendPhoneScreen(std::vector<Vertex>& out, const PhoneView& view);
+// Where the picture goes in the world: just over the glass, bottom left,
+// bottom right, top right and top left, as the phone grows out of its middle.
+std::array<Vec3, 4> phoneScreenCorners(const PhoneView& view);
+// The picture laid onto those corners as overlay vertices, for a drawing
+// with no picture of its own (the preview, the tests). In place.
+void placePhoneScreen(std::vector<Vertex>& picture, const PhoneView& view);
 // What the phone shows for a song's file name (UTF-8): no folder or extension,
 // an accented Latin letter as its letter ("Beyoncé" as BEYONCE), and only what
 // the overlay's font draws. A name with nothing of that (a Hebrew, Cyrillic or

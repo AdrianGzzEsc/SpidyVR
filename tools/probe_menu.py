@@ -190,8 +190,8 @@ def main():
         press('down', 'down', 'down', 'down')
         press('right', wait=.8)
         step('calibrate_on_resume', dict(calibrate=True, hud=0), changes=13)
-        # Down past the EXPERIMENTAL heading: the flips, off until switched on.
-        press('down')
+        # Down past HEIGHT, SEATED and the EXPERIMENTAL heading: the flips, off until switched on.
+        press('down', 'down', 'down')
         press('right', wait=.8)
         step('flips_on', dict(flips=True, calibrate=True), changes=14)
         # The flip speed, 180 degrees a second until stepped up to 240.

@@ -250,6 +250,73 @@ std::atomic<uint64_t> invokes{}, promptCallsSeen{}, raised{}, cleared{}, named{}
 constexpr unsigned lineCount = 8, lineChars = 512;
 char lines[lineCount][lineChars]{};
 std::atomic<unsigned> nextLine{};
+// The texts the game got in place of its own (observeText, promptShown): one
+// per text of the game's that names its LB + RB, made once and kept for the
+// session, since the game may read a text long after it asked for it. Each
+// keeps what its original asked for, so a reader meeting the copy (the HUD's
+// line, ShowText's help line) reads the game's LB + RB, not the X it shows.
+struct Copy {
+    const char* original{};
+    std::string text;
+    uint32_t asked{};
+};
+constexpr unsigned copyCount = 64;
+SRWLOCK copyLock = SRWLOCK_INIT;
+Copy copies[copyCount];
+unsigned copiesMade{};
+// The copy made of the game's `text`, made now where it names the pair; null
+// for a text that names nothing of the kind, or with the table full.
+const Copy* copyOf(const char* text) {
+    AcquireSRWLockShared(&copyLock);
+    for (unsigned i = 0; i < copiesMade; ++i)
+        if (copies[i].original == text) {
+            const Copy* found = &copies[i];
+            ReleaseSRWLockShared(&copyLock);
+            return found;
+        }
+    ReleaseSRWLockShared(&copyLock);
+    char seen[lineChars], swapped[lineChars];
+    const size_t length = copyText(text, seen, sizeof(seen));
+    // A whole text only: one cut short would lose its end.
+    if (!length || length + 1 >= sizeof(seen))
+        return nullptr;
+    const size_t made = prompt_buttons::pairOnX({seen, length}, swapped, sizeof(swapped));
+    if (!made)
+        return nullptr;
+    AcquireSRWLockExclusive(&copyLock);
+    const Copy* out = nullptr;
+    for (unsigned i = 0; i < copiesMade && !out; ++i)
+        if (copies[i].original == text)
+            out = &copies[i];
+    if (!out && copiesMade < copyCount) {
+        auto& c = copies[copiesMade++];
+        c.original = text;
+        c.text.assign(swapped, made);
+        c.asked = prompt_buttons::pack(prompt_buttons::forText({seen, length}));
+        out = &c;
+        rewrote.fetch_add(1, std::memory_order_relaxed);
+    }
+    ReleaseSRWLockExclusive(&copyLock);
+    return out;
+}
+// What a text the game shows asked for where it is one of the copies (by its
+// pointer, or by its words where the game has copied it on); `found` false
+// where it is none.
+uint32_t copyAsked(const char* text, std::string_view words, bool& found) {
+    AcquireSRWLockShared(&copyLock);
+    uint32_t asked = 0;
+    found = false;
+    for (unsigned i = 0; i < copiesMade && !found; ++i)
+        if (copies[i].text.c_str() == text || (!words.empty() && copies[i].text == words)) {
+            asked = copies[i].asked;
+            found = true;
+        }
+    ReleaseSRWLockShared(&copyLock);
+    return asked;
+}
+// The widget's lines as they last named something, by kind, for the
+// timeline: a line is shown again every frame while it waits its turn.
+uint32_t promptWords[prompt_buttons::LiveDemands::kinds]{};
 
 void __fastcall resolveHook(void* self, void* field, const char* text) {
     char seen[1024];
@@ -297,7 +364,11 @@ uint32_t readPromptText(const GfxValue* value) {
     if (!length)
         return 0;
     const std::string_view view(seen, length);
-    const auto asked = prompt_buttons::forText(view);
+    // A help line the lookup gave the game as a copy (observeText) asks for
+    // what the game's own text asked for: its LB + RB, not the X it shows.
+    bool copied = false;
+    const uint32_t kept = copyAsked(reinterpret_cast<const char*>(p), view, copied);
+    const auto asked = copied ? prompt_buttons::unpack(kept) : prompt_buttons::forText(view);
     if (!asked.any()) {
         if (asked.keyboard)
             keyboardTexts.fetch_add(1, std::memory_order_relaxed);
@@ -429,6 +500,13 @@ void game_prompts::observeCall(uintptr_t imageBase, const char* name, const void
         }
         AcquireSRWLockExclusive(&demandLock);
         liveDemands.stand(GetTickCount64(), word, !shown);
+        // A load or the HUD's shutdown takes its prompt list down too, its
+        // widget's hide or not.
+        if (!camera)
+            for (unsigned k = 0; k < prompt_buttons::LiveDemands::kinds; ++k) {
+                liveDemands.prompt(GetTickCount64(), k, 0, true);
+                promptWords[k] = 0;
+            }
         ReleaseSRWLockExclusive(&demandLock);
         return;
     }
@@ -496,8 +574,61 @@ void game_prompts::observeCall(uintptr_t imageBase, const char* name, const void
 // What went with it: the rewriting of a prompt's wording for VR
 // (setRewriting), which never ran in a headset, and the texts counted from
 // this route. The call route still carries the demand and the keyboard count.
+//
+// Since October 24 it rewrites one thing again, in VR play: the game's LB +
+// RB, which X sends there (prompt_buttons::pairOnX). The HUD's own prompt
+// lines take their text from here as they appear - "[ACTION_WEB_YANK] (Hold)
+// Throw" by every trash can on a street - and the copy drew the game's X
+// (measured that day). A text that names no pair passes as it was.
 const char* game_prompts::observeText(const char* text) {
-    return text;
+    if (!rewriting.load(std::memory_order_relaxed) || reinterpret_cast<uintptr_t>(text) < 0x10000)
+        return text;
+    const Copy* copy = copyOf(text);
+    return copy ? copy->text.c_str() : text;
+}
+
+const char* game_prompts::promptShown(unsigned kind, const char* text) {
+    if (!reading.load(std::memory_order_relaxed) || kind >= prompt_buttons::LiveDemands::kinds ||
+        reinterpret_cast<uintptr_t>(text) < 0x10000)
+        return text;
+    char seen[lineChars];
+    const size_t length = copyText(text, seen, sizeof(seen));
+    const std::string_view view(seen, length);
+    bool copied = false;
+    uint32_t word = copyAsked(text, {}, copied);
+    const char* shown = text;
+    if (!copied) {
+        word = prompt_buttons::pack(prompt_buttons::forText(view));
+        // A line no lookup gave its copy, in VR play: its own now.
+        if (rewriting.load(std::memory_order_relaxed))
+            if (const Copy* copy = copyOf(text))
+                shown = copy->text.c_str();
+    }
+    if (word)
+        lastPacked.store(word, std::memory_order_relaxed);
+    AcquireSRWLockExclusive(&demandLock);
+    liveDemands.prompt(GetTickCount64(), kind, word, false);
+    const bool changed = promptWords[kind] != word;
+    promptWords[kind] = word;
+    ReleaseSRWLockExclusive(&demandLock);
+    if (changed && word) {
+        char line[callChars];
+        _snprintf_s(line, sizeof(line), _TRUNCATE, "HUD prompt %u: '%.*s'", kind,
+                    static_cast<int>(std::min<size_t>(length, 90)), seen);
+        AcquireSRWLockExclusive(&callLock);
+        keepLine(line);
+        ReleaseSRWLockExclusive(&callLock);
+    }
+    return shown;
+}
+
+void game_prompts::promptHidden(unsigned kind) {
+    if (kind >= prompt_buttons::LiveDemands::kinds)
+        return;
+    AcquireSRWLockExclusive(&demandLock);
+    liveDemands.prompt(GetTickCount64(), kind, 0, true);
+    promptWords[kind] = 0;
+    ReleaseSRWLockExclusive(&demandLock);
 }
 
 void game_prompts::note(const char* text) {

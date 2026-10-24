@@ -186,6 +186,41 @@ constexpr float headClearance = .2f, leastHeadroom = .5f, headroomReach = 3.f;
 // part of the first mission's duct has no roof the rays can hit, and the head
 // stood out through it at the player's own eye height (October 14, 19:57).
 constexpr float crawlRoom = 1.2f, crawlSettleSeconds = .4f;
+// That crawl is only a duct under a duct's roof, though. The game sets the
+// same flag (0x8001, standing) for a hero ducking under anything low: in the
+// user's session of October 24 it came on for seconds at a time on a rooftop
+// under a construction frame's beams 1.7 m up, and in bursts on the street,
+// and the cap put the view at a crouch and knelt the body there ("walking
+// around on the street sucks ... constantly getting stuck"). So the cap waits
+// for a roof seen no higher than ductRoof over the feet, and once one has
+// been it holds for the rest of that crawl, through a part of a duct the rays
+// miss. Elsewhere the ray's own roof (headClearance under it) is the only
+// limit, as it is on foot.
+constexpr float ductRoof = 1.5f;
+class FloorCrawlRoof {
+  public:
+    // crawling: the game's crawl on a floor this frame. seconds: since the
+    // last. roof: how far the head's ray found the surface over the feet (0
+    // for none). Returns the height the head may reach in the crawl, 0 for
+    // no cap.
+    float update(bool crawling, float seconds, float roof) {
+        if (!crawling) {
+            *this = {};
+            return 0;
+        }
+        held_ += std::isfinite(seconds) ? std::clamp(seconds, 0.f, .1f) : 0.f;
+        duct_ = duct_ || (std::isfinite(roof) && roof > 0 && roof <= ductRoof);
+        return held_ >= crawlSettleSeconds && duct_ ? crawlRoom : 0.f;
+    }
+    // The crawl has had a duct's roof over it.
+    bool duct() const {
+        return duct_;
+    }
+
+  private:
+    float held_{};
+    bool duct_{};
+};
 // On the game's crawl the stick goes along the game camera's own look laid
 // onto the surface; where less than crawlLook of that look lies along the
 // surface (the camera faces it), along the camera's up laid onto it instead.

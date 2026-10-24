@@ -707,6 +707,61 @@ int main(int argc, char** argv) {
             std::cout << "PASS game screen blit into the sRGB eye image: 8-bit, 10-bit and float frames within "
                       << std::max({errors[0], errors[1], errors[2]}) << " level.\n";
         }
+        {
+            // The phone's screen as a picture (D3D12Renderer::Picture): drawn into
+            // a texture of its own and shown on a quad 1 m ahead - its halves as
+            // drawn, a layer further out over one further in whatever the order,
+            // the overlay's own nearer geometry over the quad, and nothing of it
+            // off the quad.
+            auto d = td;
+            d.Format = DXGI_FORMAT_R8G8B8A8_TYPELESS;
+            ComPtr<ID3D12Resource> eye;
+            require(renderer.device()->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &d,
+                                                               D3D12_RESOURCE_STATE_RENDER_TARGET, nullptr,
+                                                               IID_PPV_ARGS(&eye)));
+            const Vec3 redHalf{.8f, .02f, .02f}, greenHalf{.02f, .7f, .05f}, blueLayer{.03f, .05f, .9f}, greyBlock{.4f, .4f, .4f};
+            constexpr float hw = .04f, hh = .08f;
+            std::vector<Vertex> picture;
+            const auto rect = [&](float x0, float y0, float x1, float y1, float z, Vec3 c) {
+                picture.insert(picture.end(), {Vertex{{x0, y0, z}, c}, Vertex{{x1, y0, z}, c}, Vertex{{x1, y1, z}, c},
+                                               Vertex{{x0, y0, z}, c}, Vertex{{x1, y1, z}, c}, Vertex{{x0, y1, z}, c}});
+            };
+            rect(-.01f, -.01f, .01f, .01f, .003f, blueLayer); // first, and further out
+            rect(-hw, -hh, 0, hh, .001f, redHalf);
+            rect(0, -hh, hw, hh, .001f, greenHalf);
+            constexpr float qx = .1f, qy = .2f;
+            const D3D12Renderer::Picture shown{
+                picture, hw, hh, {Vec3{-qx, -qy, -1}, Vec3{qx, -qy, -1}, Vec3{qx, qy, -1}, Vec3{-qx, qy, -1}}, {}};
+            std::vector<Vertex> nearer;
+            addBox(nearer, {-.2f, .14f, -.9f}, {.2f, .3f, -.85f}, greyBlock);
+            constexpr float tangent = .3f;
+            const auto vp = multiply(projection(-tangent, tangent, -tangent, tangent), viewMatrix({{0, 0, 0}, {}}));
+            const D3D12Renderer::ViewTarget view{eye.Get(), DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, width, height, vp};
+            for (int frame = 0; frame < 3; ++frame)
+                overlay.renderViews(std::span(&view, 1), nearer, false, true, {}, nullptr, &shown);
+            const auto image = overlay.readback(eye.Get());
+            // A point's pixel, from the camera at the origin looking down -z.
+            const auto at = [&](float x, float y, float z) {
+                const auto px = static_cast<size_t>((x / -z / tangent * .5f + .5f) * static_cast<float>(width));
+                const auto py = static_cast<size_t>((.5f - y / -z / tangent * .5f) * static_cast<float>(height));
+                return &image[(py * width + px) * 4];
+            };
+            const unsigned char* left = at(-.05f, -.1f, -1);
+            const unsigned char* right = at(.05f, -.1f, -1);
+            const unsigned char* middle = at(0, 0, -1);
+            const unsigned char* covered = at(.05f, .17f, -1);
+            const unsigned char* off = at(.15f, -.1f, -1);
+            if (left[0] < 150 || left[1] > 80 || right[1] < 150 || right[0] > 80)
+                throw std::runtime_error("Picture's halves are not where they were drawn");
+            if (middle[2] < 150 || middle[0] > 80)
+                throw std::runtime_error("Picture's outer layer was covered by one drawn later further in");
+            if (covered[0] < 110 || covered[0] > 210 || std::abs(int(covered[0]) - int(covered[1])) > 8)
+                throw std::runtime_error("Overlay geometry nearer than the picture did not cover it");
+            if (off[0] > 60 && off[1] > 60)
+                throw std::runtime_error("Picture drawn off its quad");
+            std::cout << "PASS phone screen picture: its own texture with mips on a quad, its layers by depth, "
+                         "under nearer geometry.\n";
+        }
         if (argc >= 2) {
             std::filesystem::path folder = argv[1];
             std::filesystem::create_directories(folder);

@@ -63,7 +63,9 @@ PLAY
    both triggers until the bar fills, about a second and a half. Spider-Man
    then has your height and arm length, so his hands sit on your
    controllers. B skips it. The launcher remembers it; "Redo" on its Options
-   tab, or CALIBRATE BODY in SPIDY VR (below), does it again.
+   tab, or CALIBRATE BODY in SPIDY VR (below), does it again. Rather enter
+   your height? Set HEIGHT (SPIDY VR, or "Height" in the launcher's options).
+   Playing seated? Switch SEATED on first (below), then calibrate sitting up.
 
 Keep the game window in front on the desktop: the game pauses while another
 window is in front of it, the launcher included. If the headset shows a still
@@ -205,7 +207,7 @@ now; the left hand's are blue, the right hand's orange)
   AIM MARKERS .......... hides or shows the markers: Settings > SPIDY VR, or
                          "Aim markers" in the launcher's options (the next
                          session starts as you left it). X no longer
-                         switches them: it opens the game menu
+                         switches them: held, it opens the gadget wheel
 
 Your body and fists
   Look down ............ you are Spider-Man: his body under you, his arms
@@ -383,11 +385,6 @@ Moving
                          takes it (2 seconds at most; let go to stop). At a
                          door or a console: look at it and hold Y. Not in a
                          fight
-  Right stick click .... the game's LB + RB: its web pull. Where the game
-                         shows LB + RB (a door or a grate to tear off),
-                         click the right stick, or hold it for as long as
-                         the game wants the two held. Not while a web
-                         carries you
   Right stick down ..... heal: the game's D-pad down. Push the stick
                          straight down and hold it a moment; the right
                          controller ticks when the game gets it. In the air
@@ -414,14 +411,20 @@ Moving
   chest, both triggers   sent in VR before): both hands before your chest,
                          pull both triggers together (within half a second
                          or so). No web balls from those pulls. The game uses
-                         its power when its meter is full, as in the flat game
+                         its power when its meter is full, as in the flat game.
+                         Both hands buzz as it goes out. Builds before
+                         October 23 buzzed but sent the game nothing
   Menu button .......... pause
   Hold both sticks in .. pause too, after a moment (both hands buzz). Under
                          SteamVR the Quest's menu button is SteamVR's own:
                          it opens SteamVR's dashboard, not the game's pause
-  X .................... game menu (map, suits, skills); while the game asks
-                         for its X, that X (WHEN THE GAME ASKS FOR A
-                         BUTTON, below)
+  X .................... while the game asks for its X, that X (WHEN THE
+                         GAME ASKS FOR A BUTTON, below). Where it shows
+                         LB + RB (a prop to throw, a door or a grate to
+                         tear off), X is both: press it, or hold it for as
+                         long as the game wants the two held; its prompt
+                         shows X there. Otherwise a tap of it does nothing.
+                         The game menu is your phone's MENU since October 23
   Hold X ............... the gadget wheel, in front of that hand (the
                          right one on a Steam Frame): move the hand toward
                          a gadget to light it (it turns red, its name in
@@ -432,13 +435,18 @@ Moving
                          left, and one with none is grey. The yellow
                          gadget is the one you have now. The web shooter
                          at the top gives you web balls again. Back in
-                         the middle and let go: nothing changes
+                         the middle and let go: nothing changes. Early in
+                         a new game, before the game gives you a gadget,
+                         the wheel has the web shooter alone and says NO
+                         GADGETS YET
   Phone ................ squeeze a grip with that hand behind your hip and
                          bring it up in front, still squeezed: your phone
                          opens in that hand. The stick picks an app, A
                          opens it, B goes back or puts the phone away.
-                         CAMERA puts it away and takes the game's camera
-                         out (THE GAME'S CAMERA, below)
+                         MENU puts it away and opens the game menu (map,
+                         suits, skills; B closes it). CAMERA puts it away
+                         and takes the game's camera out (THE GAME'S
+                         CAMERA, below)
   Click both sticks .... the pad layer, as you let go: your controllers
                          become the whole Xbox controller for a moment
                          (held on, both sticks pause instead). Your grips
@@ -450,19 +458,21 @@ Moving
                          latch while a web is carrying you
   A, B and Y are the game's own A, B and Y, and X too while the game shows
   it: where the game shows one of them on screen, press that button. Your
-  grips shoot webs, so they are not the game's LB and RB in VR: the right
-  stick's click is both, and where the game shows a bumper or a trigger on
-  its own, your triggers are those (below). The controllers have no D-pad:
-  the right stick pushed down is the game's D-pad down, pushed up its
-  LT + RT. A push counts from the stick at rest, straight down or up:
-  turning, a diagonal and a quick flick do neither.
+  grips shoot webs, so they are not the game's LB and RB in VR: where the
+  game shows LB + RB, X is both (its prompt says X), and where it shows a
+  bumper or a trigger on its own, your triggers are those (below). The
+  controllers have no D-pad: the right stick pushed down is the game's
+  D-pad down, pushed up its LT + RT. A push counts from the stick at rest,
+  straight down or up: turning, a diagonal and a quick flick do neither.
 
   WHEN THE GAME ASKS FOR A BUTTON
   Press the button of the name it shows. The game's prompts name an Xbox
   controller's buttons, and while one is on screen your controllers send
   them under those names:
     A, B, X, Y ......... the button of that letter. X is then the game's
-                         X, not the menu or the wheel
+                         X, not the gadget wheel
+    LB + RB ............ X (the prompt shows X for them)
+    Back or View ....... your phone's MENU
     LT or LB ........... your left trigger
     RT or RB ........... your right trigger
     L3, R3 ............. a click of the left or the right stick
@@ -502,9 +512,10 @@ Steam Frame controllers (they have a gamepad's buttons, split between the
 hands; everything above is the same, with these buttons)
   A, B, X, Y ........... all four are on the right controller, and each is
                          the button of that name above: A jumps, B dodges,
-                         X opens the game menu, Y interacts
+                         X held opens the gadget wheel, Y interacts
   Menu ................. pause (right controller)
-  View ................. the game menu, as X (left controller)
+  View ................. the game menu, as the phone's MENU (left
+                         controller)
   D-pad ................ the game's own D-pad: down heals. The right stick
                          pushed down and up still does what it does above
   Bumpers .............. nothing: the triggers and grips are your webs
@@ -585,7 +596,7 @@ in the launcher's options)
 
 Realistic flips (experimental, off until you switch REALISTIC FLIPS on in
 Settings > SPIDY VR or "Realistic flips" in the launcher's options, where
-its nine settings show under it; while it is on it takes the place of the
+its ten settings show under it; while it is on it takes the place of the
 flips above)
   On a web ............. moving faster than MINIMUM FLIGHT SPEED (3 m/s), your
                          body turns toward the web's pull, as hard as
@@ -600,6 +611,10 @@ flips above)
                          BRAKE); landing does too
   Left stick in the air  with FLIPS on as well: let go of it once in the air,
                          then it steers the turn
+  In a fight ........... switch FLIPS IN COMBAT off, and with enemies near
+                         (and for 3 s after) nothing turns you and you come
+                         upright; the stick steers your flight and both
+                         fists thrown down are a Ground Strike again
   MAX ROTATION SPEED and ROTATION RESPONSE set how fast you can turn and how
   soon a turn gets there.
 
@@ -692,18 +707,31 @@ VR settings
                    what Spidy draws itself (its gloves and webs, the aim
                    markers, the combat marks) is only in the headset then.
   BODY ........... CALIBRATE BODY: set it to ON RESUME and resume, and the
-                   T-pose panel asks for your measurements again.
+                   T-pose panel asks for your measurements again. HEIGHT
+                   (AUTO unless you pick one, 150 to 190 cm): your height.
+                   Set, it gives Spider-Man your size instead of the
+                   calibration's or the headset's measure (the calibration
+                   still fits his arms), and it is how high SEATED raises
+                   you. SEATED (off until you switch it on): play sitting
+                   down. Spidy measures how high your eyes are over your
+                   first second of play, and again each time you recenter
+                   the headset, and raises your view, your body and your
+                   hands by the difference to your standing eye height:
+                   HEIGHT's, else a calibration you made standing, else a
+                   1.76 m player's. Sit as you will play before you
+                   recenter. Stand up with SEATED on and you tower: switch
+                   it off first.
   EXPERIMENTAL ... FLIPS (off until you switch it on) lets the left stick
                    and A in the air flip you, and FLIP SPEED sets how fast.
                    HAND WALL CLIMBING (off until you switch it on, above).
                    REALISTIC FLIPS (off until
-                   you switch it on, above) and the nine rows that tune it.
+                   you switch it on, above) and the ten rows that tune it.
   Changes apply at once. The launcher starts your next session with them;
   its options show every one of them but VR VIEW too.
-  NEAR CLIP, RECORDING FOV, UI STYLE, BLOW SOUNDS, the four body haptics
-  switches and the EXPERIMENTAL rows below FLIP SPEED Spidy keeps in
+  NEAR CLIP, RECORDING FOV, UI STYLE, BLOW SOUNDS, HEIGHT, SEATED, the four
+  body haptics switches and the EXPERIMENTAL rows below FLIP SPEED Spidy keeps in
   %APPDATA%\Spidy\spidy_vr.ini, beside the launcher's own settings; the
-  launcher shows realistic flips' nine rows while it is on, and the body
+  launcher shows realistic flips' ten rows while it is on, and the body
   haptics switches while it plays. Playing
   the game on its screen instead of VR is on the pause menu itself: SWITCH
   TO GAME SCREEN, under RESUME (each session starts in VR).
@@ -846,6 +874,14 @@ IF SOMETHING IS WRONG
 - The picture breaks up: start the game from the launcher with the game
   closed. Attached to a game that is already running, Spidy cannot give it
   the larger render memory VR needs.
+- The game freezes for good in VR (the headset keeps showing the last
+  picture and nothing answers): since October 23 Spidy notices after eight
+  seconds and saves where each of the game's threads stood, in a
+  game-vr-...-freeze.dmp file beside the session report. Close the game from
+  Task Manager, then send the report with that file: it shows what the game
+  was waiting for. A freeze that comes back at the same moment of a mission
+  is worth playing past on the game screen (pause, SWITCH TO GAME SCREEN),
+  then SWITCH TO VR again.
 - The picture freezes or jumps for a second or two at a time, however fast
   the game runs: with a wireless headset (Virtual Desktop, Steam Link), connect
   the PC to the router by network cable and turn the PC's Wi-Fi off, then
@@ -919,8 +955,8 @@ IF SOMETHING IS WRONG
   and takes no button: the game offers a thing only when its own camera
   looks at it, and Spidy turned that camera left and right with your head
   but not up and down. It follows your head both ways now: look at the
-  thing, then press what the game shows (Y; the right stick's click for
-  LB + RB; the right stick up for LT + RT).
+  thing, then press what the game shows (Y; X for LB + RB; the right stick
+  up for LT + RT).
 - The picture is softer, or a cutscene has lost its blurred background:
   Spidy turns the game's sharpening and depth of field off for VR. "Game's
   sharpening" and "Game's depth of field" in the launcher's options keep
@@ -968,8 +1004,21 @@ IF SOMETHING IS WRONG
 - The blows are too loud or the bursts too bold: tell us; this build has
   no switch for them yet.
 - B no longer interacts, or Y no longer opens the game menu: the buttons
-  moved to make room for the dodge. B dodges, Y interacts (as the game's
-  prompts say) and X opens the game menu.
+  moved to make room for the dodge. B dodges and Y interacts (as the game's
+  prompts say), and the game menu is your phone's MENU.
+- X no longer opens the game menu (since October 23): draw your phone (a
+  grip squeezed behind your hip, brought up in front) and press A on MENU.
+  Held, X still opens the gadget wheel.
+- The right stick's click no longer pulls a door or a grate (since October
+  24): X does where the game shows LB + RB, and its prompt shows X there.
+  The marker the game sets on a thing you can throw still shows its LB and
+  RB icons: press X for it all the same.
+- Holding X opened nothing early in a new game (builds before October 24):
+  the game had given you no gadget yet. The wheel opens now, with the web
+  shooter alone.
+- The suit power did nothing (builds before October 23): the gesture
+  buzzed both hands but never reached the game. Both hands before your
+  chest, both triggers pulled together, now uses it when its meter is full.
 - Y does nothing at a door, a console or a backpack: look at the thing as
   you press it, from within about a metre (closer than feels natural at a
   wall in VR). The game takes its Y only for what its own camera sees and
@@ -983,7 +1032,7 @@ IF SOMETHING IS WRONG
 - The game says "Tap RB repeatedly to web up the turret" (Fisk's office):
   shoot web balls at the turret, three in a row. Then, for "Hold LB + RB to
   yank and throw turrets": from within about 15 m, look at the webbed turret
-  and hold the right stick's click until it is thrown. Being shot during the
+  and hold X until it is thrown. Being shot during the
   first second and a half stops the yank, as in the plain game: web both
   turrets first, or wait until they reload. The webbing lasts four seconds.
 - The view turning onto a wall makes you uneasy: it has no switch of its own

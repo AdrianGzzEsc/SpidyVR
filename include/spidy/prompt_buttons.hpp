@@ -91,12 +91,22 @@ Demand forText(std::string_view text);
 // game's own D-pad and View besides.
 bool reachableInPlay(Demand);
 // What the player does in VR for it, in capitals for a prompt line: the
-// gameplay control where there is one ("RIGHT STICK CLICK"), else the pad
+// gameplay control where there is one ("X" for LB + RB), else the pad
 // layer's ("PAD + LEFT GRIP"). Null for {} and for a mix of buttons no one
 // control gives.
 const char* vrControl(Demand);
+// `text` with the game's LB + RB - its web yank's word [ACTION_WEB_YANK], or
+// the two bumpers' tokens joined by a plus ("[BTN_LB] + [BTN_RB]", "[BTN_L1]
+// + [BTN_R1]") - as [BTN_X], the X that sends them in VR play
+// (game_pad::NamedPress). The game resolves its own tokens, so its prompt
+// then draws its X icon there: measured in the game on October 24, the
+// throw's "[ACTION_WEB_YANK] (Hold) Throw" drew "(X) (Hold) Throw". Anything
+// else stays as it stands. Returns the length written; 0 where nothing was
+// replaced or the text would not fit in `capacity`, and `out` is then no
+// text to use.
+size_t pairOnX(std::string_view text, char* out, size_t capacity);
 // `text` with the buttons it spells out replaced by the VR controls for
-// them: "LB + RB (Hold) Throw" becomes "RIGHT STICK CLICK (Hold) Throw".
+// them: "LB + RB (Hold) Throw" becomes "X (Hold) Throw".
 // `interactServes` (the interact button sending what a live prompt asks for,
 // which game_pad did until October 20) puts "Y" where VR play has no control
 // of its own, so "Tap LB" reads "Tap Y" rather than naming the pad layer. No
@@ -131,10 +141,13 @@ Demand unpack(uint32_t);
 // prompt this knows by no name) lives otherMs after its latest call: no Hide
 // of its own is known to end it. And a state of the game's that asks for
 // buttons with no text at all - its camera out, its overlay up - stands
-// until the call that ends it, standMs at most.
+// until the call that ends it, standMs at most. And a line of the HUD's own
+// prompt list (the throw's "[ACTION_WEB_YANK] (Hold) Throw", "[BTN_Y]
+// Interact"; one a kind, the widget's show and hide) stands from its show
+// until its hide, standMs at most.
 class LiveDemands {
   public:
-    static constexpr unsigned channels = 16;
+    static constexpr unsigned channels = 16, kinds = 21;
     static constexpr uint64_t liveMs = 2000, channelMs = 60000, otherMs = 8000, standMs = 600000;
     // A prompt call: `word` what its text named (pack; 0 for none), `clears`
     // its manager taking a prompt away.
@@ -167,6 +180,14 @@ class LiveDemands {
         stand_ = clears ? 0 : word;
         standAt_ = now;
     }
+    // The HUD's prompt of `kind` shown naming `word` (clears false), or
+    // hidden (true).
+    void prompt(uint64_t now, unsigned kind, uint32_t word, bool clears) {
+        if (kind >= kinds)
+            return;
+        prompts_[kind] = clears ? 0 : word;
+        promptAt_[kind] = now;
+    }
     // Everything live at `now`, together; what has run out is dropped.
     Demand demand(uint64_t now) {
         Demand out;
@@ -188,6 +209,12 @@ class LiveDemands {
             if (texts_[c])
                 out |= unpack(texts_[c]);
         }
+        for (unsigned k = 0; k < kinds; ++k) {
+            if (prompts_[k] && now - promptAt_[k] > standMs)
+                prompts_[k] = 0;
+            if (prompts_[k])
+                out |= unpack(prompts_[k]);
+        }
         return out;
     }
     void clear() {
@@ -195,8 +222,8 @@ class LiveDemands {
     }
 
   private:
-    uint32_t live_{}, texts_[channels]{}, other_{}, stand_{};
-    uint64_t fresh_{}, at_[channels]{}, otherAt_{}, standAt_{};
+    uint32_t live_{}, texts_[channels]{}, other_{}, stand_{}, prompts_[kinds]{};
+    uint64_t fresh_{}, at_[channels]{}, otherAt_{}, standAt_{}, promptAt_[kinds]{};
 };
 // Every control of the pad the game can ask for, so a check can cover them
 // all instead of the ones a player has reported.

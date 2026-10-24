@@ -1,6 +1,33 @@
 # Validation — 2026-10-24
 
-## Three pull requests: wall crawling and vents (27), the web slingshot (28), better climbing (29) (latest build)
+## X for the game's LB + RB, the wheel with no gadgets, the duct's roof, the phone's body and picture (latest build)
+
+The user's list after the 14:04 and 14:05 sessions (CHANGELOG, October 24,
+third). `include/spidy/game_pad.hpp` (`NamedPress`: X for LB + RB;
+`PullPress` gone), `include/spidy/prompt_buttons.hpp` and
+`src/prompt_buttons.cpp` (the `[ACTION_*]` words, `pairOnX`,
+`LiveDemands::prompt`), `include/spidy/game_prompts.hpp` and
+`src/game_prompts.cpp` (the rewritten copies, `promptShown` and
+`promptHidden`), `src/game_menu.cpp` (hooks at `0x7793d0` and `0x77a1e0`),
+`include/spidy/gadget_wheel.hpp`, `src/web_visual.cpp` and
+`src/tech_marks.cpp` (the bare wheel), `include/spidy/game_tracking.hpp`
+(`FloorCrawlRoof`), `src/game_xr.cpp`, `include/spidy/phone.hpp` and
+`src/phone.cpp`, `include/spidy/d3d12_renderer.hpp` and
+`src/d3d12_renderer.cpp` (`Picture`), `apps/phone_preview.cpp`,
+`apps/launcher/ui.cpp` (the controls list), `tools/run_game_vr.py` (the
+prompt line).
+
+| | |
+| --- | --- |
+| Read | The user's game-vr-20261024-140459 and -140556 (profile 2, the October 23 18:42 deploy). Gadgets: 0 listed, no error (profile 1 lists 7). Floor crawl: 958 frames, 670 with the head capped, 685 kneeling; the least headroom 1.7 m; mover `0x8001` while standing on a roof at y 113 (301-308 s, 312-315 s) and in bursts on the street. Frame drops: Virtual Desktop holding frames about 100 ms (`stream_stalls`), with 69 of the game's 75 stalls inside them. Such holds appear in every session with bHaptics devices connected (October 20 21:21, October 22 17:48, both of today's) and in none of the four without. The overlay stage was 11 ms (waiting on the game's queue) in 2 of the 3 sessions with the suit. |
+| In the game (research build) | Scratchpad MinHook DLLs in the supported exe, profile 2. The throw prompt's text `[ACTION_WEB_YANK] (Hold) Throw` (hash `0x9e608aeb`) comes from the text lookup when the prompt is made. Written as `[BTN_X]` there, the bottom-left line drew "(X) (Hold) Throw" (screenshot). The world marker did not change for any of: the icon cache with its dirty flag, `POISetButton`'s hash, or `AddPOI`'s subtype. |
+| Build | `tools/build.ps1 -Observer`, ctest 3/3. 567 core tests. New: the floor crawl caps the head only under a duct's roof; X sends LB + RB where the game names the two; the action words and LB + RB written as X; prompt kinds as live demands; the phone's body box and screen corners. The PullPress test is gone. The GPU test passes its 14 checks; new: the phone's picture, its own texture with mips on a quad, its layers by depth, under nearer geometry. `spidy_phone_preview` draws four screens face-on and the home screen turned 35°: the frame, the side buttons, the depth. Launcher tests 31/31. |
+| Python | The six protocol suites. Changed: the prompt line reads "in VR: X, held." for LB + RB. |
+| In the game (this build) | No headset. `tools/probe_menu_pad.py start`, profile 2's CONTINUE (on a lamp post), a jump down and one forward to the trash can, with `tools/probe_prompt_watch.py --rewrite --seconds 260` (game_menu's hooks with the prompt widget's, rewriting on). The timeline has `HUD prompt 11: '[BTN_X] (Hold) Throw'` four times, once for each throw prompt the game made (POIs 13 to 16), and `HUD prompt 11: '[BTN_Y] Interact'` for a pedestrian. The demand was LB + RB held (`0x40300`). Screenshots: "(X) (Hold) Throw" bottom left, again after walking away and back; the marker over the can still LB • RB. Closed cleanly with no crash dump. Of the 19 save files only `-userprefs.save` changed (backup `reports/backups/saves-before-x-prompt-check-*`). |
+| Not run | A headset: X sending LB + RB, the bare wheel, the phone's body and picture on the game's queue, the duct's roof in the first mission's vent. |
+| Not changed | `docs/images/readme/controls-quest3.jpg` still shows the right stick's click as the door pull and X as the game menu. Its page is not on this PC; the README says so under the picture. |
+
+## Three pull requests: wall crawling and vents (27), the web slingshot (28), better climbing (29) (the build before)
 
 The user: "review the 3 open prs, fix if needed and merge with what we have
 here". Pull request 27 (AdrianGzzEsc, c9284e7), 28 and 29 (iplusdvr,
@@ -12,6 +39,43 @@ fifth build (f82f334), with the review's fixes after them (CHANGELOG).
 | Read | 28 and 29 in full. 27 against the rules for the body, the walls and the protocols: the hand push and the grips' reference dropped in a frame when a hold ended, the duct's head cap lost to its camera gate, the XR thread waiting on the body's solve, the launcher's dead "Wall camera distance", the body Command's version 5 and flag 128 taken twice (main's kick). The user turned the vent part off for now (`ventHandCrawl`): the game's crawl animation on the legs on a vent's walls and ceiling, the view tipping by itself in a vent, the vent test passing in narrow rooms |
 | Build | `tools/build.ps1 -Observer` after each merge and fix: 447, 448, 451, 562 and 564 core tests (new: 27's own, the slingshot's and better climbing's, the reel with the slingshot on, the hand push and the grips' reference easing back), the launcher's, the realistic flips'; the six Python suites |
 | Not run | The game and a headset: the slingshot's takeoff and buzz, better climbing's strokes, 27's crawl body, turning away and hand push. 27's author played it in a Quest 3 (Virtual Desktop) on 0.4.1, without the review's fixes |
+## A frozen game's threads saved; HEIGHT and SEATED (the build before)
+
+The user: "check what was sent in mod chat and fix it (the reports and the
+bug), also add proper height calibration or override for seated mode".
+`tools/game_freeze.py` (new), `tools/run_game_vr.py` (the freeze watch,
+`freeze`, XrData 41's `seated`), `tools/package.ps1`,
+`include/spidy/seated.hpp` (new), `include/spidy/vr_settings.hpp` and
+`src/vr_settings.cpp` (HEIGHT, SEATED), `include/spidy/launcher_profile.hpp`,
+`apps/launcher/ui.cpp`, `src/game_xr.cpp`, `tools/probe_menu.py`.
+
+| | |
+| --- | --- |
+| Read | HaNToP's game-vr-20261023-104103 (0.4.0, RTX 4090, Quest 3, VD): new images, camera commits and pad reads stop together at 105.34 s, XR frames go on to 139.9 s; eye jobs left begins 3950, ends 3949, right begins 3949; GPU fence 14226 completed 14226; the swing owned, on Spidy's wall, the right web's anchor jumped 3.72 m (38.10 to 34.38 m) at -0.18 s; game log ends 10:42:14 without a fault. His video (Video_Project_48) holds still from 24 s, the helicopter firing into the building he swings down. The October 15 silent close (game-vr-20261015-174325) also came 0.015 s after the right web's first bend. |
+| Static | Spider-Man.exe `679dc0`/`67a227`: point budget r15 = min(128, most), fill loop skips when the laid count reaches n - 1 (`0067ac19`), so the rope fill is bounded with Spidy's count capped at most - 2. `native_eye_gpu.cpp`: fence waits time out (500 ms - 5 s), `submission` before `recording` on every path. |
+| Build | `tools/build.ps1 -Observer`: ctest 3/3, 441 core tests (new: seated play - standing eye from HEIGHT or a standing calibration, the seat measured after a second of play, eased, kept through a menu, measured again after a recenter, never below the floor, at most 1.2 m, off at once; the frame raised, its copy left; the tab's rows two further down for BODY's HEIGHT and SEATED; spidy_vr.ini's two keys and HEIGHT's range), launcher tests 30/30 (SEATED in profiles, HEIGHT not). |
+| Python | The six protocol suites; new: `game_frozen` (8 s of nothing, any count starts it over), `freeze_line`, a minidump of a sleeping child process read back to its threads by module, `package.ps1` carrying every tool `run_game_vr.py` imports (fails without `game_freeze`), XrData 41's seated block. |
+| Not run | A frozen game (the capture on one), a headset: SEATED's lift and the view, HEIGHT's size, a calibration seated; `tools/probe_menu.py` (two more presses to FLIPS) in the game. |
+
+## The suit power reaches the game; the game menu on the phone (the build before)
+
+The user: "i couldnt trigger the suit power (at least it didn't feel like
+it) also lets move the menu we open with x to the phone". Built on main
+(f82f334); the single-pass stereo work went to the branch
+`single-pass-stereo` (c42d334) first. `include/spidy/game_pad.hpp`
+(`Walk::suit`, `Walk::menu`; X no longer Back in play),
+`include/spidy/phone.hpp` and `src/phone.cpp` (MENU in MAP's place,
+`PhoneAction::menu`), `src/game_xr.cpp`, `src/prompt_buttons.cpp`,
+`apps/phone_preview.cpp`, `apps/launcher/ui.cpp` (the controls list),
+`tools/run_game_vr.py` (`reachable_in_play`, the prompt line).
+
+| | |
+| --- | --- |
+| Read | The user's sessions game-vr-20261022-212813 and game-vr-20261023-180107: `combat_headset.suit_powers` 3 and 21. game_xr.cpp read `suitPress.hands()` and `powers()`, never `held()`; `Walk` had no field for it, so `fromControllers` never sent L3 + R3. |
+| Build | `tools/build.ps1 -Observer`: ctest 3/3, 440 core tests (changed: the suit power's L3 + R3 reaches the controller in play and not on the game screen; X in VR play sends nothing, the phone's MENU sends Back; the pad-wide reach test with `suit` and `menu`; the phone's MENU on the home screen and as `Phone::take`'s action). Two older tests that expected X to be Back in play now expect nothing. Launcher tests 30/30, the GPU test, `spidy_phone_preview` (MENU's card with its three bars, MAP, SUITS, SKILLS under it). |
+| Python | The six protocol suites, 141 tests; new: every gesture in game_xr.cpp with a `held()` has it read, and every `Walk` field is filled. With `walk.suit = ...` taken out it fails ("SuitPowerPress suitPress: what it holds never goes out"), and with `walk.menu = ...` taken out ("Walk::menu is never filled"). |
+| Not run | A headset: the gesture's L3 + R3 and the game's answer (its meter must be full), the phone's MENU opening the game menu and B closing it. No game run (the standing OK for game runs was for the single-pass work). |
+| Not changed | `docs/images/readme/controls-quest3.jpg` still shows X as the game menu: its page is not on this PC. |
 
 ## Four combat ideas from the Discord: dodging by moving, the suit power, the dive, the game's own blow sounds (the build before)
 

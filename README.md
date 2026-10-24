@@ -78,10 +78,12 @@ one **START VR** button.
   floor. Point at a vent or a door and press Y to go through.
 - **You are Spider-Man.** Look down and see his body; his arms and hands
   follow your controllers, open, in a fist or in the web-shooting pose. A quick
-  T-pose the first time sizes him to your height and arm length.
+  T-pose the first time sizes him to your height and arm length, or enter your
+  height. Playing seated? SEATED raises you to your standing height.
 - **The game's prompts work in VR.** Press the button the game shows: X is its
-  X, your triggers its LT, LB, RT and RB, the stick clicks its L3 and R3, the
-  right stick its D-pad. While it asks for X, a punch is that X.
+  X, and its LB + RB too (its prompt then shows X); your triggers its LT, LB,
+  RT and RB, the stick clicks its L3 and R3, the right stick its D-pad. While
+  it asks for X, a punch is that X.
 - **VR settings in the game's menu.** A SPIDY VR tab in the game's own
   Settings for aim markers, snap or smooth turning, vibration, swing speed,
   how heavy you swing, screen size, the HUD and more. Changes apply at once.
@@ -198,7 +200,7 @@ Spidy changes nothing in the game's folder.
 <p align="center">
   <a href="docs/images/readme/controls-quest3.jpg"><img src="docs/images/readme/controls-quest3.jpg" alt="Spidy's controls on Quest 3 Touch Plus controllers. Left: Menu pauses; left stick walks and runs, click for slow motion; Y interacts, hold to step up to the thing; X opens the game menu, hold for the gadget wheel. Right: right stick turns, up and hold to zip to a point or into a vent, down and hold to heal, click to pull a door or grate; B dodges the way the left stick points; A jumps, hold on the ground for a charged leap. Both hands: trigger reels in, or shoots a web ball or your gadget with no web; grip shoots a web and swings, catches a prop or an enemy and throws it on release. With your hands: a sharp pull zips or yanks, a fast fist punches or flies you to an enemy up to 10 m off, a hand at your temple with the trigger scans, a free hand on the web with its grip climbs it, both sticks clicked give a whole gamepad. Where the game shows a button, press that one: its LT, LB, RT and RB are your triggers." width="100%"></a>
   <br>
-  <sub>Quest 3 Touch Plus shown; Quest 2 and Quest Pro controllers have the same buttons. Steam Frame buttons are in the <a href="docs/PLAYERS.md">players' guide</a>.</sub>
+  <sub>Quest 3 Touch Plus shown; Quest 2 and Quest Pro controllers have the same buttons. Steam Frame buttons are in the <a href="docs/PLAYERS.md">players' guide</a>. Since the picture was made, the game menu moved to your phone's MENU, and X (not the right stick's click) pulls a door or a grate where the game shows LB + RB.</sub>
 </p>
 
 | Do this | With |
@@ -215,6 +217,7 @@ Spidy changes nothing in the game's folder.
 | Slow motion | Click the **left stick**; click again to end it. The ring on your left wrist shows the focus left |
 | Walk and run / jump | **Left stick** / **A** (from the ground, a wall or a perch; no web zip in the air). Hold **A** on the ground to charge a leap and let go: the longer you hold, the higher; with the left stick, forward too |
 | Scan (the game's R3) | Raise a hand to your temple and pull its **trigger** |
+| Suit power (the game's L3 + R3) | Both hands before your chest, pull both **triggers** together; the game uses it when its meter is full |
 | One enemy at a time | A ring marks the enemy your next punch goes to: the one you look at. Hit that enemy and the ring locks on until the enemy is down (**KO!**); look squarely at another for a moment to change |
 | Called blows | An arrow comes into the ring from the side your fist should come from: swing a hook from that side, an uppercut from below or a blow down from above, at arm's reach or from across the room. The yellow arrow into a jagged red ring calls the finisher |
 | Walls | Walk at one, or fly or jump into it, and you stay on it: at speed you run along it, then stop. **Left stick** walks it (pushed at the wall: up it), **A** jumps off, a web pulls you off. Walking it or stopped, your view turns so the wall is your floor (STAND ON WALLS in VR settings or the launcher) |
@@ -222,12 +225,13 @@ Spidy changes nothing in the game's folder.
 | Turn | **Right stick**: snap 30° (adjustable or off), or hold to turn smoothly with SMOOTH TURN on in VR settings |
 | Dodge (the game's B) | **B**, the way the **left stick** points; not while a web carries you |
 | Interact (the game's Y) | **Y**, looking at the thing from within about a metre of it; hold **Y** and you step up to what you look at until the game takes it. On a wall, point a hand at a vent or a door (a turning ring in that hand's colour) and press **Y**. Swinging, **Y** is the game's web strike too (onto a car in a chase) |
-| Any button the game asks for | The one of that name: **A**, **B**, **X**, **Y** as shown (**X** is then the game's X, not the menu); **LT** or **LB** your left **trigger**, **RT** or **RB** your right; **L3**, **R3** a stick's click; the **D-pad** the right stick pushed that way. While the game asks for X, a punch is that X; with X + A in the air, a fist thrown down is the Ground Strike |
-| Pull a door or a grate (the game's LB + RB) | Click the **right stick**, or hold it; not while a web carries you |
+| Any button the game asks for | The one of that name: **A**, **B**, **X**, **Y** as shown (**X** is then the game's X, not the gadget wheel); **X** for **LB + RB**; **LT** or **LB** your left **trigger**, **RT** or **RB** your right; **L3**, **R3** a stick's click; the **D-pad** the right stick pushed that way. While the game asks for X, a punch is that X; with X + A in the air, a fist thrown down is the Ground Strike |
+| Throw a prop, tear off a door or a grate (the game's LB + RB) | **X** where the game shows LB + RB (its prompt then shows X), or hold it as long as the game wants the two held |
 | Heal (the game's D-pad down) | Push the **right stick** straight down and hold it a moment |
 | Zip to a point, enter a vent (the game's LT + RT) | Push the **right stick** straight up and hold it, swinging too: the game takes you from your webs once its zip begins. No point to zip to? Keep holding: time slows as the game aims; look at a point and let go to zip there |
 | Pause (VR settings: Settings > SPIDY VR) | **Menu** button, or hold both sticks in for a moment (under SteamVR a Quest's menu button opens SteamVR's dashboard) |
-| Game menu (map, suits, skills) | **X** (while the game asks for its X, that X instead) |
+| Game menu (map, suits, skills) | Your phone's **MENU**: squeeze a **grip** with that hand behind your hip, bring it up in front still squeezed, pick MENU with the stick and press **A**. **B** closes the game menu |
+| Gadget wheel | Hold **X**, move the hand toward a gadget and let go of **X** to equip it; your free hand's **trigger** fires it. Before the game gives you a gadget it shows the web shooter alone: NO GADGETS YET |
 | The whole gamepad, for a moment | Click both sticks (and let go): the grips are the game's LB and RB, the triggers its LT and RT, the right stick its D-pad; your webs are off meanwhile. Click both again, or press nothing for 20 seconds, to leave |
 | Play the game as it is | Pause, **SWITCH TO GAME SCREEN** (under RESUME): the game on a 3D screen in the headset, the controllers an Xbox controller. **SWITCH TO VR** goes back |
 

@@ -10,13 +10,15 @@ namespace spidy {
 // let-go web leaves its swing's spin; responseMs: how soon a turn reaches its
 // speed; handStrength: how much an arm's swing adds, percent; falloffMs: how
 // long a spin takes to fade; handThreshold: slower arms add nothing, cm/s;
-// airBrake: A in the air rights the player.
+// airBrake: A in the air rights the player; inCombat: off, a fight
+// (RealisticFlight::fighting) turns nothing, and the player comes upright as
+// on landing.
 struct RealisticFlipSettings {
     bool enabled = false, releaseFlip = true; // carry swing momentum on release
     int strength = 50, speed = 240, minimumSpeed = 3;
     int responseMs = 500, handStrength = 100, falloffMs = 3000;
     int handThreshold = 100; // centimetres per second
-    bool airBrake = true;
+    bool airBrake = true, inCombat = true;
     bool operator==(const RealisticFlipSettings&) const = default;
 };
 struct RealisticFlight {
@@ -24,6 +26,7 @@ struct RealisticFlight {
     bool valid{}, attached{};
     Vec3 handMomentum{}; // raw tracking-space arm movement, before virtual rotation
     float ropeLength = 20;
+    bool fighting{}; // enemies in reach of the player's blows lately
 };
 struct RealisticControls {
     bool brake{};
@@ -198,7 +201,11 @@ class RealisticFlip {
             sampled_ = true;
         }
         averageVelocity_ += (velocity - averageVelocity_) * (1 - std::exp(-dt / .12f));
-        const bool flying = airborne && !surface;
+        // FLIPS IN COMBAT off: in a fight the webs, the arms, a let-go swing
+        // and the stick turn nothing, and the player comes upright as on
+        // landing; a web still held when it ends turns him again.
+        const bool aloft = airborne && !surface;
+        const bool flying = aloft && !(flight.fighting && !settings.inCombat);
         const bool tether = flying && flight.attached && length(flight.pull) > .01f;
         const bool enough = length(averageVelocity_) >= std::clamp(settings.minimumSpeed, 3, 16);
         const float strength = std::clamp(settings.strength, 25, 100) / 100.f;
@@ -231,7 +238,7 @@ class RealisticFlip {
         if (manual && flying)
             desired = tilt_.rotate(controls.manualAngular);
         attached_ = tether;
-        airborne_ = flying;
+        airborne_ = aloft;
         momentum_ = limited(desired, rate);
         integrate(momentum_, acceleration, dt);
         if (tether || !flying || manual)

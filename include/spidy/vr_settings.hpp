@@ -84,15 +84,17 @@ struct Values {
     // eye. An angle renders the game's own view again for the window, which
     // costs frame time and leaves Spidy's drawings out of the window.
     int recordingFov = 0;
-    // Realistic flips, experimental (the tab's REALISTIC FLIPS and the nine
+    // Realistic flips, experimental (the tab's REALISTIC FLIPS and the ten
     // rows under it; RealisticFlipSettings, which holds what each means): the
     // swing's flight and the arms turn the player in the air, and A there
-    // rights them.
+    // rights them. automaticCombat: FLIPS IN COMBAT, off keeps them out of
+    // fights (the player, October 24: "lets add a toggle to disable realistic
+    // flips during combat").
     bool realisticFlips = false, automaticReleaseFlip = true;
     int automaticStrength = 50, automaticSpeed = 240, automaticMinimumSpeed = 3;
     int automaticResponse = 500, automaticHandStrength = 100, automaticFalloff = 3000;
     int automaticHandThreshold = 100;
-    bool automaticAirBrake = true;
+    bool automaticAirBrake = true, automaticCombat = true;
     // How strongly a bHaptics vest, sleeves and visor play (the tab's BODY
     // HAPTICS; body_haptics.hpp), percent; 0 off. And which of its groups
     // play (the tab's WEB, WIND, COMBAT and MOVEMENT HAPTICS switches;
@@ -111,6 +113,12 @@ struct Values {
     int blowSounds = 0;
     bool webSlingshot = false; // two fixed webs drawn from a standstill, then released
     bool betterClimbing = false; // retain hand-over-hand progress along a shared web
+    // Your height, centimetres (the tab's HEIGHT; seated.hpp): 0 AUTO, the
+    // T-pose calibration's or the headset's; set, it sizes Spider-Man in their
+    // place and is the height SEATED raises you to. And seated play (the tab's
+    // SEATED): the view and the body rise from where you sit to that height.
+    int heightCm = 0;
+    bool seated = false;
     bool operator==(const Values&) const = default;
 };
 // The steps the game's Settings offer. The launcher's slider sets any swing
@@ -122,6 +130,9 @@ inline constexpr int hapticLevels[] = {0, 25, 50, 75, 100};
 inline constexpr int weights[] = {40, 60, 80, 100, 125, 150, 200, 250, 300};
 inline constexpr int flipSpeeds[] = {90, 120, 150, 180, 240, 300, 360, 480};
 inline constexpr int nearClips[] = {10, 15, 20, 30, 50, 75, 100};
+// HEIGHT's steps, centimetres: AUTO, then 150 to 190 (a row takes nine
+// choices at most: five apart where most players are, ten at the ends).
+inline constexpr int heights[] = {0, 150, 160, 165, 170, 175, 180, 185, 190};
 // Nearer than 20 cm would do nothing: the eyes keep that far from any surface
 // (HeadClearance::margin).
 inline constexpr int wallDistances[] = {20, 25, 30, 40, 50, 60, 75, 100};
@@ -153,7 +164,7 @@ inline float screenDepth(int choice) {
 // a second, vibration and body haptics 0-100%, weight 40-300%, HUD 0-3, flip
 // speed 90-480 degrees a second, the game screen's depth 0-3, near clip
 // 10-100 mm, recording FOV 0 (off) or 130-150 degrees, UI style 0-1, blow
-// sounds 0-2.
+// sounds 0-2, height 0 (AUTO) or 120-220 cm.
 Values sanitized(Values);
 
 enum class Item : uint8_t {
@@ -198,8 +209,11 @@ enum class Item : uint8_t {
     blowSounds,
     webSlingshot,
     betterClimbing,
+    height,
+    seated,
+    automaticCombat,
 };
-inline constexpr Item lastItem = Item::betterClimbing;
+inline constexpr Item lastItem = Item::automaticCombat;
 // The SPIDY VR tab, top to bottom: a section's heading (item none) or a
 // setting. The sections: WEBS, SWINGING, COMFORT, HAPTICS, DISPLAY, BODY and
 // EXPERIMENTAL (the player, October 19: "sort the options in spidy vr
@@ -217,7 +231,7 @@ struct Row {
     // menu (the one with resume)").
     bool page{};
 };
-const std::array<Row, 45>& rows();
+const std::array<Row, 48>& rows();
 // The most choices a row shows (game_menu's buffers): a row with more would
 // lose its last ones.
 inline constexpr size_t maxChoices = 9;
@@ -233,8 +247,8 @@ bool choose(Item, int choice, Values&);
 // What the game's RESET puts back: the choice for Spidy's defaults (Values{}).
 int defaultChoice(Item);
 // The settings no launcher.ini key or XrConfig field carries: NEAR CLIP,
-// RECORDING FOV, UI STYLE, BLOW SOUNDS, HAND WALL CLIMBING, WALL CAMERA DISTANCE, the
-// realistic flips' ten rows and the body haptics' four groups. The game
+// RECORDING FOV, UI STYLE, BLOW SOUNDS, HEIGHT, SEATED, HAND WALL CLIMBING, WALL CAMERA DISTANCE, the
+// realistic flips' eleven rows and the body haptics' four groups. The game
 // module keeps them as these key=value lines in a file of their own, beside
 // the launcher's settings (game_xr.cpp, tabOnlyPath), and reads them back
 // when VR starts; the launcher's options read and write the same file.

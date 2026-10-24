@@ -3,8 +3,10 @@ import math
 import pathlib
 import re
 import struct
+import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import MagicMock, Mock, patch
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]/'tools'))
@@ -24,7 +26,8 @@ from run_game_vr import (snapshot as xr_snapshot, accepted as accepted_xr, timin
                          other_mods_warning, REFLEX_OFF, device_removed, device_lost_advice, game_adapters,
                          demand_name, reachable_in_play, prompts_line, prompt_snapshot,
                          controller_buttons, sense_snapshot, attack_flags, haptics_snapshot, stage_haptics,
-                         HAPTIC_KINDS, HAPTICS_BYTES)
+                         HAPTIC_KINDS, HAPTICS_BYTES, game_frozen, freeze_line, FREEZE_SECONDS)
+import game_freeze
 from probe_collision import snapshot as collision_snapshot
 from probe_movement import snapshot as movement_snapshot
 from probe_native_motion import snapshot as motion_snapshot
@@ -323,6 +326,57 @@ class ProtocolTests(unittest.TestCase):
         self.assertIsNone(appearance_snapshot(Reader(raw[:64]), 0))
         struct.pack_into('<Q', raw, 16, 7)
         self.assertIsNone(appearance_snapshot(Reader(*([raw]*8)), 0))
+
+    def test_a_game_that_makes_nothing_counts_as_frozen_and_its_threads_read_back_from_a_dump(self):
+        """October 23 (Straw, Meet Camel): the game stopped for good in mid-swing and the report could not say
+        where. The session now saves the frozen game's threads; this checks when it counts as frozen and that a
+        dump reads back to each thread's code addresses by module."""
+        watch = {}
+
+        def sample(seconds, **changed):
+            return dict(dict(seconds=seconds, unique_submitted=5, screen_submitted=1, camera_commits=9,
+                             pad_reads=40), **changed)
+        self.assertFalse(game_frozen(watch, sample(0)))
+        self.assertFalse(game_frozen(watch, sample(FREEZE_SECONDS-.1)))
+        self.assertTrue(game_frozen(watch, sample(FREEZE_SECONDS+.1)))
+        # Anything the game makes - here one read of the controller - starts the count over.
+        self.assertFalse(game_frozen(watch, sample(FREEZE_SECONDS+.2, pad_reads=41)))
+        self.assertFalse(game_frozen(watch, sample(2*FREEZE_SECONDS, pad_reads=41)))
+        self.assertTrue(game_frozen(watch, sample(2*FREEZE_SECONDS+.3, pad_reads=41)))
+        self.assertIn('-freeze.dmp (0.4 MB)', freeze_line(dict(seconds=105.3, dump=r'C:\r\game-vr-1-freeze.dmp',
+                                                                dump_mb=.4)))
+        self.assertIn('error 5', freeze_line(dict(seconds=105.3, dump=None, error=5)))
+        # A real dump: a sleeping child process, its threads by module, its sleep among them.
+        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
+        try:
+            time.sleep(.5)
+            with tempfile.TemporaryDirectory() as folder:
+                found = game_freeze.capture(child.pid, pathlib.Path(folder)/'child-freeze.dmp')
+        finally:
+            child.kill()
+            child.wait()
+        self.assertTrue(found['dump'] and found['threads'], found)
+        python = pathlib.Path(sys.executable).stem.lower()
+        self.assertTrue(any(any(where.split('+')[0].lower().startswith('python') for where in t['stack'])
+                            for t in found['threads']), f'no thread of {python} called into Python')
+        self.assertTrue(all(t['rip'].count('+0x') == 1 for t in found['threads']), 'an address outside a module')
+
+    def test_the_package_carries_every_tool_the_session_imports(self):
+        """package.ps1 copies a fixed list of tools: one that run_game_vr.py imports and the list lacks stops every
+        packaged session at its first line (game_freeze.py, October 23, was the first one checked here)."""
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = (root/'tools'/'package.ps1').read_text(encoding='utf-8')
+        listed = set(re.findall(r"'(\w+)'", re.search(r'\$tools = @\((.*?)\)', script, re.S).group(1)))
+        needed, queue = set(), ['run_game_vr']
+        while queue:
+            name = queue.pop()
+            if name in needed:
+                continue
+            needed.add(name)
+            source = (root/'tools'/f'{name}.py').read_text(encoding='utf-8')
+            queue += [m for m in re.findall(r'^\s*(?:from|import)\s+(\w+)', source, re.M)
+                      if (root/'tools'/f'{m}.py').exists()]
+        self.assertEqual(needed-listed, set(), 'run_game_vr.py needs tools the package does not carry')
 
     def test_frame_rates_do_not_count_reused_images_as_new_scene_frames(self):
         samples=[dict(status=2,seconds=0,submitted=0),
@@ -1344,7 +1398,7 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual((result['captured'],result['reused'],result['captured_serial']),(101,202,303))
 
     def test_all_readers_reject_incompatible_dlls(self):
-        for reader, magic, size in ((gpu_snapshot, 0x53475044, 208), (xr_snapshot, 0x53585244, 1192),
+        for reader, magic, size in ((gpu_snapshot, 0x53475044, 208), (xr_snapshot, 0x53585244, 1216),
                                      (collision_snapshot, 0x53435044, 2160),
                                      (movement_snapshot, 0x534d5044, 57408),
                                      (motion_snapshot, 0x534d5644, 176), (ray_snapshot, 0x53525944, 784),
@@ -1457,13 +1511,13 @@ class ProtocolTests(unittest.TestCase):
             game.candidate.assert_not_called()
 
     def test_xr_never_publishes_partly_updated_pose(self):
-        raw = bytearray(1192)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 40, 1192, 3, 4)
+        raw = bytearray(1216)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 41, 1216, 3, 4)
         self.assertIsNone(xr_snapshot(Reader(*([raw, struct.pack('<Q', 6)]*8)), 0))
 
     def test_xr_decodes_both_hands_and_status_message(self):
-        raw = bytearray(1192)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 40, 1192, 3, 4)
+        raw = bytearray(1216)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 41, 1216, 3, 4)
         struct.pack_into('<16f', raw, 160, *range(16))
         struct.pack_into('<16f', raw, 224, *range(16, 32))
         raw[288:295] = b'Tracked'
@@ -1487,8 +1541,8 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual((result['gate'], result['camera_mover']), ([], None))
 
     def test_xr_says_why_gameplay_was_unavailable_and_which_camera_ran(self):
-        raw = bytearray(1192)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 40, 1192, 3, 4)
+        raw = bytearray(1216)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 41, 1216, 3, 4)
         # A played scene whose camera the gate does not accept, the third player of the session,
         # and the menu button held on the virtual controller the game has read 900 times.
         struct.pack_into('<2I2Q2IQ', raw, 592, 8, 0x3872860, 3, 0x2aefe723280, 0x10, 1, 900)
@@ -1505,9 +1559,20 @@ class ProtocolTests(unittest.TestCase):
         result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
         self.assertEqual((result['gate'], result['camera_mover']), (['no_player', 'no_camera_commit'], '0x3999999'))
 
+    def test_xr_reads_seated_play_and_the_height(self):
+        """Version 41 (seated.hpp): SEATED and whether a seated eye height was measured, HEIGHT, that eye height
+        and how far the tracking space is raised now, and how often it was measured."""
+        raw = bytearray(1216)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 41, 1216, 3, 4)
+        self.assertEqual(xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)['seated'],
+                         dict(on=False, measured=False, height_cm=0, seated_eye_m=0, lift_m=0, measures=0))
+        struct.pack_into('<5I', raw, 1192, 3, 175, 1180, 458, 2)
+        self.assertEqual(xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)['seated'],
+                         dict(on=True, measured=True, height_cm=175, seated_eye_m=1.18, lift_m=.458, measures=2))
+
     def test_xr_counts_interacts_dodges_and_aim_markers(self):
-        raw = bytearray(1192)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 40, 1192, 3, 4)
+        raw = bytearray(1216)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 41, 1216, 3, 4)
         result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
         self.assertEqual((result['interacts'], result['aim_markers'], result['markers']), (0, False, 0))
         self.assertEqual(result['dodges'], 0)
@@ -1541,8 +1606,8 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual((result['look_error'], result['look_turns']), (-37.5, 9))
 
     def test_xr_reports_the_vr_settings_and_the_settings_tab(self):
-        raw = bytearray(1192)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 40, 1192, 3, 4)
+        raw = bytearray(1216)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 41, 1216, 3, 4)
         # Markers on; web grab, webs in open air, the web shooter and body on, punching off; 48 m/s, half again
         # real gravity, 45 degree snap turns, smooth turning at 120 degrees a second, half vibration, the large
         # screen; two changes in the SPIDY VR tab, which the game built 7 times.
@@ -1602,8 +1667,8 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual((result['scans'], result['charge_jumps']), (3, 2))
 
     def test_xr_reports_the_layout_the_runtime_uses_for_the_controllers(self):
-        raw = bytearray(1192)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 40, 1192, 3, 4)
+        raw = bytearray(1216)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 41, 1216, 3, 4)
         result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
         # Before the runtime says: nothing, and nothing in the session log.
         self.assertEqual((result['controllers'], result['controller_layouts']), ([None, None], []))
@@ -1639,8 +1704,8 @@ class ProtocolTests(unittest.TestCase):
         self.assertIn('a layout of its own', controllers_line(result['controllers']))
 
     def test_xr_reports_what_the_game_asked_a_player_for(self):
-        raw = bytearray(1192)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 40, 1192, 3, 4)
+        raw = bytearray(1216)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 41, 1216, 3, 4)
         result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
         # Before any prompt: nothing asked for, and no line in the session log.
         self.assertEqual(result['prompts']['asking'], None)
@@ -1661,10 +1726,9 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual((prompts['beyond_play'], prompts['keyboard_texts']), (5, 2))
         self.assertEqual((prompts['context_presses'], prompts['pad_entries']), (4, 1))
         self.assertTrue(prompts['pad_layer'])
-        # Both bumpers together is a control VR play has; named, each trigger sends its own.
+        # Both bumpers together is a control VR play has: X, while the game names them (since October 24).
         self.assertTrue(reachable_in_play(pull))
-        self.assertIn('The game is asking for LB + RB (hold) - in VR: the left trigger + the right trigger, held.',
-                      prompts_line(pull))
+        self.assertIn('The game is asking for LB + RB (hold) - in VR: X, held.', prompts_line(pull))
         # The game's X alone, and each bumper alone, are what play never had on its own: the log names the
         # control that sends each while the game names it (game_pad::NamedPress), not the interact button.
         for word, name, control in ((0x4000, 'X', 'X'), (0x100, 'LB', 'the left trigger'),
@@ -1690,6 +1754,43 @@ class ProtocolTests(unittest.TestCase):
         self.assertTrue(reachable_in_play(2 << 21))
         self.assertEqual(demand_name(1 << 23), 'right stick left')
         self.assertFalse(reachable_in_play(1 << 23))
+        # The suit power's L3 + R3 goes out together (both triggers at the chest), and the game's Back is the
+        # phone's MENU since October 23 (a tap of X before).
+        self.assertTrue(reachable_in_play(0x40 | 0x80))
+        self.assertTrue(reachable_in_play(0x20))
+        self.assertIn("The game is asking for Back - in VR: the phone's MENU.", prompts_line(0x20))
+
+    def test_every_gesture_the_worker_keeps_reaches_the_games_controller(self):
+        """A gesture's held() must be read where the XR worker builds the controller, and every field of
+        game_pad::Walk must be filled there.
+
+        The suit power gesture (game_pad::SuitPowerPress, October 22) counted its presses and buzzed both
+        hands, but nothing read its held() and Walk had no field for it: the game never got its L3 + R3, 21
+        tries in one session (October 23). Its tests checked the gesture and the controller's mapping, each on
+        its own; this checks the wiring between them."""
+        root = pathlib.Path(__file__).resolve().parents[1]
+        pad = (root/'include/spidy/game_pad.hpp').read_text(encoding='utf-8')
+        worker = (root/'src/game_xr.cpp').read_text(encoding='utf-8')
+        holding = {name for name, body in re.findall(r'\nclass (\w+) \{(.*?)\n\};', pad, re.S)
+                   if 'bool held() const' in body}
+        self.assertTrue({'TemplePress', 'SuitPowerPress'} <= holding, holding)
+        kept = re.findall(r'game_pad::(\w+) (\w+);', worker)
+        for name, variable in kept:
+            if name in holding:
+                self.assertTrue(f'{variable}.held()' in worker, f'{name} {variable}: what it holds never goes out')
+        self.assertTrue({name for name, _ in kept} >= holding, 'a gesture with held() is not kept by the worker')
+        body = re.search(r'\nstruct Walk \{(.*?)\n\};', pad, re.S).group(1)
+        fields = []
+        for line in body.splitlines():
+            line = line.strip()
+            if line.startswith('//') or not line.endswith(';'):
+                continue
+            declared = line[:-1].split(' ', 1)[1]
+            fields += [field.split('{')[0].strip() for field in declared.split(',')]
+        self.assertIn('suit', fields)
+        self.assertIn('menu', fields)
+        for field in fields:
+            self.assertTrue(re.search(rf'walk\.{field}\s*\|?=[^=]', worker), f'Walk::{field} is never filled')
 
     def test_every_shared_struct_agrees_between_the_modules_and_the_tools(self):
         """The C++ struct and the Python reader must name the same version and size.
@@ -1737,8 +1838,8 @@ class ProtocolTests(unittest.TestCase):
         self.assertGreaterEqual(checked, 2, 'the version check compared almost nothing')
 
     def test_xr_reports_the_controller_buttons_the_player_pressed(self):
-        raw = bytearray(1192)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 40, 1192, 3, 4)
+        raw = bytearray(1216)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 41, 1216, 3, 4)
         result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
         self.assertEqual((result['vr_buttons'], result['vr_buttons_played']), ([], []))
         # The October 13 question: B arrived and Y never did, so which hand was pressed?
@@ -1795,8 +1896,8 @@ class ProtocolTests(unittest.TestCase):
         self.assertNotIn('census', mismatch)
 
     def test_xr_reports_walls_the_game_held_the_player_on(self):
-        raw = bytearray(1192)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 40, 1192, 3, 4)
+        raw = bytearray(1216)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 41, 1216, 3, 4)
         result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
         self.assertEqual(result['surface'], dict(entries=0, frames=0, hero_up=[0, 0, 0], stand_off_m=0,
                                                  head_height_m=0, head_clearance_m=0, view_tilt_deg=0))
@@ -1812,8 +1913,8 @@ class ProtocolTests(unittest.TestCase):
                                                  head_height_m=-.02, head_clearance_m=.46, view_tilt_deg=0))
 
     def test_xr_reports_the_game_s_own_crawl_under_the_player(self):
-        raw = bytearray(1192)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 40, 1192, 3, 4)
+        raw = bytearray(1216)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 41, 1216, 3, 4)
         self.assertEqual(xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)['warp'],
                          dict(asked=0, applied=0, refused=0, faulted=0, taken=0, declined=0, game_run_frames=0,
                               hold_grace_frames=0))
@@ -1826,8 +1927,8 @@ class ProtocolTests(unittest.TestCase):
                               hold_grace_frames=12))
 
     def test_xr_reports_gaps_in_play_the_vent_crawl_and_the_game_camera(self):
-        raw = bytearray(1192)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 40, 1192, 3, 4)
+        raw = bytearray(1216)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 41, 1216, 3, 4)
         result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
         self.assertEqual(result['tracking_gaps'], dict(frames=0, reasons=[]))
         self.assertEqual(result['floor_crawl'], dict(frames=0, capped_frames=0, kneel_frames=0))
@@ -1843,8 +1944,8 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(result['game_camera'], dict(forward=[.12, .985, .12], up=[-.696, .174, -.696]))
 
     def test_xr_reports_pointing_at_the_game_s_interactions(self):
-        raw = bytearray(1192)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 40, 1192, 3, 4)
+        raw = bytearray(1216)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 41, 1216, 3, 4)
         self.assertEqual(xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)['offers'],
                          dict(hooks='off', hook_error=0, point_frames=0, reach_frames=0, asks=0, refused=0,
                               presses=0, picked=0, failed=0, most_seen=0, masked_updates=0, posed_checks=0,
@@ -1869,8 +1970,8 @@ class ProtocolTests(unittest.TestCase):
                           if k in ('hooks', 'hook_error')}, dict(hooks='failed', hook_error=9601))
 
     def test_xr_reports_the_t_pose_calibration(self):
-        raw = bytearray(1192)
-        struct.pack_into('<4IQ', raw, 0, 0x53585244, 40, 1192, 3, 4)
+        raw = bytearray(1216)
+        struct.pack_into('<4IQ', raw, 0, 0x53585244, 41, 1216, 3, 4)
         result = xr_snapshot(Reader(raw, struct.pack('<Q', 4)), 0)
         self.assertEqual(result['calibration'], dict(phase='none', hint=None, progress=0, done=0, skipped=0,
                                                      reach_m=[0, 0]))

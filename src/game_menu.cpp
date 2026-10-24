@@ -524,6 +524,25 @@ const char* __fastcall textHook(uint32_t hash, const char* fallback) {
 bool __fastcall hasTextHook(uint32_t hash) {
     return (buildingTab && textFor(hash)) || originalHasText(hash);
 }
+// The HUD's prompt list: its widget showing a line of `kind` (0-20) with a
+// text, and hiding one - what game_prompts keeps as asked for while it is up
+// (promptShown), and the line it shows in VR play. The show takes eight
+// arguments, four on the stack (7793d0 reads them at rbp+480 to rbp+498),
+// all passed on as they came.
+using PromptShowFn = bool(__fastcall*)(void*, int, const char*, float, uint64_t, uint64_t, uint64_t, uint64_t);
+using PromptHideFn = bool(__fastcall*)(void*, int, const char*, uint64_t);
+PromptShowFn originalPromptShow{};
+PromptHideFn originalPromptHide{};
+bool __fastcall promptShowHook(void* widget, int kind, const char* text, float wait, uint64_t a, uint64_t b,
+                               uint64_t c, uint64_t d) {
+    const char* line = kind >= 0 ? game_prompts::promptShown(static_cast<unsigned>(kind), text) : text;
+    return originalPromptShow(widget, kind, line, wait, a, b, c, d);
+}
+bool __fastcall promptHideHook(void* widget, int kind, const char* text, uint64_t now) {
+    if (kind >= 0)
+        game_prompts::promptHidden(static_cast<unsigned>(kind));
+    return originalPromptHide(widget, kind, text, now);
+}
 
 struct Hook {
     uintptr_t offset;
@@ -558,6 +577,10 @@ const Hook hooks[] = {
      {0x48, 0x83, 0xec, 0x28, 0x8b, 0xd1, 0x48, 0x8b, 0x0d}, 9},
     {addItem, reinterpret_cast<void*>(&addItemHook), reinterpret_cast<void**>(&originalAddItem),
      {0x48, 0x89, 0x5c, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10}, 10},
+    {0x7793d0, reinterpret_cast<void*>(&promptShowHook), reinterpret_cast<void**>(&originalPromptShow),
+     {0x48, 0x8b, 0xc4, 0x48, 0x89, 0x58, 0x08, 0x48, 0x89, 0x70}, 10},
+    {0x77a1e0, reinterpret_cast<void*>(&promptHideHook), reinterpret_cast<void**>(&originalPromptHide),
+     {0x48, 0x89, 0x5c, 0x24, 0x08, 0x48, 0x89, 0x6c, 0x24, 0x10}, 10},
 };
 bool matches(uintptr_t at, const unsigned char* bytes, size_t count) {
     __try {

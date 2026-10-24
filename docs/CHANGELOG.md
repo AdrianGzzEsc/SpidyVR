@@ -3,7 +3,117 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 24): three pull requests - wall crawling and vents
+**Latest build (October 24, third): X is the game's LB + RB, the wheel opens
+with no gadgets, the street without the duct's crouch, a phone with depth.**
+Your list after the 14:04 and 14:05 sessions.
+
+- **X is the game's LB + RB where the game shows the two** (you: "press
+  RB+LB popups constantly, which is not the mapping (lets move it to x
+  maybe) and replace the popups like we did for y"). While the game asks
+  for LB + RB (its throw of a prop, a yank, a door or a grate to tear off),
+  X pressed or held is both, for as long as you hold it; with nothing of
+  the kind asked, held X is the gadget wheel as before. The right stick's
+  click is no longer LB + RB. The prompt the game shows says X now: the
+  line at the bottom of the screen reads "(X) (Hold) Throw" where it read
+  "LB + RB (Hold) Throw". Spidy writes X into the text before the game makes
+  the prompt from it, as it does for Y, and reads which button the shown
+  prompt asks for from the game's prompt widget (`0x7793d0` shows one,
+  `0x77a1e0` hides it). Not yet: the marker the game sets on a throwable
+  thing in the world still shows its LB and RB icons. That marker takes a
+  button id from the game's HUD, not a text, and none of the tries made it
+  show X.
+- **The gadget wheel opens with no gadgets** (you: "Can't access gadget
+  wheel now"). Your 14:04 and 14:05 sessions were on profile 2, a new game at
+  2% of the story, where the game has given you no gadget yet. Spidy offered
+  the wheel only with a gadget on it, so holding X did nothing. Now it opens
+  with the web shooter alone and "NO GADGETS YET" in the middle.
+- **Walking no longer puts you in a crouch outside a duct** (you: "Walking
+  around on the street sucks (constantly getting stuck, slow to respond etc)
+  feels bad."). In the 14:05 session Spidy took 958 frames on the street
+  and on a rooftop for a duct: it held your view at crouch height (1.2 m) in
+  670 of them and knelt the body in 685. It read the game's floor-crawl flag
+  (the mover's bit 0x1, which the first mission's duct sets) as a duct. The
+  game sets the same flag where it crouches its hero under something low:
+  for seconds at a time under the steel beams of a roof 113 m up, and in
+  short bursts on the street. The nearest roof any ray found all session
+  was 1.7 m over the feet. Now the crouch holds only once that crawl has
+  seen a roof within 1.5 m of the feet, which is the duct. Once seen, it
+  holds to the crawl's end, so the part of the duct whose roof no ray hits
+  keeps it (`FloorCrawlRoof`, `game_tracking.hpp`). Not changed: the
+  game still stops its hero for a moment when he bumps a pedestrian ("Sorry
+  about that"), as in the flat game.
+- **A phone with depth** (you: "lets improve the phone design to something
+  better (currently its very flat with tons of zfinghiting) can we use an in
+  game model and replace it its screen texture"). The phone is a solid body
+  now: 9 mm thick, with rounded edges and corners, a graphite frame, a red
+  back, the camera bump with its lenses and the side buttons, lit as it
+  turns. Its screen (the title bar, the apps, the songs, the gear) is drawn
+  once a frame into its own picture, 960 x 2048 with mip levels, and that
+  picture lies on the glass. Before, each layer of the screen was its own
+  sheet a fraction of a millimetre over the last, and at arm's length they
+  flickered through each other. It is Spidy's own phone, not the game's
+  model: the overlay cannot draw the game's models, and taking one out of
+  the game's files is a job of its own.
+- **The long frame drops** (you: "Performance sucked in last session with
+  huge spikes and long frame drops"): not changed in this build. In both
+  sessions the long drops were Virtual Desktop holding frames back, about
+  100 ms at a time (the reports' `stream_stalls`). 69 of the game's 75
+  stalls fell inside those holds. Such holds came in every session with
+  bHaptics devices connected (October 20, October 22 and both of today's)
+  and in none of the four without. Two of those three sessions with the
+  suit also had stretches where the GPU was full, the overlay waiting
+  11 ms on the game's queue, which it shares. A session with the suit off
+  (its Bluetooth dongle out) would show whether the holds go with it.
+- **Building textures that load late** (you: "Still have popins of
+  textures or impostors on buildings right in front of me (wasnt like that
+  in first versions, check when reports of it started on discord (people
+  called it "blurry" too)"): not fixed in this build. On Discord no report
+  from before 0.2.12 is about far textures. The "blurry" ones of
+  October 8-11 were about the whole picture, before anti-aliasing. The first
+  report about distance is Kinxy's on October 13 (0.3.5). The first about
+  pop-in is Keith's on October 14 (0.3.6), who said the flat game has no
+  such problem. HaNToP named 0.2.11 sharp ("the textures loaded instantly")
+  and 0.2.12, "the performance update", worse, on October 18. KRIS, HaNToP
+  and Kinxy say it is still there in 0.4.0, with only the dark windows
+  fixed. 0.2.12 brought the eyes' own TAA upscaling; 0.3.2 turned the
+  game's sharpening off in VR.
+- **Checked:** 567 core tests (new: the duct's roof, X sending LB + RB
+  where the game names the two, the game's action words and LB + RB
+  written as X, the prompt kinds' demands, the phone's body and screen
+  corners). The GPU test has a new check, the phone's picture: its own
+  texture with mips on a quad, its layers by depth, under nearer geometry.
+  Also the phone preview and all six Python suites. In the game, without a
+  headset: this build's prompt hooks with the rewriting on
+  (`tools/probe_prompt_watch.py --rewrite`, profile 2, at the trash can
+  below its lamp post). The game made the throw prompt four times, each
+  with `[BTN_X] (Hold) Throw`, and drew "(X) (Hold) Throw". The live demand
+  meanwhile was LB + RB held, which X sends. The marker over the can still
+  showed LB • RB. No crash; of the saves only `-userprefs.save` changed, as
+  on every run. Not run in a headset: X sending LB + RB, the wheel, the
+  phone, the duct. No protocol change.
+
+**Earlier build (October 24, second): realistic flips can stay out of fights.**
+You: "lets add a toggle to disable realistic flips during combat".
+
+- **FLIPS IN COMBAT, the last of REALISTIC FLIPS' rows, on by default** (as
+  before: a fight changes nothing), and "Flips in combat" under "Realistic
+  flips" in the launcher (`flips_in_combat=` in `spidy_vr.ini`). Off, while
+  enemies are within a web strike's reach (10 m, and 3 m past it) or any
+  bot within a fist's, and for 3 s after the last of them, the arms, the
+  webs, a let-go swing and the left stick turn you no more, and a spin you
+  bring into the fight dies away until you are upright, as on landing. The
+  left stick steers your flight again there, and both fists thrown down in
+  the air are the Ground Strike again, which REALISTIC FLIPS otherwise
+  keeps for a flip. A web still held when the fight ends turns you again.
+- The fight is the one the fist and web strike code already reads
+  (`game_punch`'s enemies in reach), so it holds only while punching runs.
+- Checked: 566 core tests (one new: in a fight the stick turns nothing and
+  steers again), the realistic flips' program (a fight brings an arm spin
+  upright, a web turns nothing until it ends; on, nothing changes), the
+  launcher's, all six Python suites. Not run in the game or the headset. No
+  protocol change: the switch is one of the tab's own settings.
+
+**Earlier build (October 24, first): three pull requests - wall crawling and vents
 for hand climbers (pull request 27, AdrianGzzEsc), the web slingshot (28)
 and better climbing (29, both iplusdvr).** You: "review the 3 open prs, fix
 if needed and merge with what we have here".
@@ -77,6 +187,118 @@ if needed and merge with what we have here".
   Python suites. Not run in the game or a headset here. The modules and the
   launcher go together: the swing settings (version 10), the climb sample
   (version 2) and the body Command (version 11) changed on both sides.
+
+**Earlier build (October 23, second): a frozen game saves where it stood, and
+seated play at your own height.** You: "check what was sent in mod chat and
+fix it (the reports and the bug), also add proper height calibration or
+override for seated mode".
+
+- **HaNToP's freeze in Straw, Meet Camel** (#mod-chat, October 23: "everytime
+  my game freeze"; his Straw_meet_Camel_crash.zip, Spidy 0.4.0, and the video
+  he sent as "my VR controls stopped working", which is the same freeze). The
+  game stopped for good 105 s into VR, mid-swing down a building's wall while
+  the helicopter's gunfire hit that building beside him: from one sample to
+  the next no eye image, camera commit or read of the controller came again,
+  while the headset's loop went on showing the last picture. The left eye's
+  render job had begun and never ended (the right eye's never began), every
+  GPU fence had completed, and the game's own log shows nothing wrong. So the
+  game's render thread waited, or spun, inside the left eye's work - but a
+  report holds counters, not thread stacks, and cannot say where. Ruled out by
+  reading: Spidy's GPU bridge (its waits all time out within 0.5-5 s, its two
+  locks are always taken in the same order), the swing (every loop bounded)
+  and the rope points laid round edges (the game's fill stops at its own
+  count). His web had wrapped round an edge 0.18 s before, as on October 15,
+  but ten wraps that session passed without a freeze.
+- **Now a frozen game says where.** When the game makes nothing for eight
+  seconds - no eye image, no game-screen frame, no camera commit, no read of
+  the controller - and Windows marks its window as not responding, the
+  session writes a minidump of its threads beside the report
+  (game-vr-...-freeze.dmp, `tools/game_freeze.py`), the report's `freeze`
+  lists each thread's code addresses by module, and the launcher's log says
+  to send both. HaNToP's freeze comes at the same moment every time, so one
+  report from that mission with this build names the code the game waits in.
+  Until then: pause, SWITCH TO GAME SCREEN for that moment, SWITCH TO VR after.
+- **HEIGHT** (SPIDY VR > BODY, and "Height" in the launcher's options): AUTO,
+  or your height from 150 to 190 cm. Set, it sizes Spider-Man instead of the
+  calibration's or the headset's eye height (the calibration still fits his
+  arms). Asked for on the Discord, October 14: "options like in bonelab where
+  you measure yourself and then enter your measurements instead of tposing".
+- **SEATED** (under it, and "Seated" in the launcher): play sitting down.
+  Spidy measures your eyes over your first second of play and after each
+  recenter, and raises the tracking space by the difference to your standing
+  eye height - HEIGHT's, else a calibration made standing, else a 1.76 m
+  player's; at most 1.2 m, eased in over a few tenths of a second. What the
+  game's world places from the tracking space rises with it: the camera,
+  Spider-Man's body, your hands and their webs, the T-pose's measure. The
+  headset's own poses stay as tracked, so its reprojection is untouched, and
+  the gestures measured from your head (the temple, the chest, a back
+  pocket) work as before. Until now a seated player was a crouched
+  Spider-Man with his eyes at a standing man's chest, and a T-pose made
+  sitting stored the seated eyes as standing ones (Spider-Man at 70%); such
+  a calibration (eyes under 1.35 m) is no target for the lift.
+- **Kept in spidy_vr.ini** with the tab's other own settings (`height_cm`,
+  `seated`). SEATED goes into settings profiles, HEIGHT does not: it is
+  yours, as a calibration is. Session reports carry `seated` (XrData version
+  41: on, measured, HEIGHT, the seated eye height, the lift now, how often
+  measured): the module and `tools/run_game_vr.py` go together.
+- **Not yet answered** from #mod-chat: the pigeons ("I can't catch them ...
+  the marker is displayed": it needs a report from a pigeon chase), and the
+  HUD missing from recordings (the HUD is a layer of its own in the headset,
+  not in the eye image the monitor mirrors). The map on the phone he asked
+  for is in the build before.
+- **Checked:** core tests (441; new: seated play), the launcher's (30;
+  profiles with SEATED), the six Python suites (new: when a game counts as
+  frozen and a real minidump read back, the package carrying every tool the
+  session imports, XrData 41), the build. The freeze capture ran on a
+  sleeping process, not on a frozen game; SEATED and HEIGHT not in a headset.
+
+**Earlier build (October 23, first): the suit power reaches the game, and the game
+menu is on the phone.** You: "i couldnt trigger the suit power (at least it
+didn't feel like it) also lets move the menu we open with x to the phone".
+
+- **The suit power never reached the game.** Your sessions asked for it 24
+  times (3 on October 22 at 21:28, 21 on October 23 at 18:01): the gesture
+  worked each time, both hands buzzed and the report counted it, but nothing
+  put its L3 + R3 on the virtual controller. The scan's R3 goes out through
+  the swing's leave (`Walk::scan`); the suit power had no such field, and
+  its tests checked the gesture, and that the controller clicks no stick by
+  itself, never that the gesture clicks both. Now `Walk::suit` carries it:
+  both triggers pulled at the chest are the game's L3 + R3 for 0.15 s. The
+  game still uses its power only when its meter is full, as in the flat
+  game.
+- **The game menu is the phone's MENU.** Draw the phone (a grip squeezed
+  behind your hip, brought up in front), push the stick down once to MENU
+  (under MUSIC) and press A: the phone goes away and the game's Back opens
+  its menu, the map, suits and skills; B closes it. MENU takes MAP's place,
+  a screen of hideouts that said COMING SOON (the game's own map is in the
+  menu). X no longer opens it: held, X is the gadget wheel as before; a tap
+  does nothing; while the game asks for its X, it is that X. A Steam
+  Frame's View button is still the game's Back.
+- **Prompts:** one naming the game's Back reads "the phone's MENU" in the
+  session log (it said "a tap of X"), and L3 + R3 together count as
+  something play sends (`reachableInPlay`; the prompt rewriting, off in
+  sessions, names them PHONE, MENU and BOTH TRIGGERS AT YOUR CHEST).
+- **A check of the wiring** (`tests/game_vr_protocol_tests.py`): every
+  gesture the XR worker keeps with a `held()` has it read there, and every
+  field of `game_pad::Walk` is filled there. With either of this build's
+  two new lines in game_xr.cpp taken out, it fails.
+- **Single-pass stereo is not in this build.** The October 23 experiment
+  (the game renders only the left eye, the right eye a replay of its
+  commands) is kept on the branch `single-pass-stereo`: in your 18:01
+  session it gained no frame rate (a median of 47.6 new frames a second
+  against 48.4 the night before; the laptop's GPU is the limit) and the
+  right eye showed many artifacts. This build is main as of October 22's
+  fifth with the two changes above.
+- **Checked:** core tests (440; changed: the suit power test checks the
+  controller gets L3 + R3, X sends nothing in play and the phone's MENU
+  sends Back, the pad-wide reach test covers the suit and the menu, the
+  phone's MENU puts it away), the launcher's (30), the six Python suites
+  (141 tests; new: the wiring check), the GPU test, the phone preview. Not
+  in a headset, and no game run.
+- **Not changed:** the controls picture (README and the launcher's
+  Controls tab) still shows X as the game menu; it needs re-rendering from
+  its page, which is not on this PC. The launcher's list of controls under
+  it is updated.
 
 **Earlier build (October 22, fifth): four ideas from the Discord - dodging
 by moving, the suit power at your chest, the dive, the game's own blow

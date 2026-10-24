@@ -47,24 +47,30 @@ static_assert(prompt_buttons::padDpadUp == dpadUp && prompt_buttons::padDpadDown
               prompt_buttons::padRightShoulder == rightShoulder &&
               prompt_buttons::padA == a && prompt_buttons::padB == b && prompt_buttons::padX == x &&
               prompt_buttons::padY == y);
+// The two bumpers together: the game's web pull and throw.
+constexpr uint16_t bumpers = leftShoulder | rightShoulder;
 enum class Mapping {
     none,
     // VR gameplay: the controllers swing, walk and jump. The menu button
-    // (Start: pause) and X (Back: map, suits, skills) reach the game as
-    // buttons; walking, jumping, B (the game's B: dodge), Y (the game's
-    // Y: interact), the right stick's click (the game's LB + RB: its
-    // web pull), that stick pushed down (the game's D-pad down: heal) and
+    // (Start: pause) reaches the game as a button; the game's menu (its Back:
+    // map, suits, skills) is the phone's MENU (phone.hpp), no button's (X's
+    // until October 23). Walking, jumping, B (the game's B: dodge), Y (the
+    // game's Y: interact), X where the game shows its LB + RB (its web pull
+    // and throw: NamedPress; the right stick's click until October 24), the
+    // right stick pushed down (the game's D-pad down: heal) and
     // up (its LT + RT: the zip to a point; held into the game's aim mode,
     // the zip as it is let go: ZipPress) reach it as the swing leaves them
     // (Walk). The virtual controller's own right stick turns the
     // game's camera to where the player looks (CameraLook, CameraPitch). A
-    // held on the ground charges the swing's own leap (ChargeJump), and a
+    // held on the ground charges the swing's own leap (ChargeJump), a
     // trigger pulled with its hand at the temple is the game's R3, its scan
-    // (TemplePress). The Steam Frame's View button and D-pad, which the
-    // other controllers lack, are the game's own Back and D-pad here as on
-    // the game screen: its D-pad down heals as the stick's push does. While
-    // the game names a button in a prompt, the VR control of that name sends
-    // it instead of doing its job in play (NamedPress).
+    // (TemplePress), and both triggers pulled with both hands at the chest
+    // are its L3 + R3, its suit power (SuitPowerPress). The Steam Frame's
+    // View button and D-pad, which the other controllers lack, are the
+    // game's own Back and D-pad here as on the game screen: its D-pad down
+    // heals as the stick's push does. While the game names a button in a
+    // prompt, the VR control of that name sends it instead of doing its job
+    // in play (NamedPress).
     gameplay,
     // The game screen: every control as on an Xbox controller. A, B, X and Y
     // sit where Xbox has them; grips are the bumpers.
@@ -90,9 +96,11 @@ enum class Mapping {
 // interact, Y the game menu and X the aim markers' switch. pull: the game's
 // LB and RB together, held: its web pull, where it shows the two (a door or
 // a grate to tear off). The grips are no bumpers in VR play (they shoot the
-// webs), so the right thumbstick's click gives them (PullPress): until
-// October 11 nothing did, and a door of the first mission that asks for
-// LB + RB could not be opened in VR. heal: the game's D-pad down, held: its
+// webs), so both web buttons on the thing, yanked, give them (WebPull), and
+// X does wherever the game shows the two (NamedPress, October 24: the
+// throw's prompt by every trash can on a street). The right thumbstick's
+// click gave them from October 11, when a door of the first mission that
+// asks for LB + RB could not be opened in VR, until then. heal: the game's D-pad down, held: its
 // heal. zip: the game's LT and RT together, held: its zip to a point, where
 // it shows the two (a perch, a vent to enter). Touch controllers have no
 // D-pad, and their triggers and grips are the webs in VR play, so the right
@@ -102,7 +110,11 @@ enum class Mapping {
 // on in it turns into (ZipPress). look and lookUp: the virtual controller's
 // own right stick, its X and Y, which turn the game's camera (CameraLook,
 // CameraPitch). scan: the game's R3, held: its scan of the surroundings
-// (TemplePress).
+// (TemplePress). suit: its L3 + R3, held: its suit power (SuitPowerPress).
+// Until October 23 nothing sent the suit power's: the gesture buzzed the
+// hands and counted, and the game never saw it (21 tries in one session).
+// menu: its Back, held: its menu of the map, suits and skills, from the
+// phone's MENU (phone.hpp); X sent it until October 23.
 struct Walk {
     float right{}, forward{};
     bool jump{}, interact{}, dodge{}, pull{}, heal{}, zip{}, aim{};
@@ -113,7 +125,7 @@ struct Walk {
     // either trigger and a held A did nothing; RT + A left it in 0.09 s).
     bool parkour{};
     float look{}, lookUp{};
-    bool scan{};
+    bool scan{}, suit{}, menu{};
     // What a pull at a thing the game is prompting for sends instead of the
     // pull's own LB + RB: the pair it names (its LT + RT for a vent). {}: the
     // pull is as it is. The buttons a prompt names otherwise go out from the
@@ -637,46 +649,6 @@ class CameraPitch {
     bool turning_{};
     uint32_t turns_{};
 };
-// The right thumbstick's click as Walk::pull. Like the left one's
-// (StickPress, slow_motion.hpp) it is not half of clicking both (which
-// switched between VR and the flat screen until October 12, and is neither
-// stick's press since): it holds once the stick has been
-// down chordSeconds without the other, for as long as it stays down, and a
-// click let go sooner holds for tapSeconds after it. Outside VR play
-// nothing holds, and a stick held through that must be let go first.
-class PullPress {
-  public:
-    static constexpr float chordSeconds = .12f, tapSeconds = .2f;
-    // seconds: since the previous update. play: the game has the player in
-    // VR. mine, other: the right and the left thumbstick's click.
-    bool update(float seconds, bool play, bool mine, bool other) {
-        const float dt = std::isfinite(seconds) ? std::clamp(seconds, 0.f, .1f) : 0.f;
-        if (!play) {
-            down_ = mine;
-            spent_ = true;
-            tap_ = 0;
-            return false;
-        }
-        if (!mine) {
-            tap_ = down_ && !spent_ && held_ < chordSeconds ? tapSeconds : std::max(0.f, tap_ - dt);
-            down_ = spent_ = false;
-            return tap_ > 0;
-        }
-        if (!down_) {
-            down_ = true;
-            spent_ = false;
-            held_ = tap_ = 0;
-        } else {
-            held_ += dt;
-        }
-        spent_ = spent_ || other;
-        return !spent_ && held_ >= chordSeconds;
-    }
-
-  private:
-    bool down_{}, spent_{};
-    float held_{}, tap_{};
-};
 // Y held, to reach what it is for. The game takes its Y only close to the
 // thing: a door of the first mission showed "Open Door" 1.1 m from its middle
 // and not 1.2 m, nearer than a VR player stands to a wall (October 11: four
@@ -756,7 +728,7 @@ class InteractStep {
     uint32_t steps_{};
 };
 // Where B, X and Y went down. On the game screen they are the game's own B,
-// X and Y; in VR play B dodges, Y interacts and X opens the game menu. Held
+// X and Y; in VR play B dodges, Y interacts and X opens the gadget wheel. Held
 // from one into the other, a button stays what it was until it is let go:
 // Back held into play is no dodge, and an interact held into a menu the game
 // opened is no Y there (which resets a Settings tab).
@@ -809,8 +781,9 @@ class PressOrigins {
 constexpr float pauseHoldSeconds = .7f;
 // Clicking both thumbsticks together latches this layer, and every control of
 // the pad can be sent while it is on. The chord is free: neither stick's own
-// press has been half of clicking both since October 12 (PullPress,
-// slow_motion's StickPress both drop a chord), and a tap leaves the thumbs
+// press has been half of clicking both since October 12 (slow_motion's
+// StickPress drops a chord, and the right stick's click alone sends nothing
+// since October 24, unless the game names its R3), and a tap leaves the thumbs
 // free for the face buttons, which holding the chord would not. It never
 // latches while a web carries the player, and it lets go by itself after
 // idleSeconds of nothing pressed, so a player cannot be left in it.
@@ -1023,8 +996,9 @@ class ScreenControls {
 // prompt_buttons spells it), and its names are an Xbox controller's: the
 // virtual pad it plays with is one. Four of them are on the Touch and Index
 // controllers under the very same letters, but VR play gave those other jobs:
-// X opens the game menu or the gadget wheel, A charges a leap and flips in the
-// air, B dodges only off the swing, and the triggers and grips shoot webs. So
+// X opens the gadget wheel (and opened the game menu until October 23), A
+// charges a leap and flips in the air, B dodges only off the swing, and the
+// triggers and grips shoot webs. So
 // "Press [BTN_X] for Vent Takedown" opened the map, and "Hold [BTN_L2] and tap
 // [BTN_R1] to fire webs and seal the leaks" could not be answered at all. One
 // player's whole playthrough (October 14-19: the Oscorp research stations, the
@@ -1033,12 +1007,15 @@ class ScreenControls {
 // every one of them, because there the controllers are an Xbox controller.
 //
 // So while the game names a button, the control with its name sends it:
-//   A, B, X, Y         the button itself, as long as it is held - no menu or
+//   A, B, X, Y         the button itself, as long as it is held - no gadget
 //                      wheel, no leap or flip, no dodge held back for the swing
+//   LB + RB            X, where the game names no X of its own (its throw by
+//                      every trash can, its pull of a door; October 24)
 //   LT or LB, RT or RB each hand's web-ball button (the trigger, or the grip
 //                      with WEB BUTTON: TRIGGER), the left hand's the left
-//                      ones: the swing's webs stay where they are, and a
-//                      mission that asks for its triggers still swings
+//                      ones, a bumper only where it is named alone: the
+//                      swing's webs stay where they are, and a mission that
+//                      asks for its triggers still swings
 //   L3, R3             each thumbstick's click
 //   D-pad up, left,    the right thumbstick pushed that way (pushed down it is
 //   right              the heal's D-pad down already: StickPush)
@@ -1192,22 +1169,30 @@ class NamedPress {
             s.buttons = static_cast<uint16_t>(d.buttons & b);
             break;
         case controlX:
-            s.buttons = static_cast<uint16_t>(d.buttons & x);
+            // Its own X first; else the two bumpers together, which have no
+            // control of their own in VR play.
+            if (d.buttons & x)
+                s.buttons = x;
+            else if ((d.buttons & bumpers) == bumpers)
+                s.buttons = bumpers;
             break;
         case controlY:
             s.buttons = static_cast<uint16_t>(d.buttons & y);
             break;
+        // A web-ball button is its side's bumper only while the game names
+        // that bumper alone: the pair is X's, and every trash can on a street
+        // names the pair (the throw's "[ACTION_WEB_YANK] (Hold) Throw").
         case leftBall:
             if (d.leftTrigger)
                 s.leftTrigger = 255;
-            else
-                s.buttons = static_cast<uint16_t>(d.buttons & leftShoulder);
+            else if ((d.buttons & bumpers) == leftShoulder)
+                s.buttons = leftShoulder;
             break;
         case rightBall:
             if (d.rightTrigger)
                 s.rightTrigger = 255;
-            else
-                s.buttons = static_cast<uint16_t>(d.buttons & rightShoulder);
+            else if ((d.buttons & bumpers) == rightShoulder)
+                s.buttons = rightShoulder;
             break;
         case leftClick:
             s.buttons = static_cast<uint16_t>(d.buttons & leftThumb);
@@ -1453,8 +1438,6 @@ inline State fromControllers(const XrFrame& frame, Mapping mapping, const Walk& 
         if (frame.buttons & held)
             s.buttons |= button;
     if (mapping == Mapping::gameplay) {
-        if (frame.buttons & buttonX)
-            s.buttons |= back;
         if (walk.jump)
             s.buttons |= a;
         if (walk.dodge)
@@ -1482,6 +1465,10 @@ inline State fromControllers(const XrFrame& frame, Mapping mapping, const Walk& 
             s.rightTrigger = 255;
         if (walk.scan)
             s.buttons |= rightThumb;
+        if (walk.suit)
+            s.buttons |= leftThumb | rightThumb;
+        if (walk.menu)
+            s.buttons |= back;
         s.thumbLX = stick(walk.right);
         s.thumbLY = stick(walk.forward);
         s.thumbRX = stick(walk.look);

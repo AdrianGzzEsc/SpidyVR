@@ -546,13 +546,13 @@ int main() {
         return static_cast<size_t>(found - begin);
     };
     test("a profile holds every setting of the SPIDY VR tab, the tab's own ones by spidy_vr.ini's keys", [&] {
-        // Not VR VIEW (each session starts in VR), CALIBRATE BODY (a request) or RECORDING FOV (the
-        // monitor's, which suits one PC, as the graphics options do).
+        // Not VR VIEW (each session starts in VR), CALIBRATE BODY (a request), HEIGHT (the player's own, as a
+        // calibration is) or RECORDING FOV (the monitor's, which suits one PC, as the graphics options do).
         for (const auto& row : spidy::vr_settings::rows()) {
             if (row.item == Item::none)
                 continue;
-            const bool leftOut =
-                row.item == Item::view || row.item == Item::calibrate || row.item == Item::recordingFov;
+            const bool leftOut = row.item == Item::view || row.item == Item::calibrate ||
+                                 row.item == Item::height || row.item == Item::recordingFov;
             check(std::count_if(begin, end, [&](const ProfileSetting& s) { return s.item == row.item; }) ==
                       (leftOut ? 0 : 1),
                   row.title);
@@ -562,7 +562,7 @@ int main() {
         size_t lines = 0;
         for (size_t line = 0; line < tabOnly.size(); line = tabOnly.find('\n', line) + 1) {
             const std::string key = tabOnly.substr(line, tabOnly.find('=', line) - line);
-            if (key == "recording_fov")
+            if (key == "recording_fov" || key == "height_cm")
                 continue;
             ++lines;
             check(at(key) < std::size(profileSettings) &&
@@ -625,8 +625,8 @@ int main() {
         o.flipSpeed = 300;
         auto& t = mine.tab;
         t.hapticWebs = t.hapticWind = t.hapticCombat = t.hapticMovement = false;
-        t.automaticReleaseFlip = t.automaticAirBrake = false;
-        t.handClimb = t.realisticFlips = true;
+        t.automaticReleaseFlip = t.automaticAirBrake = t.automaticCombat = false;
+        t.handClimb = t.realisticFlips = t.seated = true;
         t.uiStyle = 1;
         t.blowSounds = 1;
         t.webSlingshot = true;
@@ -649,10 +649,11 @@ int main() {
                   "better_climbing=0\nwall_run=1\nsnap_turn=30\nsmooth_turn=0\nhaptics=100\nblow_sounds=0\n"
                   "body_haptics=100\nbody_haptics_webs=1\nbody_haptics_wind=1\n"
                   "body_haptics_combat=1\nbody_haptics_movement=1\nscreen_size=1\nscreen_depth=2\nhud=2\n"
-                  "ui_style=0\nnear_clip_mm=20\nflips=0\nflip_speed=180\nhand_climb=0\nwall_distance_cm=25\n"
+                  "ui_style=0\nnear_clip_mm=20\nseated=0\nflips=0\nflip_speed=180\nhand_climb=0\n"
+                  "wall_distance_cm=25\n"
                   "realistic_flips=0\nrotation_strength=50\nrotation_speed=240\nflight_speed_min=3\n"
                   "swing_momentum=1\nrotation_response_ms=500\nhand_momentum=100\nangular_drag_ms=3000\n"
-                  "hand_speed_min_cm=100\nair_rotation_brake=1\n",
+                  "hand_speed_min_cm=100\nair_rotation_brake=1\nflips_in_combat=1\n",
               "the defaults' text: a key shared once keeps its name");
         const std::string message = profileMessage(profileOf(mine), "0.4.1");
         check(message.rfind("```ini\n# Spidy settings profile.", 0) == 0 && message.ends_with("\n```") &&

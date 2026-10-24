@@ -31,6 +31,7 @@ from probe_native_motion import snapshot as motion_snapshot
 from vr_launcher import (LauncherLock, alive, bring_to_front, wait_for_game, enlarge_render_memory, elevated,
                          RENDER_MEMORY_HOOKS, NeedsAdministrator, NEEDS_ADMINISTRATOR_EXIT, CLOSE_GAME_EXIT,
                          close_game)
+import game_freeze
 import vr_display
 import xr_runtime
 
@@ -610,6 +611,34 @@ def pad_ignored(watch, sample, quiet=5):
     return False
 
 
+# What the game makes while it runs - eye images, frames of its screen, camera commits, reads of Spidy's
+# controller - and how long they may all stand still, seconds, before a game whose window Windows calls not
+# responding counts as frozen (game_freeze.py).
+FREEZE_COUNTERS = ('unique_submitted', 'screen_submitted', 'camera_commits', 'pad_reads')
+FREEZE_SECONDS = 8
+
+
+def game_frozen(watch, sample, quiet=FREEZE_SECONDS):
+    """Whether the game has made none of FREEZE_COUNTERS for `quiet` seconds. `watch` carries the counters and
+    since when they stood still. A game paused behind another window stands still too: the caller asks Windows
+    whether its window still answers."""
+    counters = tuple(sample.get(name) for name in FREEZE_COUNTERS)
+    if counters != watch.get('counters'):
+        watch.update(counters=counters, since=sample['seconds'])
+        return False
+    return sample['seconds']-watch['since'] >= quiet
+
+
+def freeze_line(freeze):
+    """What the session log says once the game froze and its threads were saved (or could not be)."""
+    if not freeze.get('dump'):
+        return (f"The game stopped answering {freeze['seconds']:.0f} s into VR (error {freeze.get('error')} saving "
+                'where its threads stood). Close it from Task Manager if it stays frozen.')
+    return (f"The game stopped answering {freeze['seconds']:.0f} s into VR. Where each of its threads stood is saved "
+            f"in {pathlib.Path(freeze['dump']).name} ({freeze['dump_mb']} MB) beside the session report: send both, "
+            'they show what the game waits for. Close it from Task Manager if it stays frozen.')
+
+
 # The layout the VR runtime uses for a hand's controller (controller_layout.hpp ControllerKind).
 CONTROLLER_KINDS = {0: None, 1: 'touch', 2: 'index', 3: 'steam_frame', 4: 'runtime'}
 
@@ -645,8 +674,9 @@ PAD_BUTTONS = ((0x1, 'D-pad up'), (0x2, 'D-pad down'), (0x4, 'D-pad left'), (0x8
 PAD_STICKS = ((19, 'left stick left', 'left stick right'), (21, 'left stick back', 'left stick forward'),
               (23, 'right stick left', 'right stick right'), (25, 'right stick back', 'right stick forward'))
 # What VR play can send on its own, without the pad layer or the interact button carrying it
-# (prompt_buttons::reachableInPlay): each bumper and each trigger only with its pair.
-PLAY_BUTTONS = 0x1000 | 0x2000 | 0x8000 | 0x10 | 0x20 | 0x2 | 0x80 | 0x100 | 0x200
+# (prompt_buttons::reachableInPlay): each bumper and each trigger only with its pair, L3 only with R3 (both
+# triggers at the chest: the suit power), Back from the phone's MENU.
+PLAY_BUTTONS = 0x1000 | 0x2000 | 0x8000 | 0x10 | 0x20 | 0x2 | 0x40 | 0x80 | 0x100 | 0x200
 
 
 def demand_name(word):
@@ -686,6 +716,8 @@ def reachable_in_play(word):
     shoulders = word & 0x300
     if shoulders and shoulders != 0x300:
         return False
+    if word & 0x40 and not word & 0x80:                   # L3 goes out only with R3
+        return False
     return not word & 0xffff & ~PLAY_BUTTONS
 
 
@@ -693,18 +725,24 @@ def reachable_in_play(word):
 # see), in PAD_BUTTONS' order; LT and RT are the triggers' own.
 NAMED_CONTROLS = ((0x1, 'the right stick pushed up'), (0x2, 'the right stick pushed down'),
                   (0x4, 'the right stick pushed left'), (0x8, 'the right stick pushed right'), (0x10, 'Menu'),
-                  (0x20, 'a tap of X'), (0x40, 'a click of the left stick'), (0x80, 'a click of the right stick'),
+                  (0x20, "the phone's MENU"), (0x40, 'a click of the left stick'), (0x80, 'a click of the right stick'),
                   (0x100, 'the left trigger'), (0x200, 'the right trigger'), (0x1000, 'A'), (0x2000, 'B'),
                   (0x4000, 'X'), (0x8000, 'Y'))
 
 
 def named_controls(word):
     """What a player in a headset presses for a packed demand, or None for nothing. The game's right stick is
-    not among them: in VR play that stick turns the player."""
+    not among them: in VR play that stick turns the player. Both bumpers together are X's (since October 24),
+    unless the game names its own X too; a trigger is its bumper only when that one is named alone."""
     controls = []
+    pair = word & 0x300 == 0x300 and not word & 0x4000
     for bit, control in NAMED_CONTROLS:
+        if pair and bit in (0x100, 0x200):
+            continue
         if word & bit and control not in controls:
             controls.append(control)
+    if pair:
+        controls.append('X')
     for shift, control in ((16, 'the left trigger'), (17, 'the right trigger')):
         if word >> shift & 1 and control not in controls:
             controls.append(control)
@@ -750,10 +788,10 @@ TRACKING_GAP_REASONS = ((1, 'not_playing'), (2, 'unfocused'), (4, 'no_head'), (8
 
 def snapshot(game, address):
     for _ in range(8):
-        raw = game.read(address, 1192)
-        if len(raw) != 1192:
+        raw = game.read(address, 1216)
+        if len(raw) != 1216:
             return None
-        if struct.unpack_from('<3I', raw) != (0x53585244, 40, 1192):
+        if struct.unpack_from('<3I', raw) != (0x53585244, 41, 1216):
             raise RuntimeError('Game XR protocol mismatch')
         if struct.unpack_from('<Q', raw, 16)[0] & 1 or raw[16:24] != game.read(address+16, 8):
             continue
@@ -898,6 +936,12 @@ def snapshot(game, address):
         c_suit, c_moved, c_dives, c_own = struct.unpack_from('<4I', raw, 1176)
         result.update(combat_headset=dict(suit_powers=c_suit, move_dodges=c_moved, dives=c_dives,
                                           own_sounds=c_own))
+        # Version 41: seated play (seated.hpp) - SEATED on and a seated eye height measured, HEIGHT (cm, 0 AUTO),
+        # the seated eye height last measured and how far the tracking space is raised now, and how often it
+        # was measured.
+        s_flags, s_height, s_eye, s_lift, s_measures = struct.unpack_from('<5I', raw, 1192)
+        result.update(seated=dict(on=bool(s_flags & 1), measured=bool(s_flags & 2), height_cm=s_height,
+                                  seated_eye_m=s_eye/1000, lift_m=s_lift/1000, measures=s_measures))
         result.update(crawl=dict(frames=crawl_frames, stood=crawl_stood, stick_samples=crawl_stick,
                                  stick_turn_degrees=round(math.degrees(crawl_turn), 1),
                                  stick_agreement=round(crawl_agreement, 3),
@@ -2207,6 +2251,8 @@ def session(a, startup):
         # The game's reads of Spidy's controller: none while buttons are held on the game screen means its
         # menus cannot be played (the October 7 Steam Link session: the game had turned XInput off).
         pad_watch = dict(reads=None, since=0.0, warned=False)
+        # A game that stops answering: the counters it stood still with, and its threads once saved.
+        freeze_watch, freeze = {}, None
 
         # How the eyes are rendered: upscaled from `upscale` percent of their size per side and anti-aliased
         # (or neither), whether the game renders a view of its own for the monitor as well, how often the
@@ -2262,7 +2308,8 @@ def session(a, startup):
                         stream_stalls=stream_stalls(list(samples)),
                         free_commit_mb=dict(start=start_commit, lowest=lowest_commit),
                         eye_snapshots=list(eye_shots), eye_snapshot_folder=str(eye_folder) if eye_shots else None,
-                        frame_rates=frame_rates(list(samples)), final=samples[-1] if samples else None, **extra)
+                        frame_rates=frame_rates(list(samples)), freeze=freeze,
+                        final=samples[-1] if samples else None, **extra)
 
         lost_device = {}
 
@@ -2423,6 +2470,15 @@ def session(a, startup):
                     samples.append(sample)
                     if pad_ignored(pad_watch, sample):
                         print(PAD_IGNORED, flush=True)
+                    # Saved once, while it still hangs: the dump is what says where (game_freeze.py).
+                    if freeze is None and game_frozen(freeze_watch, sample) and \
+                            time.monotonic() >= freeze_watch.get('asked', 0)+1:
+                        freeze_watch['asked'] = time.monotonic()
+                        if game_freeze.window_hung(game.pid):
+                            freeze = dict(game_freeze.capture(game.pid, a.output.with_name(a.output.stem +
+                                                                                           '-freeze.dmp')),
+                                          seconds=round(freeze_watch['since'], 1))
+                            print(freeze_line(freeze), flush=True)
                     if sample['eye_width'] and not printed_dimensions:
                         print(rendering_line(sample['eye_width'], sample['eye_height'], a.render_scale, a.size,
                                              runtime['recommended_eye'], a.upscale, not a.no_eye_antialiasing),

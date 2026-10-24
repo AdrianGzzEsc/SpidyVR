@@ -137,11 +137,11 @@ void noteIcon(std::vector<Vertex>& v, const Plane& p, float x, float y, float s,
     p.rect(v, x, y + s * .05f, s * .07f, s * .6f, z, c);
     p.triangle(v, x + s * .03f, y + s * .35f, x + s * .32f, y + s * .2f, x + s * .03f, y + s * .1f, z, c);
 }
-void pinIcon(std::vector<Vertex>& v, const Plane& p, float x, float y, float s, Vec3 c, Vec3 hole) {
+// The game's menu: three bars, as a menu's sign has them.
+void menuIcon(std::vector<Vertex>& v, const Plane& p, float x, float y, float s, Vec3 c) {
     constexpr float z = .0035f;
-    p.disc(v, x, y + s * .12f, s * .3f, z, c);
-    p.triangle(v, x - s * .26f, y, x + s * .26f, y, x, y - s * .42f, z, c);
-    p.disc(v, x, y + s * .12f, s * .12f, z + .0003f, hole);
+    for (const float row : {-.22f, 0.f, .22f})
+        p.rounded(v, x, y + row * s, s * .62f, s * .11f, s * .05f, z, c);
 }
 void gearIcon(std::vector<Vertex>& v, const Plane& p, float x, float y, float s, Vec3 c, Vec3 hole) {
     constexpr float z = .0035f;
@@ -166,8 +166,9 @@ const char* musicState(const PhoneView& view) {
 }
 // The home screen: a card for each app, the picked one red; under them what plays.
 void homeScreen(std::vector<Vertex>& v, const Plane& p, const PhoneView& view) {
-    const char* const names[phoneApps] = {"MUSIC", "MAP", "GEAR", "CAMERA"};
-    const char* const notes[phoneApps] = {"YOUR SONGS", "HIDEOUTS", "GADGETS AND XP", "THE GAME'S CAMERA"};
+    const char* const names[phoneApps] = {"MUSIC", "MENU", "GEAR", "CAMERA"};
+    const char* const notes[phoneApps] = {"YOUR SONGS", "MAP, SUITS, SKILLS", "GADGETS AND XP",
+                                          "THE GAME'S CAMERA"};
     for (int i = 0; i < phoneApps; ++i) {
         const float y = .045f - i * .0235f;
         const bool lit = view.app == i;
@@ -176,8 +177,8 @@ void homeScreen(std::vector<Vertex>& v, const Plane& p, const PhoneView& view) {
         p.rounded(v, -.0235f, y, .014f, .014f, .003f, .0025f, lit ? deepRed : Vec3{.1f, .1f, .12f});
         if (i == 0)
             noteIcon(v, p, -.0235f, y, .012f, ink);
-        else if (i == 1)
-            pinIcon(v, p, -.0235f, y, .012f, ink, back);
+        else if (i == phoneMenuApp)
+            menuIcon(v, p, -.0235f, y, .012f, ink);
         else if (i == 2)
             gearIcon(v, p, -.0235f, y, .012f, ink, back);
         else
@@ -226,15 +227,6 @@ void musicScreen(std::vector<Vertex>& v, const Plane& p, const PhoneView& view) 
     const bool litAuto = view.lit == PhoneButton::autoplay;
     p.rounded(v, 0, -.055f, .056f, .01f, .005f, .002f, litAuto ? red : dim);
     p.text(v, view.autoplay ? "AUTOPLAY ON" : "AUTOPLAY OFF", 0, -.0569f, .0038f, .046f, white);
-}
-// MAP: the hideouts and the game's waypoint to them, once Spidy knows how.
-void mapScreen(std::vector<Vertex>& v, const Plane& p) {
-    p.rounded(v, 0, .03f, .034f, .034f, .004f, .002f, dim);
-    pinIcon(v, p, 0, .03f, .026f, red, dim);
-    p.text(v, "HIDEOUTS", 0, .0f, .006f, .066f, white);
-    p.text(v, "TRACK THEM ON THE MAP", 0, -.011f, .0032f, .066f, soft);
-    p.rounded(v, 0, -.035f, .062f, .014f, .004f, .002f, dim);
-    p.text(v, "COMING SOON", 0, -.0368f, .004f, .05f, red);
 }
 // GEAR: each gadget, the equipped one marked red, its charges; the level under them.
 void gearScreen(std::vector<Vertex>& v, const Plane& p, const PhoneView& view) {
@@ -397,10 +389,13 @@ PhoneAction PhoneUi::update(const PhoneControls::Event& e, int gearRows) {
         // The apps stand in a column: up and down, or left and right, go through them.
         if (const int step = e.y ? -e.y : e.x)
             app_ = (app_ + step + phoneApps) % phoneApps;
+        if (e.pressed && app_ == phoneMenuApp)
+            return PhoneAction::menu;
         if (e.pressed && app_ == phoneCameraApp)
             return PhoneAction::camera;
+        // MUSIC and GEAR, the apps with screens.
         if (e.pressed)
-            screen_ = static_cast<PhoneScreen>(app_ + 1);
+            screen_ = app_ == 0 ? PhoneScreen::music : PhoneScreen::gear;
         return PhoneAction::none;
     case PhoneScreen::music:
         if (e.closed) {
@@ -428,8 +423,6 @@ PhoneAction PhoneUi::update(const PhoneControls::Event& e, int gearRows) {
         return PhoneAction::none;
     case PhoneScreen::gear:
         gearTop_ = std::clamp(gearTop_ - e.y, 0, std::max(0, gearRows - gearShown));
-        [[fallthrough]];
-    case PhoneScreen::map:
         if (e.closed)
             screen_ = PhoneScreen::home;
         return PhoneAction::none;
@@ -488,7 +481,7 @@ Phone::Use Phone::take(XrFrame& frame, int gearRows) {
     const auto& stick = h[use.stick];
     use.controls = controls_.update(stick.stickX, stick.stickY, a, b, h[0].trigger, h[1].trigger);
     use.action = ui_.update(use.controls, gearRows);
-    if (use.action == PhoneAction::close || use.action == PhoneAction::camera)
+    if (use.action == PhoneAction::close || use.action == PhoneAction::menu || use.action == PhoneAction::camera)
         open_ = live_ = false;
     return use;
 }
@@ -612,18 +605,205 @@ std::string phoneSongName(const std::string& fileName, int track) {
     return track >= 0 ? "TRACK " + std::to_string(track + 1) : "SONG";
 }
 
-void appendPhone(std::vector<Vertex>& out, const PhoneView& view) {
-    if (!view.open || !finite(view.frame.centre))
+namespace {
+// The body's depth, and how far its rounded edges reach in from the face
+// and the back; the camera's bump on the back.
+constexpr float depth = .009f, edge = .0018f, bump = .0012f;
+// Its parts' colours: the face's black glass, the frame's graphite, the
+// back's deep red, the camera's black and its lenses' rims.
+constexpr Vec3 glassColor{.006f, .006f, .008f}, frameColor{.045f, .045f, .052f}, backColor{.15f, .016f, .02f},
+    cameraColor{.012f, .012f, .014f}, rimColor{.2f, .2f, .22f};
+// How a part shines: its share of the light that only reflects, and how
+// tight that is.
+struct Finish {
+    float shine, tightness;
+};
+constexpr Finish glassFinish{.5f, 60}, metalFinish{.35f, 24}, paintFinish{.12f, 12};
+// It grows out of its middle over an eighth of a second.
+float growth(const PhoneView& view) {
+    return std::clamp(std::isfinite(view.age) ? view.age / .12f : 1.f, .2f, 1.f);
+}
+// The body in the world, lit: a point and a normal in the phone's own frame
+// (x right, y up, z out of the face, metres) to a vertex.
+struct Body {
+    const WheelFrame& f;
+    float scale;
+    Vec3 viewer, light;
+    Vec3 world(float x, float y, float z) const {
+        return f.centre + (f.right * x + f.up * y + f.out * z) * scale;
+    }
+    Vertex lit(float x, float y, float z, Vec3 n, Vec3 color, Finish finish) const {
+        const Vec3 at = world(x, y, z);
+        const Vec3 normal = normalized(f.right * n.x + f.up * n.y + f.out * n.z);
+        const Vec3 toEye = normalized(viewer - at);
+        const float diffuse = std::max(0.f, dot(normal, light));
+        const float glint = std::pow(std::max(0.f, dot(normal, normalized(light + toEye))), finish.tightness);
+        // A rim catching the light the way a phone's edge does, seen side on.
+        const float rim = std::pow(1 - std::abs(dot(normal, toEye)), 3.f) * .12f;
+        const float shone = finish.shine * glint + rim;
+        return {at, color * (.3f + .7f * diffuse) + Vec3{shone, shone, shone}};
+    }
+    void quad(std::vector<Vertex>& out, const Vertex& a, const Vertex& b, const Vertex& c, const Vertex& d) const {
+        out.insert(out.end(), {a, b, c, a, c, d});
+    }
+};
+// A rounded rectangle's outline, half `hw` by `hh`, its corners of radius
+// `r`, `inset` in from it: points with their outward normals, anticlockwise
+// from the top right corner's start.
+struct Rim {
+    float x, y, nx, ny;
+};
+constexpr int cornerSteps = 6;
+std::array<Rim, 4 * (cornerSteps + 1)> outline(float hw, float hh, float r, float inset) {
+    std::array<Rim, 4 * (cornerSteps + 1)> rim{};
+    const float signs[4][2] = {{1, 1}, {-1, 1}, {-1, -1}, {1, -1}};
+    for (int k = 0; k < 4; ++k)
+        for (int s = 0; s <= cornerSteps; ++s) {
+            const float a = (static_cast<float>(k) + static_cast<float>(s) / cornerSteps) * pi / 2;
+            const float nx = std::cos(a), ny = std::sin(a);
+            rim[static_cast<size_t>(k * (cornerSteps + 1) + s)] = {
+                signs[k][0] * (hw - r) + nx * (r - inset), signs[k][1] * (hh - r) + ny * (r - inset), nx, ny};
+        }
+    return rim;
+}
+// A rounded slab on the frame's plane: its outline `hw` by `hh` (corner
+// `r`), from z0 out to z1, its sides one colour and its face toward z1
+// another. `rounded`: its edges eased by `edge` toward both faces, as the
+// phone's own are; else straight (the camera's bump).
+void slab(std::vector<Vertex>& out, const Body& b, float cx, float cy, float hw, float hh, float r, float z0,
+          float z1, Vec3 side, Finish sideFinish, Vec3 face, Finish faceFinish, bool rounded, bool backFirst) {
+    // The profile from the back round to the face: in from the outline, how
+    // far along z, and the normal's share along the outline's and along z.
+    struct Step {
+        float inset, z, across, along;
+    };
+    const float e = rounded ? std::min(edge, (z1 - z0) / 2) : 0.f;
+    const Step steps[] = {{e, z0, 0, -1},          {e * .3f, z0 + e * .3f, .7f, -.7f}, {0, z0 + e, 1, 0},
+                          {0, z1 - e, 1, 0},       {e * .3f, z1 - e * .3f, .7f, .7f},  {e, z1, 0, 1}};
+    constexpr int stepCount = 6;
+    std::array<std::array<Rim, 4 * (cornerSteps + 1)>, stepCount> rims;
+    for (int s = 0; s < stepCount; ++s)
+        rims[static_cast<size_t>(s)] = outline(hw, hh, r, steps[s].inset);
+    const auto at = [&](int s, size_t i, Vec3 color, Finish finish) {
+        const Rim& p = rims[static_cast<size_t>(s)][i];
+        const Step& st = steps[s];
+        return b.lit(cx + p.x, cy + p.y, st.z, {p.nx * st.across, p.ny * st.across, st.along}, color, finish);
+    };
+    const size_t n = rims[0].size();
+    const auto cap = [&](int s, Vec3 color, Finish finish, float z, float facing) {
+        const Vertex middle = b.lit(cx, cy, z, {0, 0, facing}, color, finish);
+        for (size_t i = 0; i < n; ++i)
+            out.insert(out.end(), {middle, at(s, i, color, finish), at(s, (i + 1) % n, color, finish)});
+    };
+    if (backFirst)
+        cap(0, side, sideFinish, z0, -1);
+    for (int s = 0; s + 1 < stepCount; ++s)
+        for (size_t i = 0; i < n; ++i) {
+            const size_t j = (i + 1) % n;
+            b.quad(out, at(s, i, side, sideFinish), at(s, j, side, sideFinish), at(s + 1, j, side, sideFinish),
+                   at(s + 1, i, side, sideFinish));
+        }
+    cap(stepCount - 1, face, faceFinish, z1, 1);
+}
+// A box on the frame's axes, lit on its faces: a side button.
+void button(std::vector<Vertex>& out, const Body& b, float x0, float x1, float y0, float y1, float z0, float z1) {
+    const float x[2] = {x0, x1}, y[2] = {y0, y1}, z[2] = {z0, z1};
+    // Each face: the axis it faces along, which way, and its four corners.
+    const auto face = [&](Vec3 n, int a, int c, int d, int e) {
+        const auto point = [&](int k) {
+            return b.lit(x[k & 1], y[(k >> 1) & 1], z[(k >> 2) & 1], n, frameColor, metalFinish);
+        };
+        b.quad(out, point(a), point(c), point(d), point(e));
+    };
+    face({-1, 0, 0}, 0, 2, 6, 4);
+    face({1, 0, 0}, 1, 3, 7, 5);
+    face({0, -1, 0}, 0, 1, 5, 4);
+    face({0, 1, 0}, 2, 3, 7, 6);
+    face({0, 0, -1}, 0, 1, 3, 2);
+    face({0, 0, 1}, 4, 5, 7, 6);
+}
+// A disc facing the back (-z), lit: the camera's lenses.
+void lensDisc(std::vector<Vertex>& out, const Body& b, float cx, float cy, float r, float z, Vec3 color, Finish f) {
+    constexpr int sides = 20;
+    const Vertex middle = b.lit(cx, cy, z, {0, 0, -1}, color, f);
+    for (int i = 0; i < sides; ++i) {
+        const float a0 = 2 * pi * static_cast<float>(i) / sides, a1 = 2 * pi * static_cast<float>(i + 1) / sides;
+        out.insert(out.end(), {middle, b.lit(cx + r * std::cos(a0), cy + r * std::sin(a0), z, {0, 0, -1}, color, f),
+                               b.lit(cx + r * std::cos(a1), cy + r * std::sin(a1), z, {0, 0, -1}, color, f)});
+    }
+}
+} // namespace
+
+Vec3 phoneScreenGlass() {
+    return glassColor;
+}
+
+void appendPhone(std::vector<Vertex>& out, const PhoneView& view, Vec3 viewer) {
+    if (!view.open || !finite(view.frame.centre) || !finite(view.frame.right) || !finite(view.frame.up) ||
+        !finite(view.frame.out))
         return;
-    // It grows out of its middle over an eighth of a second.
-    const Plane p{view.frame, std::clamp(std::isfinite(view.age) ? view.age / .12f : 1.f, .2f, 1.f)};
-    p.rounded(out, 0, 0, width, height, corner, 0, body);
+    const WheelFrame& f = view.frame;
+    const Vec3 eye = finite(viewer) ? viewer : f.centre + f.out;
+    // Lit as from above and a little behind the player, toward the phone.
+    const Vec3 light = normalized(Vec3{0, 1, 0} * .8f + normalized(eye - f.centre) * .55f);
+    const Body b{f, growth(view), eye, finite(light) ? light : Vec3{0, 1, 0}};
+    const float hw = width / 2, hh = height / 2, h = depth / 2;
+    // The back's camera and its red first, then the body, its face last: from
+    // the front the face covers them, whether or not anything sorts by depth.
+    const float cx = -hw + .019f, cy = hh - .022f;
+    slab(out, b, cx, cy, .012f, .012f, .0045f, -h - bump, -h + .0004f, cameraColor, metalFinish, cameraColor,
+         glassFinish, false, true);
+    for (const float lens : {.0045f, -.0045f}) {
+        lensDisc(out, b, cx, cy + lens, .0042f, -h - bump - .0001f, rimColor, metalFinish);
+        lensDisc(out, b, cx, cy + lens, .0031f, -h - bump - .0002f, cameraColor, glassFinish);
+    }
+    // The red of the back, a hair behind the body's own back, inside a rim
+    // of its graphite.
+    {
+        constexpr float z = -depth / 2 - .0003f;
+        const auto back = outline(hw, hh, corner, edge * 1.4f);
+        const Vertex middle = b.lit(0, 0, z, {0, 0, -1}, backColor, paintFinish);
+        for (size_t i = 0; i < back.size(); ++i) {
+            const auto& p = back[i];
+            const auto& q = back[(i + 1) % back.size()];
+            out.insert(out.end(), {middle, b.lit(p.x, p.y, z, {0, 0, -1}, backColor, paintFinish),
+                                   b.lit(q.x, q.y, z, {0, 0, -1}, backColor, paintFinish)});
+        }
+    }
+    slab(out, b, 0, 0, hw, hh, corner, -h, h, frameColor, metalFinish, glassColor, glassFinish, true, true);
+    // The volume's two buttons on the left side, the power button on the right.
+    for (const float y : {.034f, .018f})
+        button(out, b, -hw - .0008f, -hw + .0004f, y - .006f, y + .006f, -.0012f, .0012f);
+    button(out, b, hw - .0004f, hw + .0008f, .018f, .034f, -.0012f, .0012f);
+}
+
+std::array<Vec3, 4> phoneScreenCorners(const PhoneView& view) {
+    const WheelFrame& f = view.frame;
+    const float s = growth(view), z = (depth / 2 + .0003f) * s;
+    const Vec3 x = f.right * (phoneScreenHalfWidth * s), y = f.up * (phoneScreenHalfHeight * s), c = f.centre + f.out * z;
+    return {c - x - y, c + x - y, c + x + y, c - x + y};
+}
+
+void placePhoneScreen(std::vector<Vertex>& picture, const PhoneView& view) {
+    const WheelFrame& f = view.frame;
+    const float s = growth(view), lift = (depth / 2 + .0003f) * s;
+    // Its layers a hundredth of a millimetre apart, for a drawing that sorts nothing.
+    for (auto& v : picture)
+        v.position = f.centre + (f.right * v.position.x + f.up * v.position.y) * s +
+                     f.out * (lift + v.position.z * .01f);
+}
+
+void appendPhoneScreen(std::vector<Vertex>& out, const PhoneView& view) {
+    if (!view.open)
+        return;
+    const Plane p{{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}, 1};
     p.rounded(out, 0, 0, width - 2 * bezel, height - 2 * bezel, corner - bezel / 2, .001f, screen);
     // The red bar along the top, the screen's name in it; the controls' hint
     // along the bottom.
-    const char* const titles[] = {"FNSM", "MUSIC", "MAP", "GEAR"};
+    const char* const titles[] = {"FNSM", "MUSIC", "GEAR"};
     p.rounded(out, 0, .0695f, width - 2 * bezel, .019f, corner - bezel / 2, .0015f, red);
-    p.text(out, titles[static_cast<int>(view.screen) & 3], -.031f, .0655f, .0065f, .05f, white, 0);
+    p.text(out, titles[std::clamp(static_cast<int>(view.screen), 0, 2)], -.031f, .0655f, .0065f, .05f, white,
+           0);
     spider(out, p, .027f, .0695f, .006f, white);
     const char* hint = view.screen == PhoneScreen::home    ? "A OPEN   B PUT AWAY"
                        : view.screen == PhoneScreen::music ? "A PRESS   B HOME   TRIGGERS VOL"
@@ -635,9 +815,6 @@ void appendPhone(std::vector<Vertex>& out, const PhoneView& view) {
         break;
     case PhoneScreen::music:
         musicScreen(out, p, view);
-        break;
-    case PhoneScreen::map:
-        mapScreen(out, p);
         break;
     case PhoneScreen::gear:
         gearScreen(out, p, view);

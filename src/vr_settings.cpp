@@ -1,5 +1,6 @@
 #include "spidy/vr_settings.hpp"
 #include "spidy/recording_fov.hpp"
+#include "spidy/seated.hpp"
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -43,6 +44,10 @@ static_assert(std::size(uiStyleChoices) == std::size(uiStyles));
 constexpr int blowSoundSteps[] = {0, 1, 2};
 constexpr const char* blowSoundChoices[] = {"GAME", "SPIDY", "OFF"};
 static_assert(std::size(blowSoundChoices) == std::size(blowSoundSteps));
+// HEIGHT: AUTO, then the player's own.
+constexpr const char* heightChoices[] = {"AUTO",   "150 CM", "160 CM", "165 CM", "170 CM",
+                                         "175 CM", "180 CM", "185 CM", "190 CM"};
+static_assert(std::size(heightChoices) == std::size(heights));
 // The realistic flips' rows (RealisticFlipSettings).
 constexpr int automaticStrengths[] = {25, 50, 75, 100};
 constexpr const char* automaticStrengthChoices[] = {"25%", "50%", "75%", "100%"};
@@ -108,6 +113,8 @@ std::span<const int> steps(Item item) {
         return uiStyles;
     case Item::blowSounds:
         return blowSoundSteps;
+    case Item::height:
+        return heights;
     case Item::automaticStrength:
         return automaticStrengths;
     case Item::automaticSpeed:
@@ -159,6 +166,8 @@ float numberOf(Item item, const Values& v) {
         return static_cast<float>(v.uiStyle);
     case Item::blowSounds:
         return static_cast<float>(v.blowSounds);
+    case Item::height:
+        return static_cast<float>(v.heightCm);
     case Item::automaticStrength:
         return static_cast<float>(v.automaticStrength);
     case Item::automaticSpeed:
@@ -208,6 +217,8 @@ template <class V> auto switchOf(Item item, V& v) -> decltype(&v.aimMarkers) {
         return &v.automaticReleaseFlip;
     case Item::automaticAirBrake:
         return &v.automaticAirBrake;
+    case Item::automaticCombat:
+        return &v.automaticCombat;
     case Item::hapticWebs:
         return &v.hapticWebs;
     case Item::hapticWind:
@@ -216,6 +227,8 @@ template <class V> auto switchOf(Item item, V& v) -> decltype(&v.aimMarkers) {
         return &v.hapticCombat;
     case Item::hapticMovement:
         return &v.hapticMovement;
+    case Item::seated:
+        return &v.seated;
     default:
         return nullptr;
     }
@@ -238,6 +251,7 @@ Values sanitized(Values v) {
     v.recordingFov = recording_fov::sanitized(v.recordingFov);
     v.uiStyle = std::clamp(v.uiStyle, uiStyles[0], std::end(uiStyles)[-1]);
     v.blowSounds = std::clamp(v.blowSounds, blowSoundSteps[0], std::end(blowSoundSteps)[-1]);
+    v.heightCm = v.heightCm <= 0 ? 0 : std::clamp(v.heightCm, seated::minHeightCm, seated::maxHeightCm);
     // The realistic flips' ranges, as RealisticFlip takes them.
     v.automaticStrength = std::clamp(v.automaticStrength, 25, 100);
     v.automaticSpeed = std::clamp(v.automaticSpeed, 90, 360);
@@ -248,9 +262,9 @@ Values sanitized(Values v) {
     v.automaticHandThreshold = std::clamp(v.automaticHandThreshold, 50, 300);
     return v;
 }
-const std::array<Row, 45>& rows() {
+const std::array<Row, 48>& rows() {
     // The help fits the game's description column beside the rows.
-    static const std::array<Row, 45> all{{
+    static const std::array<Row, 48> all{{
         {Item::none, "WEBS", nullptr, {}},
         {Item::webStyle, "WEB STYLE",
          "Arcade: webs pass lamp posts, signs and cars, and swings stay above the street.", webStyleChoices},
@@ -306,6 +320,10 @@ const std::array<Row, 45>& rows() {
         {Item::none, "BODY", nullptr, {}},
         {Item::calibrate, "CALIBRATE BODY", "Fit Spider-Man to you: pick ON RESUME, then hold both triggers in a T-pose.",
          calibrateChoices},
+        {Item::height, "HEIGHT",
+         "Your height, for Spider-Man's size and SEATED. AUTO measures it in the headset.", heightChoices},
+        {Item::seated, "SEATED",
+         "Play sitting: your view rises to your standing height. Recenter after sitting.", {}},
         {Item::none, "EXPERIMENTAL", nullptr, {}},
         {Item::flips, "FLIPS", "In the air the left stick turns you over; tap A for one flip, hold A to stay.", {}},
         {Item::flipSpeed, "FLIP SPEED", "How fast a flip turns you over, at full tilt of the left stick.",
@@ -333,6 +351,8 @@ const std::array<Row, 45>& rows() {
          automaticHandThresholdChoices},
         {Item::automaticAirBrake, "AIR ROTATION BRAKE",
          "Press A in the air to stop momentum and smoothly return upright.", {}},
+        {Item::automaticCombat, "FLIPS IN COMBAT",
+         "Off: with enemies near, arms and webs stop turning you and you come upright.", {}},
     }};
     return all;
 }
@@ -406,6 +426,9 @@ bool choose(Item item, int index, Values& v) {
     case Item::blowSounds:
         v.blowSounds = s[index];
         break;
+    case Item::height:
+        v.heightCm = s[index];
+        break;
     case Item::automaticStrength:
         v.automaticStrength = s[index];
         break;
@@ -456,6 +479,7 @@ constexpr TabOnly tabOnly[] = {
     {"angular_drag_ms", nullptr, &Values::automaticFalloff},
     {"hand_speed_min_cm", nullptr, &Values::automaticHandThreshold},
     {"air_rotation_brake", &Values::automaticAirBrake, nullptr},
+    {"flips_in_combat", &Values::automaticCombat, nullptr},
     {"body_haptics_webs", &Values::hapticWebs, nullptr},
     {"body_haptics_wind", &Values::hapticWind, nullptr},
     {"body_haptics_combat", &Values::hapticCombat, nullptr},
@@ -465,6 +489,8 @@ constexpr TabOnly tabOnly[] = {
     {"blow_sounds", nullptr, &Values::blowSounds},
     {"web_slingshot", &Values::webSlingshot, nullptr},
     {"better_climbing", &Values::betterClimbing, nullptr},
+    {"height_cm", nullptr, &Values::heightCm},
+    {"seated", &Values::seated, nullptr},
 };
 } // namespace
 std::string tabOnlyText(const Values& v) {

@@ -1053,9 +1053,16 @@ void appendGadgetWheel(std::vector<Vertex>& out, const GadgetWheelView& view, Ve
         }
     });
     // The middle: the lit gadget's name between two rules with ticked ends,
-    // its charges under it; nothing lit, a diamond in a ring.
+    // its charges under it; nothing lit, a diamond in a ring, or what a bare
+    // wheel says.
     if (lit < 0) {
         wheel.plain([&] {
+            if (view.bare) {
+                const float height = fittedHeight(bareWheelText, .0105f, .136f);
+                wheel.text(bareWheelText, {textWidth(bareWheelText, height) * -.5f, -height * .5f}, height, line,
+                           .8f, .11f);
+                return;
+            }
             wheel.arc({}, .012f, .0005f, line, .5f);
             wheel.diamond({}, .004f, line, .8f);
         });

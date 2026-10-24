@@ -1831,6 +1831,10 @@ void App::options(ImVec2 origin, ImVec2 size) {
                    [&] { tabCombo("##handspeed", Item::automaticHandThreshold); });
             option("Air rotation brake", "A in the air stops the spin and brings you upright.", S(42),
                    [&] { tabToggle("##brake", Item::automaticAirBrake); });
+            option("Flips in combat",
+                   "Off: while enemies are near, and 3 s after, arms and webs stop turning you and you come "
+                   "upright.",
+                   S(42), [&] { tabToggle("##combat", Item::automaticCombat); });
             ImGui::Unindent(S(16));
         }
     });
@@ -1853,6 +1857,13 @@ void App::options(ImVec2 origin, ImVec2 size) {
                 changed = true;
             }
         });
+        // HEIGHT and SEATED (seated.hpp), kept with the tab's own in spidy_vr.ini.
+        option("Height", "Yours: Spider-Man's size, and how high seated play raises you. Auto: from the "
+                         "calibration or the headset.",
+               S(150), [&] { tabCombo("##height", Item::height); });
+        option("Seated", "Play sitting down: your view and body rise to your standing height. Recenter the "
+                         "headset after you sit down.",
+               S(42), [&] { tabToggle("##seated", Item::seated); });
         option("Controller vibration", "How strongly webs and punches buzz.", S(150), [&] {
             stepCombo("##haptics", kHaptics, kHapticValues, static_cast<int>(std::size(kHapticValues)), &o.haptics);
         });
@@ -2471,20 +2482,27 @@ void App::controls(ImVec2 origin, ImVec2 size) {
           {"Y", "Interact with what you look at: the game's Y (backpacks, doors, prompts); web strike in a "
                 "fight, while you swing too (a car in a chase). Hold it and you step up to the thing, until "
                 "the game takes it"},
-          {"Click the right stick", "The game's LB + RB: pull a door or a grate where the game shows the two"},
+          {"X where the game shows LB + RB", "The game's LB + RB: throw a prop, pull a door or a grate; hold "
+                                             "it as long as the game wants the two held. Its prompt shows X"},
           {"Right stick down", "Heal: the game's D-pad down. Push it right down and hold it a moment"},
           {"Right stick up", "The game's LT + RT: zip to a point, enter a vent, where the game shows the "
                              "two; while you swing too. No point? Keep holding (time slows as the game "
                              "aims), look at a point and let go to zip there"},
           {"Hand to your temple, trigger", "Scan your surroundings: the game's R3"},
+          {"Both hands at your chest, both triggers", "The game's suit power: its L3 + R3, when its meter is "
+                                                      "full"},
           {"Menu button", "Pause; there SWITCH TO GAME SCREEN plays the game as it is, on a 3D screen, and VR "
                           "settings are in Settings > SPIDY VR"},
           {"Both sticks held in", "Pause too: under SteamVR a Quest's menu button opens SteamVR's dashboard"},
-          {"X", "Game menu: map, suits, skills. While the game asks for its X, it is that X"},
-          {"A button the game shows", "Press the one of that name: A, B, X and Y as they are, your left "
-                                      "trigger its LT or LB, your right trigger its RT or RB, the stick "
-                                      "clicks its L3 and R3, the right stick pushed its D-pad. While it asks "
-                                      "for X, a punch is that X"}}},
+          {"Grip behind your hip, bring it up", "Your phone. MENU opens the game menu (map, suits, skills), CAMERA "
+                                                "the game's camera, MUSIC your songs. The stick picks, A opens, B "
+                                                "puts it away"},
+          {"Hold X", "The gadget wheel: move the hand toward a gadget and let go to equip it (the web shooter "
+                     "alone until the game gives you one). While the game asks for its X, X is that X"},
+          {"A button the game shows", "Press the one of that name: A, B, X and Y as they are, X its LB + RB, "
+                                      "your left trigger its LT or LB, your right trigger its RT or RB, the "
+                                      "stick clicks its L3 and R3, the right stick pushed its D-pad. While it "
+                                      "asks for X, a punch is that X"}}},
         {"MENUS AND CUTSCENES",
          {{"Left stick", "Move through menus (they show on a screen in the headset)"},
           {"A  /  B", "Select  /  Back"},
@@ -2492,8 +2510,8 @@ void App::controls(ImVec2 origin, ImVec2 size) {
           {"Menu button  /  both sticks held in", "Start"}}},
         {"STEAM FRAME CONTROLLERS",
          {{"A, B, X, Y", "All four are on the right controller, each the button of that name above: jump, dodge, "
-                         "game menu, interact"},
-          {"Menu  /  View", "Pause  /  Game menu, as X"},
+                         "gadget wheel, interact"},
+          {"Menu  /  View", "Pause  /  Game menu, as the phone's MENU"},
           {"D-pad", "The game's own D-pad: down heals. The right stick's down and up work as above"},
           {"Bumpers", "Not used: the triggers and grips are your webs"}}},
     };

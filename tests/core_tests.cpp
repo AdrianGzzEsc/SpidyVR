@@ -33,6 +33,7 @@
 #include "spidy/crawl_stick.hpp"
 #include "spidy/crawl_hands.hpp"
 #include "spidy/body_calibration.hpp"
+#include "spidy/seated.hpp"
 #include "spidy/overlay_text.hpp"
 #include "spidy/punch.hpp"
 #include "spidy/shooter.hpp"
@@ -1635,6 +1636,29 @@ int main() {
         world.roof = true;
         check(crawlEnclosed(world, {}, {0, 1, 0}), "duct roof was not recognised");
         check(!crawlEnclosed(world, {}, {}), "invalid support became a vent");
+    });
+    test("the game's floor crawl caps the head only under a duct's roof", [] {
+        constexpr float frame = 1.f / 90;
+        // October 24's rooftop: the flag for seconds under beams 1.7 m up.
+        FloorCrawlRoof roof;
+        for (int i = 0; i < 400; ++i)
+            check(roof.update(true, frame, 1.7f) == 0, "a rooftop's beams capped the head at a crouch");
+        // The street's bursts, with nothing over the feet at all.
+        for (int i = 0; i < 400; ++i)
+            check(roof.update(i % 30 < 25, frame, 0) == 0, "a street's floor flags capped the head");
+        // A duct: its roof 1.2 m up, the cap once the crawl has settled.
+        FloorCrawlRoof duct;
+        float cap = 0;
+        int frames = 0;
+        for (; frames < 200 && cap == 0; ++frames)
+            cap = duct.update(true, frame, 1.2f);
+        check(cap == crawlRoom, "a duct's crawl was not capped");
+        near(static_cast<float>(frames) * frame, crawlSettleSeconds, 2 * frame);
+        // Its stretch with no roof the rays hit keeps the cap; the crawl's end lets it go.
+        for (int i = 0; i < 300; ++i)
+            check(duct.update(true, frame, 0) == crawlRoom, "a roofless stretch of a duct lost the cap");
+        check(duct.update(false, frame, 0) == 0 && !duct.duct(), "the cap outlived the crawl");
+        check(duct.update(true, frame, 0) == 0, "a new crawl began capped");
     });
     test("ground floor-flag bursts cannot acquire the vent camera or its height cap", [] {
         TestWorld open;
@@ -5628,6 +5652,14 @@ int main() {
         f=XrFrame{};f.buttons=buttonA;f.jump=true;
         check(p.take(f,0).action==PhoneAction::camera&&!p.open()&&!p.live(),"A on CAMERA did not put the phone away");
         check(!(f.buttons&buttonA)&&!f.jump,"the A that took the game's camera out reached the game as a jump");
+        // So does A on MENU (down from MUSIC), for the game's menu.
+        check(p.update(frame,true,head,grips,tracked,0,grips[0].position)&&p.live(),"the phone did not open a third time");
+        f=XrFrame{};p.take(f,0);
+        f=XrFrame{};f.hands[1].stickY=-1;p.take(f,0);
+        f=XrFrame{};p.take(f,0);
+        f=XrFrame{};f.buttons=buttonA;f.jump=true;
+        check(p.take(f,0).action==PhoneAction::menu&&!p.open()&&!p.live(),"A on MENU did not put the phone away");
+        check(!(f.buttons&buttonA)&&!f.jump,"the A that opened the game's menu reached the game as a jump");
     });
     test("phone: home screen apps, MUSIC's buttons, GEAR's scroll; A, B, stick and triggers once per press", [] {
         PhoneControls c;
@@ -5667,7 +5699,10 @@ int main() {
         const auto step=[&](E ev,int rows=0){return ui.update(ev,rows);};
         check(ui.screen()==PhoneScreen::home&&ui.app()==0,"it did not open home, MUSIC picked");
         step(E{0,-1});
-        check(ui.app()==1,"down did not pick MAP");
+        check(ui.app()==phoneMenuApp,"down did not pick MENU");
+        // MENU has no screen: A on it is the game's menu, the home screen left as it is.
+        check(step(E{0,0,true})==PhoneAction::menu&&ui.screen()==PhoneScreen::home,
+              "A on MENU did not ask for the game's menu");
         step(E{0,1});step(E{0,1});
         check(ui.app()==phoneCameraApp,"up from MUSIC did not wrap to CAMERA");
         // CAMERA has no screen: A on it is the game's camera, the home screen left as it is.
@@ -5710,10 +5745,40 @@ int main() {
             v.screen=s;
             change(v);
             std::vector<Vertex> out;
-            appendPhone(out,v);
+            appendPhoneScreen(out,v);
             check(out.size()%3==0,"a screen not in triangles");
+            // The picture stays inside the screen's own size, in its plane.
+            for(const auto& p:out)
+                if(std::abs(p.position.x)>phoneScreenHalfWidth+1e-4f||std::abs(p.position.y)>phoneScreenHalfHeight+1e-4f)
+                    check(false,"the screen's picture ran off the screen");
             return out.size();
         };
+        // The body: inside its own box, its face the part of it nearest the eyes.
+        {
+            PhoneView v=view;
+            v.frame={{0,0,-.4f},{1,0,0},{0,1,0},{0,0,1}};
+            std::vector<Vertex> body;
+            appendPhone(body,v,{0,0,0});
+            check(!body.empty()&&body.size()%3==0,"no body, or not in triangles");
+            float nearest=-1;
+            for(const auto& p:body){
+                const Vec3 d=p.position-v.frame.centre;
+                check(std::abs(d.x)<=.0435f+1e-4f&&std::abs(d.y)<=.0855f+1e-4f&&d.z>=-.0062f&&d.z<=.0046f,
+                      "the body left its box");
+                nearest=std::max(nearest,d.z);
+            }
+            near(nearest,.0045f,1e-4f);
+            const auto corners=phoneScreenCorners(v);
+            near(corners[2].x-corners[0].x,2*phoneScreenHalfWidth,1e-5f);
+            near(corners[2].y-corners[0].y,2*phoneScreenHalfHeight,1e-5f);
+            check(corners[0].z-v.frame.centre.z>nearest,"the screen lies under the glass");
+            PhoneView closed=v;
+            closed.open=false;
+            std::vector<Vertex> none;
+            appendPhone(none,closed,{0,0,0});
+            appendPhoneScreen(none,closed);
+            check(none.empty(),"a closed phone was drawn");
+        }
         const auto nothing=[](PhoneView&){};
         const auto songs=[](PhoneView& v){
             v.tracks=2;
@@ -5734,8 +5799,6 @@ int main() {
                   v.gear[0].most=4;
               }),
               "GEAR showed no gadgets");
-        // MAP shows the same whatever else the phone has: more than a phone with no screen at all.
-        check(drawn(PhoneScreen::map,nothing)>drawn(static_cast<PhoneScreen>(phoneApps+1),nothing),"MAP showed nothing");
     });
     test("sky anchors respect body occlusion and later world obstruction", [] {
         struct Occluded : TestWorld {
@@ -7878,6 +7941,13 @@ int main() {
         game_pad::Walk walk;
         auto pad=game_pad::fromControllers(XrFrame{},game_pad::Mapping::gameplay,walk);
         check(!(pad.buttons&(game_pad::leftThumb|game_pad::rightThumb)),"the pad clicks both sticks by itself");
+        // What the gesture holds reaches the game as its L3 + R3, in play only. Until October 23 nothing
+        // sent it: the hands buzzed and the game got nothing (21 tries in one session).
+        walk.suit=true;
+        pad=game_pad::fromControllers(XrFrame{},game_pad::Mapping::gameplay,walk);
+        check(pad.buttons==(game_pad::leftThumb|game_pad::rightThumb),"the suit power is not the game's L3 + R3");
+        check(!game_pad::fromControllers(XrFrame{},game_pad::Mapping::menus,walk).buttons,
+              "the suit power went out on the game screen");
     });
     test("called blows: the flow calls its next blow, and the call stands until a fist answers it", [] {
         Cues cues;
@@ -8680,34 +8750,35 @@ int main() {
         // Full deflection, a stick at rest a few percent off centre, analog triggers.
         check(menus.thumbLX==-32767 && menus.thumbLY==0 && menus.thumbRX==0 && menus.thumbRY==19660,"sticks");
         check(menus.leftTrigger==128 && menus.rightTrigger==255,"triggers");
-        // In VR the controllers swing: of their own buttons only pause (menu) and the game menu (X) pass.
+        // In VR the controllers swing: of their own buttons only pause (menu) passes. X is the gadget
+        // wheel's; it was the game menu (Back) until October 23, the phone's MENU since.
         check(fromControllers(f,Mapping::gameplay)==game_pad::State{static_cast<uint16_t>(start)},"Y alone reached the game in play");
         f.buttons=buttonA|buttonX|buttonMenu;
         const auto play=fromControllers(f,Mapping::gameplay);
-        check(play==game_pad::State{static_cast<uint16_t>(start|back)},"gameplay passes only Start and Back");
+        check(play==game_pad::State{static_cast<uint16_t>(start)},"gameplay passes only Start");
         // Walking and jumping come as the swing leaves them: the October 6
         // session could not move at all while they went to the keyboard only.
         const auto walking=fromControllers(f,Mapping::gameplay,{.5f,-1,true});
-        check(walking.buttons==(start|back|a),"native jump is not A");
+        check(walking.buttons==(start|a),"native jump is not A");
         check(walking.thumbLX==16384 && walking.thumbLY==-32767 && !walking.thumbRX && !walking.thumbRY,"walk stick");
         check(!walking.leftTrigger && !walking.rightTrigger,"triggers leaked into gameplay");
         check(fromControllers(f,Mapping::gameplay,{.05f,0,false})==play,"stick noise walked");
         check(fromControllers(f,Mapping::none,{1,1,true})==game_pad::State{},"nothing without the headset");
         // Y is the game's Y in VR (interact, web strike) and B its B (the dodge), as the swing leaves them.
-        check(fromControllers(f,Mapping::gameplay,{0,0,false,true}).buttons==(start|back|y),"interact is not the game's Y");
-        check(fromControllers(f,Mapping::gameplay,{0,0,false,false,true}).buttons==(start|back|b),"dodge is not the game's B");
+        check(fromControllers(f,Mapping::gameplay,{0,0,false,true}).buttons==(start|y),"interact is not the game's Y");
+        check(fromControllers(f,Mapping::gameplay,{0,0,false,false,true}).buttons==(start|b),"dodge is not the game's B");
         // A dodge goes the way the stick points: both reach the game together.
         const auto dodging=fromControllers(f,Mapping::gameplay,{-1,0,false,false,true});
-        check(dodging.buttons==(start|back|b) && dodging.thumbLX==-32767 && !dodging.thumbLY,"a dodge lost its way");
+        check(dodging.buttons==(start|b) && dodging.thumbLX==-32767 && !dodging.thumbLY,"a dodge lost its way");
         // The game's web pull is its LB and RB together; the grips alone are no bumpers in VR.
-        check(fromControllers(f,Mapping::gameplay,{0,0,false,false,false,true}).buttons==(start|back|leftShoulder|rightShoulder),
+        check(fromControllers(f,Mapping::gameplay,{0,0,false,false,false,true}).buttons==(start|leftShoulder|rightShoulder),
               "a pull is not the game's LB + RB");
         // The right stick pushed down is the game's D-pad down (heal), pushed up its LT and RT together (the zip
         // to a point): until October 12 neither reached the game in VR play.
-        check(fromControllers(f,Mapping::gameplay,{0,0,false,false,false,false,true}).buttons==(start|back|dpadDown),
+        check(fromControllers(f,Mapping::gameplay,{0,0,false,false,false,false,true}).buttons==(start|dpadDown),
               "a heal is not the game's D-pad down");
         const auto zipping=fromControllers(f,Mapping::gameplay,{0,0,false,false,false,false,false,true});
-        check(zipping.buttons==(start|back) && zipping.leftTrigger==255 && zipping.rightTrigger==255,
+        check(zipping.buttons==start && zipping.leftTrigger==255 && zipping.rightTrigger==255,
               "a zip is not the game's LT + RT");
         XrFrame gripping;gripping.hands[0].squeeze=gripping.hands[1].squeeze=1;
         check(fromControllers(gripping,Mapping::gameplay)==game_pad::State{},"the grips were bumpers in VR play");
@@ -8741,9 +8812,10 @@ int main() {
         check(fromControllers(o.filtered(f,Mapping::gameplay),Mapping::gameplay).buttons==back,"View and X in play");
         o.update(f.buttons,false);
         check(fromControllers(o.filtered(f,Mapping::menus),Mapping::menus).buttons==back,"View let go by the switch");
-        // The Frame's X and Y are Spidy's X and Y: the game menu and the interact, as Touch's.
+        // The Frame's X and Y are Spidy's X and Y, as Touch's: X the gadget wheel's, sending the game
+        // nothing in play (the game menu until October 23), Y the interact.
         XrFrame face;face.buttons=buttonX;
-        check(fromControllers(face,Mapping::gameplay).buttons==back,"X is not the game menu");
+        check(!fromControllers(face,Mapping::gameplay).buttons,"X sent the game something in play");
         check(fromControllers(face,Mapping::menus).buttons==x,"X on the game screen is not the game's X");
     });
     // The prompt and button work of October 13: the game names the button of
@@ -8779,9 +8851,10 @@ int main() {
             // controller has them, and its own test covers them).
             const uint32_t faces[]={0,buttonA,buttonB,buttonX,buttonY,buttonMenu};
             // The swing's leave, as game_xr fills it: every flag on its own.
-            Walk walks[9]{};
+            Walk walks[11]{};
             walks[1].jump=true;walks[2].interact=true;walks[3].dodge=true;walks[4].pull=true;
             walks[5].heal=true;walks[6].zip=true;walks[7].scan=true;walks[8].right=1;
+            walks[9].suit=true;walks[10].menu=true;
             for(uint32_t face:faces)
                 for(const auto& walk:walks)
                     for(int grips=0;grips<4;++grips)
@@ -9623,6 +9696,21 @@ int main() {
         P vaccine;
         check(step(vaccine,both,Demand{prompt_buttons::padLeftShoulder})==State{leftShoulder},"LB did not go out");
         check(vaccine.claimed()==P::leftBall,"the right ball was claimed for a prompt that names none of it");
+        // The throw by every trash can on a street, "[ACTION_WEB_YANK] (Hold) Throw": both bumpers, X's to send
+        // (October 24), and the web-ball buttons stay the webs'.
+        const Demand throwing{static_cast<uint16_t>(prompt_buttons::padLeftShoulder|prompt_buttons::padRightShoulder),
+                              false,false,true};
+        P pair;
+        check(step(pair,face(buttonX),throwing)==State{static_cast<uint16_t>(leftShoulder|rightShoulder)},
+              "X did not send the game's LB + RB");
+        check(pair.claimed()==P::controlX,"the pair was not X's");
+        P street;
+        check(step(street,both,throwing)==State{} && !street.claimed(),"a web ball went to the game for a throw");
+        // The game's own X named beside the pair: X is that X.
+        P mixed;
+        const Demand both3{static_cast<uint16_t>(prompt_buttons::padX|prompt_buttons::padLeftShoulder|
+                                                 prompt_buttons::padRightShoulder)};
+        check(step(mixed,face(buttonX),both3)==State{x},"X was not the game's X with the pair named too");
         // "Press [BTN_R2] to zip to ceiling while aiming": the right ball is RT.
         P zip;
         check(step(zip,both,Demand{0,false,true}).rightTrigger==255,"RT did not go out");
@@ -9826,11 +9914,46 @@ int main() {
                 answered=answered||(s.buttons==d.buttons&&(s.leftTrigger>200)==d.leftTrigger&&
                                     (s.rightTrigger>200)==d.rightTrigger);
             }
-            // What play sends anyway: the menu button's Start, X's Back, the heal's D-pad down.
+            // What play sends anyway: the menu button's Start, the phone MENU's Back, the heal's D-pad down.
             answered=answered||prompt_buttons::reachableInPlay(d);
             if(!answered)missing+=std::string(missing.empty()?"":", ")+control.name;
         }
         check(missing.empty(),("VR play cannot send what the game names: "+missing).c_str());
+    });
+    test("the game's action words say their buttons, and its LB + RB is put as X", [] {
+        using namespace prompt_buttons;
+        const Demand pair{padLeftShoulder|padRightShoulder};
+        // As the game resolved them for Spidy's virtual pad on October 24.
+        const auto thrown=forText("[ACTION_WEB_YANK] (Hold) Throw");
+        check(thrown.buttons==pair.buttons&&thrown.hold,"the throw's word");
+        const auto yank=forText("While in the air, hold [ACTION_WEB_YANK_BOT] to yank enemies up to you");
+        check(yank.buttons==padY&&yank.hold,"the yank up to you was read as the throw's");
+        check(forText("press [ACTION_ACTIVE_FINISHER] to instantly finish").buttons==(padB|padY),"the finisher");
+        check(forText("[ACTION_SUIT_POWER]").buttons==(padLeftThumb|padRightThumb),"the suit power");
+        check(forText("[ACTION_ZIP_TO_POINT]")==Demand{0,true,true},"the zip to a point");
+        check(forText("[BTN_LT]")==Demand{0,true,false}&&forText("[BTN_RT]")==Demand{0,false,true},"LT and RT");
+        check(!forText("[ACTION_MENU_X] Reset").any(),"a menu's action was read for play");
+        char out[256];
+        // The game's LB + RB as [BTN_X], which it draws as its X; nothing else changes.
+        check(pairOnX("[ACTION_WEB_YANK] (Hold) Throw",out,sizeof out)&&!std::strcmp(out,"[BTN_X] (Hold) Throw"),
+              "the throw's word was not put as X");
+        check(pairOnX("Hold [BTN_LB] + [BTN_RB] to pull",out,sizeof out)&&!std::strcmp(out,"Hold [BTN_X] to pull"),
+              "the bumpers' tokens were not put as X");
+        check(pairOnX("[BTN_L1] + [BTN_R1]",out,sizeof out)&&!std::strcmp(out,"[BTN_X]"),"the PlayStation pair");
+        check(!pairOnX("Press [BTN_LB] to disperse vaccine",out,sizeof out),"a bumper alone was put as X");
+        check(!pairOnX("hold [ACTION_WEB_YANK_BOT] to yank",out,sizeof out),"the yank up to you was put as X");
+        check(!pairOnX("[BTN_Y] Interact",out,sizeof out),"a text naming no pair was rewritten");
+        check(!pairOnX("[ACTION_WEB_YANK] (Hold) Throw",out,12),"a text cut short was handed out");
+        // The HUD's own prompt lines: a kind's demand from its show until its hide.
+        LiveDemands live;
+        live.prompt(1000,4,pack(thrown),false);
+        check(live.demand(2000).buttons==pair.buttons,"a shown line's demand was not live");
+        live.prompt(3000,4,0,true);
+        check(!live.demand(3000).any(),"a hidden line's demand stayed live");
+        live.prompt(4000,21,pack(thrown),false);
+        check(!live.demand(4000).any(),"a kind beyond the widget's own was kept");
+        live.prompt(5000,2,pack(thrown),false);
+        check(!live.demand(5000+LiveDemands::standMs+1).any(),"a line never hidden lived on");
     });
     test("the game's icon ids say what a prompt asks of the pad, in every device family", [] {
         using namespace prompt_buttons;
@@ -9890,7 +10013,7 @@ int main() {
         check(!forText("Climb the ladder").any(),"a text with no button named one");
         char out[256];
         // Rewritten for a VR player: the control they have, not the pad's name.
-        check(rewrite("LB + RB (Hold) Throw",out,sizeof out,false)&&!std::strcmp(out,"RIGHT STICK CLICK (Hold) Throw"),
+        check(rewrite("LB + RB (Hold) Throw",out,sizeof out,false)&&!std::strcmp(out,"X (Hold) Throw"),
               "the hint line was not rewritten for VR");
         check(rewrite("Press LT + RT to enter",out,sizeof out,false)&&
                   !std::strcmp(out,"Press RIGHT STICK UP to enter"),"the vent line was not rewritten");
@@ -9902,8 +10025,7 @@ int main() {
         // for becomes Y; what it does have keeps the control's own name.
         check(rewrite("Tap LB to aim",out,sizeof out,true)&&!std::strcmp(out,"Tap Y to aim"),
               "the interact button was not offered for a bumper VR play cannot send");
-        check(rewrite("LB + RB (Hold) Throw",out,sizeof out,true)&&
-                  !std::strcmp(out,"RIGHT STICK CLICK (Hold) Throw"),
+        check(rewrite("LB + RB (Hold) Throw",out,sizeof out,true)&&!std::strcmp(out,"X (Hold) Throw"),
               "a control VR play has was replaced by the interact button");
         // A text that names no button is left to the game.
         check(!rewrite("Open the door",out,sizeof out,false),"a text with no button was rewritten");
@@ -9911,7 +10033,7 @@ int main() {
         check(!rewrite("Press MkbKeyboardEnter",out,sizeof out,false),"a keyboard prompt was rewritten");
         check(!rewrite("LB + RB",out,1,false),"a rewrite wrote into no room");
         // What the player is told matches what the mapping sends.
-        check(!std::strcmp(vrControl(shoulders),"RIGHT STICK CLICK"),"the pull's VR control");
+        check(!std::strcmp(vrControl(shoulders),"X"),"the pull's VR control");
         check(!std::strcmp(vrControl(Demand{padX}),"PAD + X"),"the game's X needs the pad layer");
         check(!std::strcmp(vrControl(Demand{padY}),"Y"),"the game's Y is the interact");
         check(vrControl({})==nullptr,"an empty demand has a control");
@@ -10371,17 +10493,21 @@ int main() {
         check(!(o.play()&buttonB) && o.screen()==buttonB,"Back held into play dodged");
         o.update(0,true);
         check(!o.play() && !o.screen(),"a button let go stayed held");
-        // X opens the game menu from VR; held on into the menu it is no X there.
+        // X in VR is the gadget wheel's and sends the game nothing (a tap of it was the game menu until
+        // October 23; the phone's MENU is now); held on into a menu the game opened it is no X there.
         o.update(buttonX,true);
-        check(sent(o,buttonX,Mapping::gameplay)==back,"X in VR is not the game menu");
+        check(!sent(o,buttonX,Mapping::gameplay),"X in VR sent the game something");
         o.update(buttonX,false);
-        check(!sent(o,buttonX,Mapping::menus),"the game menu's press was X in that menu");
-        // X pressed in the menu is X there, and opens no menu when play is back.
+        check(!sent(o,buttonX,Mapping::menus),"an X pressed in VR was X in the game's menu");
+        // X pressed in the menu is X there, and sends nothing when play is back.
         o.update(0,false);
         o.update(buttonX,false);
         check(sent(o,buttonX,Mapping::menus)==x,"X on the game screen is not the game's X");
         o.update(buttonX,true);
-        check(!sent(o,buttonX,Mapping::gameplay),"X held from a menu opened the game menu");
+        check(!sent(o,buttonX,Mapping::gameplay),"X held from a menu sent something in play");
+        // The phone's MENU is the game's Back in VR play.
+        Walk menu;menu.menu=true;
+        check(sent(o,0,Mapping::gameplay,menu)==back,"the phone's MENU is not the game's Back");
         // Y interacts in VR; held into the game's Settings it resets no tab. A second button
         // pressed meanwhile is the screen's own; A and the menu button pass as they are.
         o.update(buttonY,true);
@@ -10526,54 +10652,6 @@ int main() {
               "the look is not the right stick's X");
         check(!fromControllers(f,Mapping::menus,walk).thumbRX && !fromControllers(f,Mapping::none,walk).thumbRX,
               "the camera was turned on the game screen");
-    });
-    test("the right thumbstick's click is the game's LB + RB, and not half of clicking both", [] {
-        using game_pad::PullPress;
-        PullPress press;
-        // Held, it holds from the chord's time on, for as long as the stick is down.
-        float began = -1;
-        for (int i = 0; i < 60; ++i)
-            if (press.update(.011f, true, true, false) && began < 0)
-                began = i * .011f;
-        check(began >= PullPress::chordSeconds - .012f && began <= PullPress::chordSeconds + .012f,
-              "a held click began to pull at the wrong time");
-        check(press.update(.011f, true, true, false), "a held click let go of the pull");
-        check(!press.update(.011f, true, false, false), "the pull outlasted the stick");
-        // A short click holds for a moment after it.
-        PullPress tap;
-        check(!tap.update(.011f, true, true, false) && !tap.update(.011f, true, true, false), "a click pulled at once");
-        float held = 0;
-        for (int i = 0; i < 60; ++i)
-            held += tap.update(.011f, true, false, false) ? .011f : 0;
-        check(held >= PullPress::tapSeconds - .012f && held <= PullPress::tapSeconds + .012f,
-              "a short click did not hold for its time");
-        // Both sticks, either first, switch the screen and pull nothing.
-        for (const bool rightFirst : {false, true}) {
-            PullPress chord;
-            bool any = chord.update(.011f, true, rightFirst, !rightFirst);
-            for (int i = 0; i < 30; ++i)
-                any = chord.update(.011f, true, true, true) || any;
-            for (int i = 0; i < 30; ++i)
-                any = chord.update(.011f, true, false, false) || any;
-            check(!any, "clicking both sticks pulled");
-        }
-        // The left stick joining a pull ends it, until the right one is let go.
-        PullPress joined;
-        for (int i = 0; i < 20; ++i)
-            joined.update(.011f, true, true, false);
-        check(joined.update(.011f, true, true, false), "a held click did not pull");
-        check(!joined.update(.011f, true, true, true) && !joined.update(.011f, true, true, false),
-              "a pull went on after the left stick joined");
-        // Outside VR play nothing pulls, and a stick held through it waits for a release.
-        PullPress screen;
-        for (int i = 0; i < 30; ++i)
-            check(!screen.update(.011f, false, true, false), "a click on the game screen pulled");
-        for (int i = 0; i < 30; ++i)
-            check(!screen.update(.011f, true, true, false), "a click held into play pulled");
-        check(!screen.update(.011f, true, false, false), "letting go of a click held into play pulled");
-        for (int i = 0; i < 20; ++i)
-            screen.update(.011f, true, true, false);
-        check(screen.update(.011f, true, true, false), "a new click after the screen did not pull");
     });
     test("the right stick pushed down heals and pushed up is the game's LT + RT; a turn, a diagonal and a flick are neither", [] {
         using game_pad::StickPush;
@@ -15482,6 +15560,66 @@ int main() {
         hold(c,tPose(1.62f,.3f),27);
         check(c.phase()==body_calibration::Phase::waiting&&c.progress()==0,"a long lapse kept the hold");
     });
+    test("seated play: the space rises from the measured seat to the standing eyes, HEIGHT before a calibration", [] {
+        using namespace seated;
+        // HEIGHT's eyes, else a calibration's made standing, else the default; one made sitting is none.
+        near(standingEye(175, 1.5f, defaultEye), 1.638f);
+        check(standingEye(0, 1.62f, defaultEye) == 1.62f, "a standing calibration was not taken");
+        check(standingEye(0, 1.2f, defaultEye) == defaultEye, "a seated calibration was taken for a standing one");
+        check(standingEye(300, 1.62f, defaultEye) == 1.62f, "a height out of range was taken");
+        const float dt = 1.f / 90;
+        Lift lift;
+        check(lift.update(dt, false, true, 1.2f, false, 1.65f) == 0, "raised while SEATED was off");
+        // On: nothing until a second of play has measured the seat, then up to the standing eyes, eased in.
+        float now{};
+        for (int i = 0; i < 80; ++i)
+            now = lift.update(dt, true, true, 1.2f, false, 1.65f);
+        check(now == 0 && !lift.measures(), "raised before the seat was measured");
+        for (int i = 0; i < 20; ++i)
+            now = lift.update(dt, true, true, 1.2f, false, 1.65f);
+        check(lift.measures() == 1, "no seat measured after a second of play");
+        near(lift.seatedEye(), 1.2f, 1e-4f);
+        check(now > 0 && now < .45f, "the lift came in all at once");
+        for (int i = 0; i < 180; ++i)
+            now = lift.update(dt, true, true, 1.2f, false, 1.65f);
+        near(now, .45f);
+        // Menus measure nothing; a recenter measures again, the lift kept meanwhile.
+        for (int i = 0; i < 200; ++i)
+            lift.update(dt, true, false, 1.f, false, 1.65f);
+        check(lift.measures() == 1, "a menu measured the seat");
+        lift.update(dt, true, true, 1.1f, true, 1.65f);
+        check(lift.lift() > .44f, "a recenter dropped the player to the floor");
+        for (int i = 0; i < 400; ++i)
+            now = lift.update(dt, true, true, 1.1f, false, 1.65f);
+        check(lift.measures() == 2, "the recenter's seat was not measured");
+        near(now, .55f);
+        // Standing with SEATED on lowers nothing below the floor; a deep seat raises at most maxLift.
+        Lift tall, low;
+        for (int i = 0; i < 400; ++i) {
+            tall.update(dt, true, true, 1.75f, false, 1.65f);
+            low.update(dt, true, true, .35f, false, 1.65f);
+        }
+        check(tall.lift() == 0 && tall.measures() == 1, "a standing player was lowered");
+        near(low.lift(), Lift::maxLift);
+        // Off again: on the floor at once, and measured anew when it comes back on.
+        check(lift.update(dt, false, true, 1.1f, false, 1.65f) == 0 && lift.seatedEye() == 0, "off kept the lift");
+        // What the game's world takes is raised by it; the frame itself is a copy.
+        XrFrame f;
+        f.head.position = {0, 1.2f, 0};
+        f.eyes[0].pose.position = {-.03f, 1.2f, 0};
+        f.hands[1].grip.position = {.2f, .9f, -.3f};
+        f.hands[1].aim.position = {.2f, .9f, -.35f};
+        const auto up = raised(f, .45f);
+        near(up.head.position.y, 1.65f);
+        near(up.eyes[0].pose.position.y, 1.65f);
+        near(up.hands[1].grip.position.y, 1.35f);
+        near(up.hands[1].aim.position.y, 1.35f);
+        check(up.head.position.x == 0 && up.hands[1].grip.position.z == -.3f && f.head.position.y == 1.2f,
+              "raising moved more than the height, or the frame it came from");
+        check(raised(f, 0).head.position.y == 1.2f &&
+                  raised(f, std::numeric_limits<float>::quiet_NaN()).head.position.y == 1.2f,
+              "nothing to raise by raised the frame");
+    });
     test("calibration panel: ahead of the head, facing it; drawn while the calibration shows", [] {
         const auto panel=body_calibration::panelPose({{.2f,1.6f,.1f},Quat::yaw(1.5707963f)});
         // Looking along -x: the panel 1.4 m that way, a little below the eyes, its front toward the head.
@@ -16444,7 +16582,7 @@ int main() {
         // settings ingame into nice sections"), each with a setting in the tab.
         const std::pair<size_t, const char*> sections[] = {{0, "WEBS"},     {5, "SWINGING"}, {10, "COMFORT"},
                                                            {13, "HAPTICS"}, {21, "DISPLAY"}, {29, "BODY"},
-                                                           {31, "EXPERIMENTAL"}};
+                                                           {33, "EXPERIMENTAL"}};
         check(headings == std::size(sections),
               "the sections: webs, swinging, comfort, haptics, display, body, experimental");
         for (const auto& [at, title] : sections) {
@@ -16454,20 +16592,27 @@ int main() {
                 ++next;
             check(next < all.size() && all[next].item != Item::none, "a section with no setting in the tab");
         }
-        check(all[32].item == Item::flips && all[32].choices.empty() && std::strcmp(all[31].title, "EXPERIMENTAL") == 0,
+        // BODY: the calibration, then your height and seated play (the user, October 23: "add proper height
+        // calibration or override for seated mode").
+        check(all[30].item == Item::calibrate && all[31].item == Item::height &&
+                  all[31].choices.size() == std::size(heights) && std::strcmp(all[31].choices[0], "AUTO") == 0 &&
+                  std::strcmp(all[31].choices[8], "190 CM") == 0 && all[32].item == Item::seated &&
+                  all[32].choices.empty(),
+              "BODY: CALIBRATE BODY, then HEIGHT (AUTO, 150 to 190 cm), then SEATED, a switch");
+        check(all[34].item == Item::flips && all[34].choices.empty() && std::strcmp(all[33].title, "EXPERIMENTAL") == 0,
               "the flips: a switch under EXPERIMENTAL");
-        check(all[33].item == Item::flipSpeed && all[33].choices.size() == std::size(flipSpeeds),
+        check(all[35].item == Item::flipSpeed && all[35].choices.size() == std::size(flipSpeeds),
               "the flip speed under the flips");
-        check(all[34].item == Item::handClimb && all[34].choices.empty(),
+        check(all[36].item == Item::handClimb && all[36].choices.empty(),
               "hand wall climbing switch under the flips");
         const Item realistic[] = {Item::realisticFlips,        Item::automaticStrength,    Item::automaticSpeed,
                                   Item::automaticMinimumSpeed, Item::automaticReleaseFlip, Item::automaticResponse,
                                   Item::automaticHandStrength, Item::automaticFalloff,     Item::automaticHandThreshold,
-                                  Item::automaticAirBrake};
-        check(all.size() == 35 + std::size(realistic), "the realistic flips' rows are not the last");
+                                  Item::automaticAirBrake,     Item::automaticCombat};
+        check(all.size() == 37 + std::size(realistic), "the realistic flips' rows are not the last");
         for (size_t i = 0; i < std::size(realistic); ++i)
-            check(all[35 + i].item == realistic[i], "the realistic flips' rows out of order");
-        check(std::strcmp(all[35].title, "REALISTIC FLIPS") == 0 && all[35].choices.empty(),
+            check(all[37 + i].item == realistic[i], "the realistic flips' rows out of order");
+        check(std::strcmp(all[37].title, "REALISTIC FLIPS") == 0 && all[37].choices.empty(),
               "realistic flips: a switch, first of its rows");
         // The wall view has no row of its own any more: it turned only while
         // Spidy held the player on a wall, so it was never a choice of its own
@@ -16613,9 +16758,9 @@ int main() {
                                        "rotation_strength=50\nrotation_speed=240\nflight_speed_min=3\n"
                                        "swing_momentum=1\nrotation_response_ms=500\nhand_momentum=100\n"
                                        "angular_drag_ms=3000\nhand_speed_min_cm=100\nair_rotation_brake=1\n"
-                                       "body_haptics_webs=1\nbody_haptics_wind=1\nbody_haptics_combat=1\n"
+                                       "flips_in_combat=1\nbody_haptics_webs=1\nbody_haptics_wind=1\nbody_haptics_combat=1\n"
                                        "body_haptics_movement=1\nrecording_fov=0\nui_style=0\nblow_sounds=0\n"
-                                       "web_slingshot=0\nbetter_climbing=0\n",
+                                       "web_slingshot=0\nbetter_climbing=0\nheight_cm=0\nseated=0\n",
               "the defaults' text");
         Values changed = defaults;
         changed.recordingFov = 140;
@@ -16634,12 +16779,19 @@ int main() {
         changed.automaticFalloff = 1000;
         changed.automaticHandThreshold = 200;
         changed.automaticAirBrake = false;
+        changed.automaticCombat = false;
         changed.hapticWind = false;
         changed.hapticCombat = false;
         changed.uiStyle = 1;
         changed.blowSounds = 2;
+        changed.heightCm = 178;
+        changed.seated = true;
         check(withTabOnly(defaults, tabOnlyText(changed)) == sanitized(changed),
               "the settings did not come back with the fixed wall clearance");
+        check(withTabOnly(defaults, "height_cm=40\n").heightCm == 120 &&
+                  withTabOnly(defaults, "height_cm=999\n").heightCm == 220 &&
+                  withTabOnly(defaults, "height_cm=-5\n").heightCm == 0,
+              "a height past either end, or below AUTO");
         check(withTabOnly(defaults, "blow_sounds=9\n").blowSounds == 2 &&
                   withTabOnly(defaults, "blow_sounds=-1\n").blowSounds == 0,
               "blow sounds past either end");
@@ -16885,6 +17037,34 @@ int main() {
         for (int i = 0; i < 240; ++i)
             m = flipFrame(rig, f, false, true);
         near(length(m.flipTilt.rotate({0, 1, 0}) - Vec3{0, 1, 0}), 0, .001f);
+    });
+    test("realistic flips: FLIPS IN COMBAT off, in a fight the stick turns nothing and steers the flight again",
+         [] {
+        for (const bool inCombat : {true, false}) {
+            GameTrackingRig rig;
+            RealisticFlipSettings settings;
+            settings.enabled = true;
+            settings.inCombat = inCombat;
+            rig.automaticFlips(settings);
+            rig.flips(true);
+            rig.flipSpeed(3.14159265f);
+            RealisticFlight fight{{}, {}, true, false};
+            fight.fighting = true;
+            rig.flight(fight);
+            auto f = trackedFrame();
+            flipFrame(rig, f, false, false);
+            flipFrame(rig, f, false, true);
+            f.hands[0].stickY = 1;
+            GameMotionFrame m;
+            for (int i = 0; i < 45; ++i)
+                m = flipFrame(rig, f, false, true);
+            if (inCombat)
+                check(!levelTilt(m.flipTilt) && length(m.swing.move) < .001f,
+                      "with FLIPS IN COMBAT on, the stick did not turn a fighter");
+            else
+                check(levelTilt(m.flipTilt) && length(m.swing.move) > .5f,
+                      "with FLIPS IN COMBAT off, the stick turned a fighter or did not steer");
+        }
     });
     test("physical arm gestures generate airborne rotation without a button or tether", [] {
         GameTrackingRig rig;

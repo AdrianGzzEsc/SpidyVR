@@ -35,8 +35,13 @@
 //   is a POI of a kind; its icon is not in the call. The hint line is in none
 //   of them.
 //
-// Not found yet: where the hint line's text and icons are set. Not run: the
-// trace of the game's localized texts with markup (SpidyPromptsTexts).
+// Found on October 24: the hint line is the HUD's own prompt list. Its
+// manager (e36300, 50 slots) looks each line's text up in the localized
+// texts as it appears - "[ACTION_WEB_YANK] (Hold) Throw" - and hands it to
+// the list's widget (show 7793d0, hide 77a1e0, 21 kinds of line), which
+// resolves the tokens itself; a text changed in the lookup before the line
+// appears is what the line draws. The LB/RB world marker is a POI (AddPOI's
+// third argument 1 for a throw target) whose labels are Flash's own.
 namespace spidy::game_prompts {
 // Hooks the resolver. 0 when hooked; 9601 while the game's UI has none yet
 // (try again), 9602-9603 when what is there is not this game's, 9700-9799
@@ -160,10 +165,20 @@ void recentCalls(Calls&);
 // Y from a wall, and did nothing.
 void note(const char* text);
 // One of the game's localized texts, from game_menu's hook on the lookup.
-// Returns the text to show in its place - the same pointer where nothing
-// changed, else one of a few kept lines with the buttons it names turned
-// into what a VR player presses.
+// Returns the text to show in its place: the same pointer, or in VR play
+// (setRewriting) a kept copy where the text names the game's LB + RB, with
+// them as [BTN_X] (prompt_buttons::pairOnX) - X sends them there
+// (game_pad::NamedPress), and the game then draws its own X in the prompt.
+// The copy is the game's to read for the rest of the session; what it named
+// before stays known to the readers here, so it still asks for LB + RB.
 const char* observeText(const char* text);
+// The HUD's prompt list (the throw's "[ACTION_WEB_YANK] (Hold) Throw" on a
+// street, "[BTN_Y] Interact" by a passer-by), from game_menu's hooks on its
+// widget: a line of `kind` (0-20, the widget's own) shown with `text`, which
+// is what it asks for until hidden. Returns the text to show, as
+// observeText does: a line the lookup already gave its copy is that copy.
+const char* promptShown(unsigned kind, const char* text);
+void promptHidden(unsigned kind);
 // What the game is asking for now; {} for nothing (no prompt, one whose
 // button could not be read, or a session that is not reading).
 prompt_buttons::Demand demand();

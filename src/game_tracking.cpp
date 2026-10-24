@@ -465,14 +465,18 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
         automaticBrakeHeld_ = f.jump;
         controls.brake = autoSettings_.airBrake && air && f.jump && automaticBrakeFromAir_;
         const Vec3 want = stickTurn(flip);
+        // FLIPS IN COMBAT off and a fight on: RealisticFlip turns nothing,
+        // the stick is the game's again, and arm swings count from nothing
+        // once it ends.
+        const bool calm = flight.fighting && !autoSettings_.inCombat;
         if (!air)
             automaticStickReady_ = false;
         else if (length(want) == 0)
             automaticStickReady_ = true;
-        automaticSteering = flips_ && air && automaticStickReady_ && length(want) > 0 && !controls.brake;
+        automaticSteering = flips_ && air && automaticStickReady_ && length(want) > 0 && !controls.brake && !calm;
         controls.manualActive = automaticSteering;
         controls.manualAngular = want * flip_.steeringRate();
-        if (controls.brake || automatic_.recovering())
+        if (controls.brake || automatic_.recovering() || calm)
             automaticHands_.reset();
         flight.handMomentum = automaticHands_.update(f, autoSettings_.handThreshold);
         rig_.tilt = automatic_.update(flight, flip.airborne, flip.surface, rig_.yaw, f.seconds, autoSettings_,

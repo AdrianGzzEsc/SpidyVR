@@ -59,8 +59,8 @@ constexpr ProfileSetting tabOnly(std::string_view key, Item item, bool Values::*
 constexpr ProfileSetting tabOnly(std::string_view key, Item item, int low, int high, int Values::*number) {
     return {key, item, low, high, nullptr, nullptr, nullptr, number};
 }
-// In the tab's order, its sections WEBS, SWINGING, COMFORT, HAPTICS, DISPLAY and EXPERIMENTAL, with wall
-// running after SWINGING. The keys are launcher.ini's and spidy_vr.ini's, the weight's the session's line's
+// In the tab's order, its sections WEBS, SWINGING, COMFORT, HAPTICS, DISPLAY, BODY (seated play; not
+// HEIGHT, which is the player's own, as a calibration is) and EXPERIMENTAL, with wall running after SWINGING. The keys are launcher.ini's and spidy_vr.ini's, the weight's the session's line's
 // (launcher.ini calls it gravity_percent only because older launchers saved other weights as weight). A
 // key, once in a profile someone shared, keeps its name and meaning.
 inline constexpr ProfileSetting profileSettings[] = {
@@ -87,6 +87,7 @@ inline constexpr ProfileSetting profileSettings[] = {
     launcherOption("hud", Item::hud, 0, 3, &SessionOptions::hud),
     tabOnly("ui_style", Item::uiStyle, 0, 1, &Values::uiStyle),
     tabOnly("near_clip_mm", Item::nearClip, 10, 100, &Values::nearClipMm),
+    tabOnly("seated", Item::seated, &Values::seated),
     launcherOption("flips", Item::flips, &SessionOptions::flips),
     launcherOption("flip_speed", Item::flipSpeed, 90, 480, &SessionOptions::flipSpeed),
     tabOnly("hand_climb", Item::handClimb, &Values::handClimb),
@@ -102,6 +103,7 @@ inline constexpr ProfileSetting profileSettings[] = {
     tabOnly("angular_drag_ms", Item::automaticFalloff, 500, 3000, &Values::automaticFalloff),
     tabOnly("hand_speed_min_cm", Item::automaticHandThreshold, 50, 300, &Values::automaticHandThreshold),
     tabOnly("air_rotation_brake", Item::automaticAirBrake, &Values::automaticAirBrake),
+    tabOnly("flips_in_combat", Item::automaticCombat, &Values::automaticCombat),
 };
 } // namespace detail
 using detail::profileSettings;

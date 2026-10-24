@@ -1024,8 +1024,28 @@ void appendGadgetWheel(std::vector<Vertex>& out, const GadgetWheelView& view, Ve
     for (int p = 0; p < gadgetPlaces; ++p)
         if (view.places[static_cast<size_t>(p)] != Gadget::none && p != lit)
             gadgetPicture(wheel, view.places[static_cast<size_t>(p)], place(p, radius), badge, plate::ink);
-    if (lit < 0)
+    // Words in a yellow caption across the middle, leaning as its lettering
+    // does: the lit gadget's name, or what a bare wheel says.
+    const auto caption = [&](const char* words, float scale, float turn, bool hit) {
+        const float height = fittedHeight(words, .0135f, .15f);
+        const float width = textWidth(words, height) + Print::lean * height;
+        const float halfWidth = width * .5f + .008f, halfHeight = height * .5f + .0075f;
+        const float slant = Print::lean * halfHeight;
+        Print print(out, f.centre, f.right, f.up, f.out, px);
+        print.place(scale, turn + 2 * plate::degree);
+        print.layers(.003f, .0045f, plate::ink, hit ? .005f : 0, [&] {
+            const Flat a{-halfWidth - slant, -halfHeight}, b{halfWidth - slant, -halfHeight},
+                d{halfWidth + slant, halfHeight}, e{-halfWidth + slant, halfHeight};
+            print.triangle(a, b, d, plate::yellow);
+            print.triangle(a, d, e, plate::yellow);
+        });
+        print.text(words, {width * -.5f, height * -.5f}, height, .17f, plate::ink);
+    };
+    if (lit < 0) {
+        if (view.bare)
+            caption(bareWheelText, land.scale, land.turn, land.hit);
         return;
+    }
     const Gadget chosen = view.places[static_cast<size_t>(lit)];
     // The lit badge: red and larger. It snaps on each time another gadget
     // lights - a pose wide and out of register, a pose short - and then
@@ -1060,22 +1080,8 @@ void appendGadgetWheel(std::vector<Vertex>& out, const GadgetWheelView& view, Ve
                       [&] { charges(badgePrint, lit, {}, pipsFrom); });
     badgePrint.layers(.0016f, 0, {}, 0,
                       [&] { gadgetPicture(badgePrint, chosen, {}, litBadge, plate::paper); });
-    // Its name in a yellow caption across the middle, leaning as its
-    // lettering does, snapping on with the badge.
-    const char* name = gadgetName(chosen);
-    const float height = fittedHeight(name, .0135f, .15f);
-    const float width = textWidth(name, height) + Print::lean * height;
-    const float halfWidth = width * .5f + .008f, halfHeight = height * .5f + .0075f;
-    const float slant = Print::lean * halfHeight;
-    Print caption(out, f.centre, f.right, f.up, f.out, px);
-    caption.place(land.scale * pop.scale, land.turn + pop.turn + 2 * plate::degree);
-    caption.layers(.003f, .0045f, plate::ink, pop.hit ? .005f : 0, [&] {
-        const Flat a{-halfWidth - slant, -halfHeight}, b{halfWidth - slant, -halfHeight},
-            d{halfWidth + slant, halfHeight}, e{-halfWidth + slant, halfHeight};
-        caption.triangle(a, b, d, plate::yellow);
-        caption.triangle(a, d, e, plate::yellow);
-    });
-    caption.text(name, {width * -.5f, height * -.5f}, height, .17f, plate::ink);
+    // Its name, snapping on with the badge.
+    caption(gadgetName(chosen), land.scale * pop.scale, land.turn + pop.turn, pop.hit);
 }
 void AimMarkerMotion::reset() {
     *this = {};
