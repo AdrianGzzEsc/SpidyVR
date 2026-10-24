@@ -1796,8 +1796,6 @@ void App::options(ImVec2 origin, ImVec2 size) {
                "On a wall with the left stick at rest, squeeze a grip near the wall to hold on and pull to "
                "climb; both grips held roll your view along it.",
                S(42), [&] { tabToggle("##handclimb", Item::handClimb); });
-        option("Wall camera distance", "How far your eyes keep from the wall while you hand climb.", S(150),
-               [&] { tabCombo("##walldistance", Item::wallDistance); });
     });
     group(0, "Flips", [&] {
         option("Flips (experimental)", "In the air the left stick turns you over; tap A for one flip, hold A to stay.",
