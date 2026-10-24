@@ -6,6 +6,7 @@
 #include "spidy/bhaptics_output.hpp"
 #include "spidy/body_calibration.hpp"
 #include "spidy/body_haptics.hpp"
+#include "spidy/crawl_hands.hpp"
 #include "spidy/crawl_stick.hpp"
 #include "spidy/eye_resolution.hpp"
 #include "spidy/monitor_rate.hpp"
@@ -1663,7 +1664,10 @@ DWORD WINAPI run(void*) {
                     // The game's crawl on a floor keeps the head under the
                     // roof (below) whether or not the vent view takes it.
                     const bool gameFloorCrawl = hold.crawl && hold.normal.y > .99f;
-                    hold = crawlCameraGate.update(frame.seconds, gameplay && values.handClimb,
+                    // The gate keeps transient floor crawls out of the vent
+                    // view: with vents off for now (ventHandCrawl) there is none.
+                    const bool ventView = ventHandCrawl && gameplay && values.handClimb;
+                    hold = crawlCameraGate.update(frame.seconds, ventView,
                         (origins.play() & buttonB) != 0, swingFresh && swingState.grounded, hold);
                     const bool crawlsFloor = hold.crawl && hold.normal.y > .99f;
                     floorCrawlSeconds =

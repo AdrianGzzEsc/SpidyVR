@@ -633,11 +633,8 @@ in Settings > SPIDY VR or "Hand wall climbing" in the launcher's options)
                          it, your eyes 40 cm out. The same turns you back.
                          Looking around alone turns nothing, and the two
                          hands' roll waits until you face the wall again
-  In a vent ............ grip its floor, walls or ceiling and pull: the
-                         game's own crawl takes you along it and round its
-                         bends. The view lies down along the duct (look up
-                         to look along it). No wall running or turning away
-                         in there
+  In a vent ............ the left stick crawls you through it, as with hand
+                         climbing off
 
 Menus and cutscenes show on a screen in the headset. There the controllers act
 as an Xbox controller: left stick moves, A selects, B goes back, grips switch

@@ -31,9 +31,9 @@ if needed and merge with what we have here".
   view and upper body off it, up to 45 cm. Moving your head while you hold
   on no longer moves you: the grips are measured from where your head was
   when the hold began. WALL CAMERA DISTANCE is gone; the eyes keep 25 cm
-  from the wall. In a vent your hand pulls drive the game's own crawl along
-  its floor, walls and ceiling, and the view lies down along the duct. The
-  author's fixes to the camera when dodging, on quick left stick moves and
+  from the wall. Its vents (your hand pulls driving the game's crawl, the
+  view lying down along the duct) are off for now, below. The author's
+  fixes to the camera when dodging, on quick left stick moves and
   on LB + RB pulls are in it too. The author played it in a Quest 3
   (Virtual Desktop) on 0.4.1.
 - **What the review changed.**
@@ -61,14 +61,16 @@ if needed and merge with what we have here".
     an atomic now. The launcher's "Wall camera distance", which every start
     reset, is gone with the row, and 27's own page (WALL_CRAWLING.md) went
     into PLAYERS.md and DEVELOPMENT.md.
-  - **Left as 27 has it, for you to decide** (only with HAND WALL CLIMBING
-    on): on a vent's walls and ceiling the legs keep the game's crawl
-    animation (on its floor they kneel, as before); once a vent is
-    recognised the view tips 90 degrees by itself, a level head looking at
-    the duct's floor and up to look along it; and a vent is recognised
-    from the game's floor-crawl flags with a surface within 2 m over them,
-    or two walls within 1 m either side, which narrow rooms and alleys can
-    pass too.
+  - **27's vents are off for now** (you: "turn vents off for now"). On a
+    vent's walls and ceiling its legs kept the game's crawl animation;
+    once a vent was recognised the view tipped 90 degrees by itself (a
+    level head looked at the duct's floor, and up to look along it); and
+    the test for a vent (the game's floor-crawl flags with a surface within
+    2 m over them, or two walls within 1 m either side) passes in narrow
+    rooms and alleys too, which would have handed the movement to the
+    game's crawl there. With hand climbing on, a vent is the game's crawl
+    on the stick again, the view upright under its roof and the legs
+    kneeling, as before. The code stays (`ventHandCrawl`, crawl_hands.hpp).
 - **Checked:** core tests (564; new: 27's own, the slingshot's and better
   climbing's, the reel with the slingshot on, the hand push and the grips'
   reference easing back), the launcher's, the realistic flips', the six

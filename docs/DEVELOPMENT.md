@@ -596,7 +596,10 @@ one; after it that reference goes back to the head at 0.5 m/s. The eyes keep
 `vr_settings::fixedWallDistance` (25 cm) from the wall, 15 cm more as the body
 turns its back to it (`GameTrackingRig::outwardCrawl`, from
 `native_body::crawlOutwardWeight`); the `wall_distance_cm` line of older
-files still reads, as 25. In a vent (`VentCrawlMode`, `crawl_hands.hpp`: the
+files still reads, as 25. Its vents are off for now (`ventHandCrawl`; the
+user, October 24: the legs keep the game's pose on a vent's walls and roof,
+the view tips by itself, and the vent test passes in narrow rooms). On, in a
+vent (`VentCrawlMode`, `crawl_hands.hpp`: the
 game's floor-crawl flags plus `crawlEnclosed`, a fixed face within 2 m along
 the surface's normal or two within 1 m to either side) the swing leaves the
 wall to the game, `CrawlHands` turns the hands' pulls into the game's crawl

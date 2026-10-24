@@ -9,9 +9,9 @@ fifth build (f82f334), with the review's fixes after them (CHANGELOG).
 
 | | |
 | --- | --- |
-| Read | 28 and 29 in full. 27 against the rules for the body, the walls and the protocols: the hand push and the grips' reference dropped in a frame when a hold ended, the duct's head cap lost to its camera gate, the XR thread waiting on the body's solve, the launcher's dead "Wall camera distance", the body Command's version 5 and flag 128 taken twice (main's kick). Left for the user: the game's crawl animation on the legs on a vent's walls and ceiling, the view tipping by itself in a vent, the vent test passing in narrow rooms |
+| Read | 28 and 29 in full. 27 against the rules for the body, the walls and the protocols: the hand push and the grips' reference dropped in a frame when a hold ended, the duct's head cap lost to its camera gate, the XR thread waiting on the body's solve, the launcher's dead "Wall camera distance", the body Command's version 5 and flag 128 taken twice (main's kick). The user turned the vent part off for now (`ventHandCrawl`): the game's crawl animation on the legs on a vent's walls and ceiling, the view tipping by itself in a vent, the vent test passing in narrow rooms |
 | Build | `tools/build.ps1 -Observer` after each merge and fix: 447, 448, 451, 562 and 564 core tests (new: 27's own, the slingshot's and better climbing's, the reel with the slingshot on, the hand push and the grips' reference easing back), the launcher's, the realistic flips'; the six Python suites |
-| Not run | The game and a headset: the slingshot's takeoff and buzz, better climbing's strokes, 27's crawl body, turning away, hand push and vents. 27's author played it in a Quest 3 (Virtual Desktop) on 0.4.1, without the review's fixes |
+| Not run | The game and a headset: the slingshot's takeoff and buzz, better climbing's strokes, 27's crawl body, turning away and hand push. 27's author played it in a Quest 3 (Virtual Desktop) on 0.4.1, without the review's fixes |
 
 ## Four combat ideas from the Discord: dodging by moving, the suit power, the dive, the game's own blow sounds (the build before)
 

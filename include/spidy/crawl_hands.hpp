@@ -22,6 +22,14 @@ inline bool crawlEnclosed(const WorldQueries& world, Vec3 point, Vec3 normal) {
     const Vec3 ahead = normalized(cross(side, n));
     return (face(side, 1.f) && face(-side, 1.f)) || (face(ahead, 1.f) && face(-ahead, 1.f));
 }
+// Hand crawling in vents (pull request 27): the hands' pulls drive the
+// game's crawl, the view lies down along the duct, and on its walls and
+// roof the legs keep the game's pose. Off for now (the user, October 24:
+// "Turn vents off for now"), until the legs keep a pose of our own there
+// and a vent is told from a narrow room or an alley, which crawlEnclosed
+// can pass. Off, a vent is the game's crawl on the stick, as with hand
+// climbing off.
+inline constexpr bool ventHandCrawl = false;
 class VentCrawlMode {
   public:
     bool update(bool floor, bool wall, bool enclosed, bool standing, float seconds) {

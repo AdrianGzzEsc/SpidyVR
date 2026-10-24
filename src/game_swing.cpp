@@ -334,14 +334,17 @@ void visit(const native_rays::QueryContext& world) {
         ventMode = false;
     // A vent entered on its wall can be recognised by an opposing surface;
     // ordinary exposed building walls retain all outdoor run transitions.
-    bool enclosed{};
-    if (solver.handClimbEnabled() && !ventCrawlMode.active() && length(crawlNormal) > .5f)
-        enclosed = crawlEnclosed(world, crawlPoint, crawlNormal);
     const bool nativeCrawl = length(crawlNormal) > .5f;
-    if (!solver.handClimbEnabled() || !focused) ventCrawlMode.reset();
-    const bool handCrawl = solver.handClimbEnabled() &&
-        ventCrawlMode.update(nativeFloor, nativeCrawl && !nativeFloor, enclosed,
-                            supported && !nativeCrawl, sampleSeconds);
+    bool handCrawl{};
+    if constexpr (ventHandCrawl) {
+        bool enclosed{};
+        if (solver.handClimbEnabled() && !ventCrawlMode.active() && nativeCrawl)
+            enclosed = crawlEnclosed(world, crawlPoint, crawlNormal);
+        if (!solver.handClimbEnabled() || !focused) ventCrawlMode.reset();
+        handCrawl = solver.handClimbEnabled() &&
+            ventCrawlMode.update(nativeFloor, nativeCrawl && !nativeFloor, enclosed,
+                                supported && !nativeCrawl, sampleSeconds);
+    }
     if (handCrawl) ventMode = true;
     const unsigned webHands = (solver.webs()[0].attached ? 1u : 0u) | (solver.webs()[1].attached ? 2u : 0u);
     crawlHands.update(handCrawl, sampleSeconds, in, crawlNormal, crawlPoint + crawlNormal * .4f,
