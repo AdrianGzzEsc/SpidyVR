@@ -183,6 +183,8 @@ float numberOf(Item item, const Values& v) {
 // A switch setting's value (const for const values), or null for a list.
 template <class V> auto switchOf(Item item, V& v) -> decltype(&v.aimMarkers) {
     switch (item) {
+    case Item::webSlingshot:
+        return &v.webSlingshot;
     case Item::aimMarkers:
         return &v.aimMarkers;
     case Item::airWebs:
@@ -247,9 +249,9 @@ Values sanitized(Values v) {
     v.automaticHandThreshold = std::clamp(v.automaticHandThreshold, 50, 300);
     return v;
 }
-const std::array<Row, 44>& rows() {
+const std::array<Row, 45>& rows() {
     // The help fits the game's description column beside the rows.
-    static const std::array<Row, 44> all{{
+    static const std::array<Row, 45> all{{
         {Item::none, "WEBS", nullptr, {}},
         {Item::webStyle, "WEB STYLE",
          "Arcade: webs pass lamp posts, signs and cars, and swings stay above the street.", webStyleChoices},
@@ -262,6 +264,8 @@ const std::array<Row, 44>& rows() {
         {Item::swingSpeed, "SWING SPEED LIMIT", "How fast a swing can carry you.", swingChoices},
         {Item::weight, "WEIGHT", "How heavy you are while swinging and after letting go. 100% is real gravity.",
          weightChoices},
+        {Item::webSlingshot, "WEB SLINGSHOT",
+         "No auto jump. Draw two fixed webs, hold for vibration, release both to launch.", {}},
         {Item::none, "COMFORT", nullptr, {}},
         {Item::snapTurn, "SNAP TURN", "How far a flick of the right stick turns you. Off: no snap turning.",
          snapChoices},
@@ -461,6 +465,7 @@ constexpr TabOnly tabOnly[] = {
     {"recording_fov", nullptr, &Values::recordingFov},
     {"ui_style", nullptr, &Values::uiStyle},
     {"blow_sounds", nullptr, &Values::blowSounds},
+    {"web_slingshot", &Values::webSlingshot, nullptr},
 };
 } // namespace
 std::string tabOnlyText(const Values& v) {
