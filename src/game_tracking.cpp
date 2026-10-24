@@ -744,12 +744,23 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     const bool holdingGrip = (handValid(f.hands[0]) && f.hands[0].squeeze > .35f) ||
                              (handValid(f.hands[1]) && f.hands[1].squeeze > .35f);
     const bool physicalClimb = pressing && !walks && holdingGrip;
-    if (!physicalClimb || out.releaseWebs) climbTrackingSet_ = false;
-    if (physicalClimb) {
-        if (!climbTrackingSet_) {
-            climbTrackingHead_ = f.head.position;
-            climbTrackingSet_ = true;
-        }
+    if (out.releaseWebs) climbTrackingSet_ = false;
+    if (physicalClimb && !climbTrackingSet_) {
+        climbTrackingHead_ = f.head.position;
+        climbTrackingSet_ = true;
+    } else if (!physicalClimb && climbTrackingSet_) {
+        // Both hands' grips are sent from this reference (wallClimbInput),
+        // so it goes back to the head no faster than a slow reach: let go
+        // at once, every hand jumped by the head's travel since the hold,
+        // in one frame a hand speed that could zip a held web or land a blow.
+        const Vec3 back = f.head.position - climbTrackingHead_;
+        const float step = .5f * std::clamp(f.seconds, 0.f, .1f);
+        if (!finite(back) || length(back) <= step)
+            climbTrackingSet_ = false;
+        else
+            climbTrackingHead_ += back * (step / length(back));
+    }
+    if (climbTrackingSet_) {
         out.climbTracking = true;
         for (unsigned i = 0; i < 2; ++i) {
             out.climbGrips[i] = f.hands[i].grip.position - climbTrackingHead_;

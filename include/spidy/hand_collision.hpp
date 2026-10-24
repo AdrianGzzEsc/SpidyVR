@@ -51,8 +51,12 @@ class HandCollision {
         const float dt = std::isfinite(seconds) ? std::clamp(seconds, 0.f, .1f) : 0.f;
         active_ = enabled && dt > 0 && validTrackedPose(head);
         if (!active_) {
-            planes_ = {}; push_ = {}; tracked_ = {};
-            return {};
+            // Off the wall (a jump, a run, a gap in the hold, a fast move)
+            // the placement eases back as from a lighter press: dropped at
+            // once, the eyes jumped up to maxPush toward the wall in a frame.
+            planes_ = {}; tracked_ = {};
+            push_ -= limited(push_, returnSpeed * dt);
+            return push_;
         }
         raw_ = grips;
         for (unsigned i = 0; i < 2; ++i) {

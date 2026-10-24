@@ -2744,6 +2744,26 @@ int main() {
         near(length(view.headPose.position - old.headPose.position), 0, .001f);
         near(length(view.handPush), 0, .001f);
     });
+    test("hand collision: off the wall the camera's push eases back, it does not snap", [] {
+        constexpr float dt = 1.f / 90;
+        HandCollision collision;
+        const Pose head{{0, 1, .25f}, {}};
+        const std::array<Pose, 2> hands{{{{-.22f, .7f, -.16f}, {}}, {{.22f, .7f, -.02f}, {}}}};
+        Vec3 push = collision.update(dt, true, head, hands, {true, true});
+        for (unsigned frame = 1; frame <= 100; ++frame) {
+            collision.feedback(handRayBatch(frame, collision.next(head.position + push)), 1000, 10000);
+            push = collision.update(dt, true, head, hands, {true, true});
+        }
+        check(length(push) > .05f, "the palms pushed nothing");
+        for (int frame = 0; frame < 200 && length(push) > 0; ++frame) {
+            const Vec3 next = collision.update(dt, false, head, hands, {true, true});
+            check(length(next) <= length(push) &&
+                      length(push) - length(next) <= HandCollision::returnSpeed * dt + 1e-4f,
+                  "the push snapped back");
+            push = next;
+        }
+        near(length(push), 0, .0001f);
+    });
     test("both ray-confirmed pressing palms remain contacts under unequal shared camera push", [] {
         HandCollision collision;
         const Pose head{{0, 1, .25f}, {}};
@@ -3090,12 +3110,20 @@ int main() {
         check(headMotion > .06f, "the regression did not move the tracked head");
         check(body.position.y > heldAt.y + .15f && visual.handSteps()[0] > 0,
               "real tracked controller pulls no longer climbed or cued a step");
+        // Let go: the reference eases back to the head (0.5 m/s), the head's
+        // travel since the hold no hand speed of its own.
         f.hands[0].squeeze = 0;
-        ++f.predictedDisplayTime;
         const auto wall = s.wall();
         const Vec3 feet = body.position - Vec3{0, 1, 0};
-        placed = rig.update(f, feet, {1, 0, 0}, true, {0, 1, 0}, true,
-                            {wall.normal, feet - wall.normal * wall.distance, 0, false});
+        Vec3 before = wallClimbInput(placed).hands[0].gripRelativeToHead;
+        for (int frame = 0; frame < 90 && placed.climbTracking; ++frame) {
+            ++f.predictedDisplayTime;
+            placed = rig.update(f, feet, {1, 0, 0}, true, {0, 1, 0}, true,
+                                {wall.normal, feet - wall.normal * wall.distance, 0, false});
+            const Vec3 now = wallClimbInput(placed).hands[0].gripRelativeToHead;
+            check(length(now - before) <= .5f * dt + 1e-4f, "release jumped the held hand's input");
+            before = now;
+        }
         check(!placed.climbTracking, "release did not restore ordinary head-relative input");
         near(length(wallClimbInput(placed).hands[0].gripRelativeToHead -
                     placed.swing.hands[0].gripRelativeToHead), 0, .0001f);
@@ -3319,6 +3347,31 @@ int main() {
         out = holdFor(rig, f, feet, wall, .3f);
         check(std::abs(out.wallRoll - locked) > .3f && out.wallRotate,
               "wall-facing return could not use a fresh wrist-roll neutral");
+    });
+    test("wall climbing: let go, the grips' fixed reference eases back to the head with no jump", [] {
+        constexpr float dt = 1.f / 90;
+        GameTrackingRig rig;
+        rig.handClimb(true);
+        auto f = trackedFrame();
+        const Vec3 feet{0, 9, -4.1f};
+        const SurfaceHold wall{{0, 0, 1}, {0, 10, -5}, 0, false};
+        auto out = holdFor(rig, f, feet, wall, .3f);
+        check(out.climbTracking, "a hold on the wall took no fixed reference");
+        const Vec3 head = f.head.position;
+        f.head.position += Vec3{.2f, 0, 0};
+        out = holdFor(rig, f, feet, wall, .1f);
+        Vec3 before = wallClimbInput(out).hands[1].gripRelativeToHead;
+        near(length(before - (f.hands[1].grip.position - head)), 0, .0001f);
+        for (auto& h : f.hands)
+            h.squeeze = 0;
+        for (int frame = 0; frame < 60; ++frame) {
+            out = holdFor(rig, f, feet, wall, dt);
+            const Vec3 now = wallClimbInput(out).hands[1].gripRelativeToHead;
+            check(length(now - before) <= .5f * dt + 1e-4f, "the grips jumped back to the head's reference");
+            before = now;
+        }
+        check(!out.climbTracking, "the fixed reference never came back to the head");
+        near(length(before - (f.hands[1].grip.position - f.head.position)), 0, .0001f);
     });
     test("wall run input follows the rolled view throughout transition and returns to a fresh climb view", [] {
         for (float angle : {0.f, 1.5707963f, 3.14159265f, -1.5707963f}) {
