@@ -165,15 +165,16 @@ def main():
         press('down')
         press('right', wait=.8)
         step('weight_100', dict(weight=100, swing_speed=40.0), changes=7)
-        # Down past the COMFORT heading.
-        press('down')
+        # Down past WEB SLINGSHOT, BETTER CLIMBING and the COMFORT heading.
+        press('down', 'down', 'down')
         press('right', wait=.8)
         step('snap_turn_45', dict(snap_turn=45, weight=100), changes=8)
         press('down')
         press('right', wait=.8)
         step('smooth_turn_60', dict(smooth_turn=60, snap_turn=45), changes=9)
-        # Down past the HAPTICS heading and vibration: BODY HAPTICS, 100% until stepped down to 75%.
-        press('down', 'down')
+        # Down past the HAPTICS heading, the vibration and BLOW SOUNDS: BODY HAPTICS, 100% until stepped
+        # down to 75%.
+        press('down', 'down', 'down')
         press('left', wait=.8)
         step('body_haptics_75', dict(body_haptics=75, smooth_turn=60), changes=10)
         # Down past the web, wind, combat and movement switches, the DISPLAY heading, the screen size and its depth:
