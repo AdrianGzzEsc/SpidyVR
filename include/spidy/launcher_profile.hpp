@@ -71,6 +71,7 @@ inline constexpr ProfileSetting profileSettings[] = {
     launcherOption("swing_speed", Item::swingSpeed, 10, 65, &SessionOptions::swingSpeed),
     launcherOption("weight", Item::weight, 40, 300, &SessionOptions::weight),
     tabOnly("web_slingshot", Item::webSlingshot, &Values::webSlingshot),
+    tabOnly("better_climbing", Item::betterClimbing, &Values::betterClimbing),
     launcherOption("wall_run", Item::none, &SessionOptions::wallRun),
     launcherOption("snap_turn", Item::snapTurn, 0, 90, &SessionOptions::snapTurn),
     launcherOption("smooth_turn", Item::smoothTurn, 0, 360, &SessionOptions::smoothTurn),

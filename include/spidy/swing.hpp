@@ -337,6 +337,13 @@ class Swing {
     bool reeling() const {
         return (webs_[0].attached && hands_[0].reeling) || (webs_[1].attached && hands_[1].reeling);
     }
+    // A shared strand keeps the length taken in by hand-over-hand pulling.
+    void allowBetterClimbing(bool on) {
+        betterClimbing_ = on;
+        if (!on)
+            for (auto& hand : hands_)
+                hand.ropeClimbing = false;
+    }
     // A new speed limit during play (the VR settings). A body
     // faster than it slows to it in the next step.
     void limitSpeed(float maxSpeed);
@@ -509,10 +516,12 @@ class Swing {
     Vec3 slingshotHands_[2]{}, slingshotEnds_[2]{};
     uint64_t slingshotSurfaces_[2]{};
     float slingshotCharge_{}, slingshotHold_{}, slingshotRelease_{}, slingshotYaw_{};
+    bool betterClimbing_{};
     struct HandState {
         // held: grip squeezed, with release hysteresis. A web shoots only on the
         // press that sets it, so a lost web never re-fires while the grip stays held.
         bool held{}, sample{}, zipUsed{}, triggerReleased{}, reeling{};
+        bool ropeClimbing{};
         Vec3 previous{};
         float pullDistance{}, pullTime{}, obstructed{};
         float winch{}; // how fast this hand's rope shortened in the last step

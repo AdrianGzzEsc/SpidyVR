@@ -113,6 +113,7 @@ struct Values {
     // an option to remove the sfx when punching", 12 reactions).
     int blowSounds = 0;
     bool webSlingshot = false; // two fixed webs drawn from a standstill, then released
+    bool betterClimbing = false; // retain hand-over-hand progress along a shared web
     bool operator==(const Values&) const = default;
 };
 // The steps the game's Settings offer. The launcher's slider sets any swing
@@ -199,8 +200,9 @@ enum class Item : uint8_t {
     uiStyle,
     blowSounds,
     webSlingshot,
+    betterClimbing,
 };
-inline constexpr Item lastItem = Item::webSlingshot;
+inline constexpr Item lastItem = Item::betterClimbing;
 // The SPIDY VR tab, top to bottom: a section's heading (item none) or a
 // setting. The sections: WEBS, SWINGING, COMFORT, HAPTICS, DISPLAY, BODY and
 // EXPERIMENTAL (the player, October 19: "sort the options in spidy vr
@@ -218,7 +220,7 @@ struct Row {
     // menu (the one with resume)").
     bool page{};
 };
-const std::array<Row, 45>& rows();
+const std::array<Row, 46>& rows();
 // The most choices a row shows (game_menu's buffers): a row with more would
 // lose its last ones.
 inline constexpr size_t maxChoices = 9;

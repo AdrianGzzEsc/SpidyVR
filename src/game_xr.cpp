@@ -1245,6 +1245,7 @@ DWORD WINAPI run(void*) {
             s.arcade = values.arcadeWebs;
             s.handClimb = values.handClimb;
             s.webSlingshot = values.webSlingshot;
+            s.betterClimbing = values.betterClimbing;
             sentSwingSettings = s;
             swingSettingsSent = true;
             // A hand-over owns the walls while it lasts; the player's own

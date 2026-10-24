@@ -3,6 +3,13 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
+**Unreleased: optional BETTER CLIMBING (iplusdvr).** Off by default, under
+SWINGING. Take a single web in both hands, then pull hand over hand. Each
+stroke takes in rope and keeps that progress while the other hand holds it;
+the climbing stroke adds no yank/zip impulse. The normal web holds, releases,
+speed limit and minimum rope length still apply. This changes web climbing,
+separately from HAND WALL CLIMBING.
+
 **Unreleased: optional WEB SLINGSHOT (iplusdvr).** Off by default, under
 SWINGING. When on, attaching a web on the ground no longer jumps automatically.
 Stand still, shoot a separate web from each hand at two solid surfaces, draw
