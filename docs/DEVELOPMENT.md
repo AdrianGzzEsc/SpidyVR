@@ -105,7 +105,7 @@ the files, dialogs and the card are in `apps/launcher` (`system.cpp`,
   monitor's, which suits one PC as the graphics options do), and wall
   running. The launcher's options among them come from `SessionOptions`; the
   tab's own (NEAR CLIP, UI STYLE, the four body haptics switches, HAND WALL
-  CLIMBING and WALL CAMERA DISTANCE, the realistic flips' ten) from
+  CLIMBING, the realistic flips' ten) from
   `%APPDATA%\Spidy\spidy_vr.ini`, which the launcher now reads and, when a
   profile changes one, writes as the stereo module does
   (`vr_settings::withTabOnly`/`tabOnlyText`; whole, then renamed into place,
@@ -565,8 +565,8 @@ version 5 carries each grip's place and the controller's own squeeze
 (`game_swing::ClimbData`) counts each hand's new holds, for a buzz, and says
 which hands hold, for open palms (`HandPoseInput::wallContact`). The view:
 `GameTrackingRig::handClimb` keeps it upright beside the wall, the head
-lowered up to 0.7 m and `wallDistance` (WALL CAMERA DISTANCE, at least
-`HeadClearance::margin`) out from it; both grips, while both hands hold the
+lowered up to 0.7 m and `wallDistance` (25 cm since pull request 27, below)
+out from it; both grips, while both hands hold the
 wall (`GameTrackingRig::wallHands`, from `ClimbData::hands`), roll it about
 the view's axis (`WallRollGesture`: 10 degrees of play, full speed, 90
 degrees a second, from 45); the stick runs along the wall with the heading taken once and then
@@ -574,6 +574,37 @@ steered by the head's yaw only (`wallRunHeadYaw`); round an outside corner
 the view turns onto the next face at 4 radians a second and the swing carries
 the body 0.85 m on along it. Head clearance casts 0.75 m further and takes up
 to 32 passes between opposing walls while climbing close.
+
+**Wall crawling and vents** (with HAND WALL CLIMBING; Adrian's pull request
+27). The body crawls on the wall in a pose of its own, never the game's
+crawl: `WallCrawlBody` (`wall_crawl_body.hpp`, in game_xr) turns the hold and
+the hands' pulls into the body Command's crawl frame (versions 5 to 10:
+`crawlNormal`, `crawlAhead`, `crawlStep`, `crawlPhase`, `crawlMotion`,
+`crawlOrigin`, `crawlStrokes`, `crawlDistance`; flags `crawl`, `crawlPlanted`,
+`crawlHandSync`, the held and touching hands, `crawlTurnAway`, `ventHands`),
+and `body_ik` plants the feet on the facade (`CrawlFeet`, `crawl_feet.hpp`),
+steps them in turn with the opposite hand's strokes (`CrawlHandSteps`), and
+turns the body's back to the wall when a hand leaves it, the head turns and
+the hand touches again (`CrawlTurn`); none of it moves the game's collision
+body. The dive's kick is the Command's version 11, after them. Palms stop at
+ray-confirmed building faces (`HandCollision`, `hand_collision.hpp`: the
+`appendTrackingRays` hand rays, tags 8 and 9), and pressing further pushes the
+tracking placement off the face, at most 45 cm, easing back off the wall.
+While a hold lasts the grips go out from the head where it began
+(`GameMotionFrame::climbGrips`, `wallClimbInput`), so head motion moves no
+one; after it that reference goes back to the head at 0.5 m/s. The eyes keep
+`vr_settings::fixedWallDistance` (25 cm) from the wall, 15 cm more as the body
+turns its back to it (`GameTrackingRig::outwardCrawl`, from
+`native_body::crawlOutwardWeight`); the `wall_distance_cm` line of older
+files still reads, as 25. In a vent (`VentCrawlMode`, `crawl_hands.hpp`: the
+game's floor-crawl flags plus `crawlEnclosed`, a fixed face within 2 m along
+the surface's normal or two within 1 m to either side) the swing leaves the
+wall to the game, `CrawlHands` turns the hands' pulls into the game's crawl
+stick (`ClimbData` version 2: `crawl`, `crawlMove`), and the rig lays the
+view along the duct (`ventTurn_`, 4 radians a second); `CrawlCameraGate`
+keeps unconfirmed floor crawls and dodges out of that view, not out of the
+crawl's head cap. On a vent's walls and ceiling the legs keep the game's
+pose (`ventHands`); on its floor they kneel.
 
 **Realistic flips** (REALISTIC FLIPS and the nine rows under it,
 experimental and off by default; pull request 23, iplusdvr, after the

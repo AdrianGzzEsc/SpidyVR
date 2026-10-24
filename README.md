@@ -31,8 +31,6 @@
   ·
   <a href="docs/PLAYERS.md">Players' guide</a>
   ·
-  <a href="docs/WALL_CRAWLING.md">Hand wall crawling</a>
-  ·
   <a href="docs/CHANGELOG.md">What's new</a>
 </p>
 

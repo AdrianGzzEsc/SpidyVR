@@ -607,7 +607,8 @@ Hand wall climbing (experimental, off until you switch HAND WALL CLIMBING on
 in Settings > SPIDY VR or "Hand wall climbing" in the launcher's options)
   On a wall ............ with the left stick at rest you stay upright beside
                          the wall, a little crouched, your eyes 25 cm from
-                         it. The camera distance is fixed
+                         it. Your body crawls on it, its feet planted,
+                         stepping in turn as your hands pull
   Squeeze a grip ....... with that hand within about 18 cm of the wall and
                          pointed at it: the palm holds on, open, with a
                          short buzz. Pull it down to climb, sideways to go
@@ -623,15 +624,20 @@ in Settings > SPIDY VR or "Hand wall climbing" in the launcher's options)
                          left or right; let go to climb again
   A .................... jumps off the wall
   Round a corner ....... your view turns onto the building's next side
-  Turn away ............ withdraw one hand, turn your head toward the other
-                         side, then touch that hand to the wall again. Your
-                         body turns with its feet still attached; looking
-                         around alone does not request a turn. Use the same
-                         gesture to turn back. Back-facing camera clearance
-                         is 40 cm; the two-grip roll gesture is suspended
-  In a vent ............ grip and pull along its floor, walls or ceiling.
-                         The native crawl animation and corner transitions
-                         remain; wall running and back-facing turns are off
+  Press a palm ......... into the wall and your hand stops at it; press
+                         harder and your view and body push off it, up to
+                         45 cm
+  Turn away ............ take one hand off the wall, turn your head the other
+                         way and touch the wall with that hand again: your
+                         body turns its back to the wall, its feet still on
+                         it, your eyes 40 cm out. The same turns you back.
+                         Looking around alone turns nothing, and the two
+                         hands' roll waits until you face the wall again
+  In a vent ............ grip its floor, walls or ceiling and pull: the
+                         game's own crawl takes you along it and round its
+                         bends. The view lies down along the duct (look up
+                         to look along it). No wall running or turning away
+                         in there
 
 Menus and cutscenes show on a screen in the headset. There the controllers act
 as an Xbox controller: left stick moves, A selects, B goes back, grips switch
@@ -692,8 +698,8 @@ VR settings
                    T-pose panel asks for your measurements again.
   EXPERIMENTAL ... FLIPS (off until you switch it on) lets the left stick
                    and A in the air flip you, and FLIP SPEED sets how fast.
-                   HAND WALL CLIMBING (off until you switch it on, above)
-                   and its WALL CAMERA DISTANCE. REALISTIC FLIPS (off until
+                   HAND WALL CLIMBING (off until you switch it on, above).
+                   REALISTIC FLIPS (off until
                    you switch it on, above) and the nine rows that tune it.
   Changes apply at once. The launcher starts your next session with them;
   its options show every one of them but VR VIEW too.

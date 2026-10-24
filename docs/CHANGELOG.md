@@ -3,23 +3,80 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Unreleased: optional BETTER CLIMBING (iplusdvr).** Off by default, under
-SWINGING. Take a single web in both hands, then pull hand over hand. Each
-stroke takes in rope and keeps that progress while the other hand holds it;
-the climbing stroke adds no yank/zip impulse. The normal web holds, releases,
-speed limit and minimum rope length still apply. This changes web climbing,
-separately from HAND WALL CLIMBING.
+**Latest build (October 24): three pull requests - wall crawling and vents
+for hand climbers (pull request 27, AdrianGzzEsc), the web slingshot (28)
+and better climbing (29, both iplusdvr).** You: "review the 3 open prs, fix
+if needed and merge with what we have here".
 
-**Unreleased: optional WEB SLINGSHOT (iplusdvr).** Off by default, under
-SWINGING. When on, attaching a web on the ground no longer jumps automatically.
-Stand still, shoot a separate web from each hand at two solid surfaces, draw
-both hands back at least 16 cm and hold. Both controllers vibrate as the launch
-charges. Release both web buttons together to launch toward the anchors'
-midpoint, within the chosen swing speed limit. Pushing the hands forward,
-walking, jumping, losing tracking or switching it off cancels the charge.
-This adds no web bridges, enemy tethers or rope climbing.
+- **WEB SLINGSHOT, under SWINGING, off by default (28).** On, a web shot on
+  the ground no longer lifts you off it, and drawing a web there zips
+  nothing. Standing still, shoot a web from each hand at two solid surfaces
+  at least 1.5 m apart, draw both hands back 16 cm or more and hold: both
+  controllers buzz, harder as it charges (full in about a second and a half,
+  with a 40 cm draw). Let go of both web buttons within 0.2 s of each other
+  and you fly at the point between the two anchors, at 16 to 40 m/s within
+  SWING SPEED LIMIT. Walking, a jump, a turn, lost tracking, one hand let go
+  alone, an anchor gone or open air cancel it.
+- **BETTER CLIMBING, under SWINGING, off by default (29).** Take one web in
+  both hands and pull hand over hand: each pull takes the rope in, up to 3 m
+  a second, and keeps it while the other hand reaches up again, so you climb
+  the web. None of it zips you.
+- **Hand wall climbing (27, with HAND WALL CLIMBING on).** The body crawls
+  on the wall in a pose of its own: feet planted on it, stepping in turn
+  with the opposite hand's pulls, toes into the facade, knees under the
+  hips. Take one hand off the wall, turn your head the other way and touch
+  the wall with that hand again, and the body turns its back to the wall
+  with its feet still on it (your eyes 40 cm out; the same again turns you
+  back). Palms stop at a building's surface, and pressing harder pushes your
+  view and upper body off it, up to 45 cm. Moving your head while you hold
+  on no longer moves you: the grips are measured from where your head was
+  when the hold began. WALL CAMERA DISTANCE is gone; the eyes keep 25 cm
+  from the wall. In a vent your hand pulls drive the game's own crawl along
+  its floor, walls and ceiling, and the view lies down along the duct. The
+  author's fixes to the camera when dodging, on quick left stick moves and
+  on LB + RB pulls are in it too. The author played it in a Quest 3
+  (Virtual Desktop) on 0.4.1.
+- **What the review changed.**
+  - The slingshot kept every lift off the ground while it was on, so a
+    web's reel (its trigger) no longer lifted you; it does again.
+  - Both 28 and 29 appended their switch to the swing settings as version
+    9: the slingshot keeps 9, better climbing is 10.
+  - Main's dive kick (October 22, fifth, below) had taken the body
+    Command's version 5 and the flag 27 also uses: the kick is version 11
+    now, after 27's versions 5 to 10. The wall roll keeps the October 22
+    rule that two grips roll the view only while both hands hold the wall,
+    and 27's tests point the climbing hand at the wall, as main's own do
+    since.
+  - When a hold ended (a jump, a run, a gap, a fast move), 27 dropped two
+    things in one frame: the hand push, so the eyes jumped up to 45 cm back
+    toward the wall, and the grips' fixed reference, so every hand jumped by
+    the head's travel since the hold began - a hand speed that could zip a
+    held web or land a blow. Both ease back now (the reference at 0.5 m/s).
+  - 27's camera gate also took away the duct's head cap from hand climbers
+    until a vent was confirmed: in the first mission's duct, whose roof no
+    ray hits, the head stood out through it again. The cap comes from the
+    game's own floor crawl again.
+  - The XR thread waited out the body's solve every frame, for every player
+    with the body on, to read the crawl's turn away from the wall; it reads
+    an atomic now. The launcher's "Wall camera distance", which every start
+    reset, is gone with the row, and 27's own page (WALL_CRAWLING.md) went
+    into PLAYERS.md and DEVELOPMENT.md.
+  - **Left as 27 has it, for you to decide** (only with HAND WALL CLIMBING
+    on): on a vent's walls and ceiling the legs keep the game's crawl
+    animation (on its floor they kneel, as before); once a vent is
+    recognised the view tips 90 degrees by itself, a level head looking at
+    the duct's floor and up to look along it; and a vent is recognised
+    from the game's floor-crawl flags with a surface within 2 m over them,
+    or two walls within 1 m either side, which narrow rooms and alleys can
+    pass too.
+- **Checked:** core tests (564; new: 27's own, the slingshot's and better
+  climbing's, the reel with the slingshot on, the hand push and the grips'
+  reference easing back), the launcher's, the realistic flips', the six
+  Python suites. Not run in the game or a headset here. The modules and the
+  launcher go together: the swing settings (version 10), the climb sample
+  (version 2) and the body Command (version 11) changed on both sides.
 
-**Latest build (October 22, fifth): four ideas from the Discord - dodging
+**Earlier build (October 22, fifth): four ideas from the Discord - dodging
 by moving, the suit power at your chest, the dive, the game's own blow
 sounds.** You: "commit current dif and do all 4", the four picked from the
 ideas forum.

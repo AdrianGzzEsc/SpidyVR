@@ -1,28 +1,19 @@
-# Validation — 2026-10-22
+# Validation — 2026-10-24
 
-## Better Climbing — 2026-10-23
+## Three pull requests: wall crawling and vents (27), the web slingshot (28), better climbing (29) (latest build)
 
-Complete Windows Release build with OpenXR, observer/game modules and launcher.
-Core: 430 checks passed, including retained climbing progress, another grip
-and pull, no zip impulse while climbing, repeated input, tracking gaps,
-switching off, persistence and legacy settings packets. All three CTest
-targets and the 138 Python protocol checks passed. Not tested in the live
-game or a headset; repeated strokes and the feel of the handover need that check.
+The user: "review the 3 open prs, fix if needed and merge with what we have
+here". Pull request 27 (AdrianGzzEsc, c9284e7), 28 and 29 (iplusdvr,
+fa2c369 and b8a8925), all from 0.4.1 (ff3fc89), merged onto main's October 22
+fifth build (f82f334), with the review's fixes after them (CHANGELOG).
 
-## Optional web slingshot — 2026-10-23
+| | |
+| --- | --- |
+| Read | 28 and 29 in full. 27 against the rules for the body, the walls and the protocols: the hand push and the grips' reference dropped in a frame when a hold ended, the duct's head cap lost to its camera gate, the XR thread waiting on the body's solve, the launcher's dead "Wall camera distance", the body Command's version 5 and flag 128 taken twice (main's kick). Left for the user: the game's crawl animation on the legs on a vent's walls and ceiling, the view tipping by itself in a vent, the vent test passing in narrow rooms |
+| Build | `tools/build.ps1 -Observer` after each merge and fix: 447, 448, 451, 562 and 564 core tests (new: 27's own, the slingshot's and better climbing's, the reel with the slingshot on, the hand push and the grips' reference easing back), the launcher's, the realistic flips'; the six Python suites |
+| Not run | The game and a headset: the slingshot's takeoff and buzz, better climbing's strokes, 27's crawl body, turning away, hand push and vents. 27's author played it in a Quest 3 (Virtual Desktop) on 0.4.1, without the review's fixes |
 
-Built the complete Windows Release configuration, including the game modules,
-OpenXR and launcher, from `ff3fc89` with this feature applied. All three CTest
-targets passed: core (434 checks), launcher (30 checks), and realistic flips.
-All 138 Python protocol checks passed. No headset or live-game testing yet.
-
-The new tests exercise charging and one-shot release, the swing speed cap,
-OFF, two-hand release timing, duplicate input samples, relaxing the draw,
-walking, jumping, turning, tracking/focus loss, missing surfaces, air anchors,
-settings persistence and old settings packets. Native takeoff timing and the
-feel of the controller vibration still need a headset test.
-
-## Four combat ideas from the Discord: dodging by moving, the suit power, the dive, the game's own blow sounds (latest build)
+## Four combat ideas from the Discord: dodging by moving, the suit power, the dive, the game's own blow sounds (the build before)
 
 The user: "commit current dif and do all 4" - the four picked from the ideas
 forum. `include/spidy/spider_sense.hpp` and `src/spider_sense.cpp`
