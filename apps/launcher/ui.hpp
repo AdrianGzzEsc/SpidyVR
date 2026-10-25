@@ -3,6 +3,7 @@
 #include "update.hpp"
 #include "imgui.h"
 #include <functional>
+#include <vector>
 
 namespace launcher {
 
@@ -30,9 +31,9 @@ void theme(ImGuiStyle& style);
 
 class App {
 public:
-    // `controls`: the README's picture of the controls. `updatedFrom`: the version an update just replaced (the
-    // launcher started again), else empty.
-    App(HWND window, Fonts fonts, Picture controls, std::string updatedFrom = {});
+    // `controls`: the README's pictures of the controls, in their order. `updatedFrom`: the version an update just
+    // replaced (the launcher started again), else empty.
+    App(HWND window, Fonts fonts, std::vector<Picture> controls, std::string updatedFrom = {});
     ~App();
     // Reads the scan, checks and session; runs every loop, even while minimized.
     void poll();
@@ -150,7 +151,7 @@ private:
 
     HWND window_;
     Fonts fonts_;
-    Picture controlsPicture_;
+    std::vector<Picture> controlsPictures_;
     float scale_ = 1;
     Tab tab_ = Tab::play;
     Settings settings_;

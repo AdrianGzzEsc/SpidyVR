@@ -11,8 +11,10 @@ FONT_KICKER RCDATA "fonts/BarlowCondensed-SemiBold.ttf"
 FONT_DISPLAY RCDATA "fonts/BarlowCondensed-BlackItalic.ttf"
 FONT_NARRATION RCDATA "fonts/ComicNeue-BoldItalic.ttf"
 
-// The controls on Quest 3 controllers, the README's picture (the Controls tab).
+// The controls on Quest 3 controllers, the moves and the phone: the README's pictures (the Controls tab).
 PICTURE_CONTROLS RCDATA "../../docs/images/readme/controls-quest3.jpg"
+PICTURE_MOVES RCDATA "../../docs/images/readme/controls-moves.jpg"
+PICTURE_PHONE RCDATA "../../docs/images/readme/controls-phone.jpg"
 
 VS_VERSION_INFO VERSIONINFO
 FILEVERSION SPIDY_VERSION_NUMBERS

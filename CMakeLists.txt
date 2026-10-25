@@ -252,10 +252,11 @@ if(SPIDY_BUILD_LAUNCHER)
                              SPIDY_VERSION_NUMBERS=${PROJECT_VERSION_MAJOR},${PROJECT_VERSION_MINOR},${PROJECT_VERSION_PATCH},0)
   set_source_files_properties(apps/launcher/main.cpp apps/launcher/ui.cpp apps/launcher/system.cpp
                               apps/launcher/update.cpp PROPERTIES COMPILE_OPTIONS "/W4;/permissive-")
-  # The resource script compiles the fonts and the controls picture in; a changed one builds it again.
+  # The resource script compiles the fonts and the controls pictures in; a changed one builds it again.
   file(GLOB SPIDY_LAUNCHER_FONTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/apps/launcher/fonts/*.ttf")
+  file(GLOB SPIDY_LAUNCHER_PICTURES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/docs/images/readme/controls-*.jpg")
   set_source_files_properties(apps/launcher/launcher.rc PROPERTIES OBJECT_DEPENDS
-                              "${SPIDY_LAUNCHER_FONTS};${CMAKE_CURRENT_SOURCE_DIR}/docs/images/readme/controls-quest3.jpg")
+                              "${SPIDY_LAUNCHER_FONTS};${SPIDY_LAUNCHER_PICTURES}")
   target_link_libraries(spidy_launcher PRIVATE d3d11 dxgi d3dcompiler dwmapi bcrypt version urlmon wintrust crypt32
                         shell32 ole32 uuid advapi32 winhttp windowscodecs)
   # Static runtime: the launcher starts on a PC that has no Visual C++ runtime yet and offers to install it.

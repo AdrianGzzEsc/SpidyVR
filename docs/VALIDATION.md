@@ -1,6 +1,24 @@
 # Validation — 2026-10-25
 
-## The pad layer's sign; the phone's draw leaves the layer (latest build)
+## The controls in three pictures (latest build)
+
+The user: "lets update the control infographic and also maybe describe
+controls in context and add the motion actions and what's in the phone"
+(CHANGELOG, October 25, third). `docs/images/readme/controls-quest3.jpg`
+(re-shot), `controls-moves.jpg` and `controls-phone.jpg` (new), `README.md`,
+`apps/launcher/launcher.rc` (`PICTURE_MOVES`, `PICTURE_PHONE`),
+`apps/launcher/main.cpp`, `apps/launcher/ui.hpp`, `apps/launcher/ui.cpp`
+(`App` takes a list of pictures), `CMakeLists.txt` (the launcher's resources
+depend on every `controls-*.jpg`).
+
+| | |
+| --- | --- |
+| Pictures | Each rendered at 3840 x 2160 and scaled to 1920 x 1080, JPEG quality 88 (529, 580 and 512 kB). Every line checked against PLAYERS.md's CONTROLS. The marks: `spidy_mark_preview` (this checkout, built October 25) over black and over white, the difference kept as transparency. The phones: `spidy_phone_preview` from a scratch copy whose sample song is TRACK 03 (the checkout's names a film's song). |
+| Build | `cmake --build build\windows-ninja --target spidy_launcher spidy_launcher_tests`: no warnings at /W4. Launcher tests 32/32. The built exe holds `PICTURE_CONTROLS`, `PICTURE_MOVES` and `PICTURE_PHONE`, each the whole file. |
+| Launcher | A copy in `build\launcher-check`, off-screen: the Controls tab shows the three pictures one under another, then the words; scrolled through with the wheel. `%APPDATA%\Spidy` unchanged after (hashes). |
+| Not run | The game and the headset: nothing in them changed. |
+
+## The pad layer's sign; the phone's draw leaves the layer (the build before)
 
 The user: "I couldn't access the phone and some other aspects of the vr mode
 broke after playing around with camera (was fixed by opening and closing the

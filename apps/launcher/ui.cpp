@@ -259,8 +259,8 @@ void theme(ImGuiStyle& style) {
     c[ImGuiCol_NavCursor] = vec(kAccentHover);
 }
 
-App::App(HWND window, Fonts fonts, Picture controls, std::string updatedFrom)
-    : window_(window), fonts_(fonts), controlsPicture_(std::move(controls)), settings_(loadSettings()),
+App::App(HWND window, Fonts fonts, std::vector<Picture> controls, std::string updatedFrom)
+    : window_(window), fonts_(fonts), controlsPictures_(std::move(controls)), settings_(loadSettings()),
       installFolder_(installFolder()), updatedFrom_(std::move(updatedFrom)) {
     scanner_.start(settings_);
     refreshProfiles();
@@ -2528,15 +2528,16 @@ void App::controls(ImVec2 origin, ImVec2 size) {
     const float contentWidth = ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ScrollbarSize - S(6);
     const float columnWidth = (contentWidth - gap) * 0.5f;
     columnY[0] = columnY[1] = base.y;
-    // The README's picture of them first, as many pixels wide as it is drawn (never wider than it is), then each
-    // control in words.
-    if (controlsPicture_.texture && controlsPicture_.size.x > 0) {
-        const float width = std::floor(std::min(contentWidth, controlsPicture_.size.x));
-        const float height = std::round(width * controlsPicture_.size.y / controlsPicture_.size.x);
-        if (const ImTextureID texture = controlsPicture_.texture(static_cast<int>(width));
-            texture != ImTextureID_Invalid) {
+    // The README's pictures of them first, one under another, each as many pixels wide as it is drawn (never wider
+    // than it is), then each control in words.
+    for (const Picture& picture : controlsPictures_) {
+        if (!picture.texture || picture.size.x <= 0)
+            continue;
+        const float width = std::floor(std::min(contentWidth, picture.size.x));
+        const float height = std::round(width * picture.size.y / picture.size.x);
+        if (const ImTextureID texture = picture.texture(static_cast<int>(width)); texture != ImTextureID_Invalid) {
             auto* draw = ImGui::GetWindowDrawList();
-            const ImVec2 min(std::round(base.x), std::round(base.y)), max(min.x + width, min.y + height);
+            const ImVec2 min(std::round(base.x), std::round(columnY[0])), max(min.x + width, min.y + height);
             draw->AddImage(ImTextureRef(texture), min, max);
             draw->AddRect(min, max, col(kLine));
             ImGui::SetCursorScreenPos(min);

@@ -3,7 +3,34 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 25, second): the pad layer shows, and drawing the
+**Latest build (October 25, third): the controls in three pictures.** You:
+"lets update the control infographic and also maybe describe controls in
+context and add the motion actions and what's in the phone".
+
+- **The controls picture is current again.** X: hold it for the gadget
+  wheel, and where the game shows LB + RB it throws a prop or tears off a
+  door (the right stick's click no longer does). Both sticks clicked: the pad
+  layer. The red box: LB + RB is X, and LT, LB, RT or RB alone is one of
+  your triggers. In the row along the bottom the phone, drawn from behind
+  the hip, took the pad layer's place.
+- **The moves, by where you are**, a second picture: what your body does
+  without a button, in four columns (on a web, in a fight, Spider-Sense,
+  anywhere). The ring, a called blow, the finisher and the three
+  Spider-Sense colours are the game's own marks as `spidy_mark_preview`
+  draws them; small figures show the hand at the temple, the hands at the
+  chest, the draw from the back pocket and the T-pose. Realistic flips and
+  hand wall climbing are at the foot, as off until you switch them on.
+- **Your phone**, a third: how to draw it, the keys while it is out, and
+  its four apps (MUSIC, MENU, GEAR, CAMERA), the phone drawn by
+  `spidy_phone_preview` (its sample song named TRACK 03 there).
+- **The README and the launcher's Controls tab show all three**, one under
+  another, before the controls in words.
+- **Checked:** the launcher built (no warnings) and its 32 checks; a test
+  copy's Controls tab shows the three in order. Every line on the pictures
+  checked against [PLAYERS.md](PLAYERS.md). Not run: the game and the
+  headset (nothing in them changed).
+
+**Earlier build (October 25, second): the pad layer shows, and drawing the
 phone leaves it.** You, after the 10:23 session: "I couldn't access the phone
 and some other aspects of the vr mode broke after playing around with
 camera (was fixed by opening and closing the pause menu)".
