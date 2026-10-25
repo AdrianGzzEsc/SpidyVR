@@ -88,10 +88,11 @@ gradient would. `ui.cpp` draws it with ImGui's draw lists.
   session that fails marks the step it reached, and its error, offers (copy
   the log, ask on the Discord, restart as administrator, close the game) and
   the narrator's red line take the steps' place when the panel is short.
-- **The controls pictures** are the README's three, compiled in:
+- **The controls pictures** are the README's four, compiled in:
   `docs/images/readme/controls-quest3.jpg` (the buttons), `controls-moves.jpg`
-  (what the body does, by where you are) and `controls-phone.jpg` (the
-  phone's draw and apps), drawn one under another in that order. `main.cpp`
+  (what the body does, by where you are), `controls-phone.jpg` (the phone's
+  draw and apps) and `controls-others.jpg` (the buttons on a Steam Frame, an
+  Index and PS VR2 controllers), drawn one under another in that order. `main.cpp`
   decodes each with WIC and scales it to the pixels it is drawn at, since
   ImGui's DX11 sampler reads one mip level only. When a control changes, the
   picture that shows it is re-rendered for both.

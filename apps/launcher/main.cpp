@@ -376,11 +376,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
 
     std::wstring restartFolder;
     {
-        // The README's pictures of the controls: the buttons, the moves, the phone.
-        Picture controls[3];
+        // The README's pictures of the controls: the buttons, the moves, the phone, the other controllers.
+        Picture controls[4];
         controls[0].load(L"PICTURE_CONTROLS");
         controls[1].load(L"PICTURE_MOVES");
         controls[2].load(L"PICTURE_PHONE");
+        controls[3].load(L"PICTURE_OTHERS");
         std::vector<launcher::Picture> pictures;
         for (Picture& picture : controls)
             pictures.push_back(picture.picture());

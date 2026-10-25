@@ -3,9 +3,11 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 25, third): the controls in three pictures.** You:
+**Latest build (October 25, third): the controls in four pictures.** You:
 "lets update the control infographic and also maybe describe controls in
-context and add the motion actions and what's in the phone".
+context and add the motion actions and what's in the phone", then "can we
+make an infograhpic with other common controllers with diffirent button
+layouts, like frame, psvr2 and index".
 
 - **The controls picture is current again.** X: hold it for the gadget
   wheel, and where the game shows LB + RB it throws a prop or tears off a
@@ -23,7 +25,22 @@ context and add the motion actions and what's in the phone".
 - **Your phone**, a third: how to draw it, the keys while it is out, and
   its four apps (MUSIC, MENU, GEAR, CAMERA), the phone drawn by
   `spidy_phone_preview` (its sample song named TRACK 03 there).
-- **The README and the launcher's Controls tab show all three**, one under
+- **Your controller**, a fourth: the buttons that differ, side by side for
+  Quest Touch, the Steam Frame, the Valve Index and PS VR2 Sense controllers
+  (jump, dodge, interact, the gadget wheel, pause, the game menu, heal, web
+  and reel), each named as it is printed on that controller, in the colour
+  of its hand. The Quest, Frame and Index are rendered from their models
+  (the WebXR one for the Quest, SteamVR's own for the other two); no model
+  of the PS VR2 Sense controllers is free to use, so theirs is a likeness
+  built from simple shapes (the white band round the dark loop, the stick
+  and two face buttons), lit and turned as the others are. PS VR2
+  controllers play SteamVR's translation of the Touch layout (Cross and
+  Circle are A and B, Square and Triangle X and Y, with no menu button), as
+  a community port for those controllers describes it; it says so on the
+  picture, with "no player report yet".
+- **The players' guide has the Index's and PS VR2's buttons** beside the
+  Steam Frame's.
+- **The README and the launcher's Controls tab show all four**, one under
   another, before the controls in words.
 - **Checked:** the launcher built (no warnings) and its 32 checks; a test
   copy's Controls tab shows the three in order. Every line on the pictures

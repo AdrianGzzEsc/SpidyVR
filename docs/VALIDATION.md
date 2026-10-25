@@ -1,12 +1,15 @@
 # Validation — 2026-10-25
 
-## The controls in three pictures (latest build)
+## The controls in four pictures (latest build)
 
 The user: "lets update the control infographic and also maybe describe
-controls in context and add the motion actions and what's in the phone"
-(CHANGELOG, October 25, third). `docs/images/readme/controls-quest3.jpg`
-(re-shot), `controls-moves.jpg` and `controls-phone.jpg` (new), `README.md`,
-`apps/launcher/launcher.rc` (`PICTURE_MOVES`, `PICTURE_PHONE`),
+controls in context and add the motion actions and what's in the phone", then
+"can we make an infograhpic with other common controllers with diffirent
+button layouts, like frame, psvr2 and index" (CHANGELOG, October 25, third).
+`docs/images/readme/controls-quest3.jpg` (re-shot), `controls-moves.jpg`,
+`controls-phone.jpg` and `controls-others.jpg` (new), `README.md`,
+`docs/PLAYERS.md` (Index and PS VR2 buttons),
+`apps/launcher/launcher.rc` (`PICTURE_MOVES`, `PICTURE_PHONE`, `PICTURE_OTHERS`),
 `apps/launcher/main.cpp`, `apps/launcher/ui.hpp`, `apps/launcher/ui.cpp`
 (`App` takes a list of pictures), `CMakeLists.txt` (the launcher's resources
 depend on every `controls-*.jpg`).
@@ -14,8 +17,9 @@ depend on every `controls-*.jpg`).
 | | |
 | --- | --- |
 | Pictures | Each rendered at 3840 x 2160 and scaled to 1920 x 1080, JPEG quality 88 (529, 580 and 512 kB). Every line checked against PLAYERS.md's CONTROLS. The marks: `spidy_mark_preview` (this checkout, built October 25) over black and over white, the difference kept as transparency. The phones: `spidy_phone_preview` from a scratch copy whose sample song is TRACK 03 (the checkout's names a film's song). |
-| Build | `cmake --build build\windows-ninja --target spidy_launcher spidy_launcher_tests`: no warnings at /W4. Launcher tests 32/32. The built exe holds `PICTURE_CONTROLS`, `PICTURE_MOVES` and `PICTURE_PHONE`, each the whole file. |
-| Launcher | A copy in `build\launcher-check`, off-screen: the Controls tab shows the three pictures one under another, then the words; scrolled through with the wheel. `%APPDATA%\Spidy` unchanged after (hashes). |
+| Other controllers | The buttons from `include/spidy/controller_layout.hpp` (Touch, Index, Frame) and PLAYERS.md's Steam Frame section. PS VR2: SteamVR's translation of the Touch layout as a community port describes it (github.com/satyaloka93/cyberpunk-vr-port: Square/Triangle X/Y, Cross/Circle A/B, no Menu or System path); the PS VR2 driver is not on this PC and no player has reported. Renders: the Quest from the WebXR model, the Frame and Index from SteamVR's `drivers\*\resources\rendermodels` (OBJ with their textures), all at the same angle; the Sense controllers a likeness from three.js primitives (no model of them is free to use), checked side by side against a product photo the user sent. 1920 JPEG 387 kB. |
+| Build | `cmake --build build\windows-ninja --target spidy_launcher spidy_launcher_tests`: no warnings at /W4. Launcher tests 32/32. The built exe holds `PICTURE_CONTROLS`, `PICTURE_MOVES`, `PICTURE_PHONE` and `PICTURE_OTHERS`, each the whole file. |
+| Launcher | A copy in `build\launcher-check`, off-screen, with the first three: the Controls tab shows them one under another, then the words; scrolled through with the wheel. `%APPDATA%\Spidy` unchanged after (hashes). The fourth goes through the same loop; not looked at in the window. |
 | Not run | The game and the headset: nothing in them changed. |
 
 ## The pad layer's sign; the phone's draw leaves the layer (the build before)

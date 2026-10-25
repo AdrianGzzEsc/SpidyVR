@@ -535,6 +535,30 @@ hands; everything above is the same, with these buttons)
   when these are in use. Versions up to 0.3.2 had no layout for them:
   SteamVR translated the Quest one, and B, X and Y all dodged.
 
+Valve Index controllers (Spidy has a layout for them; everything above is the
+same, with these buttons)
+  A, right ............. A: jump
+  B, right ............. B: dodge
+  A, left .............. X: held, the gadget wheel; the game's LB + RB
+  B, left .............. Y: interact
+  Squeeze the handle ... the grip: your web
+  System button ........ SteamVR's own. Pause by holding both sticks in
+  Trackpads ............ nothing
+  The session log says "the Index layout" when these are in use.
+
+PS VR2 Sense controllers (under SteamVR, which plays them as Quest
+controllers: Spidy has no layout of its own for them, and no player has
+reported on them yet)
+  Cross, right ......... A: jump
+  Circle, right ........ B: dodge
+  Square, left ......... X: held, the gadget wheel; the game's LB + RB
+  Triangle, left ....... Y: interact
+  L1, R1 ............... the grips: your webs
+  L2, R2 ............... the triggers
+  Pause ................ hold both sticks in: SteamVR's translation carries
+                         no menu button over
+  The session log says "the Touch layout" when these are in use.
+
 Walls (every wall is Spidy's own; the game's crawl only takes you for a
 vent or a door you ask for, and inside vents and ducts)
   Walk onto one ........ walk at a wall from the ground and you go up onto it.
