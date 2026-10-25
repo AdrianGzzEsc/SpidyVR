@@ -323,7 +323,7 @@ void Swing::senseWall(float dt, const Input& in, const WorldQueries& world) {
         direction = normalized(direction);
         if (!finite(from) || length(direction) < .9995f || !(reach >= .02f))
             return {};
-        const auto hit = world.raycast(from, direction, std::min(reach, 100.f));
+        const auto hit = world.bodyRaycast(from, direction, std::min(reach, 100.f));
         if (!hit || !hit->fixed || !finite(hit->point) || !finite(hit->normal))
             return {};
         const Vec3 n = normalized(hit->normal);
@@ -455,7 +455,7 @@ void Swing::senseWall(float dt, const Input& in, const WorldQueries& world) {
                 const float depth = std::max(dot(at - wall_.point, n),
                                              hit ? dot(at - hit->point, n) : 0.f);
                 const Vec3 start = at - n * (depth - .05f), way = offset / span;
-                const auto edge = world.raycast(start, way, span);
+                const auto edge = world.bodyRaycast(start, way, span);
                 std::optional<RayHit> lip;
                 if (edge && edge->fixed && finite(edge->point)) {
                     const float travel = dot(edge->point - start, way);
@@ -582,7 +582,7 @@ std::optional<RayHit> Swing::wallContact(const HandInput& hand, const WorldQueri
     // Start outside the current wall even when the tracked palm passed into
     // it. Project the palm onto the facade, then confirm solid wall there.
     const Vec3 outside = hand.wallPosition + n * (.35f - distance);
-    const auto hit = world.raycast(outside, -n, .6f);
+    const auto hit = world.bodyRaycast(outside, -n, .6f);
     if (hit && hit->fixed && world.exists(hit->surface) && finite(hit->point) && finite(hit->normal) &&
         dot(hit->normal, n) > .8f)
         return hit;
@@ -813,7 +813,7 @@ void Swing::skimGround(float dt, const WorldQueries& world) {
     // As far as the ground matters: the clearance, and what turning this
     // fall level takes.
     const float reach = clearance + falling * falling / (2 * turn) + falling * dt + .5f;
-    const auto ground = world.raycast(body_.position, {0, -1, 0}, std::min(reach, config_.maxRange));
+    const auto ground = world.bodyRaycast(body_.position, {0, -1, 0}, std::min(reach, config_.maxRange));
     if (!ground || !finite(ground->point) || !finite(ground->normal))
         return;
     const Vec3 face = normalized(ground->normal);

@@ -257,6 +257,72 @@ bool MoveDodge::update(float seconds, bool play, Vec3 head, Vec3 room, Quat room
     }
     return false;
 }
+WebDodge::WebDodge(WebDodgeConfig c) : config_(c) {
+    const auto bad = [](float v) { return !std::isfinite(v) || v < 0; };
+    if (bad(c.speed) || bad(c.coast) || bad(c.lead) || bad(c.untimed) || bad(c.late) || bad(c.hold) ||
+        bad(c.rest) || !std::isfinite(c.most) || c.most < c.hold || c.most <= 0)
+        throw std::invalid_argument("Invalid web dodge configuration");
+}
+void WebDodge::reset() {
+    dodging_ = false;
+    age_ = restLeft_ = 0;
+    sinceWeb_ = 1e9f;
+    way_ = {};
+}
+void WebDodge::refused() {
+    if (dodging_ && dodges_)
+        --dodges_;
+    dodging_ = false;
+    restLeft_ = config_.rest;
+}
+WebDodge::Ask WebDodge::update(float seconds, bool webbed, bool airborne, Vec3 velocity,
+                               std::span<const WebDodgeThreat> threats, GameDodge game) {
+    const float dt = std::isfinite(seconds) ? std::clamp(seconds, 0.f, .1f) : 0.f;
+    restLeft_ = std::max(0.f, restLeft_ - dt);
+    sinceWeb_ = webbed ? 0.f : std::min(sinceWeb_ + dt, 1e9f);
+    // A blow still to land, or only just landed: the dodge holds for it.
+    const auto coming = [&](const WebDodgeThreat& t) {
+        return t.attacker && t.timed && std::isfinite(t.toImpact) && t.toImpact >= -config_.late;
+    };
+    if (dodging_) {
+        // The game ended it itself (a state of the hero's that ends dodges
+        // as it ends): nothing left to end.
+        if (game != GameDodge::ours) {
+            dodging_ = false;
+            restLeft_ = config_.rest;
+            ++cutShort_;
+            return Ask::none;
+        }
+        age_ += dt;
+        const bool waiting = std::any_of(threats.begin(), threats.end(), coming);
+        if (age_ >= config_.most || (age_ >= config_.hold && !waiting)) {
+            dodging_ = false;
+            restLeft_ = config_.rest;
+            return Ask::end;
+        }
+        return Ask::none;
+    }
+    const float speed = finite(velocity) ? length(velocity) : 0.f;
+    const bool carried = (webbed || (airborne && sinceWeb_ <= config_.coast)) && speed >= config_.speed &&
+                         speed > 1e-3f;
+    if (!carried || game != GameDodge::none || restLeft_ > 0)
+        return Ask::none;
+    const bool due = std::any_of(threats.begin(), threats.end(), [&](const WebDodgeThreat& t) {
+        if (!t.attacker || t.answered)
+            return false;
+        if (t.timed)
+            return coming(t) && t.toImpact <= config_.lead;
+        return std::isfinite(t.warned) && t.warned >= config_.untimed;
+    });
+    if (!due)
+        return Ask::none;
+    const Vec3 level{velocity.x, 0, velocity.z};
+    way_ = length(level) > .25f * speed ? normalized(level) : velocity / speed;
+    dodging_ = true;
+    age_ = 0;
+    ++dodges_;
+    return Ask::start;
+}
 SenseSight senseSight(Pose head, Vec3 target, SenseSight before, const SenseSightConfig& config) {
     SenseSight sight = before;
     const Vec3 to = target - head.position;

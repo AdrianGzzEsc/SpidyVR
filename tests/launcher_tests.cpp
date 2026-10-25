@@ -238,24 +238,16 @@ int main() {
         options.arcadeWebs = true;
         args = sessionArguments(options, L"r.json", L"", L"");
         check(args.size() == 8 && args[7] == L"--arcade-webs", "arcade webs chosen");
-        // The view turning onto a wall is no option of its own and is never passed: it turns whoever holds
-        // the player there, the swing or the game's own crawl, which is the whole point of giving the crawl
-        // the view (the player, October 14: "i like how it feel to walk on building and stand on their side",
-        // of a vent that only works while the game holds him). A launcher.ini from the build that tied the
-        // view to wall running can still have it off, and that is not read back either.
+        // The view turning onto a wall is no option of its own: it turns whoever holds the player there (the
+        // player, October 14: "i like how it feel to walk on building and stand on their side"). Nor, since
+        // October 25, are the swing's own walls: off, the game's crawl took every wall, and walls are Spidy's
+        // own since October 15 (the user: "can you not just use our locomotion system only"). A session is
+        // told neither.
         options = {};
-        check(options.standOnWalls, "no standing on walls in a new launcher");
-        options.standOnWalls = false;
         args = sessionArguments(options, L"r.json", L"", L"");
-        check(args.size() == 7, "the view on walls was passed to the session");
-        // Wall running, the default, goes unsaid; off, the game's own wall crawl takes a wall, which is
-        // what tells whether something on a wall is the swing's doing (October 13, a vent the game would
-        // not interact with while the swing owned the hero).
-        options = {};
-        check(options.wallRun, "wall running is not the default");
-        options.wallRun = false;
-        args = sessionArguments(options, L"r.json", L"", L"");
-        check(args.size() == 8 && args[7] == L"--no-wall-run", "wall running switched off");
+        check(std::find(args.begin(), args.end(), L"--no-stand-on-walls") == args.end() &&
+                  std::find(args.begin(), args.end(), L"--no-wall-run") == args.end(),
+              "the walls switched off for a session");
         // Real gravity is the default weight since October 12, and goes unsaid; the old default is passed.
         options = {};
         check(options.weight == 100, "the weight in a new launcher is not real gravity");
@@ -323,8 +315,13 @@ int main() {
                   options.screenDepth == 3 && options.arcadeWebs && options.bodyHaptics == 25 &&
                   options.screenSize == 2,
               "every value, the last one before a carriage return");
-        // ... and `stand_on_walls` in that line is no longer one of them.
-        check(options.standOnWalls, "the view on walls was taken from a headset line");
+        // ... and `stand_on_walls` in that line is no longer one of them, nor an older session's wall_run.
+        {
+            const auto before = options;
+            check(!headsetSettings("VR settings from the headset: stand_on_walls=1 wall_run=0", options) &&
+                      options == before,
+                  "the walls taken from a headset line");
+        }
         // Webs are always physical since October 15: an older session's physical_webs changes nothing.
         {
             const auto before = options;
@@ -572,10 +569,18 @@ int main() {
         const auto tabs = [](const ProfileSetting& s) { return s.flag || s.number; };
         check(lines == static_cast<size_t>(std::count_if(begin, end, tabs)),
               "a setting kept with the tab's own that spidy_vr.ini lacks");
-        // Of the launcher's own options, wall running alone: no graphics option, no body calibration.
-        check(std::count_if(begin, end, [](const ProfileSetting& s) { return s.item == Item::none; }) == 1 &&
-                  profileSettings[at("wall_run")].item == Item::none,
-              "the launcher's options in a profile");
+        // None of the launcher's own options (no graphics option, no body calibration), and two settings no
+        // more: wall running (until October 25 the one launcher option a profile held) and the wall camera's
+        // distance, at the values Spidy plays with. Only they have no row.
+        check(std::count_if(begin, end, [](const ProfileSetting& s) { return s.item == Item::none; }) == 2 &&
+                  profileSettings[at("wall_run")].retired() && profileSettings[at("wall_run")].low == 1 &&
+                  profileSettings[at("wall_run")].isSwitch() &&
+                  profileSettings[at("wall_distance_cm")].retired() &&
+                  profileSettings[at("wall_distance_cm")].low == spidy::vr_settings::fixedWallDistance &&
+                  std::all_of(begin, end, [](const ProfileSetting& s) {
+                      return s.retired() == (s.item == Item::none) && (!s.retired() || s.low == s.high);
+                  }),
+              "the launcher's options and the settings no more in a profile");
         for (const auto& a : profileSettings)
             check(std::count_if(begin, end, [&](const ProfileSetting& b) { return a.key == b.key; }) == 1,
                   "a key twice");
@@ -589,30 +594,49 @@ int main() {
                 check(spidy::vr_settings::sanitized(v).*s.number == s.high, std::string(s.key).c_str());
             }
     });
-    test("old distance profiles keep the crawl clearance fixed without dropping new 0.4.1 settings", [&] {
-        const auto read = readProfile("wall_distance_cm=100\nhand_climb=1\nnear_clip_mm=50\n"
+    test("settings no more: an older profile's read at Spidy's one value, and a new one has them", [&] {
+        // 0.4.1's: wall running off, the wall camera 1 m out.
+        const auto read = readProfile("wall_distance_cm=100\nhand_climb=1\nnear_clip_mm=50\nwall_run=0\n"
                                       "body_haptics=75\n");
-        check(read.has_value(), "old profile was rejected");
+        check(read && read->count() == 5 && read->values[at("wall_run")] == 1 &&
+                  read->values[at("wall_distance_cm")] == spidy::vr_settings::fixedWallDistance,
+              "an old profile rejected, or its settings no more not at Spidy's values");
         PlaySettings settings;
-        settings.tab.wallDistance = 60;
         applyProfile(*read, settings);
-        check(settings.tab.wallDistance == spidy::vr_settings::fixedWallDistance && settings.tab.handClimb,
-              "profile changed the fixed climb clearance or lost hand climbing");
-        check(settings.tab.nearClipMm == 50 && settings.options.bodyHaptics == 75,
-              "new 0.4.1 settings were lost");
-        check(profileMatches(*read, settings),
-              "an imported old profile could never match its fixed clearance");
-        settings.tab.wallDistance = 100;
-        const auto saved = profileOf(settings);
-        check(saved.values[at("wall_distance_cm")] == spidy::vr_settings::fixedWallDistance,
-              "a stale distance was exported into a new profile");
+        check(settings.tab.handClimb && settings.tab.nearClipMm == 50 && settings.options.bodyHaptics == 75,
+              "an old profile's settings lost");
+        check(profileMatches(*read, settings) && profileChanges(*read, settings).empty(),
+              "an old profile's settings no more kept it from matching");
+        check(readProfile("wall_run=off")->values[at("wall_run")] == 1, "wall running by name");
+        // Written, they say how Spidy plays now, so that an older launcher finds every setting it has.
+        const std::string text = profileText(profileOf(settings), "0.4.1");
+        check(text.find("\nwall_run=1\n") != std::string::npos &&
+                  text.find("\nwall_distance_cm=25\n") != std::string::npos,
+              "a profile without the settings an older launcher has");
+    });
+    test("a profile holds every setting of 0.4.1's, so that it reads whole there", [&] {
+        // Spidy 0.4.1's keys, the first release with profiles: a launcher counts a profile that lacks one of
+        // its settings short ("It has 32 of the 34") and never takes it for the settings in use.
+        constexpr std::string_view released[] = {
+            "arcade_webs",       "trigger_webs",         "aim_markers",       "air_webs",
+            "swing_speed",       "weight",               "wall_run",          "snap_turn",
+            "smooth_turn",       "haptics",              "body_haptics",      "body_haptics_webs",
+            "body_haptics_wind", "body_haptics_combat",  "body_haptics_movement", "screen_size",
+            "screen_depth",      "hud",                  "ui_style",          "near_clip_mm",
+            "flips",             "flip_speed",           "hand_climb",        "wall_distance_cm",
+            "realistic_flips",   "rotation_strength",    "rotation_speed",    "flight_speed_min",
+            "swing_momentum",    "rotation_response_ms", "hand_momentum",     "angular_drag_ms",
+            "hand_speed_min_cm", "air_rotation_brake"};
+        const std::string text = profileText(profileOf(PlaySettings{}), "x");
+        for (const std::string_view key : released)
+            check(text.find("\n" + std::string(key) + "=") != std::string::npos, std::string(key).c_str());
     });
     // Every adjustable setting a profile holds away from its default.
     PlaySettings mine;
     {
         auto& o = mine.options;
         o.arcadeWebs = o.triggerWebs = o.flips = true;
-        o.aimMarkers = o.airWebs = o.wallRun = false;
+        o.aimMarkers = o.airWebs = false;
         o.swingSpeed = 47;
         o.weight = 125;
         o.snapTurn = 45;
@@ -632,7 +656,6 @@ int main() {
         t.webSlingshot = true;
         t.betterClimbing = true;
         t.nearClipMm = 10;
-        t.wallDistance = 60;
         t.automaticStrength = 75;
         t.automaticSpeed = 360;
         t.automaticMinimumSpeed = 8;
@@ -663,7 +686,7 @@ int main() {
     test("a profile's text gives its settings back and leaves graphics and the body as they are", [&] {
         const PlaySettings defaults;
         for (const auto& s : profileSettings)
-            if (s.low != s.high)
+            if (!s.retired())
                 check(profileValue(s, mine) != profileValue(s, defaults), std::string(s.key).c_str());
         const auto read = readProfile(profileText(profileOf(mine, "Arcade swing"), "0.4.1"));
         check(read && read->name == "Arcade swing" && read->madeWith == "0.4.1" && read->complete(),
@@ -689,7 +712,7 @@ int main() {
                   !o.stockMonitorView && o.gameDepthOfField && o.gameSharpening && o.eyeHeightMm == 1630 &&
                   o.armLengthMm == 590 && !o.calibrationPrompt,
               "graphics or the calibration changed");
-        check(o.standOnWalls == before.options.standOnWalls &&
+        check(other.tab.standOnWalls == before.tab.standOnWalls &&
                   other.tab.swingSpeed == before.tab.swingSpeed &&
                   other.tab.flatScreen == before.tab.flatScreen,
               "what no profile holds changed");
@@ -719,10 +742,10 @@ int main() {
         const auto ini = readProfile("\xEF\xBB\xBFgame=C:\\Games\\Spider-Man.exe\ngravity_percent=80\n"
                                      "render_scale=150\neye_height_mm=1700\nupdate_check=0\n");
         check(ini && ini->count() == 1 && ini->values[at("weight")] == 80, "launcher.ini: the weight alone");
-        const auto words = readProfile("aim_markers=OFF, air_webs=True; `flips=yes` wall_run=no hud=2.5");
+        const auto words = readProfile("aim_markers=OFF, air_webs=True; `flips=yes` seated=no hud=2.5");
         check(words && words->count() == 4 && words->values[at("aim_markers")] == 0 &&
                   words->values[at("air_webs")] == 1 && words->values[at("flips")] == 1 &&
-                  words->values[at("wall_run")] == 0,
+                  words->values[at("seated")] == 0,
               "switches by name, words apart by commas and code marks; a fraction is no whole number");
         const auto ranges = readProfile("swing_speed=500\nweight=-7\nnear_clip_mm=1\n"
                                         "flip_speed=99999999999\n");
@@ -740,23 +763,23 @@ int main() {
         PlaySettings change;
         change.options.arcadeWebs = true;
         change.options.swingSpeed = 47;
-        change.options.wallRun = false;
         change.options.smoothTurn = 90;
         change.tab.hapticWebs = false;
         change.tab.uiStyle = 1;
         change.tab.nearClipMm = 10;
         change.tab.automaticFalloff = 1000;
+        // ANGULAR DRAG by its row's name, though only the launcher shows that row.
         const std::vector<ProfileChange> expected{
             {"WEB STYLE", "REALISTIC", "ARCADE"},          {"SWING SPEED LIMIT", "32 M/S", "47 M/S"},
-            {"WALL RUNNING", "ON", "OFF"},                 {"SMOOTH TURN", "OFF", "90\xC2\xB0/S"},
-            {"WEB HAPTICS", "ON", "OFF"},                  {"UI STYLE", "COMIC", "TECH"},
-            {"NEAR CLIP", "2 CM", "1 CM"},                 {"ANGULAR DRAG", "VERY SLOW", "QUICK"}};
+            {"SMOOTH TURN", "OFF", "90\xC2\xB0/S"},        {"WEB HAPTICS", "ON", "OFF"},
+            {"UI STYLE", "COMIC", "TECH"},                 {"NEAR CLIP", "2 CM", "1 CM"},
+            {"ANGULAR DRAG", "VERY SLOW", "QUICK"}};
         check(profileChanges(profileOf(change), PlaySettings{}) == expected,
               "the changes, in the tab's order");
         const auto adjustable =
-            std::count_if(begin, end, [](const ProfileSetting& s) { return s.low != s.high; });
+            std::count_if(begin, end, [](const ProfileSetting& s) { return !s.retired(); });
         check(profileChanges(profileOf(mine), PlaySettings{}).size() == static_cast<size_t>(adjustable),
-              "all adjustable settings, excluding the fixed wall clearance");
+              "every setting but the two no more");
     });
     test("a profile's file is its name without what Windows refuses in a file name", [] {
         check(profileFileName("Arcade swing") == "Arcade swing", "a plain name");

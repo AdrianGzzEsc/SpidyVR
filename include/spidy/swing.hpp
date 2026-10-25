@@ -18,6 +18,12 @@ class WorldQueries {
   public:
     virtual ~WorldQueries() = default;
     virtual std::optional<RayHit> raycast(Vec3 origin, Vec3 direction, float distance) const = 0;
+    // The nearest hit the player's own body meets: what the game lets his
+    // body through (a broken glass pane: native_rays::meets) it passes too.
+    // For what he walks at, stands on and climbs; the webs take raycast.
+    virtual std::optional<RayHit> bodyRaycast(Vec3 origin, Vec3 direction, float distance) const {
+        return raycast(origin, direction, distance);
+    }
     virtual bool exists(std::uint64_t surface) const = 0;
 };
 class World : public WorldQueries {

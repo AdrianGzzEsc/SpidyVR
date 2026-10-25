@@ -19,8 +19,9 @@
 namespace spidy::launcher {
 
 // The settings a profile holds: every setting of the SPIDY VR tab but VR VIEW (each session starts in VR),
-// CALIBRATE BODY (a request, not a setting) and RECORDING FOV (the monitor's), and wall running, the one
-// launcher option on how Spidy plays that the tab has no row for. Not the launcher's graphics options
+// CALIBRATE BODY (a request, not a setting) and RECORDING FOV (the monitor's), the realistic flips' rows
+// the launcher alone shows (vr_settings::Place::launcher), and two settings no more (retired). Not the
+// launcher's graphics options
 // (render resolution, upscaling, the game window, the monitor, the game's depth of field and sharpening),
 // which suit one PC, as RECORDING FOV does, nor the T-pose calibration, which is one body's: a profile
 // leaves them as they are.
@@ -29,9 +30,9 @@ struct PlaySettings {
     vr_settings::Values tab; // those launcher.ini has no key for (spidy_vr.ini, vr_settings::tabOnlyText)
 };
 
-// One setting of a profile: its key in the profile's text, its row in the tab (none: wall running), the
-// whole numbers it takes (0 and 1 for a switch), and where the launcher keeps it: one of its options
-// (launcher.ini), or one of those in spidy_vr.ini.
+// One setting of a profile: its key in the profile's text, its row in the tab, the whole numbers it takes
+// (0 and 1 for a switch), and where the launcher keeps it: one of its options (launcher.ini), or one of
+// those in spidy_vr.ini. Or nowhere: a setting no more (retired, no row), whose one value is low.
 struct ProfileSetting {
     std::string_view key;
     vr_settings::Item item{};
@@ -40,7 +41,8 @@ struct ProfileSetting {
     int SessionOptions::*optionNumber{};
     bool vr_settings::Values::*flag{};
     int vr_settings::Values::*number{};
-    constexpr bool isSwitch() const { return option || flag; }
+    constexpr bool retired() const { return !option && !optionNumber && !flag && !number; }
+    constexpr bool isSwitch() const { return option || flag || (retired() && high <= 1); }
 };
 
 namespace detail {
@@ -59,10 +61,19 @@ constexpr ProfileSetting tabOnly(std::string_view key, Item item, bool Values::*
 constexpr ProfileSetting tabOnly(std::string_view key, Item item, int low, int high, int Values::*number) {
     return {key, item, low, high, nullptr, nullptr, nullptr, number};
 }
+// A setting no more since October 25, which a profile still holds at the one value Spidy plays with now:
+// the launchers before (0.4.1 on) have it, and without it a profile would be one short of their settings
+// ("It has 32 of the 34") and never taken for the ones in use. Read, it is that value whatever the text
+// says, and using it changes nothing.
+constexpr ProfileSetting retired(std::string_view key, int value) {
+    return {key, Item::none, value, value};
+}
 // In the tab's order, its sections WEBS, SWINGING, COMFORT, HAPTICS, DISPLAY, BODY (seated play; not
-// HEIGHT, which is the player's own, as a calibration is) and EXPERIMENTAL, with wall running after SWINGING. The keys are launcher.ini's and spidy_vr.ini's, the weight's the session's line's
-// (launcher.ini calls it gravity_percent only because older launchers saved other weights as weight). A
-// key, once in a profile someone shared, keeps its name and meaning.
+// HEIGHT, which is the player's own, as a calibration is) and EXPERIMENTAL. The keys are launcher.ini's and
+// spidy_vr.ini's, the weight's the session's line's (launcher.ini calls it gravity_percent only because
+// older launchers saved other weights as weight). A key, once in a profile someone shared, keeps its name
+// and meaning, its place too once its setting is no more: wall running, on (the swing's own walls), and
+// the wall camera's distance, fixed at 25 cm.
 inline constexpr ProfileSetting profileSettings[] = {
     launcherOption("arcade_webs", Item::webStyle, &SessionOptions::arcadeWebs),
     launcherOption("trigger_webs", Item::webButton, &SessionOptions::triggerWebs),
@@ -72,7 +83,7 @@ inline constexpr ProfileSetting profileSettings[] = {
     launcherOption("weight", Item::weight, 40, 300, &SessionOptions::weight),
     tabOnly("web_slingshot", Item::webSlingshot, &Values::webSlingshot),
     tabOnly("better_climbing", Item::betterClimbing, &Values::betterClimbing),
-    launcherOption("wall_run", Item::none, &SessionOptions::wallRun),
+    retired("wall_run", 1),
     launcherOption("snap_turn", Item::snapTurn, 0, 90, &SessionOptions::snapTurn),
     launcherOption("smooth_turn", Item::smoothTurn, 0, 360, &SessionOptions::smoothTurn),
     launcherOption("haptics", Item::haptics, 0, 100, &SessionOptions::haptics),
@@ -91,8 +102,7 @@ inline constexpr ProfileSetting profileSettings[] = {
     launcherOption("flips", Item::flips, &SessionOptions::flips),
     launcherOption("flip_speed", Item::flipSpeed, 90, 480, &SessionOptions::flipSpeed),
     tabOnly("hand_climb", Item::handClimb, &Values::handClimb),
-    tabOnly("wall_distance_cm", Item::wallDistance, vr_settings::fixedWallDistance,
-            vr_settings::fixedWallDistance, &Values::wallDistance),
+    retired("wall_distance_cm", vr_settings::fixedWallDistance),
     tabOnly("realistic_flips", Item::realisticFlips, &Values::realisticFlips),
     tabOnly("rotation_strength", Item::automaticStrength, 25, 100, &Values::automaticStrength),
     tabOnly("rotation_speed", Item::automaticSpeed, 90, 360, &Values::automaticSpeed),
@@ -109,7 +119,7 @@ inline constexpr ProfileSetting profileSettings[] = {
 using detail::profileSettings;
 
 inline int profileValue(const ProfileSetting& s, const PlaySettings& settings) {
-    if (s.low == s.high)
+    if (s.retired())
         return s.low;
     if (s.option)
         return settings.options.*s.option ? 1 : 0;
@@ -120,7 +130,7 @@ inline int profileValue(const ProfileSetting& s, const PlaySettings& settings) {
     return settings.tab.*s.number;
 }
 
-// Within the setting's range; a switch is on for any number but 0.
+// Within the setting's range; a switch is on for any number but 0. A retired one has nowhere to go.
 inline void setProfileValue(const ProfileSetting& s, int value, PlaySettings& settings) {
     value = s.isSwitch() ? (value != 0 ? 1 : 0) : std::clamp(value, s.low, s.high);
     if (s.option)
@@ -129,7 +139,7 @@ inline void setProfileValue(const ProfileSetting& s, int value, PlaySettings& se
         settings.options.*s.optionNumber = value;
     else if (s.flag)
         settings.tab.*s.flag = value != 0;
-    else
+    else if (s.number)
         settings.tab.*s.number = value;
 }
 
@@ -238,8 +248,9 @@ inline std::string profileMessage(const Profile& profile, std::string_view versi
 // quote's ">" and whatever else is around it are passed over), or written by hand. Its settings come one to
 // a line, or several to a line as a session's "VR settings from the headset" line has them, with spaces
 // round '=' or none; a switch takes on/off, true/false and yes/no too. A value outside its setting's range
-// is taken to the nearer end; a key no setting has, and a value that is no whole number, are passed over.
-// launcher.ini's gravity_percent is the weight. nullopt when the text holds no setting at all.
+// is taken to the nearer end, and a retired setting's to its one value; a key no setting has, and a value
+// that is no whole number, are passed over. launcher.ini's gravity_percent is the weight. nullopt when the
+// text holds no setting at all.
 inline std::optional<Profile> readProfile(std::string_view text) {
     if (text.substr(0, 3) == "\xEF\xBB\xBF")
         text.remove_prefix(3);
@@ -320,7 +331,9 @@ inline std::optional<Profile> readProfile(std::string_view text) {
                 else if (const auto [last, error] = std::from_chars(value.data(), valueEnd, number);
                          error != std::errc() || last != valueEnd)
                     break;
-                profile.values[i] = s.isSwitch() ? (number != 0 ? 1 : 0) : std::clamp(number, s.low, s.high);
+                profile.values[i] = s.retired()    ? s.low
+                                    : s.isSwitch() ? (number != 0 ? 1 : 0)
+                                                   : std::clamp(number, s.low, s.high);
                 any = true;
                 break;
             }
@@ -331,14 +344,14 @@ inline std::optional<Profile> readProfile(std::string_view text) {
     return profile;
 }
 
-// A setting's name as the SPIDY VR tab shows it; wall running, which has no row there, as the launcher's
-// options name it.
+// A setting's name as its row in the SPIDY VR tab has it (the launcher's own rows too); a retired one,
+// which has no row and never changes, by its key.
 inline std::string profileSettingName(const ProfileSetting& s) {
     if (s.item != vr_settings::Item::none)
         for (const auto& row : vr_settings::rows())
             if (row.item == s.item)
                 return row.title;
-    return "WALL RUNNING";
+    return std::string(s.key);
 }
 
 // A value as the tab shows it: the choice nearest to it, or ON or OFF; the swing speed limit, which the

@@ -185,6 +185,34 @@ does in a headset):
 | The game's clock: seconds of game time, the manager's times on it | double `0x7a7fbd0` | Disassembly (RegisterAttack adds a time to it); its scale `0x7a7fb90` (game_time.hpp) |
 | `Hero::HeroSpiderSenseManager` answers `HeroCounterableDodgeWindowOpenEvent` / `CloseEvent` (the flat game's mask lines, a material value 0x9402b89e set to 1, then 0) and `BotConfirmTimerIncreasing` (the stealth Spider-Sense) | vtable `0x38b4028`; handlers `0x966dd0`, `0x966d80`, `0x966c70` | Disassembly of its registrations at `0x966590` |
 
+For the dodge a web carrying the player starts (October 24;
+`include/spidy/game_dodge.hpp`, `spider_sense.hpp`'s `WebDodge`), read from
+the exe with capstone, then started and ended in the running game with
+`tools/probe_web_dodge.py`:
+
+| Fact | RVA | Verification |
+|---|---:|---|
+| The manager's update (manager, game seconds): its timers and immunities, each attack (`0x92b6d0`), and while its dodge's window (+0xca0) lasts, the dodge again for warnings that went off since (`0x929d20`) | `0x92d640`, called once a frame for every manager by the component type's update `0x926040` | Hooked by `game_dodge.cpp`; its first 16 bytes checked |
+| Dodge start (manager, kind, an attacker's handle or 0, the dodge's way or none, whether a perfect one slows time): its kind at +0xcd8, its answer at +0xcdc (0 none answered, 1 plain, 2 accurate, 3 perfect), when it started at +0xcc0; sets the hero's `HeroWAMUser` flag 0x10 (+0x180); sounds `0x5f9ae3a4` (accurate), `0x3cd06219` (perfect), `0xeedb2021` (none); combat action bits `0x8000` / `0x18000` (`0xb87540`) | `0x92a040` | In the game: kind 5 started on the hero's manager three times, answer 0 with no warning standing |
+| Dodge end (manager, whether `HeroWAMUser` hears it at once): kind and answer 0, the window 0, the immunities left clamped to the config's +0x74 (`MaxDodgeEndDamageImmunityTime`), each dodged attack's 0x1 for 0x400000 | `0x929ef0` (28 callers: the states' ends) | In the game: kind 0 again after each |
+| The dodge for each attack (manager, config, event, slot): warned (0x10), and not 0x100 unless its flags have 0x8 (kUsesDodgeButton); its stage under 2; the kind's flag in its flags (kinds 1, 2, 3, 5, 7, 12: 0x400; 9: 0x800; the rest either); then 0x1, with flags 0x21 an immunity from its damager (`0x927030`, `0x1ecabe0` on the hero's damage component), timed by the config (+0x58 by difficulty for an accurate one, +0x6c a perfect one, when +0x78 / +0x79 say so; by the reflection's field order `AccurateDodgeDamageImmunityTimeByDifficulty`, `PerfectDodgeDamageImmunityTime`, `...UsesTimedDamageImmunity`) or by the attack's own; and the answer: plain without kIsDodgable, perfect in its perfect window (0x8000, within the attack's perfect distance) on a side it allows (`0x929800`: flags 0x4000-0x20000 against the attacker's axes) | `0x929990`, for every attack from `0x929d20` | Disassembly |
+| The kinds the hero's states start: 1 `HeroStatePounceOff` and `0x9f5390`, 4 `HeroStateSplineDodge`, `HeroStateWallRunLaneJump` and `HeroStateJumpDodge`, 5 `HeroStateTraversalDodge`, 6 `HeroStateJumpDodgeOver`, 7, 8 `HeroStateWebRush`, 10 `HeroStateJumpOffTarget`, 11, 12, 13 `HeroStateJumpGroundPound`, 14 `HeroStateZipToTarget`; the air states (jump, fall, swing jump, zip jump...) by their own (vtable slot 37), only with no dodge on | | Each caller's argument; owners by RTTI |
+| The immunities: up to 16 of {time left, attacker, damager, the attack's warning time} from +0xb00, their count +0xc80; at 0 the damager leaves the damage component's set (`0x1ecad00`) | `0x92c700`, `0x92aa50` | Disassembly |
+
+For the rays that stand in for the player's body (October 24;
+`native_rays::meets`, `WorldQueries::bodyRaycast`, `Command::bodyRays`), read
+from the exe with capstone, measured in free roam with a scratchpad MinHook
+build on the test, then read through Spidy's own module with
+`tools/probe_body_rays.py`:
+
+| Fact | RVA | Verification |
+|---|---:|---|
+| The world's collision filter: `InsomniacCollisionFilter`, at the world's +0x498 (the pointer a query's +8 holds) | vtable `0x3d095b0` | RTTI; read in the game |
+| Its test (filter, the query's word, the body's word): with the query's 0x800, a category in common (the low 11 bits; either none passes), the body's type (bits 12-15) among the query's types (bits 12-19), then the groups (bits 21-31, a bit matrix at +0x40, rows +0x48 bytes; bit 20 includes, else excludes; world bodies have group 0); without 0x800, a type table of 16 bytes at +0x30 | `0x18060a0`; callers `0x1807690` (query, body: the body's word at hknpBody +0x6c), `0x18076d0` | Disassembly; in the game every query word of the mover's profile (`0x..e7804`) met 0x43f and not 0x10 |
+| Collision profiles: 32 bytes each from `[0x7813120]` (19 live, each starting -1): +6, +8 the types (low byte), +0xc the categories; a query's word is the categories, 0x800, the types << 12 and a group the query system leases | `0x17ff820` builds a query's filter from one | Read in the game: profile 3 `{-1, 0x00070001, 0xfee7, 0x4}` |
+| The mover's profile: its MoverManager's +0xd9c (2 at its init `0x1fb995f`, set at `0x1fbbe96`); the player's is 3, categories 0x004, types 0xe7 | `MoverManager::SubmitSafeBodySizeRequest` (`0x1826600` from `0x1fbc37b`) | Its query filter logged in the game: `{0x2ed, 0x70001, 0xfee7, 0x4}`; Spidy's `SpidyRayBody` read 0x004, 0xe7 |
+| What Spidy's rays (categories 0x410) met in the user's sessions of October 24: 0x43f, 0x63f, 0x6bf (the city), 0x10 (2 bodies, all vertical: the burning office's broken glass), 0x400, 0x43b, 0x6bb, 0x47b, 0x6aa, 0x79, 0x3b, 0x9b (no category of the player's mover: his body passes them) | | The session reports' ray samples (`filter` of each hit) |
+
 For the button icons in the game's prompts (October 24;
 `include/spidy/prompt_buttons.hpp`, `include/spidy/game_prompts.hpp`),
 found from disassembly and measured in the running game with scratchpad
@@ -201,6 +229,18 @@ MinHook builds:
 | `HUD.managers::POIManager` in POIs.gfx: categories `POI_INTERACT` 9, `POI_OBJECTIVE` 3, ...; interact subtypes `SUBTYPE_TALK` 1 (a pedestrian: `POISetButton(id, 0x85920BAD)`, the name hash of the hero's `kInteract`, which `POI.SetButton` ignores, and the text `[BTN_Y] Interact`), `SUBTYPE_THROWABLE` 7, `SUBTYPE_GENERIC_TRIANGLE` 12, `SUBTYPE_GENERIC_SQUARE` 13, `SUBTYPE_GENERIC_CIRCLE` 14, `SUBTYPE_GENERIC_X` 15 | | The movie's bytecode (ABC) read from the game's memory and disassembled, October 24 |
 | `POIDefault` (7, 8 and 12-15, 22, 32): the throwable's `RefreshThrowable` asks the game `getDataFromMarkup('[ACTION_WEB_YANK]')` and draws a keyboard's markup, a Steam Input pad's two parts (LB . RB beside the diamond: the virtual pad), or `icon_web_throw`; 12 to 15 draw `icon_face_button_top`, `_left`, `_right`, `_bottom` | | Disassembled; subtype 7 made 13 drew X over a mailbox (a research build; Spidy's `game_prompts::rewriteCall` makes the same call) |
 | A bumped pedestrian: `ShowText(1, 'Spider-Man: Sorry about that.')` | | Logged |
+
+For the throw of a prop (October 24; `include/spidy/throw_aim.hpp`,
+`src/game_throw.cpp`), from disassembly and measured in the game with
+scratchpad MinHook builds:
+
+| Fact | RVA | Verification |
+|---|---:|---|
+| `Hero::HeroAimManagerLocal`: its results in the object its +0xB9CC handle names; per slot an override index at +0xC408 for slots 0-3 and 6 only (mask 0x4f) | vtable `0x38b1658`, type `0x6dd5a40` | Disassembly of its slot getters `0x8ff1a0` (actor), `0x8ff3a0`, `0x8ff340` (part), `0x8ff160` (way); the type's name from its registration `0xb64bd` |
+| The results' getters: actor handle `+0x9FB8 + 0x18 slot` (results, out, slot); aim point `+0x9FC4 + 0x18 slot` (results, slot); level way `+0x9B28` x, `+0x9B30` z, stride `0x98` (results, out, slot), y zeroed and normalised | `0x957620`, `0x957640`, `0x9575d0` | Hooked (Spidy's `game_throw`): entry bytes `41 8b c0 4c 8d 04 40`, `8b c2 48 8d 14 40`, `40 53 48 83 ec 30` |
+| HeroStateWebYankEnviro's throw target (slot 4, the aim manager found by its type on the hero): an actor and part give the way to his aim point (`0x211eb50`: his position, or his target point of that byte index), else the slot's way, else the state's +0x32c; stored at +0x358 (way), +0x364 (actor handle), +0x368 (part) | `0xa52270` | Disassembly. In the game: slot 4 read about 117 times in one 1.5 s hold, never outside one; its way the camera's heading (-39.5 against -39.8, -90.2 against -90.1) |
+| `0xa51340` sends the state's target as `HeroStateWebYankAndThrowTargetUpdate` (co-op sync, behind a flag and a frame count); `0xa55950` stores a level way at +0x320 | | Disassembly |
+| Actors: records of 0xc0 bytes in a table of their own; a handle's index (20 bits) names the record, its generation (11 bits) the word at record +0x10; a record holds its index at +0xC | table `0x7a44380`, count `0x7a4439c`; resolver `0x15a0560` | Disassembly; the throw's handle made as `0xa52429` makes it |
 
 The camera-related entry was temporarily hooked by the independently written
 Spidy observer. Local disassembly showed RCX as the object, XMM1 as the float

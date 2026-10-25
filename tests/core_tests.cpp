@@ -47,6 +47,7 @@
 #include "spidy/xr_layers.hpp"
 #include "spidy/offer_pointing.hpp"
 #include "spidy/tech_marks.hpp"
+#include "spidy/throw_aim.hpp"
 #include <algorithm>
 #include <cstring>
 #include <functional>
@@ -2709,6 +2710,18 @@ int main() {
             covered |= mask;
         }
         check((covered & 0x3ff) == 0x3ff, "rotating head side/up probes lost a direction");
+        // The head's, the hands' contact and the roof stand in for the body; the hands' aim, for the webs, not.
+        {
+            Input aiming;
+            for (auto& hand : aiming.hands) hand.tracked = true;
+            auto command = controllerAimRays(aiming, 9);
+            appendTrackingRays(command, head, hands, roof, 0);
+            for (unsigned i = 0; i < command.count; ++i)
+                check(((command.bodyRays >> i) & 1) == (command.rays[i].tag >= 2 ? 1u : 0u),
+                      "a ray stood in for the body, or did not, wrongly");
+            command.bodyRays |= 1u << command.count;
+            check(!native_rays::valid(command), "a body bit past the rays was accepted");
+        }
         Input input;
         for (auto& hand : input.hands) hand.tracked = true;
         auto stock = controllerAimRays(input, 4);
@@ -3995,34 +4008,19 @@ int main() {
         pose = poser.update(.05f, in);
         check(pose.fist > .9f && pose.shoot > .5f, "normal hand poses did not resume");
     });
-    test("wall camera distance: locked at 25 cm, hidden and unaffected by old values or reset", [] {
-        using namespace vr_settings;
-        Values values;
-        check(values.wallDistance == 25, "unexpected fixed wall distance");
+    test("wall camera distance: fixed at 25 cm, and kept through a reset", [] {
         GameTrackingRig rig;
         rig.handClimb(true);
+        rig.wallDistance(static_cast<float>(vr_settings::fixedWallDistance) / 100);
         auto f = trackedFrame();
         const Vec3 feet{4.1f, 10, 0};
         const SurfaceHold wall{{-1, 0, 0}, {5, 11, 0}, 0, false};
         holdFor(rig, f, feet, {}, .3f);
-        for (unsigned i = 0; i < std::size(wallDistances); ++i) {
-            check(!choose(Item::wallDistance, static_cast<int>(i), values), "disabled distance changed");
-            rig.wallDistance(static_cast<float>(values.wallDistance) / 100);
-            auto out = holdFor(rig, f, feet, wall, .7f);
-            near(dot(out.headPose.position - wall.anchor, wall.normal),
-                 .25f, .005f);
-            rig.reset();
-            out = holdFor(rig, f, feet, wall, .7f);
-            near(dot(out.headPose.position - wall.anchor, wall.normal),
-                 .25f, .005f);
-        }
-        values.wallDistance = -100;
-        check(sanitized(values).wallDistance == 25, "old small distance was not overridden");
-        values.wallDistance = 999;
-        check(sanitized(values).wallDistance == 25, "old large distance was not overridden");
-        check(!choose(Item::wallDistance, 100, values), "invalid distance choice accepted");
-        for (const auto& row : rows())
-            check(row.item != Item::wallDistance, "distance setting still visible");
+        auto out = holdFor(rig, f, feet, wall, .7f);
+        near(dot(out.headPose.position - wall.anchor, wall.normal), .25f, .005f);
+        rig.reset();
+        out = holdFor(rig, f, feet, wall, .7f);
+        near(dot(out.headPose.position - wall.anchor, wall.normal), .25f, .005f);
     });
     test("wall contact: palms inside the facade attach, pull and pulse once without pushing the body through", [] {
         constexpr float dt = 1.f / 60;
@@ -4558,6 +4556,34 @@ int main() {
         check(!late.mounting(),"the mount went on without the stick");
         body=fly(late,w,{{4.5f,1.2f,0},{0,11,0},false},in,1);
         check(late.wall().on&&length(body.velocity)<.05f,"the jump did not end on its wall");
+    });
+    test("a pane the game lets the body through - a broken glass one - is no wall to walk up, nor the ground", [] {
+        // The game's own test of the player's mover profile (3: categories 0x004, types 0xe7, measured) against
+        // what Spidy's rays met: the burning office's broken glass (0x10) is passed, its floor and walls (0x43f,
+        // 0x63f) met; a body of a type the profile has not (0x7000: type 7 is, type 3 not) passed; no profile
+        // read: every hit, as before.
+        const native_rays::BodyFilter player{0x004,0xe7};
+        check(!native_rays::meets(player,0x10),"the broken glass met the player's body");
+        check(native_rays::meets(player,0x43f)&&native_rays::meets(player,0x63f),"the building passed the body");
+        check(native_rays::meets(player,0x7004)&&!native_rays::meets(player,0x3004),"a type was taken wrongly");
+        check(native_rays::meets({},0x10)&&native_rays::meets(player,0),"an unknown profile or category passed");
+        // A pane at x = 5 that rays meet and the body passes: walked at, no mount; the same pane solid, a mount.
+        struct Pane : Building {
+            bool passes = true;
+            std::optional<RayHit> bodyRaycast(Vec3 o,Vec3 d,float distance) const override {
+                return passes ? std::nullopt : raycast(o,d,distance);
+            }
+        } pane;
+        Input in;in.move={1,0,0};
+        const Body stands{{4.5f,1,0},{},true};
+        Swing s(mounted());
+        bool wants{};
+        for(int i=0;i<30;++i){s.predictNativeStep(1.f/60,in,pane,stands);wants|=s.mounting()||s.mountBegun();}
+        check(!wants&&!s.wall().on,"a pane the body passes was walked up");
+        pane.passes=false;
+        Swing solid(mounted());
+        for(int i=0;i<30;++i){solid.predictNativeStep(1.f/60,in,pane,stands);wants|=solid.mounting();}
+        check(wants,"the same pane solid was no wall");
     });
     test("a stroll past a wall, a glance at it, a kerb and a far wall mount nothing", [] {
         Building w;Input in;
@@ -8284,6 +8310,71 @@ int main() {
         try{MoveDodgeConfig c;c.window=0;MoveDodge bad(c);}catch(const std::invalid_argument&){refused=true;}
         check(refused,"a move measured over no time accepted");
     });
+    test("dodging on a web: a warned blow about to land on a player a web carries starts the game's dodge, ended after it", [] {
+        const float dt=1.f/90;
+        using Ask=WebDodge::Ask;
+        // Swinging down and on along -z at 12 m/s.
+        const Vec3 swinging{0,-2,-12};
+        WebDodgeThreat blow{5,.8f,.2f,true,false};
+        WebDodge d;
+        check(d.update(dt,true,true,swinging,{&blow,1},GameDodge::none)==Ask::none,"a blow 0.8 s off dodged at once");
+        blow.toImpact=.3f;
+        check(d.update(dt,true,true,swinging,{&blow,1},GameDodge::none)==Ask::start&&d.dodging()&&d.dodges()==1,
+              "a blow 0.3 s off a swinging player went undodged");
+        check(std::abs(d.way().z+1)<1e-4f&&std::abs(d.way().y)<1e-4f,"the dodge's way is not the swing's, level");
+        // It lasts 0.6 s, the blow passed by then.
+        const auto until=[&](WebDodge& w,std::span<WebDodgeThreat> threats,GameDodge game=GameDodge::ours) {
+            int frames{};
+            for(;frames<400;++frames){
+                if(w.update(dt,true,true,swinging,threats,game)==Ask::end)return frames+1;
+                for(auto& t:threats)t.toImpact-=dt;
+            }
+            return 0;
+        };
+        const int held=until(d,{&blow,1});
+        check(held>=53&&held<=56&&!d.dodging(),"the dodge did not end 0.6 s on");
+        // A rest, then the next warning: a blow still to come keeps it on, to 1.5 s at most.
+        std::array<WebDodgeThreat,2> two{{{6,.3f,.1f,true,false},{7,1.f,.1f,true,false}}};
+        for(int i=0;i<9;++i)d.update(dt,true,true,swinging,{},GameDodge::none);
+        check(d.update(dt,true,true,swinging,two,GameDodge::none)==Ask::start,"the next warning went undodged");
+        const int longer=until(d,two);
+        check(longer>=103&&longer<=107,"a dodge did not hold for the blow still to come");
+        two={{{6,.3f,.1f,true,false},{7,5.f,.1f,true,false}}};
+        for(int i=0;i<9;++i)d.update(dt,true,true,swinging,{},GameDodge::none);
+        check(d.update(dt,true,true,swinging,two,GameDodge::none)==Ask::start,"a third warning went undodged");
+        const int most=until(d,two);
+        check(most>=134&&most<=137,"a dodge held past 1.5 s");
+        // None: on the ground, hanging still on a web, a warning the game answered, a game dodge on already.
+        WebDodge ground,hanging,answered,busy;
+        WebDodgeThreat soon{8,.2f,.3f,true,false},done{8,.2f,.3f,true,true};
+        check(ground.update(dt,false,false,swinging,{&soon,1},GameDodge::none)==Ask::none,"a player on the ground dodged");
+        check(hanging.update(dt,true,true,{0,.5f,1},{&soon,1},GameDodge::none)==Ask::none,"a player hanging still dodged");
+        check(answered.update(dt,true,true,swinging,{&done,1},GameDodge::none)==Ask::none,"an answered warning dodged");
+        check(busy.update(dt,true,true,swinging,{&soon,1},GameDodge::other)==Ask::none,"a dodge over the game's own");
+        // The flight a web left him in counts for a second; a warning with no time set, a tenth on.
+        WebDodge coast,late;
+        coast.update(dt,true,true,swinging,{},GameDodge::none);
+        for(int i=0;i<45;++i)coast.update(dt,false,true,swinging,{},GameDodge::none);
+        check(coast.update(dt,false,true,swinging,{&soon,1},GameDodge::none)==Ask::start,"the flight after a web dodged nothing");
+        late.update(dt,true,true,swinging,{},GameDodge::none);
+        for(int i=0;i<100;++i)late.update(dt,false,true,swinging,{},GameDodge::none);
+        check(late.update(dt,false,true,swinging,{&soon,1},GameDodge::none)==Ask::none,"a fall long after a web dodged");
+        WebDodge untimed;
+        WebDodgeThreat open{9,0,.05f,false,false};
+        check(untimed.update(dt,true,true,swinging,{&open,1},GameDodge::none)==Ask::none,"an untimed warning dodged at once");
+        open.warned=.1f;
+        check(untimed.update(dt,true,true,swinging,{&open,1},GameDodge::none)==Ask::start,"an untimed warning went undodged");
+        // The game ended it first: nothing to end; one it did not take is no dodge.
+        check(untimed.update(dt,true,true,swinging,{&open,1},GameDodge::none)==Ask::none&&!untimed.dodging()&&
+              untimed.cutShort()==1,"a dodge the game ended was asked to end");
+        WebDodge refusedDodge;
+        refusedDodge.update(dt,true,true,swinging,{&soon,1},GameDodge::none);
+        refusedDodge.refused();
+        check(!refusedDodge.dodging()&&refusedDodge.dodges()==0,"a dodge the game did not take counted");
+        bool refused{};
+        try{WebDodgeConfig c;c.most=.3f;WebDodge bad(c);}catch(const std::invalid_argument&){refused=true;}
+        check(refused,"a dodge whose most is under its least accepted");
+    });
     test("spider-sense's sightline: an attacker over 31 degrees off the look, kept to 26, on his side, behind too", [] {
         const Pose head{{0,1.6f,0},{}};
         const auto at=[&](float degrees,float up=0) {
@@ -9920,12 +10011,50 @@ int main() {
         }
         check(missing.empty(),("VR play cannot send what the game names: "+missing).c_str());
     });
+    test("the game's throw goes where the free hand points: at the character it is on, or that way", [] {
+        using namespace throw_aim;
+        const Vec3 player{10, 0, 10};
+        game_swing::Aim at;
+        // On a character 8 m ahead and a little to the right: at him.
+        at.kind = static_cast<uint32_t>(game_swing::AimKind::character);
+        at.point = {13, 1.2f, 2};
+        auto r = fromHand(at, {0, 0, -1}, player);
+        check(r.flags == (active | character), "a hand on a character aims at him");
+        const float across = 3 / std::sqrt(73.f), ahead = 8 / std::sqrt(73.f);
+        check(std::abs(r.direction.x - across) < 1e-4f && std::abs(r.direction.z + ahead) < 1e-4f &&
+                  r.direction.y == 0,
+              "the way to a character is the way from the player to him, level");
+        check(length(r.point - at.point) < 1e-6f, "the character's centre goes along");
+        // On a wall to the left: that way, no character.
+        at.kind = static_cast<uint32_t>(game_swing::AimKind::anchor);
+        at.point = {0, 6, 10};
+        r = fromHand(at, {0, 0, -1}, player);
+        check(r.flags == active && std::abs(r.direction.x + 1) < 1e-5f, "a hand on a surface aims that way");
+        // Its web busy (no aim): the way the hand points.
+        at.kind = static_cast<uint32_t>(game_swing::AimKind::none);
+        r = fromHand(at, normalized(Vec3{1, -.5f, 1}), player);
+        check(r.flags == active && std::abs(r.direction.x - std::sqrt(.5f)) < 1e-4f,
+              "no aim: the hand's own way");
+        // Pointing at the player's own feet from overhead: nothing to aim.
+        at.kind = static_cast<uint32_t>(game_swing::AimKind::anchor);
+        at.point = {10, -1, 10};
+        r = fromHand(at, {0, -1, 0}, player);
+        check(r.flags == 0, "straight down aims nothing");
+        // A handle the way the game makes one.
+        check(handle(0x12345, 0x801) == ((1u << 20) | 0x12345), "generation's 11 bits over the index's 20");
+        // The character nearest the hand's point, his body from his feet up 2 m.
+        const Vec3 feet[] = {{0, 0, 0}, {3, 0, 0}, {1.5f, 0, 4}};
+        check(nearest(feet, 3, {2.6f, 1.3f, 0}, 2) == 1, "the nearest body");
+        check(nearest(feet, 3, {1.5f, 3.5f, 4}, 2) == 2, "a point over a head is his");
+        check(nearest(feet, 3, {8, 1, 8}, 2) == -1, "nobody within 2 m");
+    });
     test("the HUD's throw marker over a prop is drawn as X, and no other marker changes", [] {
         using namespace prompt_buttons;
         // AddPOI(id, category, subtype) as the game made them by the trash cans of
         // the user's second profile on October 24.
         check(markerSubtype(poiInteract, poiThrowable)==poiLeftFace,"a throwable's marker");
-        check(markerSubtype(poiInteract, 1)==1&&markerSubtype(poiInteract, 0)==0,"a pedestrian's talk marker");
+        check(markerSubtype(poiInteract, 1)==1&&markerSubtype(poiInteract, 0)==0,
+              "a pedestrian's talk marker");
         check(markerSubtype(poiInteract, poiLeftFace)==poiLeftFace,"a marker that is X already");
         check(markerSubtype(3, poiThrowable)==poiThrowable,"an objective's marker of the same number");
     });
@@ -14676,13 +14805,13 @@ int main() {
                             }
                         }
     });
-    test("body: every saved camera distance sets absolute pelvis clearance across body sizes", [] {
+    test("body: camera distances of 20 cm to 1 m set absolute pelvis clearance across body sizes", [] {
         for (const auto& b : {testBody(), splitPelvisBody()})
             for (float scale : {.85f, 1.2f})
                 for (float roll : {0.f, 1.5707963f, 3.14159265f})
                     for (float pitch : {-1.f, 0.f, 1.f}) {
                         body::State state;
-                        for (int cm : vr_settings::wallDistances) {
+                        for (int cm : {20, 25, 30, 40, 50, 60, 75, 100}) {
                             const float distance = static_cast<float>(cm) / 100;
                             body::Targets t;
                             t.head = t.crawl = t.crawlPlanted = t.crawlHandSync = t.airborne = true;
@@ -15216,6 +15345,34 @@ int main() {
                     for(const auto& fin:b.rig.arms[side].fingers)
                         for(size_t k=1;k<=3;++k)
                             near(bendOf(b,made,fin,k,heroHinge(b,made,fin,side)),c.fistBend[k-1],.02f);
+            }
+        }
+    });
+    test("body: an open hand's fingers lie side by side, not in the rest pose's fan", [&] {
+        for(const bool odd:{false,true}){
+            auto b=testBody(odd,true);
+            body::Config c;c.hideHead=false;
+            body::State s;
+            const auto pose=solved(b,heroHandsOut(0),s,c);
+            for(int side=0;side<2;++side){
+                const auto& arm=b.rig.arms[side];
+                const auto& fingers=arm.fingers;
+                const Vec3 palm=heroPalm(b,pose,side),along=normalized(b.at(pose,arm.finger)-b.at(pose,arm.hand));
+                const Vec3 across=normalized(cross(palm,along));
+                const auto inPalm=[&](const std::vector<int16_t>& f){
+                    const Vec3 v=normalized(b.at(pose,f[2])-b.at(pose,f[1]));
+                    return normalized(v-palm*dot(v,palm));
+                };
+                for(size_t i=1;i<fingers.size();++i){
+                    // Each finger's first bone within 8 degrees of the next's in the palm's plane, where the rest
+                    // pose fans them 12 to 15 ("hands look a bit goofy with fingers spread too wide", October 25).
+                    check(dot(inPalm(fingers[i]),inPalm(fingers[i-1]))>std::cos(.14f),"an open hand's fingers fan out");
+                    // Square across the fingers, each tip as far from the next as its knuckle to 1.5 times as far
+                    // (the rest pose's fan: 2.1 to 2.3 times), never crossing.
+                    const float tips=dot(b.at(pose,fingers[i][4])-b.at(pose,fingers[i-1][4]),across);
+                    const float knuckles=dot(b.at(pose,fingers[i][1])-b.at(pose,fingers[i-1][1]),across);
+                    check(tips/knuckles>.9f&&tips/knuckles<1.5f,"an open hand's fingertips fan out or crowd together");
+                }
             }
         }
     });
@@ -16597,7 +16754,7 @@ int main() {
         for (const auto& [at, title] : sections) {
             check(all[at].item == Item::none && std::strcmp(all[at].title, title) == 0, "a section out of place");
             size_t next = at + 1;
-            while (next < all.size() && all[next].page)
+            while (next < all.size() && all[next].place != Place::tab)
                 ++next;
             check(next < all.size() && all[next].item != Item::none, "a section with no setting in the tab");
         }
@@ -16623,14 +16780,15 @@ int main() {
             check(all[37 + i].item == realistic[i], "the realistic flips' rows out of order");
         check(std::strcmp(all[37].title, "REALISTIC FLIPS") == 0 && all[37].choices.empty(),
               "realistic flips: a switch, first of its rows");
-        // The wall view has no row of its own any more: it turned only while
-        // Spidy held the player on a wall, so it was never a choice of its own
-        // and the launcher's one "Wall running" now carries both (the player,
-        // October 14: "i dont get why we have a wall run and a wall stand
-        // options where wall run actually controlls wheter i stand or crawl",
-        // then "also merge the two options").
+        // The wall view has no row of its own (the player, October 14: "i dont
+        // get why we have a wall run and a wall stand options where wall run
+        // actually controlls wheter i stand or crawl", then "also merge the
+        // two options"), nor the wall camera's distance (October 24); since
+        // October 25 neither is a setting at all.
         for (const auto& row : all)
-            check(row.item != Item::standOnWalls, "the wall view still has a row of its own");
+            check(std::strcmp(row.title, "STAND ON WALLS") != 0 &&
+                      std::strcmp(row.title, "WALL CAMERA DISTANCE") != 0,
+                  "the wall view or the wall camera's distance has a row again");
         check(all[23].item == Item::screenSize && all[25].item == Item::hud && all[25].choices.size() == 4 &&
                   std::strcmp(all[25].choices[0], "OFF") == 0 && std::strcmp(all[25].choices[3], "LARGE") == 0,
               "the HUD after the game screen's rows: OFF, SMALL, MEDIUM, LARGE");
@@ -16657,9 +16815,20 @@ int main() {
         check(all[22].item == Item::view && std::strcmp(all[22].title, "VR VIEW") == 0 && all[22].choices.size() == 2 &&
                   std::strcmp(all[22].choices[0], "VR") == 0 && std::strcmp(all[22].choices[1], "GAME SCREEN") == 0,
               "the view above the game screen's rows: VR, or GAME SCREEN");
-        // VR VIEW is on the pause menu's first page, beside RESUME, and no other row is.
-        for (const auto& row : all)
-            check(row.page == (row.item == Item::view), "a row on the wrong page");
+        // VR VIEW is on the pause menu's first page, beside RESUME, and no other row is; the realistic
+        // flips' thresholds and how a spin builds and dies away are the launcher's alone (the user,
+        // October 25: "cleanup the redundant"). The other 43 rows are the tab's.
+        for (const auto& row : all) {
+            const bool launcherOnly =
+                row.item == Item::automaticMinimumSpeed || row.item == Item::automaticResponse ||
+                row.item == Item::automaticFalloff || row.item == Item::automaticHandThreshold;
+            check(row.place == (row.item == Item::view ? Place::page
+                                : launcherOnly           ? Place::launcher
+                                                         : Place::tab),
+                  "a row in the wrong place");
+        }
+        check(std::count_if(all.begin(), all.end(), [](const Row& r) { return r.place == Place::tab; }) == 43,
+              "the tab's own rows");
         check(all[1].item == Item::webStyle && std::strcmp(all[1].title, "WEB STYLE") == 0 &&
                   all[1].choices.size() == 2 && std::strcmp(all[1].choices[0], "REALISTIC") == 0 &&
                   std::strcmp(all[1].choices[1], "ARCADE") == 0,
@@ -16683,12 +16852,9 @@ int main() {
         check(all[30].item == Item::calibrate && all[30].choices.size() == 2 &&
                   std::strcmp(all[30].choices[1], "ON RESUME") == 0,
               "the body's calibration: NO, or ON RESUME");
-        // Every setting has a row but the wall view, which the launcher's one
-        // "Wall running" now carries along with who holds you on the wall.
+        // Every setting has a row.
         constexpr uint64_t everySetting = (uint64_t{2} << static_cast<unsigned>(lastItem)) - 2;
-        constexpr uint64_t noRowOfItsOwn = uint64_t{1} << static_cast<unsigned>(Item::standOnWalls) |
-            (uint64_t{1} << static_cast<unsigned>(Item::wallDistance));
-        check(seen == (everySetting & ~noRowOfItsOwn), "a setting missing");
+        check(seen == everySetting, "a setting missing");
         auto choicesOf = [&](Item item) {
             return std::find_if(all.begin(), all.end(), [&](const Row& r) { return r.item == item; })->choices.size();
         };
@@ -16762,7 +16928,7 @@ int main() {
     test("VR settings only the tab offers: kept as key=value lines, read back sanitized, the rest left", [] {
         using namespace vr_settings;
         const Values defaults;
-        check(tabOnlyText(defaults) == "near_clip_mm=20\nhand_climb=0\nwall_distance_cm=25\n"
+        check(tabOnlyText(defaults) == "near_clip_mm=20\nhand_climb=0\n"
                                        "realistic_flips=0\n"
                                        "rotation_strength=50\nrotation_speed=240\nflight_speed_min=3\n"
                                        "swing_momentum=1\nrotation_response_ms=500\nhand_momentum=100\n"
@@ -16776,7 +16942,6 @@ int main() {
         changed.webSlingshot = true;
         changed.betterClimbing = true;
         changed.handClimb = true;
-        changed.wallDistance = 75;
         changed.nearClipMm = 50;
         changed.realisticFlips = true;
         changed.automaticReleaseFlip = false;
@@ -16796,7 +16961,7 @@ int main() {
         changed.heightCm = 178;
         changed.seated = true;
         check(withTabOnly(defaults, tabOnlyText(changed)) == sanitized(changed),
-              "the settings did not come back with the fixed wall clearance");
+              "the settings did not come back");
         check(withTabOnly(defaults, "height_cm=40\n").heightCm == 120 &&
                   withTabOnly(defaults, "height_cm=999\n").heightCm == 220 &&
                   withTabOnly(defaults, "height_cm=-5\n").heightCm == 0,
@@ -16806,13 +16971,15 @@ int main() {
               "blow sounds past either end");
         check(withTabOnly(defaults, "ui_style=7\n").uiStyle == 1 && withTabOnly(defaults, "ui_style=-2\n").uiStyle == 0,
               "a UI style past either end");
-        // Windows' line ends, a line of another build, no number, and a
-        // distance out of range: the rest still counts.
-        auto read = withTabOnly(defaults, "hand_climb=1\r\nfuture_row=3\nwall_distance_cm=near\n");
-        check(read.handClimb && read.wallDistance == fixedWallDistance, "a bad line spoiled the good one");
+        // Windows' line ends, a line of another build, no number, and an
+        // older file's wall distance (no setting since October 25): the rest
+        // still counts.
+        Values climbing = defaults;
+        climbing.handClimb = true;
+        auto read = withTabOnly(defaults, "hand_climb=1\r\nfuture_row=3\nnear_clip_mm=near\n");
+        check(read == climbing, "a bad line spoiled the good one");
         read = withTabOnly(defaults, "wall_distance_cm=5\nhand_climb=2");
-        check(read.handClimb && read.wallDistance == fixedWallDistance,
-              "an old distance escaped the fixed value");
+        check(read == climbing, "an older file's wall distance changed a setting");
         // Nothing saved yet, and the launcher's settings untouched.
         Values launched = defaults;
         launched.swingSpeed = 40;
@@ -16880,10 +17047,7 @@ int main() {
                   choose(Item::view, 1, v) && v.flatScreen && choice(Item::view, v) == 1 &&
                   !choose(Item::view, 2, v) && choose(Item::view, 0, v) && !v.flatScreen,
               "the view: VR by default, GAME SCREEN the other choice");
-        check(defaults.standOnWalls && choice(Item::standOnWalls, defaults) == 1 &&
-                  defaultChoice(Item::standOnWalls) == 1 && choose(Item::standOnWalls, 0, v) && !v.standOnWalls &&
-                  !choose(Item::standOnWalls, 0, v) && choose(Item::standOnWalls, 1, v) && v.standOnWalls,
-              "standing on walls: ON by default, a switch");
+        check(defaults.standOnWalls, "standing on walls: on unless run_game_vr.py says otherwise");
         check(!defaults.triggerWebs && choice(Item::webButton, defaults) == 0 && defaultChoice(Item::webButton) == 0 &&
                   choose(Item::webButton, 1, v) && v.triggerWebs && choice(Item::webButton, v) == 1 &&
                   !choose(Item::webButton, 1, v) && !choose(Item::webButton, 2, v),

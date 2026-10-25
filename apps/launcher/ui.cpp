@@ -1730,8 +1730,8 @@ void App::options(ImVec2 origin, ImVec2 size) {
     };
     const float columnWidth = (width - gap) * 0.5f;
     float columnY[2] = {top, top};
-    // A card of options in a column: webs, moving and walls on the left; you, the picture and the screens on the
-    // right.
+    // A card of options in a column: webs, moving and walls on the left; you, the picture, the screens and
+    // troubleshooting on the right.
     const auto group = [&](int column, const char* title, const std::function<void()>& rows) {
         ImGui::SetCursorScreenPos(ImVec2(base.x + column * (columnWidth + gap), columnY[column]));
         if (beginCard(title, ImVec2(columnWidth, 0), ImGuiChildFlags_AutoResizeY)) {
@@ -1786,12 +1786,6 @@ void App::options(ImVec2 origin, ImVec2 size) {
         });
     });
     group(0, "Walls", [&] {
-        option("Wall running", "On: a wall you swing or fly onto is Spidy's, and you run along it. Stop on any wall "
-                               "and the game's own crawl holds you, so its vents, doors and prompts work; push the "
-                               "stick up a wall to run up it, the game's own wall run. Off: every wall is the game's "
-                               "crawl. Either way you stand upright on the wall and your view turns so the wall is "
-                               "your floor.",
-               S(42), [&] { changed |= toggle("##wallrun", &o.wallRun); });
         option("Hand wall climbing (experimental)",
                "On a wall with the left stick at rest, squeeze a grip near the wall to hold on and pull to "
                "climb; both grips held roll your view along it.",
@@ -1957,8 +1951,6 @@ void App::options(ImVec2 origin, ImVec2 size) {
     group(1, "Monitor", [&] {
         option("Small game window", "Saves GPU time while you play in VR.", S(42),
                [&] { changed |= toggle("##small", &o.smallWindow); });
-        option("Normal camera on the monitor", "Off: the monitor shows your left eye.", S(42),
-               [&] { changed |= toggle("##stock", &o.stockMonitorView); });
         option("Monitor frame rate",
                "How often the monitor gets your left eye in VR. Each picture costs the graphics card time the "
                "headset could have.",
@@ -1970,6 +1962,15 @@ void App::options(ImVec2 origin, ImVec2 size) {
                "A wider view on the monitor to record, at least this wide across, instead of your left "
                "eye. Costs frame rate; Spidy's marks stay in the headset.",
                S(150), [&] { tabCombo("##recordingfov", Item::recordingFov); });
+    });
+    // A way round a display driver error as VR starts (PLAYERS.md), apart from the monitor's options since
+    // October 25: beside them it read as one of them, and Recording FOV does nothing while it is on.
+    group(1, "Troubleshooting", [&] {
+        option("Normal camera on the monitor",
+               "Only for a display driver error as VR starts: the game keeps its own camera, and the "
+               "monitor shows it. Costs frame rate; shadows and far detail follow that camera, and "
+               "Recording FOV does nothing.",
+               S(42), [&] { changed |= toggle("##stock", &o.stockMonitorView); });
     });
     ImGui::EndDisabled();
     if (changed)
@@ -2470,6 +2471,8 @@ void App::controls(ImVec2 origin, ImVec2 size) {
           {"Blue lines: throw a fist at him", "The counter: his attack breaks, he is your target, and you fly to "
                                               "him if he is out of reach. The blow sends him flying"},
           {"Red lines / yellow lines", "Dodge (B) / jump (A): no counter breaks this attack"},
+          {"Lines while you swing", "A web carrying you dodges red and blue lines' blows by itself: the game's "
+                                    "own dodge on the move, with its Focus"},
           {"Yank a thug while you are in the air", "He flies to you and floats in front of you; time slows as he "
                                                    "arrives and you hang there. Hit him"},
           {"Slow motion by itself", "Time slows for a moment at a finisher, a called blow, a thug who arrives in "
@@ -2484,7 +2487,7 @@ void App::controls(ImVec2 origin, ImVec2 size) {
                 "the game takes it"},
           {"X where the game shows LB + RB", "The game's LB + RB: throw a prop, pull a door or a grate; hold "
                                              "it as long as the game wants the two held. Its prompt and marker "
-                                             "show X"},
+                                             "show X. A prop goes where your other hand points"},
           {"Right stick down", "Heal: the game's D-pad down. Push it right down and hold it a moment"},
           {"Right stick up", "The game's LT + RT: zip to a point, enter a vent, where the game shows the "
                              "two; while you swing too. No point? Keep holding (time slows as the game "

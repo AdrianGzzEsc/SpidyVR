@@ -10,7 +10,7 @@ inline bool crawlEnclosed(const WorldQueries& world, Vec3 point, Vec3 normal) {
     if (!finite(point) || !finite(n) || length(n) < .9f) return false;
     const Vec3 inside = point + n * .25f;
     const auto face = [&](Vec3 direction, float reach) {
-        const auto hit = world.raycast(inside, direction, reach);
+        const auto hit = world.bodyRaycast(inside, direction, reach);
         return hit && hit->fixed && finite(hit->normal) &&
                dot(normalized(hit->normal), direction) < -.7f;
     };
@@ -138,7 +138,7 @@ class CrawlHands {
             // Cast from the duct's interior, aligned with the palm. This also
             // finds palms already inside a wall, floor or ceiling.
             const Vec3 from = palm + axis * dot(inside - palm, axis);
-            const auto hit = world.raycast(from, -axis, 3.f);
+            const auto hit = world.bodyRaycast(from, -axis, 3.f);
             if (!hit || !hit->fixed || !world.exists(hit->surface) || !finite(hit->point) ||
                 !finite(hit->normal) || dot(normalized(hit->normal), axis) < .5f) continue;
             const float distance = dot(palm - hit->point, normalized(hit->normal));

@@ -338,6 +338,12 @@ Fighting (web strikes: punching across the room, as in Batman: Arkham Shadow)
                          duck: the way the game picks), its perfect dodge and
                          its slowed time too. A lean toward him is none (a
                          counter leans in). Not while a web carries you
+  On a web ............. swinging, zipping or pulled along a web, faster than
+                         a jog (3 m/s), red and blue lines' blows are
+                         dodged for you just before they land: the game's
+                         own dodge on the move, its Focus and its sound, a
+                         whoosh across the vest. Its perfect dodge does not
+                         slow time there: the swing goes on
   Yellow lines ......... under a white chevron: jump over it, A
   Out of view .......... an enemy behind you or to the side: his mark shows
                          small near the middle of your view on his side,
@@ -374,7 +380,8 @@ Moving
                          save may not have
   B .................... dodge: the game's B. You dodge the way the left
                          stick points; with the stick at rest the game
-                         chooses the way. Not while a web carries you
+                         chooses the way. Not while a web carries you: the
+                         web dodges for you then
   Y .................... interact: the game's Y (backpacks, doors, prompts;
                          web strike in a fight). Look at the thing and
                          press Y, within about a metre of it: you turn to
@@ -423,8 +430,10 @@ Moving
                          LB + RB (a prop to throw, a door or a grate to
                          tear off), X is both: press it, or hold it for as
                          long as the game wants the two held; its prompt
-                         and the marker over the thing show X there.
-                         Otherwise a tap of it does nothing.
+                         and the marker over the thing show X there. A
+                         prop thrown that way goes where your other hand
+                         points: at the enemy its aim marker is on, or
+                         that way. Otherwise a tap of it does nothing.
                          The game menu is your phone's MENU since October 23
   Hold X ............... the gadget wheel, in front of that hand (the
                          right one on a Steam Frame): move the hand toward
@@ -526,7 +535,9 @@ hands; everything above is the same, with these buttons)
 
 Walls (every wall is Spidy's own; the game's crawl only takes you for a
 vent or a door you ask for, and inside vents and ducts)
-  Walk onto one ........ walk at a wall from the ground and you go up onto it
+  Walk onto one ........ walk at a wall from the ground and you go up onto it.
+                         What the game lets you walk through - a broken glass
+                         pane - is no wall: you walk on through it
   Swing or fly into one  you stay on it, an arm's length off. At speed you run
                          along it with the speed you had, and nothing pulls
                          you down it; without the left stick or a web you
@@ -597,8 +608,9 @@ in the launcher's options)
 
 Realistic flips (experimental, off until you switch REALISTIC FLIPS on in
 Settings > SPIDY VR or "Realistic flips" in the launcher's options, where
-its ten settings show under it; while it is on it takes the place of the
-flips above)
+its ten settings show under it; SPIDY VR has six of them, and MINIMUM
+FLIGHT SPEED, ROTATION RESPONSE, ANGULAR DRAG and MINIMUM HAND SPEED are
+the launcher's alone; while it is on it takes the place of the flips above)
   On a web ............. moving faster than MINIMUM FLIGHT SPEED (3 m/s), your
                          body turns toward the web's pull, as hard as
                          ROTATION STRENGTH says; where you face stays yours
@@ -725,8 +737,9 @@ VR settings
   EXPERIMENTAL ... FLIPS (off until you switch it on) lets the left stick
                    and A in the air flip you, and FLIP SPEED sets how fast.
                    HAND WALL CLIMBING (off until you switch it on, above).
-                   REALISTIC FLIPS (off until
-                   you switch it on, above) and the ten rows that tune it.
+                   REALISTIC FLIPS (off until you switch it on, above) and
+                   six of the ten rows that tune it (the launcher has all
+                   ten).
   Changes apply at once. The launcher starts your next session with them;
   its options show every one of them but VR VIEW too.
   NEAR CLIP, RECORDING FOV, UI STYLE, BLOW SOUNDS, HEIGHT, SEATED, the four
@@ -752,8 +765,8 @@ Settings profiles (share your settings, or try someone else's)
   "Profile", at the top of the launcher's Options tab, keeps sets of settings
   and switches between them. A profile holds every setting of the SPIDY VR
   tab but RECORDING FOV, the ones in spidy_vr.ini too (NEAR CLIP, UI STYLE,
-  BLOW SOUNDS, the body haptics switches, the EXPERIMENTAL rows), and "Wall
-  running". Not
+  BLOW SOUNDS, the body haptics switches, the EXPERIMENTAL rows), and the
+  four realistic flips settings only the launcher shows. Not
   your graphics options (render resolution, upscaling, the game window, the
   monitor and its RECORDING FOV, the game's depth of field and sharpening),
   which suit your own PC, and not your body calibration: a profile leaves
@@ -850,9 +863,9 @@ IF SOMETHING IS WRONG
 - "A problem has occurred with your display driver" as VR starts, every
   time: the session log names the code (0x887A002B is one). Try these one
   at a time, pressing START VR after each: in the launcher's options,
-  "Normal camera on the monitor" on; the game's Display settings with
-  Monitor set to your main display; the newest graphics driver. Then post
-  the report in #spidy-bugs on Discord.
+  Troubleshooting, "Normal camera on the monitor" on; the game's Display
+  settings with Monitor set to your main display; the newest graphics
+  driver. Then post the report in #spidy-bugs on Discord.
 - The game's menus ignore the VR controllers: keep the game window in front
   on the desktop, and start the game from the launcher with the game closed
   (the launcher turns off what lets SteamVR's virtual gamepads take over).
@@ -1038,10 +1051,8 @@ IF SOMETHING IS WRONG
   turrets first, or wait until they reload. The webbing lasts four seconds.
 - The view turning onto a wall makes you uneasy: it has no switch of its own
   any more, because it is what makes a wall feel like a floor and it turns on
-  every wall, whoever holds you. "Wall running" off makes every wall the
-  game's own crawl, which is slower, but the view turns there too. Ask and the
-  switch comes back; until then a session started by hand takes
-  `--no-stand-on-walls` and stays upright.
+  every wall, whoever holds you. Ask and the switch comes back; until then a
+  session started by hand takes `--no-stand-on-walls` and stays upright.
 - A vent or a door on a wall does nothing: point a hand at it and press Y.
   No ring round it means the game does not offer it from where you stand -
   come closer; a faint ring means you nearly are. A ring and still nothing:

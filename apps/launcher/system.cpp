@@ -544,7 +544,8 @@ Settings loadSettings() {
         else if (key == "flips") o.flips = number() != 0;
         else if (key == "trigger_webs") o.triggerWebs = number() != 0;
         else if (key == "arcade_webs") o.arcadeWebs = number() != 0;
-        else if (key == "wall_run") o.wallRun = number() != 0;
+        // wall_run (before October 25) and stand_on_walls (written until then, read until October 15) are no
+        // longer read: the swing's walls and the view on them are always on.
         else if (key == "game_depth_of_field") o.gameDepthOfField = number() != 0;
         else if (key == "game_sharpening") o.gameSharpening = number() != 0;
         // physical_webs (before October 15) is no longer read: webs are always physical.
@@ -606,8 +607,6 @@ void saveSettings(const Settings& settings) {
          << "\nsmall_window=" << o.smallWindow << "\nstock_monitor_view=" << o.stockMonitorView
          << "\naim_markers=" << o.aimMarkers << "\nair_webs=" << o.airWebs << "\nflips=" << o.flips
          << "\ntrigger_webs=" << o.triggerWebs << "\narcade_webs=" << o.arcadeWebs
-         << "\nstand_on_walls=" << o.standOnWalls
-         << "\nwall_run=" << o.wallRun
          << "\ngame_depth_of_field=" << o.gameDepthOfField
          << "\ngame_sharpening=" << o.gameSharpening
          << "\nrender_scale=" << o.renderScale << "\nupscale=" << o.upscale

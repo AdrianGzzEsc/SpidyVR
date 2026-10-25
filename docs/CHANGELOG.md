@@ -3,7 +3,152 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 24, fourth): the phone's screen stays over its glass,
+**Latest build (October 25): fewer options - the ones that did nothing or
+were never meant for play.** You, after we went through the options:
+"cleanup the redundant".
+
+- **"Wall running" is gone from the launcher.** Off, it handed every wall to
+  the game's own crawl, which walls have not been for moving since October
+  15 ("can you not just use our locomotion system only"); it stayed only as
+  a way to tell whether something on a wall was the swing's doing. The
+  swing's own walls are always on now; `run_game_vr.py --no-wall-run` still
+  turns them off for tests. launcher.ini's `wall_run` is passed over.
+- **"Normal camera on the monitor" has a Troubleshooting card of its own.**
+  It sat in the Monitor card beside Recording FOV, which does nothing while
+  it is on, and it has the eyes' shadows and far detail follow the game's
+  flat camera. It is what the player's guide offers for a display driver
+  error as VR starts, and its help says so now.
+- **Four realistic flips settings are the launcher's alone.** MINIMUM
+  FLIGHT SPEED, ROTATION RESPONSE, ANGULAR DRAG and MINIMUM HAND SPEED,
+  thresholds and how a spin builds and dies away, showed in the SPIDY VR tab
+  whether realistic flips were on or not. The launcher still shows all ten
+  under Realistic flips while they are on; the tab has the other six, and
+  its RESET ALL leaves those four as they are. What you set them to stays
+  (spidy_vr.ini, profiles).
+- **Leftovers gone.** STAND ON WALLS and WALL CAMERA DISTANCE had no row
+  anywhere (since October 15 and October 24) but were still settings in the
+  code: the launcher went on writing `stand_on_walls` to launcher.ini and
+  never read it, and spidy_vr.ini carried `wall_distance_cm=25`. Neither is
+  a setting now, and older files' lines are passed over. The view on walls
+  stays on unless `--no-stand-on-walls`, and the hand climb's eyes keep 25 cm
+  from the wall as before.
+- **Profiles read and write as before.** You: "make sure it wont break
+  profiles". A profile still holds `wall_run=1` and `wall_distance_cm=25`, in
+  their old places: Spidy 0.4.1 and the builds since have both settings, and
+  a profile without one of them would read there as partial ("It has 32 of
+  the 34 settings a profile holds") and never be taken for the settings in
+  use. Read, the two are wall running on and 25 cm whatever a profile says,
+  so an older profile with wall running off still counts as the one in use
+  once used, and lists no change for it. For the same settings this build
+  writes the same text as the last one did.
+- **The tab** has 43 rows (from 47); no other row's setting number moved. No
+  XrConfig or XrData change.
+- **Checked:** ctest 3/3, 571 core tests (each row's place: VR VIEW on the
+  pause menu's first page, the four the launcher's, 43 in the tab;
+  spidy_vr.ini's text without `wall_distance_cm`, an older file's line passed
+  over), 32 launcher checks (no wall switch for a session or from a headset
+  line; an older profile's `wall_run=0` and `wall_distance_cm=100` read as 1
+  and 25, it matches once used, and a profile written again has both; a
+  profile holds every key of 0.4.1's), the six Python suites. Profiles across
+  versions, this PC's settings and a 0.4.1 player's with wall running off and
+  the wall camera at 60 cm, each written by 0.4.1, the last commit and this
+  build and read by each: every one reads whole wherever it did before, and
+  this build's read whole in 0.4.1 (34 of 34). Not run: the game (the tab in
+  the pause menu, `tools/probe_menu.py`), and the launcher's window (yours
+  was open, and one runs at a time).
+
+**Earlier build (October 24, sixth): moving on a web dodges, and broken glass
+lets you through.** You: "Swinging and moving with webs should count as
+dodging"; "also walking up broken glass (trough which you can walk) was still
+responding as a wall not letting me pass in vr".
+
+- **A web carrying you dodges for you.** A swing, a zip, a pull, a web
+  strike's flight, the game's zip to a point out of the swing, and the flight
+  a web leaves you in for a second after it lets go, at 3 m/s or faster: a
+  blow the game warns of (red or blue lines) is dodged 0.3 s before it lands
+  by the game's own dodge on the move, its traversal dodge. It answers every
+  warning standing then and those that go off while it lasts (0.6 s, longer
+  while a blow it may have dodged is still on its way, 1.5 s at most), as
+  the game's dodge does: you are immune to that attacker's blow, an accurate
+  or a perfect dodge earns its Focus, the game plays its dodge sound. A
+  whoosh runs across the vest and both controllers breathe once when one
+  answers a warning. Its perfect dodge does not slow time: the swing goes on
+  at its own speed. On the ground nothing changes: B and a dodge by moving.
+- **Why nothing dodged there before:** neither B nor a dodge by moving goes
+  out while a web carries you (the game's dodge would take you off the web).
+  In the flat game the web rush and the zip to a target are dodges
+  themselves.
+- **How:** read from the game's code. The hero's HeroDodgeManager runs his
+  dodges; each of the hero's states that dodges starts one of its own kind
+  as it starts and ends it as it ends, and a dodge started answers the
+  warnings the manager holds by the game's own rules (which attacks that
+  kind may dodge, the immunity, accurate or perfect). Spidy hooks the
+  manager's update, once a frame on the game's main thread, and starts and
+  ends the traversal dodge's kind there (`game_dodge.cpp`; when, in
+  `spider_sense.hpp`'s `WebDodge`). The session report has `dodge`: the
+  dodges asked for, taken, and what the game answered.
+- **Checked:** 570 core tests (new: when a dodge on a web starts and ends,
+  and when none does). In the game without a headset, perched in free roam
+  with no enemy about: three dodges started from the hook each put the
+  traversal dodge's kind on the hero's manager, answered nothing (no warning
+  stood) and ended; the game ran on. Not seen: a blow dodged on a web (no
+  enemy), and the headset.
+- **Broken glass is no wall.** Your 21:39 session: in the burning office 141 m
+  up, the swing took you up as onto a wall eleven times, at two spots where
+  Spidy's rays met broken glass partitions (1 to 4 m up each time); the game
+  would have let you walk through. Each surface carries a collision filter
+  word, and the game's own test lets two things collide only when they share a
+  category in it. The game queries your body's collisions with categories
+  0x004 (your mover's collision profile, 3); the panes are 0x10 and share
+  none, so your body passes them. Spidy's rays carry 0x410, which the webs'
+  anchors want, so they met the panes. Now the rays that stand in for your
+  body (what you walk at and onto, the ground under you, the hands' climb, the
+  head's clearance, the web strike's line) take the nearest thing your body
+  itself meets, by that same test with your mover's own profile, read from the
+  game as you play. The webs still take whatever they meet. In that session's
+  rays other surfaces your body passes turned up as well (categories 0x400,
+  0x43b and a few more, mostly flat); they are passed the same way.
+- **Checked:** 571 core tests (new: the game's test for your profile against
+  the panes, the office's walls and floor; a pane your body passes walked at
+  mounts nothing, the same pane solid does; the head's, hands' and roof's
+  rays stand in for the body, the aim's do not). In the game: the profile,
+  the filter's tables and the game's own collision test, read in free roam
+  (every query of your mover's profile: no collision with 0x10, collision
+  with 0x43f); Spidy's ray module found your mover's manager and read 0x004
+  and 0xe7 from it (`tools/probe_body_rays.py`). Not seen: the office's
+  panes in this build (they are in a mission, not in free roam).
+
+**Earlier build (October 24, fifth): the throw goes where your other hand
+points.** You: "the x works well but really hard or not possible to aim
+where the throw will go", at enemies and at a spot alike; and for the aim,
+the free hand, pointing.
+
+- **While X throws a prop, the hand X is not on aims it** (the right hand on
+  Touch and Index, the left on a Steam Frame). Point it at an enemy and the
+  throw goes at him; point it anywhere else and the throw goes that way. The
+  aim marker of that hand is the throw's mark: the ring on the enemy, or the
+  ring where the hand points.
+- **How:** the game's throw (the hero's HeroStateWebYankEnviro) asks the
+  hero's aim manager for its target as you hold the throw: an enemy and the
+  point on him to aim for, or a level direction with none. Left alone that
+  direction is the game camera's heading (measured), and the camera is no
+  hand. Spidy now answers those questions (three hooked getters, slot 4 of
+  the aim manager's results) while X holds the throw: the enemy standing
+  within 2 m of what the hand's aim marker is on, or the level direction
+  from you to what it points at. Nothing else that reads the aim manager
+  changes, and with no hand aiming the throw is the game's own.
+- **Checked:** 569 core tests (new: the hand's aim made a throw's, at a
+  character and at a surface; the game's actor handle; the enemy nearest a
+  point). In the game without a headset: a research build that handed the
+  throw's slot a direction 90 degrees off the camera was read 117 times
+  in one hold, and in frames 0.15 s apart Spider-Man let the prop go toward
+  the side it was given (the probes could not follow the prop's own flight).
+  Spidy's own module installed its three hooks in the game and took a hand's
+  aim. The throw through Spidy's own
+  module, and aiming at an enemy, have not been seen: there was no enemy,
+  and no prop within reach when it was loaded. Not run in a headset.
+
+**Earlier build (October 24, fourth): the phone's screen stays over its glass,
 and the marker over a prop says X.** You: "phone still z-fighting between
 screen and its body i think. rb+lm still appears over the object together
 with the static places press x indicator - can we have the press x appear

@@ -5,11 +5,15 @@ namespace spidy {
 void appendTrackingRays(native_rays::Command& command, const std::array<HeadClearance::Ray, 5>& head,
                         const std::array<native_rays::Ray, 2>& hands, native_rays::Ray roof,
                         unsigned phase) {
+    // All of them stand in for the player's body - the head, the hands' contact,
+    // the roof over the feet - and pass what it passes (Command::bodyRays).
     const auto append = [&](native_rays::Ray ray) {
         if (command.count < native_rays::capacity && ray.distance >= .01f &&
             std::isfinite(ray.distance) && finite(ray.origin) && finite(ray.direction) &&
-            std::abs(length(ray.direction) - 1) < .001f)
+            std::abs(length(ray.direction) - 1) < .001f) {
+            command.bodyRays |= 1u << command.count;
             command.rays[command.count++] = ray;
+        }
     };
     const auto validHandRay = [](const auto& ray) {
         return ray.distance >= .01f && finite(ray.direction) &&

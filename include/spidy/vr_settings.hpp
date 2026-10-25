@@ -13,6 +13,9 @@
 // keeps in a file of its own (tabOnlyText), which the launcher's options
 // change too.
 namespace spidy::vr_settings {
+// How far the eyes keep from a wall you climb by hand, and from a duct's face
+// in its close view, centimetres (GameTrackingRig::wallDistance): fixed since
+// WALL CAMERA DISTANCE went (October 24).
 inline constexpr int fixedWallDistance = 25;
 struct Values {
     bool aimMarkers = true;
@@ -60,12 +63,12 @@ struct Values {
     // a quarter slower than the flips' first 240.
     int flipSpeed = 180;
     // Walking a wall or stopped on it, your view turns so that the wall is
-    // your floor (the tab's STAND ON WALLS; GameTrackingRig::standOnWalls);
-    // off, you stay upright beside it.
+    // your floor (GameTrackingRig::standOnWalls); off, you stay upright
+    // beside it. On unless run_game_vr.py's --no-stand-on-walls turns it off:
+    // the tab and the launcher do not offer it (since October 15).
     bool standOnWalls = true;
     // Experimental physical hand pulls, solid palms and crawling body poses.
     bool handClimb = false;
-    int wallDistance = fixedWallDistance; // retained for stored-profile compatibility
     // Scenes the game plays on the game screen (cutscenes, finishers) have
     // depth there (the tab's GAME SCREEN 3D): 0 off, the game's flat frame; 1
     // low, 2 medium, 3 high (screenDepths).
@@ -133,9 +136,6 @@ inline constexpr int nearClips[] = {10, 15, 20, 30, 50, 75, 100};
 // HEIGHT's steps, centimetres: AUTO, then 150 to 190 (a row takes nine
 // choices at most: five apart where most players are, ten at the ends).
 inline constexpr int heights[] = {0, 150, 160, 165, 170, 175, 180, 185, 190};
-// Nearer than 20 cm would do nothing: the eyes keep that far from any surface
-// (HeadClearance::margin).
-inline constexpr int wallDistances[] = {20, 25, 30, 40, 50, 60, 75, 100};
 // Real gravity, m/s^2: a weight of 100% falls at it.
 inline constexpr float realGravity = 9.81f;
 // The swing's gravity for a weight, m/s^2.
@@ -182,12 +182,10 @@ enum class Item : uint8_t {
     webButton,
     hud,
     flipSpeed,
-    standOnWalls,
     screenDepth,
     view,
     webStyle,
     handClimb,
-    wallDistance,
     nearClip,
     realisticFlips,
     automaticStrength,
@@ -214,6 +212,13 @@ enum class Item : uint8_t {
     automaticCombat,
 };
 inline constexpr Item lastItem = Item::automaticCombat;
+// Where a row shows: in the tab; on the pause menu's first page instead,
+// under RESUME: VR VIEW (the user, October 15: "move the VIEW: GAME SCREEN to
+// the first menu (the one with resume)"); or only in the launcher's options:
+// the realistic flips' finest tuning, its thresholds and how a spin builds
+// and dies away (the user, October 25: "cleanup the redundant"). The tab's
+// RESET ALL leaves the last two alone.
+enum class Place : uint8_t { tab, page, launcher };
 // The SPIDY VR tab, top to bottom: a section's heading (item none) or a
 // setting. The sections: WEBS, SWINGING, COMFORT, HAPTICS, DISPLAY, BODY and
 // EXPERIMENTAL (the player, October 19: "sort the options in spidy vr
@@ -221,15 +226,13 @@ inline constexpr Item lastItem = Item::automaticCombat;
 // controllers' vibration and the bHaptics rows together). A setting without choices is an ON/OFF switch, the game's own;
 // one with choices steps through them. Titles are upper case, as the game's
 // own rows are; the help shows beside the rows while the setting is selected.
+// A row shown elsewhere (Place) stands where it would be in the tab.
 struct Row {
     Item item{};
     const char* title{};
     const char* help{};
     std::span<const char* const> choices{};
-    // On the pause menu's first page, under RESUME, instead of the tab: VR
-    // VIEW (the user, October 15: "move the VIEW: GAME SCREEN to the first
-    // menu (the one with resume)").
-    bool page{};
+    Place place{};
 };
 const std::array<Row, 48>& rows();
 // The most choices a row shows (game_menu's buffers): a row with more would
@@ -247,8 +250,8 @@ bool choose(Item, int choice, Values&);
 // What the game's RESET puts back: the choice for Spidy's defaults (Values{}).
 int defaultChoice(Item);
 // The settings no launcher.ini key or XrConfig field carries: NEAR CLIP,
-// RECORDING FOV, UI STYLE, BLOW SOUNDS, HEIGHT, SEATED, HAND WALL CLIMBING, WALL CAMERA DISTANCE, the
-// realistic flips' eleven rows and the body haptics' four groups. The game
+// RECORDING FOV, UI STYLE, BLOW SOUNDS, HEIGHT, SEATED, WEB SLINGSHOT, BETTER CLIMBING, HAND WALL
+// CLIMBING, the realistic flips' eleven rows and the body haptics' four groups. The game
 // module keeps them as these key=value lines in a file of their own, beside
 // the launcher's settings (game_xr.cpp, tabOnlyPath), and reads them back
 // when VR starts; the launcher's options read and write the same file.

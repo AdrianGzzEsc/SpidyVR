@@ -14,7 +14,8 @@ from probe_stereo_gpu import snapshot as gpu_snapshot, save_eye_images
 from run_game_vr import (snapshot as xr_snapshot, accepted as accepted_xr, timing_snapshot, frame_rates,
                          appearance_snapshot, eye_snapshot, save_eye_snapshot, rgb_rows, crop_origin,
                          game_memory, keep_game_log, body_snapshot,
-                         punch_snapshot, strike_snapshot, focus_snapshot, sound_snapshot, shooter_snapshot,
+                         punch_snapshot, strike_snapshot, focus_snapshot, sound_snapshot, dodge_snapshot,
+                         shooter_snapshot,
                          rope_snapshot,
                          start_settings,
                          settings_line,
@@ -604,6 +605,28 @@ class ProtocolTests(unittest.TestCase):
         torn = bytearray(raw)
         struct.pack_into('<q', torn, 16, 7)
         self.assertIsNone(sound_snapshot(Reader(*([torn, struct.pack('<q', 7)]*8)), 0))
+
+    def test_dodge_decodes_the_dodges_on_a_web_the_game_took_and_what_they_answered(self):
+        raw = bytearray(128)
+        struct.pack_into('<4Iq', raw, 0, 0x53444744, 1, 128, 1, 6)
+        # 5400 frames of the hero's manager; 7 dodges asked, 6 taken: one answered nothing, one plainly, three
+        # accurately, one perfectly; Spidy ended 5, the game 1 first.
+        struct.pack_into('<3Q4Q2Q', raw, 24, 5400, 7, 6, 1, 1, 3, 1, 5, 1)
+        # The latest: accurate, two warnings standing, no error, a web carrying the player now, at 11.5 m/s.
+        struct.pack_into('<4I3ff', raw, 96, 2, 2, 0, 1, 0, 0, -1, 11.5)
+        self.assertEqual(dodge_snapshot(Reader(raw, struct.pack('<q', 6)), 0),
+                         dict(status='running', frames=5400, asked=7, taken=6,
+                              answers=dict(none=1, plain=1, accurate=3, perfect=1), ended=5, cut_short=1,
+                              last_answer='accurate', last_warnings=2, last_way=[0, 0, -1], last_speed=11.5,
+                              error=0, carried=True))
+        # Another build of the game: the module checked it and hooked nothing.
+        struct.pack_into('<I', raw, 12, 3)
+        struct.pack_into('<I', raw, 104, 9201)
+        result = dodge_snapshot(Reader(raw, struct.pack('<q', 6)), 0)
+        self.assertEqual((result['status'], result['error']), ('another build', 9201))
+        torn = bytearray(raw)
+        struct.pack_into('<q', torn, 16, 7)
+        self.assertIsNone(dodge_snapshot(Reader(*([torn, struct.pack('<q', 7)]*8)), 0))
 
     def test_spider_sense_decodes_the_warnings_the_counters_and_the_census(self):
         raw = bytearray(632)
@@ -1407,7 +1430,7 @@ class ProtocolTests(unittest.TestCase):
                                      (grab_snapshot,0x53475244,368),(body_snapshot,0x53424453,144),
                                      (punch_snapshot,0x53505544,168),(shooter_snapshot,0x53484f44,296),
                                      (strike_snapshot,0x53535452,328),(focus_snapshot,0x53464344,56),
-                                     (sound_snapshot,0x53534e44,72)):
+                                     (sound_snapshot,0x53534e44,72),(dodge_snapshot,0x53444744,128)):
             raw = bytearray(size)
             struct.pack_into('<4IQ', raw, 0, magic, 99, size, 2, 4)
             with self.assertRaisesRegex(RuntimeError, 'protocol mismatch'):

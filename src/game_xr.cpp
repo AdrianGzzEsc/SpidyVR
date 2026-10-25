@@ -12,6 +12,7 @@
 #include "spidy/monitor_rate.hpp"
 #include "spidy/eye_snapshot.hpp"
 #include "spidy/game_bridge_protocol.hpp"
+#include "spidy/game_dodge.hpp"
 #include "spidy/game_grab.hpp"
 #include "spidy/game_menu.hpp"
 #include "spidy/game_offers.hpp"
@@ -43,6 +44,7 @@
 #include "spidy/recording_fov.hpp"
 #include "spidy/seated.hpp"
 #include "spidy/slow_motion.hpp"
+#include "spidy/throw_aim.hpp"
 #include "spidy/vr_settings.hpp"
 #include "spidy/web_pull.hpp"
 #include "spidy/xr_layers.hpp"
@@ -478,6 +480,9 @@ const native_rays::Data* rayResults{};
 // The game's own blow sounds (game_sound.hpp), read in place; null from an
 // older ray module, whose blows sound as the headset makes them.
 const game_sound::Data* soundResults{};
+// The game's own dodges for a player a web carries (game_dodge.hpp), read in
+// place; null from an older ray module, which has none.
+const game_dodge::Data* dodgeResults{};
 // The tab's BLOW SOUNDS to the ray module (SpidySoundMode; optional).
 DWORD(WINAPI* soundMode)(void*){};
 BridgeCall startSwing{}, submitSwing{}, sampleSwing{}, stopSwing{}, retargetSwing{}, sampleGrab{}, sampleAim{};
@@ -489,6 +494,9 @@ BridgeCall startPunch{}, samplePunch{}, stopPunch{}, swingSettings{}, sampleStri
 // Spider-Sense (game_sense, in the same module as the punches): optional, an
 // older module draws no warnings.
 BridgeCall sampleSense{};
+// The game's throw aimed by the free hand (game_throw, same module): optional,
+// an older module throws the camera's way.
+BridgeCall aimGameThrow{};
 BridgeCall startShooter{}, sampleShooter{}, stopShooter{}, wheelShooter{};
 // The game's own crawl under the player (game_warp, in the same module):
 // optional, for the session report.
@@ -878,6 +886,9 @@ DWORD WINAPI run(void*) {
         float headroomSeen{}, headroomLeast{};
         uint32_t headDroppedFrames{};
         bool pulling_{};
+        // The game's throw aimed by the free hand: seconds the aim still goes
+        // out after X is let go (the throw may still be reading it).
+        float throwAimTail{};
         bool padLayerWas{};
         // The prompt calls are copied out only when one more has come: the
         // lines are 3 kB and nothing changes between calls.
@@ -1056,7 +1067,7 @@ DWORD WINAPI run(void*) {
             SenseSight sight{};
         };
         std::array<SenseMark, 6> senseMarks{};
-        uint64_t countersBefore{};
+        uint64_t countersBefore{}, webDodgesBefore = UINT64_MAX;
         uint32_t senseShown{}, senseFrames{}, senseSightFrames{}, senseTingles{};
         uint32_t senseBroken{}, senseDodges{};
         // (They outlive the session: one may still be playing as it ends.)
@@ -2586,6 +2597,30 @@ DWORD WINAPI run(void*) {
                             }
                             countersBefore = counters;
                         }
+                        // A dodge on a web the game took and that answered a warning
+                        // (game_dodge): the whoosh across the body as a dodge's, from
+                        // the side the web carries the player away from, and a breath
+                        // in both hands. It is a dodge while a warning stands.
+                        if (dodgeResults) {
+                            const auto* answers = static_cast<const volatile uint64_t*>(dodgeResults->answers);
+                            const uint64_t answered = answers[1] + answers[2] + answers[3];
+                            // Those of an earlier session in this game are not this one's.
+                            if (webDodgesBefore == UINT64_MAX)
+                                webDodgesBefore = answered;
+                            if (answered > webDodgesBefore && input.focused) {
+                                const volatile float* way = &dodgeResults->lastWay.x;
+                                const float right =
+                                    way[0] * motion.walkRightAxis.x + way[2] * motion.walkRightAxis.z;
+                                feel(body_haptics::Kind::dodge, -1, 1, right > 0 ? -1.f : 1.f);
+                                const int64_t until = frame.predictedDisplayTime + 60'000'000;
+                                for (unsigned h = 0; h < 2; ++h) {
+                                    runtime.haptic(h, .3f, .05f);
+                                    pulseUntil[h] = std::max(pulseUntil[h], until);
+                                }
+                                ++senseDodges;
+                            }
+                            webDodgesBefore = answered;
+                        }
                         // A warning gone (its blow landed, or the game took it off) is
                         // gone at once; a broken mark plays out its poses first.
                         for (auto& m : senseMarks) {
@@ -2892,6 +2927,27 @@ DWORD WINAPI run(void*) {
                         // What the game names now, for a pull (below). Not in the pad
                         // layer: there the player presses the game's own buttons.
                         const auto asked = layerOn ? prompt_buttons::Demand{} : game_prompts::demand();
+                        // The game's throw of a prop where the hand X is not on
+                        // points (throw_aim.hpp, game_throw): while X sends the
+                        // game's LB + RB, at the enemy that hand's aim marker is
+                        // on, or the way from the player to what it points at.
+                        // The user, October 24: "really hard or not possible to
+                        // aim where the throw will go".
+                        {
+                            const bool pair = (asked.buttons & game_pad::bumpers) == game_pad::bumpers;
+                            const bool holding = playing && pair && (named & game_pad::NamedPress::controlX);
+                            const float dt = std::isfinite(frame.seconds) ? std::clamp(frame.seconds, 0.f, .1f) : 0.f;
+                            throwAimTail = holding ? 1.f : std::max(0.f, throwAimTail - dt);
+                            if (aimGameThrow && throwAimTail > 0) {
+                                const unsigned xHand =
+                                    runtime.controllers()[1] == ControllerKind::frame ? 1u : 0u;
+                                const unsigned hand = 1 - xHand;
+                                auto request = throw_aim::fromHand(
+                                    aimed.hands[hand], motion.swing.hands[hand].aim.orientation.rotate({0, 0, -1}),
+                                    swingState.position);
+                                aimGameThrow(&request);
+                            }
+                        }
                         // The game takes its own interact away the moment the
                         // player leaves the surface, and the swing's wall is
                         // the player off it: hand him back for the press. Only
@@ -4480,12 +4536,18 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyXrStart(void* input) {
     // Optional: an older ray module has no web strike, and a punch only its short pulse.
     sampleStrike = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidyStrikeSample"));
     sampleSense = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidySenseSample"));
+    aimGameThrow = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidyThrowAim"));
     soundResults = reinterpret_cast<const game_sound::Data*>(GetProcAddress(rays, "SpidySoundData"));
     soundMode = reinterpret_cast<DWORD(WINAPI*)(void*)>(GetProcAddress(rays, "SpidySoundMode"));
     if (const game_sound::Data expected; soundResults && (soundResults->magic != expected.magic ||
                                                           soundResults->version != expected.version ||
                                                           soundResults->bytes != expected.bytes))
         soundResults = nullptr;
+    dodgeResults = reinterpret_cast<const game_dodge::Data*>(GetProcAddress(rays, "SpidyDodgeData"));
+    if (const game_dodge::Data expected; dodgeResults && (dodgeResults->magic != expected.magic ||
+                                                          dodgeResults->version != expected.version ||
+                                                          dodgeResults->bytes != expected.bytes))
+        dodgeResults = nullptr;
     swingSettings = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidySwingSettings"));
     // Optional: an older ray module has no web shooter.
     startShooter = reinterpret_cast<BridgeCall>(GetProcAddress(rays, "SpidyShooterStart"));

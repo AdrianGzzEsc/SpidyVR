@@ -78,7 +78,8 @@ gradient would. `ui.cpp` draws it with ImGui's draw lists.
 - **Tabs:** Play (a panel with the session's headline, the narrator's line,
   its three steps and START VR; This PC; the session log), Options (the
   Profile card, then the options in cards: webs, moving, walls, flips, body
-  and haptics, picture, game screen and HUD, monitor), Controls (the README's
+  and haptics, picture, game screen and HUD, monitor, troubleshooting),
+  Controls (the README's
   picture of the controls, then each in words) and About (credits, this PC's
   folders, updates, and the README's Ko-fi and Discord cards).
 - **The session's steps** come from the log the panel already reads: Headset
@@ -102,8 +103,14 @@ the files, dialogs and the card are in `apps/launcher` (`system.cpp`,
 
 - **What a profile holds** (`profileSettings`, in the tab's order): every row
   of the SPIDY VR tab but VR VIEW, CALIBRATE BODY and RECORDING FOV (the
-  monitor's, which suits one PC as the graphics options do), and wall
-  running. The launcher's options among them come from `SessionOptions`; the
+  monitor's, which suits one PC as the graphics options do), with the four
+  rows only the launcher shows. And two settings no more (`retired`,
+  October 25): `wall_run` and `wall_distance_cm`, written in their places at
+  the one value Spidy plays with (1, 25) and read as that value whatever a
+  profile says. Spidy 0.4.1 and the builds since have both, and count a
+  profile that lacks one of their settings short ("It has 32 of the 34") and
+  never take it for the settings in use; a test lists 0.4.1's 34 keys and
+  holds a profile's text to them. The launcher's options among them come from `SessionOptions`; the
   tab's own (NEAR CLIP, UI STYLE, the four body haptics switches, HAND WALL
   CLIMBING, the realistic flips' ten) from
   `%APPDATA%\Spidy\spidy_vr.ini`, which the launcher now reads and, when a
@@ -538,6 +545,26 @@ bends round one, nor is cut off by one; the shot's anchor is what comes after.
 through something and each held line coming onto something is an
 `EventKind::Pass`, counted in the rope data's `passed`.
 
+**The player's body passes what the game lets it pass** (October 24). The
+rays that stand in for his body - the walls he walks at and onto (`Swing`'s
+`wallAlong`, the facade's lip, a hand on the wall), the ground below his
+flight, the game's crawl surfaces in `game_swing`, the climbing hands
+(`crawl_hands.hpp`), the web strike's line (`web_strike.cpp`'s `inSight`),
+and the XR worker's head, hand-contact and roof rays (`Command::bodyRays`,
+set by `appendTrackingRays`) - take the nearest hit his body meets
+(`WorldQueries::bodyRaycast`; a world without such surfaces answers as
+`raycast`). `native_rays::meets` is the game's own test (`18060a0`) of his
+mover's query against a hit's filter word: a category in common (or either
+none) and the hit's type among the query's. The categories and types come
+from his MoverManager's collision profile (+0xd9c into the game's profiles
+at `[7813120]`), which `native_rays::setPlayer` finds once per actor record
+(a registry walk, again at most every 2 s while missing) and reads every
+quarter second; `game_swing`'s visit names the record each sample. Profile 3,
+0x004 and 0xe7, in free roam. Unread, every hit counts, as before. The webs,
+the grab, the shooter and the hands' aim keep `raycast` (categories 0x410):
+a broken glass pane (0x10) the body walks through still holds a web.
+`tools/probe_body_rays.py` reads the profile through `SpidyRayBody`.
+
 **Webs round corners.** A web bent round edges (physical webs) is drawn by
 the game's rope from the web shooter round each edge to where it sticks: the
 ray module hands the edges on (`SpidySwingBends`, `game_swing::Bends`,
@@ -595,8 +622,9 @@ While a hold lasts the grips go out from the head where it began
 one; after it that reference goes back to the head at 0.5 m/s. The eyes keep
 `vr_settings::fixedWallDistance` (25 cm) from the wall, 15 cm more as the body
 turns its back to it (`GameTrackingRig::outwardCrawl`, from
-`native_body::crawlOutwardWeight`); the `wall_distance_cm` line of older
-files still reads, as 25. Its vents are off for now (`ventHandCrawl`; the
+`native_body::crawlOutwardWeight`); an older spidy_vr.ini's `wall_distance_cm`
+line is passed over, and a profile's reads as 25 (the row went October 24,
+the setting October 25). Its vents are off for now (`ventHandCrawl`; the
 user, October 24: the legs keep the game's pose on a vent's walls and roof,
 the view tips by itself, and the vent test passes in narrow rooms). On, in a
 vent (`VentCrawlMode`, `crawl_hands.hpp`: the
@@ -648,9 +676,9 @@ gives the stick back to the game, and `NamedPress`'s slams come back.
 `realistic_flips`).
 
 The SPIDY VR tab's settings that no launcher.ini key or XrConfig field
-carries (NEAR CLIP, RECORDING FOV, UI STYLE, HAND WALL CLIMBING, WALL CAMERA
-DISTANCE, the realistic flips' rows, the body haptics' groups) are kept by
-the stereo module itself:
+carries (NEAR CLIP, RECORDING FOV, UI STYLE, HAND WALL CLIMBING, the
+realistic flips' rows, the body haptics' groups) are kept by the stereo
+module itself:
 `vr_settings::tabOnlyText` lines in `%APPDATA%\Spidy\spidy_vr.ini`, read as VR
 starts and written when the tab changes one (`game_xr.cpp`, `tabOnlyPath`). A
 file beside the module would not do: it runs from a copy staged per build
@@ -658,6 +686,13 @@ file beside the module would not do: it runs from a copy staged per build
 them in the same file while VR is stopped (`App::options`'s `tabCombo` and
 `tabToggle`, with the tab's own choices from `vr_settings::rows()`, so a new
 step there shows in both); it reads the file again when a session ends.
+Four of the realistic flips' rows only the launcher shows since October 25
+(the user: "cleanup the redundant"): MINIMUM FLIGHT SPEED, ROTATION RESPONSE,
+ANGULAR DRAG and MINIMUM HAND SPEED, thresholds and the build and decay of a
+spin. Their `Row::place` is `Place::launcher` (VR VIEW's is `Place::page`):
+`game_menu` builds their items but leaves them out of the tab, and the tab's
+RESET ALL leaves them as they are. They keep their setting numbers (0x200
+plus the row), so no other row's number moved; the tab has 43 rows.
 
 Webs are drawn by the game's own web-line system. If they look wrong in the
 eyes, start with `Launch Spidy VR.cmd -OverlayWebs` for Spidy's overlay strands.
@@ -703,9 +738,7 @@ left and right, switch the experimental FLIPS (off by default;
 `GameTrackingRig::flips`, XrConfig options bit 11, XrData settings bit 32)
 and step their FLIP SPEED (90 to 480 degrees a second at full tilt of the
 left stick, 180 by default; `GameTrackingRig::flipSpeed`, XrConfig and XrData
-`flipSpeed`), and switch STAND ON WALLS (on by default: walking a wall or
-stopped on it, the view turns so the wall is the floor; `GameTrackingRig::standOnWalls`, XrConfig
-options bit 13 for off, XrData settings bit 128), and step GAME SCREEN 3D
+`flipSpeed`), and step GAME SCREEN 3D
 (OFF, LOW, MEDIUM, HIGH: the depth cutscenes have on the game screen;
 `vr_settings::screenDepths`, XrConfig and XrData `screenDepth`); XrConfig is
 version 23 (664 bytes: `screenDepth`; `upscale`, `monitorRate`; options bit 15
@@ -717,7 +750,13 @@ X resets a setting, Y the
 whole tab (to Spidy's defaults). Web grabbing, the web
 shooter, your body and punching are not in it or in the launcher's options
 (since October 8): they are always on unless a launch option below turns
-them off, and the game draws the webs unless `-OverlayWebs`. Changes apply at once; Spidy Launcher starts your next
+them off, and the game draws the webs unless `-OverlayWebs`. So are the view
+on walls (`GameTrackingRig::standOnWalls`: walking a wall or stopped on it,
+the view turns so the wall is the floor; XrConfig options bit 13 for off,
+XrData settings bit 128), with no row since October 15, and the swing's own
+walls, whose launcher switch "Wall running" (off: the game's crawl takes every
+wall) went October 25: `run_game_vr.py --no-stand-on-walls` and
+`--no-wall-run` still turn them off. Changes apply at once; Spidy Launcher starts your next
 session with them. Weight is the swing's gravity in percent of real gravity
 (40-300%, 60% by default: Spidy's 6 m/s² since October 5), while webs fly the
 player and after letting go until landing (`Swing::setGravity`, game_swing
@@ -787,7 +826,21 @@ pauses the game, the phone's MENU opens the game menu (map, suits, skills;
 the game's own: B its dodge, the way the left stick points, and Y its interact
 button (backpacks, doors, consoles, prompts; web strike in a fight), both
 except while a web carries you (`game_pad::Walk`; XrData `dodges` and
-`interacts` count the presses that reached the game). The game takes its Y
+`interacts` count the presses that reached the game). While a web carries
+the player since October 24, the web dodges instead: a warning the game
+holds within 0.3 s of its blow, the player carried at 3 m/s or more (a
+web's swing, zip or pull, a web strike's flight, the game's zip to a point
+out of the swing, and a second of the flight after a web lets go), starts
+the game's own dodge of the traversal dodge's kind (5) on the hero's
+HeroDodgeManager for 0.6 s, longer while a blow it may have dodged is still
+on its way (1.5 s at most): `spider_sense.hpp`'s `WebDodge` decides, and
+`game_dodge.cpp` hooks the manager's update (`0x92d640`, the main thread
+once a frame) and calls the game's dodge start (`0x92a040`, a perfect one
+not slowing time) and end (`0x929ef0`) there. `game_swing` sends it each
+input sample whether a web carries the player (`game_dodge::carry`); the
+headset reads `SpidyDodgeData` in place for the whoosh, the session report
+as `dodge`, and `tools/probe_web_dodge.py` starts and ends one in the game.
+The game takes its Y
 only within about a metre of the thing (a door's "Open Door" prompt showed
 1.1 m from its middle and not 1.2 m), so Y held past 0.3 s walks the player
 on where they look, at half stick, until the game's scene ends play, Y is let
@@ -823,8 +876,17 @@ subtype (7) makes a `POIDefault`, which draws whatever icons the game hands
 it for `[ACTION_WEB_YANK]` (LB . RB); `game_menu`'s hook makes that call
 with the generic left face button's subtype (13) instead
 (`game_prompts::rewriteCall`, `prompt_buttons::markerSubtype`), which the
-same class draws as X. Until October 24 the right thumbstick's click was the
-game's LB + RB (`game_pad::PullPress`), and players clicked it by accident. The right stick pushed straight down is the game's D-pad down, its heal (the
+same class draws as X. The throw itself goes where the hand X is not on
+points (`throw_aim.hpp`, `game_throw` in the ray module): the hero's
+HeroStateWebYankEnviro reads its target from the aim manager's results, slot
+4, through three getters (an actor's handle, the aim point on him, a level
+direction that is the camera's heading when left alone), and while X holds
+the game's LB + RB `game_xr.cpp` sends that hand's aim every frame
+(`SpidyThrowAim`, renewed within 250 ms, kept a second after X is let go):
+the getters then give the enemy within 2 m of what its aim marker is on, or
+the level way from the player to it. Until October 24 the right thumbstick's
+click was the game's LB + RB (`game_pad::PullPress`), and players clicked it
+by accident. The right stick pushed straight down is the game's D-pad down, its heal (the
 controllers have no D-pad), in the air too; pushed straight up it is the
 game's LT + RT together, its zip to a point and into a vent, while a web
 carries you too since October 18 (`game_swing::AirYield`). A push counts
@@ -960,8 +1022,9 @@ Reflex is the cause is not known. A session that ends with the game's log
 saying `Device removed detected` prints the code and what to try
 (`device_removed`, `device_lost_advice` in `tools/run_game_vr.py`; the
 report's `device_removed`), and every report lists the adapters the game
-listed (`game_adapters`). "Normal camera on the monitor" (`--stock-monitor-view`)
-is the launcher's way around everything VR play starts doing to the game's
+listed (`game_adapters`). "Normal camera on the monitor" (`--stock-monitor-view`;
+the launcher's Troubleshooting card since October 25, apart from the Monitor
+card's options) is the launcher's way around everything VR play starts doing to the game's
 own view: it keeps that view rendering, so nothing rests it, draws the left
 eye over its window or holds back its presents.
 
@@ -1757,13 +1820,15 @@ still requires a running game or headset.
 | `tools/game_freeze.py` | A game that stops answering during VR: the minidump of its threads `run_game_vr.py` writes once (no image, frame, camera commit or controller read for 8 s, its window not responding), and each thread's code addresses by module for the report's `freeze` |
 | `src/punch.cpp`, `src/game_punch.cpp` | Punching: fists against characters, and the game's own melee damage for each punch |
 | `src/web_strike.cpp` | Fighting across the room: the web strike that flies the player to the thug a fist is thrown at, and the dive (`WebStrike::dive`), the player's own flight on course for the marked one that takes him the rest of the way feet first with a blow as hard as he was fast; the flow's count and finisher, how each blow is delivered (melee, or the kinetic blow that sends him flying), and the hit stop; `game_punch.cpp` runs it (the player's velocity in `game_punch::Player`), `game_swing.cpp` flies the player, `game_xr.cpp` slows the dive's last moment (`Moment::dive`) and kicks the legs out (`body::Targets::kick`) |
-| `src/spider_sense.cpp`, `src/game_sense.cpp` | Spider-Sense: the game's own warnings of an attack about to land, read from the hero's `HeroDodgeManager` (`game_sense`), what each asks for, the counter a fist thrown at the attacker makes and the blow after it (`spider_sense`); `game_punch.cpp` runs it, `game_xr.cpp` tingles and draws the marks (`web_visual.cpp`'s `appendSense`, `appendSenseSight`) and dodges by moving (`MoveDodge`: the head's move in the tracking space out of a warned attack's way is the game's B, that way) |
+| `src/spider_sense.cpp`, `src/game_sense.cpp` | Spider-Sense: the game's own warnings of an attack about to land, read from the hero's `HeroDodgeManager` (`game_sense`), what each asks for, the counter a fist thrown at the attacker makes and the blow after it (`spider_sense`); `game_punch.cpp` runs it, `game_xr.cpp` tingles and draws the marks (`web_visual.cpp`'s `appendSense`, `appendSenseSight`) and dodges by moving (`MoveDodge`: the head's move in the tracking space out of a warned attack's way is the game's B, that way) and on a web (`WebDodge`: when a web carrying the player starts the game's own dodge, `game_dodge.cpp`) |
 | `src/impact_sound.cpp` | The headset's own blow sounds (BLOW SOUNDS: SPIDY, and GAME while the game's are not there) and a strike's rush, synthesized as WAVs in memory |
 | `src/game_sound.cpp`, `tools/probe_sound.py` | The game's own melee impact for Spidy's blows: the Melee Impact Event's five switches (where on him, how hard, the flow's count, in the air, a fist or a web strike) set on the one struck's sound sources (the player's when he has none) and its hit sound played on him, on the game's main thread; the BLOW SOUNDS row says whether (`SpidySoundMode`), `SpidySoundData` whether the game plays them (`live`) |
 | `include/spidy/game_pad.hpp` (`TemplePress`, `SuitPowerPress`, `NamedPress`) | The VR gestures that press the virtual controller: a hand at the temple with its trigger (the game's R3, its scan), both hands at the chest with both triggers (its L3 + R3, the suit power), the controls of the names the game shows (its prompts) |
 | `src/phone.cpp`, `src/phone_music.cpp`, `apps/phone_preview.cpp` | Spidy's phone, drawn from a back pocket: MUSIC (the songs in the Music folder), MENU (the game's Back, its menu of the map, suits and skills; `Walk::menu`), GEAR (the gadgets) and CAMERA (its D-pad up, its camera). Its body (`appendPhone`: a rounded slab 9 mm deep, the frame, the back, the camera bump, the side buttons, lit as it turns) is overlay geometry; its screen (`appendPhoneScreen`, drawn flat) is rendered once a frame into a picture of its own and laid on the glass (`D3D12Renderer::Picture`: 960 x 2048, sRGB, its layers by depth, 6 mip levels, sampled anisotropically on a quad at `phoneScreenCorners`). Until October 24 every layer of the screen was its own sheet in the scene, a fraction of a millimetre over the last, and they fought for depth at arm's length. `game_xr.cpp` draws the whole overlay about the eyes' middle (`about`), not the world's origin: 1-2 km out in the city, the eye's view-projection in single floats is off by a tenth of a millimetre per vertex, and the screen, 0.3 mm over the glass, lost to it at 293 of 8242 points in the GPU test's check (none about the eye) |
 | `src/body_haptics.cpp`, `src/bhaptics_output.cpp`, `apps/haptics_test.cpp` | Body haptics on a bHaptics vest, sleeves and visor: the patterns (pure, in the core tests), the bHaptics SDK on a thread of its own, and the test tool without the game ([Body haptics](#body-haptics-bhaptics)) |
 | `src/shooter.cpp`, `src/game_shooter.cpp` | The web shooter: trigger pulls and their aim, and the game's own web-shooter shot fired from the hand |
+| `include/spidy/throw_aim.hpp`, `src/game_throw.cpp` | The game's throw of a prop aimed by the free hand: the hand's aim made a throw's (pure, in the core tests), and the hooks on the aim manager's getters that hand it to the game's throw (`SpidyThrowAim`, `SpidyThrowData`, `SpidyThrowStart` for a probe) |
+| `include/spidy/game_dodge.hpp`, `src/game_dodge.cpp` | The game's own dodge for a player a web carries: the hook on the hero's HeroDodgeManager update that starts and ends the traversal dodge's kind when `spider_sense.hpp`'s `WebDodge` asks (`SpidyDodgeData`; `SpidyDodgeStart`, `SpidyDodgeStop`, `SpidyDodgeTest` for a probe) |
 | `src/slow_motion.cpp`, `src/game_time.cpp` | Slow motion: the left stick's click, focus and the eased time scale; the game's own time system slowed to it (its look: `D3D12Renderer::Grade`, the meter in `web_visual.cpp`) |
 | `src/game_grab.cpp`, `src/native_bodies.cpp`, `src/game_targets.cpp` | Web grab in the game: candidates, freed Havok props, flung bots |
 | `src/native_render_memory.cpp`, `tools/vr_launcher.py` | A larger per-frame render memory ring, installed while the game starts |
@@ -1776,7 +1841,7 @@ still requires a running game or headset.
 | `include/spidy/wall_roll.hpp`, `src/swing.cpp` (`climbInputs`) | Hand wall climbing: palms that hold the wall and pull, the two-grip roll of the view |
 | `include/spidy/realistic_flip.hpp`, `tests/realistic_flip_tests.cpp` | Realistic flips: spin from the webs' pull, a let-go swing and arm swings, drag, and the way back upright |
 | `src/native_hud.cpp`, `include/spidy/native_hud.hpp`, `tools/probe_hud.py` | The game's HUD in VR: its panel in front of the head, the second movie (markers, subtitles, prompts) on it, and its check in the game |
-| `src/native_rays.cpp`, `src/native_movement.cpp`, `src/game_swing.cpp` | Native world queries and collision-controlled swing requests |
+| `src/native_rays.cpp`, `src/native_movement.cpp`, `src/game_swing.cpp` | Native world queries and collision-controlled swing requests; the rays that stand in for the player's body pass what it passes (`native_rays::meets`, his mover's collision profile) |
 | `src/lab_world.cpp`, `apps/xr_lab.cpp` | Synthetic collision world and VR lab |
 | `tools/inspect_game.py`, `tools/discover_render_types.py` | Offline game research |
 | `src/game_observer.cpp`, `tools/observe_game.py` | Opt-in native camera callback diagnostic |

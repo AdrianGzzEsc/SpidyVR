@@ -1183,6 +1183,39 @@ def sound_snapshot(game, address):
     return None
 
 
+DODGE_STATUS = {0: 'off', 1: 'running', 3: 'another build'}
+DODGE_ANSWERS = ('none', 'plain', 'accurate', 'perfect')
+
+
+def dodge_snapshot(game, address):
+    """The game's own dodge for a player a web carries (game_dodge.hpp): `frames` the hero's dodge manager was
+    updated in; dodges `asked` for, those the game `taken` and its `answers` to them (none: no warning it could
+    answer; plain: no immunity; accurate; perfect); dodges Spidy `ended` and those the game ended first
+    (`cut_short`); the latest one's answer, the warnings standing as it started, its way and the player's speed
+    then; `carried` while a web carries the player."""
+    for _ in range(8):
+        raw = game.read(address, 128)
+        if len(raw) != 128:
+            return None
+        if struct.unpack_from('<3I', raw) != (0x53444744, 1, 128):
+            raise RuntimeError('Dodge protocol mismatch')
+        if struct.unpack_from('<Q', raw, 16)[0] & 1 or raw[16:24] != game.read(address+16, 8):
+            continue
+        status, = struct.unpack_from('<I', raw, 12)
+        frames, asked, taken = struct.unpack_from('<3Q', raw, 24)
+        answers = struct.unpack_from('<4Q', raw, 48)
+        ended, cut_short = struct.unpack_from('<2Q', raw, 80)
+        last, warnings, error, carried = struct.unpack_from('<4I', raw, 96)
+        way = struct.unpack_from('<3f', raw, 112)
+        speed, = struct.unpack_from('<f', raw, 124)
+        return dict(status=DODGE_STATUS.get(status, status), frames=frames, asked=asked, taken=taken,
+                    answers=dict(zip(DODGE_ANSWERS, answers)), ended=ended, cut_short=cut_short,
+                    last_answer=DODGE_ANSWERS[last] if last < len(DODGE_ANSWERS) else last,
+                    last_warnings=warnings, last_way=[round(x, 3) for x in way], last_speed=round(speed, 2),
+                    error=error, carried=bool(carried))
+    return None
+
+
 SENSE_ANSWERS = ('none', 'counter', 'dodge', 'jump')
 # BotAttackDodgeData's Properties, as the game's reflection table names the bits (spider_sense.hpp attack::).
 ATTACK_FLAGS = ('dodgeable', 'counterable', 'never_beaten', 'dodge_button', 'jump_button', 'dodge_left',
@@ -2157,7 +2190,8 @@ def session(a, startup):
             ROOT/'reports/ray-modules', ('SpidyRayStart', 'SpidyRaySubmit', 'SpidyRayStop',
                                        'SpidyRaySample', 'SpidyRayData', 'SpidySwingData', 'SpidyGrabData',
                                        'SpidyPunchData', 'SpidyStrikeData', 'SpidyShooterData', 'SpidyRopeData',
-                                       'SpidySenseData', 'SpidyFocusData', 'SpidySoundData'))
+                                       'SpidySenseData', 'SpidyFocusData', 'SpidySoundData',
+                                       'SpidyDodgeData'))
         # Imported here: probe_game_grab imports from this module.
         from probe_game_grab import grab_snapshot
         ray_module = next(m['base'] for m in modules(game.pid) if m['name'].lower() == 'spidy_ray_bridge.dll')
@@ -2223,6 +2257,8 @@ def session(a, startup):
         # The game's Focus for those blows: the latest.
         focus = None
         sound = None
+        # The game's own dodges for a player a web carries: the latest.
+        dodge = None
         # Read while the game runs: a session that ends with the game has nothing to read them from.
         ropes = steam = None
         # The web shooter: the latest, and a sample when a shot is asked for, fired or dropped.
@@ -2298,7 +2334,7 @@ def session(a, startup):
                         swing_samples=list(swing_samples), motion_samples=list(motion_samples),
                         grab_samples=list(grab_samples), body=body, punch=punch,
                         punch_samples=list(punch_samples), strikes=strikes, strike_samples=list(strike_samples),
-                        focus=focus, sense=sense, sense_samples=list(sense_samples),
+                        focus=focus, sense=sense, sense_samples=list(sense_samples), dodge=dodge,
                         ropes=ropes, steam_guard=steam,
                         shooter=shooter, shooter_samples=list(shooter_samples),
                         slow_motion=slow_motion, slow_motion_samples=list(slow_motion_samples), hud=hud_last,
@@ -2391,6 +2427,7 @@ def session(a, startup):
                         strikes = fight
                     focus = focus_snapshot(game, rays['SpidyFocusData']) or focus
                     sound = sound_snapshot(game, rays['SpidySoundData']) or sound
+                    dodge = dodge_snapshot(game, rays['SpidyDodgeData']) or dodge
                     senses = sense_snapshot(game, rays['SpidySenseData'])
                     if senses and 'protocol_mismatch' in senses:
                         sense = senses
@@ -2591,6 +2628,7 @@ def session(a, startup):
             strikes=strike_snapshot(game, rays['SpidyStrikeData']) or strikes, strike_samples=list(strike_samples),
             focus=focus_snapshot(game, rays['SpidyFocusData']) or focus,
             sound=sound_snapshot(game, rays['SpidySoundData']) or sound,
+            dodge=dodge_snapshot(game, rays['SpidyDodgeData']) or dodge,
             sense=sense_snapshot(game, rays['SpidySenseData']) or sense, sense_samples=list(sense_samples),
             ropes=rope_snapshot(game, rays['SpidyRopeData']) or ropes,
             steam_guard=steam_snapshot(game, xr['SpidySteamData']) or steam,

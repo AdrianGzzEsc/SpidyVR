@@ -103,8 +103,6 @@ std::span<const int> steps(Item item) {
         return flipSpeeds;
     case Item::screenDepth:
         return depthSteps;
-    case Item::wallDistance:
-        return wallDistances;
     case Item::nearClip:
         return nearClips;
     case Item::recordingFov:
@@ -156,8 +154,6 @@ float numberOf(Item item, const Values& v) {
         return static_cast<float>(v.flipSpeed);
     case Item::screenDepth:
         return static_cast<float>(v.screenDepth);
-    case Item::wallDistance:
-        return static_cast<float>(v.wallDistance);
     case Item::nearClip:
         return static_cast<float>(v.nearClipMm);
     case Item::recordingFov:
@@ -205,8 +201,6 @@ template <class V> auto switchOf(Item item, V& v) -> decltype(&v.aimMarkers) {
         return &v.triggerWebs;
     case Item::webStyle:
         return &v.arcadeWebs;
-    case Item::standOnWalls:
-        return &v.standOnWalls;
     case Item::handClimb:
         return &v.handClimb;
     case Item::view:
@@ -246,7 +240,6 @@ Values sanitized(Values v) {
     v.hud = std::clamp(v.hud, 0, 3);
     v.flipSpeed = std::clamp(v.flipSpeed, 90, 480);
     v.screenDepth = std::clamp(v.screenDepth, 0, 3);
-    v.wallDistance = fixedWallDistance;
     v.nearClipMm = std::clamp(v.nearClipMm, nearClips[0], std::end(nearClips)[-1]);
     v.recordingFov = recording_fov::sanitized(v.recordingFov);
     v.uiStyle = std::clamp(v.uiStyle, uiStyles[0], std::end(uiStyles)[-1]);
@@ -303,7 +296,7 @@ const std::array<Row, 48>& rows() {
          "Body haptics for landings, walls, wall climbing and charged leaps.", {}},
         {Item::none, "DISPLAY", nullptr, {}},
         {Item::view, "VR VIEW", "Play in VR, or the game as it is on a 3D screen, with pad controls.", viewChoices,
-         true},
+         Place::page},
         {Item::screenSize, "GAME SCREEN SIZE", "The screen that shows menus, cutscenes and flat mode.",
          screenChoices},
         {Item::screenDepth, "GAME SCREEN 3D",
@@ -337,18 +330,20 @@ const std::array<Row, 48>& rows() {
         {Item::automaticSpeed, "MAX ROTATION SPEED",
          "Maximum automatic turning speed, including release flips.", automaticSpeedChoices},
         {Item::automaticMinimumSpeed, "MINIMUM FLIGHT SPEED",
-         "Start automatic rotation only above this travel speed.", automaticMinimumChoices},
+         "Start automatic rotation only above this travel speed.", automaticMinimumChoices, Place::launcher},
         {Item::automaticReleaseFlip, "SWING MOMENTUM",
          "Carry orbital momentum when the last web is released. No preset flip.", {}},
         {Item::automaticResponse, "ROTATION RESPONSE",
-         "Longer response gives gentler acceleration and braking.", automaticResponseChoices},
+         "Longer response gives gentler acceleration and braking.", automaticResponseChoices,
+         Place::launcher},
         {Item::automaticHandStrength, "HAND MOMENTUM",
          "How much arm movement changes your angular momentum in the air.", automaticHandStrengthChoices},
         {Item::automaticFalloff, "ANGULAR DRAG",
-         "How quickly rotation slows without more hand or web input.", automaticFalloffChoices},
+         "How quickly rotation slows without more hand or web input.", automaticFalloffChoices,
+         Place::launcher},
         {Item::automaticHandThreshold, "MINIMUM HAND SPEED",
          "Ignore hand movements slower than this. Faster gestures add momentum.",
-         automaticHandThresholdChoices},
+         automaticHandThresholdChoices, Place::launcher},
         {Item::automaticAirBrake, "AIR ROTATION BRAKE",
          "Press A in the air to stop momentum and smoothly return upright.", {}},
         {Item::automaticCombat, "FLIPS IN COMBAT",
@@ -412,8 +407,6 @@ bool choose(Item item, int index, Values& v) {
     case Item::screenDepth:
         v.screenDepth = s[index];
         break;
-    case Item::wallDistance:
-        return false;
     case Item::nearClip:
         v.nearClipMm = s[index];
         break;
@@ -468,7 +461,6 @@ struct TabOnly {
 constexpr TabOnly tabOnly[] = {
     {"near_clip_mm", nullptr, &Values::nearClipMm},
     {"hand_climb", &Values::handClimb, nullptr},
-    {"wall_distance_cm", nullptr, &Values::wallDistance},
     {"realistic_flips", &Values::realisticFlips, nullptr},
     {"rotation_strength", nullptr, &Values::automaticStrength},
     {"rotation_speed", nullptr, &Values::automaticSpeed},

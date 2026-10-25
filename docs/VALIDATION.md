@@ -1,6 +1,73 @@
-# Validation — 2026-10-24
+# Validation — 2026-10-25
 
-## The overlay drawn about the eyes; the throw marker drawn as X (latest build)
+## Fewer options: wall running, the monitor's camera, four realistic flips rows, leftovers (latest build)
+
+The user: "cleanup the redundant", after a review of the options (CHANGELOG,
+October 25). `include/spidy/vr_settings.hpp` (`Place`, `Row::place`;
+`Item::standOnWalls`, `Item::wallDistance`, `Values::wallDistance` and
+`wallDistances` gone), `src/vr_settings.cpp`, `src/game_menu.cpp`,
+`include/spidy/game_menu.hpp`, `include/spidy/launcher_text.hpp`
+(`SessionOptions::wallRun` and `standOnWalls` gone), `include/spidy/launcher_profile.hpp`
+(`retired`: `wall_run` and `wall_distance_cm` kept in profiles at 1 and 25, for the user's "make sure it
+wont break profiles"), `apps/launcher/system.cpp`, `apps/launcher/ui.cpp` (the Troubleshooting card),
+`tests/core_tests.cpp`, `tests/launcher_tests.cpp`.
+
+| | |
+| --- | --- |
+| Build | `tools/build.ps1 -Observer`, ctest 3/3, 571 core tests (changed: each row's place, VR VIEW `page`, MINIMUM FLIGHT SPEED, ROTATION RESPONSE, ANGULAR DRAG and MINIMUM HAND SPEED `launcher`, 43 rows `tab`; every setting has a row; the wall view and the wall camera's distance have none; spidy_vr.ini's text without `wall_distance_cm`, and an older file's line changes nothing; the hand climb's eyes 25 cm from the wall, through a reset), 32 launcher checks (changed: a new launcher tells a session neither `--no-wall-run` nor `--no-stand-on-walls`; a headset line's `stand_on_walls` and `wall_run` change nothing; no launcher option in a profile, the two retired ones fixed at 1 and 25 with no row; an older profile's `wall_run=0` and `wall_distance_cm=100` read as 1 and 25, it matches once used and lists no change, `wall_run=off` counts, a profile written again has `wall_run=1` and `wall_distance_cm=25`; the defaults' profile text as before; new: a profile holds each of 0.4.1's 34 keys). |
+| Python | The six protocol suites, unchanged. |
+| Profiles across versions | A scratch program built three times against `launcher_profile.hpp` and `vr_settings.cpp` of 0.4.1 (`origin/main` ff3fc89), the last commit (0ea290a) and the tree. Two sets of settings: this PC's launcher.ini and spidy_vr.ini, and the same with `wall_run=0` and `wall_distance_cm=60` (a 0.4.1 player's). Each version wrote each as a profile, used on default settings; each read every one. 0.4.1's: 34 of 34 in 0.4.1, 34 of 39 in the last commit and the tree (its five newer settings missing, as before). The last commit's and the tree's: 39 of 39 in both, 34 of 34 in 0.4.1. The tree's text for this PC's settings is byte for byte the last commit's. The tree reads `wall_run=0` as 1 and 60 cm as 25 (the last commit read 60 as 25 already), and a profile that has them matches once used. A hand-written `wall_run=off`: counted by all three. |
+| Not run | The game: the tab's 43 rows and its RESET ALL in the pause menu. `tools/probe_menu.py` walks the rows up to FLIP SPEED, none of which moved, and expects the same changes. The launcher's window: the user's own launcher was open, and one runs at a time. |
+
+## Dodging on a web; broken glass passed (the build before)
+
+The user: "Swinging and moving with webs should count as dodging"; "also
+walking up broken glass (trough which you can walk) was still responding as a
+wall not letting me pass in vr" (CHANGELOG, October 24, sixth). For the glass:
+`include/spidy/native_rays.hpp` (`BodyFilter`, `meets`, `setPlayer`,
+`Command::bodyRays` for the former `reserved`), `src/native_rays.cpp`,
+`include/spidy/swing.hpp` (`bodyRaycast`), `src/swing.cpp`, `src/game_swing.cpp`,
+`include/spidy/crawl_hands.hpp`, `src/web_strike.cpp`, `src/game_tracking.cpp`,
+`tools/probe_body_rays.py` (new). `include/spidy/spider_sense.hpp` and
+`src/spider_sense.cpp` (`WebDodge`), `include/spidy/game_dodge.hpp` and
+`src/game_dodge.cpp` (new, ray module), `src/game_swing.cpp` (starts and stops
+it, sends each input sample's carry), `src/game_xr.cpp` (the whoosh),
+`tools/run_game_vr.py` (`dodge` in the report), `tools/probe_web_dodge.py` (new),
+`CMakeLists.txt`, `tests/core_tests.cpp`, `tests/game_vr_protocol_tests.py`,
+`apps/launcher/ui.cpp`.
+
+| | |
+| --- | --- |
+| Static | The hero's HeroDodgeManager's update, dodge start and end, the dodge for each attack, its immunities, the kinds the hero's states start (REFERENCE.md, "For the dodge a web carrying the player starts"). |
+| In the game (this build) | The title's CONTINUE: Spider-Man perched on a roof, no enemy. `tools/probe_web_dodge.py --times 3`: `SpidyDodgeStart` 0; three times `SpidyDodgeTest` with kind 5 for the hero: no dodge on before, kind 5 on the hero's manager after the start, answer 0 (no warning standing), kind 0 after the end, read from outside 0 too, no error; `SpidyDodgeStop` 0 and the update's entry bytes as the exe has them. The game ran on (screenshots before and after). |
+| Build | `tools/build.ps1 -Observer`, ctest 3/3, 570 core tests (new: a dodge on a web starts 0.3 s before a blow, lasts 0.6 s, holds for a blow still to come, 1.5 s at most; none on the ground, hanging still, at an answered warning, over the game's own dodge; the flight after a web for a second; an untimed warning a tenth on; a dodge the game ended, one it did not take). |
+| Python | The six protocol suites (new: `dodge` decoded; its magic, version and size agree with the module's). |
+| Saves | Of the 19 files only `-userprefs.save` changed (Continue rewrites it); backup `reports/backups/saves-before-dodge-probe-20261024-224012`. |
+| Not run | A blow dodged on a web: no enemy was near. The headset: the whoosh, the game's dodge sound, its Focus. |
+| Read (glass) | The user's game-vr-20261024-213937: 14 ground mounts, 11 at two spots of a burning office at y = 141 (5 at (-603, -649), 6 at (-579, -648)), each lifting the body 1-4 m; the hands' rays there met vertical bodies with the filter word 0x10 (2 bodies in the whole session, 1658 hits, every one vertical) beside the floor's and walls' 0x43f and 0x63f; eye images 0119-0120: a glass partition, broken glass at the view's edge. |
+| In the game (glass, research) | Free roam. Read: the world's filter `InsomniacCollisionFilter`, its type table, the 19 collision profiles, the player's MoverManager on profile 3. A scratchpad MinHook build on the filter's test (`18060a0`) for 8 s: 96 distinct query words (5.4 million more calls past the table); every word of the mover's kind (`0x..e7804`: categories 0x004, types 0xe7) meets 0x43f and not 0x10, by the game's own answer; the mover's safe-body query carried `{0x2ed, 0x70001, 0xfee7, 0x4}`, profile 3's fields. |
+| In the game (glass, this build) | `tools/probe_body_rays.py`: `SpidyRayStart` 0; `SpidyRayBody` for the player: categories 0x4, types 0xe7 (the module found his MoverManager in the registry); for no record 0, 0. The office's panes are in a mission and were not reached: no body ray was seen passing one. |
+| Build (glass) | 571 core tests (new: `meets` for the player's profile against 0x10, 0x43f, 0x63f, two types, none; a pane the body passes walked at, no mount, the same pane solid, a mount; the tracking rays' body bits, a bit past the rays refused). |
+
+## The throw aimed by the free hand (the build before)
+
+The user: "the x works well but really hard or not possible to aim where
+the throw will go"; the aim chosen: the free hand, pointing (CHANGELOG,
+October 24, fifth). `include/spidy/throw_aim.hpp` (new),
+`include/spidy/game_throw.hpp` and `src/game_throw.cpp` (new, ray module),
+`src/game_swing.cpp` (starts and stops it), `src/game_xr.cpp`,
+`CMakeLists.txt`, `tests/core_tests.cpp`, `apps/launcher/ui.cpp`.
+
+| | |
+| --- | --- |
+| Static | The yank-and-throw states, the hero's aim manager and its results' getters, the actor table (REFERENCE.md, "For the throw of a prop"). |
+| In the game (research builds) | Profile 2. The aim manager's slots read during LB + RB at a mailbox: slot 4 appeared only in the hold, no actor, its way the camera's heading. With the getters hooked, slot 4 was read 117 times in a 1.5 s hold; given a way 90 degrees right of the camera, a manhole cover and a trash can were thrown (frames 0.15 s apart: the can swung round and let go to the right). The probes could not follow a thrown prop's flight: the records they read stay put, the drawn matrix at the actor moves. |
+| In the game (this build) | `spidy_ray_bridge.dll` loaded into the game: `SpidyThrowStart` 0, the three getters' entries jumps to its hooks, `SpidyThrowAim` 0 for a request and 9803 for a malformed one, `SpidyThrowData` running, no error. No throw was made through it: no prop the game offered was within reach then. No enemy was near in any run. |
+| Build | `tools/build.ps1 -Observer`, ctest 3/3, 569 core tests (new: the hand's aim made a throw's at a character, at a surface, with no aim, straight down; the handle; the enemy nearest a point). |
+| Saves | Of the 19 files only `-userprefs.save` and `slot1-s.save` (profile 2: the game's autosave in free roam, where Spider-Man stood) changed; backup `reports/backups/saves-before-throw-probe-20261024-204556`. |
+| Not run | A headset: X's throw aimed by the hand, at a spot and at an enemy. |
+
+## The overlay drawn about the eyes; the throw marker drawn as X (the build before)
 
 The user: "phone still z-fighting between screen and its body i think.
 rb+lm still appears over the object together with the static places press

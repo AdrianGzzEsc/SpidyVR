@@ -16,7 +16,7 @@ bool inSight(const WorldQueries& world, Vec3 from, Vec3 to) {
     const float distance = length(line);
     if (distance < 1)
         return true;
-    const auto hit = world.raycast(from, line / distance, distance);
+    const auto hit = world.bodyRaycast(from, line / distance, distance);
     return !hit || !hit->fixed || length(hit->point - from) > distance - 1;
 }
 } // namespace

@@ -279,9 +279,13 @@ struct Config {
     // The open hand, holding nothing, under the fist and the shooting pose:
     // each finger joint past the palm sits this far from the bone before it
     // (knuckle, middle, tip, radians), the thumb's first two joints
-    // openThumb. A hand at rest, barely curled.
+    // openThumb. A hand at rest, barely curled. The rest pose fans the
+    // fingers (the hero's tips 2.3 times as far apart as the knuckles); the
+    // open hand keeps openSpread of each finger's turn from the hand's way
+    // in the palm's plane, its tips about 1.3 times as far apart ("hands
+    // look a bit goofy with fingers spread too wide", October 25).
     float openBend[3]{.22f, .3f, .22f};
-    float openThumb = .18f;
+    float openThumb = .18f, openSpread = .3f;
     // Feet within this height of the ground in the game's pose stand on it:
     // the legs bend to keep them there. Higher, the legs keep the game's pose.
     float groundedFoot = .3f;

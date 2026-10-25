@@ -145,7 +145,7 @@ std::atomic<bool> hooked{}, created{};
 std::atomic<int> built{};
 alignas(16) unsigned char tab[tabBytes];
 alignas(16) unsigned char items[rowCount][itemBytes];
-// The tab's own items (the rows not on the first page), and the row that is.
+// The tab's own items (its Place's rows), and the row on the first page.
 alignas(16) unsigned char tabItems[rowCount][itemBytes];
 size_t tabRows{};
 int pageRow = -1;
@@ -202,7 +202,7 @@ void addTexts() {
         const auto& row = vr_settings::rows()[r];
         sprintf_s(tag, "SPIDY_VR_%zu", r);
         titles[r] = addText(tag, row.title);
-        if (row.page)
+        if (row.place == vr_settings::Place::page)
             pageTitle = const_cast<Text*>(titles[r]);
         if (row.help) {
             sprintf_s(tag, "SPIDY_VR_%zu_HELP", r);
@@ -298,13 +298,13 @@ uint32_t buildItems() {
                 put<uint64_t>(c, 0x28, 0);
             }
         }
-        // The tab's rows, and the one for the first page.
+        // The tab's rows, and the one for the first page; the launcher's own are in neither.
         tabRows = 0;
         pageRow = -1;
         for (size_t r = 0; r < rowCount; ++r)
-            if (vr_settings::rows()[r].page)
+            if (vr_settings::rows()[r].place == vr_settings::Place::page)
                 pageRow = static_cast<int>(r);
-            else
+            else if (vr_settings::rows()[r].place == vr_settings::Place::tab)
                 std::memcpy(tabItems[tabRows++], items[r], itemBytes);
         std::memcpy(tab, reinterpret_cast<const void*>(menu), tabBytes);
         put<uint32_t>(tab, 8, tabId);
@@ -461,9 +461,9 @@ void __fastcall callbackHook(void* ui, uint32_t hash, GfxValue* args, uint32_t c
     // Y RESET ALL on the SPIDY VR tab: the game's RESET ALL takes only its own tabs.
     if (built == 1 && args && count >= 1 && (args[0].type & typeMask) == intType &&
         static_cast<uint32_t>(args[0].data) == tabId && hash == get<uint32_t>(imageBase + resetAllHash)) {
-        // The tab's own rows: VR VIEW is on the first page, not in the tab.
+        // The tab's own rows: VR VIEW is on the first page, and the launcher keeps its own.
         for (size_t r = 0; r < rowCount; ++r)
-            if (!vr_settings::rows()[r].page)
+            if (vr_settings::rows()[r].place == vr_settings::Place::tab)
                 change(itemOf(static_cast<int>(r)), vr_settings::defaultChoice(itemOf(static_cast<int>(r))));
         // Built again, every tab shows its values, as after the game's own RESET ALL.
         reinterpret_cast<void(__fastcall*)(void*)>(imageBase + openOptions)(ui);

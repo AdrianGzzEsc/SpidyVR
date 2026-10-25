@@ -1612,6 +1612,21 @@ Result solve(Pose& pose, const Rig& rig, const Targets& targets, const Config& c
                           pose.position(chain[k]));
         };
         // Open, holding nothing; a fist or the shooting pose closes over it.
+        // Its fingers lie closer than the rest pose's fan: each turns at its
+        // knuckle, about the palm's normal, toward the hand's way.
+        const Vec3 palmNormal = normalized(pose.direction(arm.hand, rig.handPalm[i]));
+        const Vec3 handWay = normalized(across(pose.direction(arm.hand, rig.handFingers[i]), palmNormal));
+        for (size_t f = 0; f < fingers; ++f) {
+            const auto& chain = arm.fingers[f];
+            if (chain.size() < 3 || length(handWay) < .5f)
+                continue;
+            const Vec3 bone = across(normalized(pose.position(chain[2]) - pose.position(chain[1])), palmNormal);
+            if (length(bone) < .17f)
+                continue;
+            const float off = std::atan2(dot(cross(handWay, bone), palmNormal), dot(handWay, bone));
+            pose.turn(rig.below[static_cast<size_t>(chain[1])],
+                      axisAngle(palmNormal, -off * (1 - c.openSpread) * own), pose.position(chain[1]));
+        }
         for (size_t f = 0; f < fingers; ++f)
             for (size_t k = 1; k <= 3 && k + 1 < arm.fingers[f].size(); ++k)
                 bendFinger(f, k, c.openBend[k - 1], own);

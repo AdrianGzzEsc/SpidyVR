@@ -1,6 +1,7 @@
 // Swing prediction runs inside a native world-query lease. MoverStandard remains
 // responsible for body collision and committing the resulting position.
 #include "spidy/game_swing.hpp"
+#include "spidy/game_dodge.hpp"
 #include "spidy/game_focus.hpp"
 #include "spidy/game_sound.hpp"
 #include "spidy/crawl_hands.hpp"
@@ -8,10 +9,12 @@
 #include "spidy/game_offers.hpp"
 #include "spidy/game_punch.hpp"
 #include "spidy/game_shooter.hpp"
+#include "spidy/game_throw.hpp"
 #include "spidy/game_warp.hpp"
 #include "spidy/native_bodies.hpp"
 #include "spidy/native_movement.hpp"
 #include "spidy/native_query_context.hpp"
+#include "spidy/native_rays.hpp"
 #include <atomic>
 #include <cstring>
 #include <windows.h>
@@ -92,8 +95,12 @@ SwingTakeoff takeoffTransition;
 SwingTakeoff mountTakeoff;
 LARGE_INTEGER frequency{};
 // When the web strike (game_punch::fly) last had its say over a step: the
-// real time between two is the step it flies the player through.
+// real time between two is the step it flies the player through. And whether
+// it flew him then, or the game's own move out of the swing's flight had him
+// (its zip to a point, AirYield): a web that carries him, as a swing's does
+// (game_dodge).
 int64_t strikeQpc{};
+std::atomic<bool> strikeFlying{}, gameMoveFlying{};
 // Aim previews are made while sampled before this tick, once per input
 // command; the latest was made at aimMadeMs.
 std::atomic<uint64_t> aimDeadline{};
@@ -261,6 +268,9 @@ void visit(const native_rays::QueryContext& world) {
         enabled = false;
         return;
     }
+    // The rays that stand in for the player's body pass what his own body
+    // passes (native_rays::meets): his mover's collision profile.
+    native_rays::setPlayer(config.record);
     Command c;
     AcquireSRWLockShared(&control);
     c = command;
@@ -312,7 +322,7 @@ void visit(const native_rays::QueryContext& world) {
     Vec3 crawlNormal = nativeFloor ? Vec3{0, 1, 0} : Vec3{};
     Vec3 crawlPoint = at;
     if (supported && currentUp.y < .866f) {
-        const auto hit = world.raycast(at + currentUp * .4f, -currentUp, 1.2f);
+        const auto hit = world.bodyRaycast(at + currentUp * .4f, -currentUp, 1.2f);
         if (hit && hit->fixed && finite(hit->point) && finite(hit->normal) &&
             dot(normalized(hit->normal), currentUp) > .7f) {
             crawlNormal = normalized(hit->normal);
@@ -394,6 +404,19 @@ void visit(const native_rays::QueryContext& world) {
         float grabDt{};
         if (game_grab::due(grabDt))
             game_grab::step(grabDt, world, config.record);
+        // A web that carries the player - a swing's, a zip's, a pull's, a web
+        // strike's flight, the game's zip to a point out of the swing - dodges
+        // the blows the game warns of (game_dodge), as the flat game's web
+        // moves do. The mover's velocity is in the game's time: in real m/s,
+        // as the dodge's speed is.
+        {
+            bool webbed = strikeFlying.load(std::memory_order_relaxed) ||
+                          gameMoveFlying.load(std::memory_order_relaxed);
+            for (unsigned i = 0; i < 2; ++i)
+                webbed |= solver.webs()[i].attached && (owned || !motion.grounded);
+            game_dodge::carry(config.record, webbed, motion.grounded == 0,
+                              player.velocity * game_punch::worldScale());
+        }
         // Fists take the same samples. A hand whose web holds a target or
         // carries the player does not punch; one whose web only hangs from a
         // wall while the player stands (a clenched fist shoots one) does.
@@ -514,7 +537,7 @@ void visit(const native_rays::QueryContext& world) {
     solver.supportSurface({});
     const Vec3 actorUp = normalized({feet[4], feet[5], feet[6]});
     if (!owned && finite(actorUp) && length(actorUp) > .9995f && actorUp.y < .866f) {
-        const auto hit = world.raycast(at + actorUp, -actorUp, 2.5f);
+        const auto hit = world.bodyRaycast(at + actorUp, -actorUp, 2.5f);
         if (hit && hit->fixed && finite(hit->normal) && dot(normalized(hit->normal), actorUp) > .7f) {
             crawl = normalized(hit->normal);
             solver.supportSurface(crawl, hit->point);
@@ -550,7 +573,7 @@ void visit(const native_rays::QueryContext& world) {
     if (!owned && !motion.grounded && (motion.moverFlags & 0x80u) && length(crawl) < .5f &&
         length(crawlWall.normal) > .5f && dot(body.velocity, crawlWall.normal) < runLeaving) {
         const Vec3 n = crawlWall.normal;
-        const auto hit = world.raycast(at + Vec3{0, 1, 0}, -n, 2.5f);
+        const auto hit = world.bodyRaycast(at + Vec3{0, 1, 0}, -n, 2.5f);
         if (hit && hit->fixed && finite(hit->normal) && dot(normalized(hit->normal), n) > .9f &&
             dot(at - hit->point, normalized(hit->normal)) < runReach) {
             crawl = normalized(hit->normal);
@@ -688,6 +711,7 @@ void visit(const native_rays::QueryContext& world) {
     strikeQpc = now.QuadPart;
     const auto flight = game_punch::fly(sinceStrike, body.position - Vec3{0, 1, 0}, body.grounded,
                                         strikeLift && transition.waiting);
+    strikeFlying.store(flight.drive, std::memory_order_relaxed);
     const bool striking = flight.drive && collidable;
     if (striking)
         requested = limited(flight.velocity / timeScale,
@@ -781,6 +805,7 @@ void visit(const native_rays::QueryContext& world) {
     // has its own - until it is done.
     const bool yielding = airYield.update(tick, live && (c.asks & 1u), owned, !body.grounded,
                                           (motion.moverFlags & 0x80u) != 0, motion.steps, motion.airEvents);
+    gameMoveFlying.store(yielding && !body.grounded, std::memory_order_relaxed);
     if (airYield.began()) {
         solver.releaseAll();
         solver.leaveWall();
@@ -980,6 +1005,13 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingStart(void* input) {
         // The game's own interactions where the swing's wall holds the
         // player (game_offers): without them that wall offers nothing.
         game_offers::start(config.base);
+        // The game's throw of a prop aimed where the free hand points
+        // (game_throw): without it the throw goes the camera's way.
+        game_throw::start(config.base);
+        // The game's own dodge for a player a web carries (game_dodge):
+        // without it a warned blow finds him on the swing undodged.
+        strikeFlying = gameMoveFlying = false;
+        game_dodge::start(config.base);
         // A start after a stop takes input from the first sample on: the
         // last one's serial would have every new sample refused as old.
         AcquireSRWLockExclusive(&control);
@@ -1243,6 +1275,8 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingStop(void*) {
     game_sound::stop();
     native_bodies::stop();
     game_offers::stop();
+    game_throw::stop();
+    game_dodge::stop();
     ReleaseSRWLockExclusive(&simulation);
     const DWORD result = started ? stopMotion(nullptr) : 0;
     AcquireSRWLockExclusive(&output);
