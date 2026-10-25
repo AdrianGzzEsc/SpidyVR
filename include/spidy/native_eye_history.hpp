@@ -30,6 +30,8 @@ struct NativeEyeFrame {
     body_calibration::View calibration{};
     // Slow motion: the image's recolouring and the focus meter (none at rest).
     SlowMotionView slow{};
+    // The pad layer is on (game_pad::PadLayer): its sign over the right wrist.
+    bool padLayer{};
     // The gadget wheel, open while X is held (gadget_wheel.hpp).
     GadgetWheelView gadgetWheel{};
     // The phone, open from a pocket draw until B: whether the image has it,

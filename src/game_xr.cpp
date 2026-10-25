@@ -1593,16 +1593,24 @@ DWORD WINAPI run(void*) {
                         }
                     }
                     // A grip squeezed at a back pocket draws the phone, and shoots
-                    // no web until it is let go. Not with the phone out, nor in the
-                    // pad layer, where the grips are the game's bumpers (October
-                    // 19: a draw sent the game LB or RB until the phone came out).
+                    // no web until it is let go. Not with the phone out. In the pad
+                    // layer too, where the grips are the game's bumpers: that grip
+                    // is no bumper (October 19: a draw sent the game LB or RB until
+                    // the phone came out), and the phone drawn ends the layer
+                    // (PadLayer::leave), so the phone is always the way back to
+                    // play's controls.
                     int phoneDrawnWith = -1;
                     {
                         const float squeezes[2]{frame.hands[0].squeeze, frame.hands[1].squeeze};
-                        const bool drawPlay = gesturesPlay && !phone.open() && !padLayer.latched();
+                        const bool drawPlay = gesturesPlay && !phone.open();
                         if (pocketDraw.update(frame.seconds, drawPlay, frame.head, grips, gripsTracked,
                                               squeezes))
                             phoneDrawnWith = pocketDraw.drewWith();
+                        if (phoneDrawnWith >= 0 && padLayer.latched()) {
+                            padLayer.leave();
+                            // "Phone out" says it; "Pad layer off" would hide it.
+                            padLayerWas = false;
+                        }
                         for (unsigned i = 0; i < 2; ++i)
                             if (pocketDraw.hands() & (1u << i))
                                 controller.hands[i].squeeze = 0;
@@ -3141,6 +3149,12 @@ DWORD WINAPI run(void*) {
                             }
                         }
                         auto buttons = origins.filtered(frame, mapping);
+                        // On the pad layer a grip pressed at a back pocket is the
+                        // phone's draw, not the game's bumper.
+                        if (mapping == game_pad::Mapping::pad)
+                            for (unsigned i = 0; i < 2; ++i)
+                                if (pocketDraw.hands() & (1u << i))
+                                    buttons.hands[i].squeeze = 0;
                         // An X the game names is its X: no wheel (NamedPress).
                         if (named & game_pad::NamedPress::controlX)
                             buttons.buttons &= ~static_cast<uint32_t>(buttonX);
@@ -3804,6 +3818,7 @@ DWORD WINAPI run(void*) {
                     saved.screenPose = screenPose;
                     saved.screenAspect = SpidyFlatAspect();
                     saved.slow = moments.view(slowMotion.view());
+                    saved.padLayer = padLayer.latched();
                     if (gadgetWheel.open()) {
                         // The gadget wheel, from tracking space into this frame's
                         // world, with the gadgets in their places.
@@ -4150,6 +4165,13 @@ DWORD WINAPI run(void*) {
                             const double clock = std::fmod(static_cast<double>(shown) * 1e-9, 3600.);
                             appendSlowMotionMeter(translucent, saved->slow, wrist, viewer, pixelAngle,
                                                   static_cast<float>(clock), saved->uiStyle);
+                        }
+                        // The pad layer's sign over the back of the right wrist while
+                        // it is on: until October 25 only a buzz said so.
+                        if (!saved->flatScreen && saved->padLayer && rendered.swing.hands[1].tracked) {
+                            auto wrist = rendered.hands[1];
+                            wrist.position += travel;
+                            appendPadLayerSign(translucent, wrist, viewer, pixelAngle, saved->uiStyle);
                         }
                         // The bursts where the latest blows landed: fixed in the world.
                         if (!saved->flatScreen)

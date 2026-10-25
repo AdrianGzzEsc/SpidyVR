@@ -1,6 +1,25 @@
 # Validation — 2026-10-25
 
-## Fewer options: wall running, the monitor's camera, four realistic flips rows, leftovers (latest build)
+## The pad layer's sign; the phone's draw leaves the layer (latest build)
+
+The user: "I couldn't access the phone and some other aspects of the vr mode
+broke after playing around with camera (was fixed by opening and closing the
+pause menu)" (CHANGELOG, October 25, second). `include/spidy/game_pad.hpp`
+(`PadLayer::leave`), `src/game_xr.cpp` (the pocket draw in the layer, its grip
+no bumper, the sign), `include/spidy/native_eye_history.hpp` (`padLayer`),
+`include/spidy/web_visual.hpp`, `src/web_visual.cpp`, `include/spidy/tech_marks.hpp`,
+`src/tech_marks.cpp` (`appendPadLayerSign`), `apps/mark_preview.cpp`,
+`tools/preview-marks.ps1`, `tests/core_tests.cpp`.
+
+| | |
+| --- | --- |
+| The session | `game-vr-20261025-102303.json` (the play folder): `prompts.pad_entries` 1. The layer latched at 177.4 s, 2.3 s after the phone's CAMERA took the game's camera out (`prompt_demand` 0x10201), and stayed on to 287.6 s, when the menu button paused the game. Meanwhile the right stick sent the D-pad's up at least 9 times (the camera away and out again), the face buttons went to the game, the layer's idle never reached 20 s, and no web attached (`swing_samples` `attaches` flat from 102 s to 418 s). The camera's other three times out (154, 296, 396 s) ended with the right stick up and nothing stuck: webs attached again from 418 s. |
+| Build | `tools/build.ps1 -Observer`, ctest 3/3, 572 core tests (more checks in two: the pad layer's phone drawn lets a busy layer go, and a click latches it again, counted; UI STYLE: the sign comic unless tech is asked for, tech drawn anew, within 13 cm of the wrist's point in both, nothing for a hand that is no number). |
+| Python | The six protocol suites, unchanged. |
+| Preview | `tools/preview-marks.ps1 -Style Comic` and `-Style Tech` over a capture of the session, the sign 0.4 m and 0.6 m off: both lines read at both distances. |
+| Not run | The game and the headset: the sign over a real wrist, and a draw in the layer. |
+
+## Fewer options: wall running, the monitor's camera, four realistic flips rows, leftovers (the build before)
 
 The user: "cleanup the redundant", after a review of the options (CHANGELOG,
 October 25). `include/spidy/vr_settings.hpp` (`Place`, `Row::place`;

@@ -832,6 +832,15 @@ class PadLayer {
     bool latched() const {
         return latched_;
     }
+    // Lets go of it at once: the phone drawn from a back pocket does, as the
+    // phone is play's. On October 25 a click of both sticks with the game's
+    // camera out latched it unseen, and for 110 s the phone would not come
+    // out and the grips and triggers shot no web; every press kept it on,
+    // until the pause menu let it go.
+    void leave() {
+        latched_ = false;
+        idle_ = 0;
+    }
     // The times the layer was latched on.
     uint32_t entries() const {
         return entries_;

@@ -473,6 +473,38 @@ void appendSlowMotionMeter(std::vector<Vertex>& out, const SlowMotionView& view,
             softTriangle(out, shape, view3, shadow ? shadowColor : mix(glass, fill, .35f),
                          opacity * (shadow ? .55f : .9f), shadow ? 1.2f * px : 0.f, shadow ? 1.6f * px : soft);
 }
+void appendPadLayerSign(std::vector<Vertex>& out, Pose hand, Vec3 viewer, float pixelAngle, UiStyle style) {
+    if (style == UiStyle::tech)
+        return tech::appendPadLayerSign(out, hand, viewer, pixelAngle);
+    if (!finite(hand.position) || !finite(viewer) || !std::isfinite(pixelAngle) || pixelAngle <= 0)
+        return;
+    // Over the back of the wrist as the meter is over the left one, a little
+    // higher: two lines of lettering stand taller than a watch's face.
+    const Vec3 c = hand.position + hand.orientation.rotate({0, .07f, .065f});
+    const float distance = length(viewer - c);
+    if (!finite(c) || !(distance > .08f && distance < 3))
+        return;
+    // Level and upright across the line of sight, as the aim markers are.
+    const Vec3 view = (viewer - c) / distance;
+    Vec3 right = cross(Vec3{0, 1, 0}, view);
+    right = length(right) > .1f ? normalized(right) : perpendicular(view);
+    const Vec3 up = cross(view, right);
+    // A caption: a yellow pill with a red drop, the title in red over the
+    // hint in ink, each line centred (the lettering leans right).
+    constexpr float title = .016f, hint = .0075f, gap = .005f;
+    const float block = title + gap + hint;
+    const float wide = std::max(textWidth(padLayerTitle, title), textWidth(padLayerHint, hint));
+    const auto from = [](std::string_view words, float height) {
+        return -.5f * (textWidth(words, height) + Print::lean * height);
+    };
+    Print print(out, c, right, up, view, pixelAngle * distance);
+    print.layers(title * .08f, title * .15f, plate::red, 0,
+                 [&] { print.line({wide * -.5f, 0}, {wide * .5f, 0}, block * .5f + .005f, plate::yellow); });
+    print.layers(title * .05f, 0, {}, 0, [&] {
+        print.text(padLayerTitle, {from(padLayerTitle, title), block * .5f - title}, title, .2f, plate::red);
+        print.text(padLayerHint, {from(padLayerHint, hint), block * -.5f}, hint, .16f, plate::ink);
+    });
+}
 void appendImpact(std::vector<Vertex>& out, const ImpactView& impact, Vec3 viewer, float pixelAngle,
                   UiStyle style) {
     if (style == UiStyle::tech)

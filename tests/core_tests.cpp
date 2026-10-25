@@ -9288,6 +9288,22 @@ int main() {
             s ? appendSlowMotionMeter(v, slow, hand, viewer, pixel, 1, *s)
               : appendSlowMotionMeter(v, slow, hand, viewer, pixel, 1);
         });
+        three("the pad layer's sign", [&](std::vector<Vertex>& v, const UiStyle* s) {
+            const Pose hand{{.2f, 1.2f, -.4f}, {}};
+            s ? appendPadLayerSign(v, hand, viewer, pixel, *s) : appendPadLayerSign(v, hand, viewer, pixel);
+        });
+        // The sign over the back of the wrist, in either style; nothing for a hand that is no number.
+        for (const auto style : {UiStyle::comic, UiStyle::tech}) {
+            const Pose hand{{.2f, 1.2f, -.4f}, {}};
+            const Vec3 over = hand.position + Vec3{0, .07f, .065f};
+            std::vector<Vertex> v;
+            appendPadLayerSign(v, hand, viewer, pixel, style);
+            for (const auto& x : v)
+                check(length(x.position - over) < .13f, "the pad layer's sign is not over the wrist");
+            std::vector<Vertex> lost;
+            appendPadLayerSign(lost, {{std::nanf(""), 1, 0}, {}}, viewer, pixel, style);
+            check(lost.empty(), "the pad layer's sign drew for a hand that is no number");
+        }
         three("a blow", [&](std::vector<Vertex>& v, const UiStyle* s) {
             const ImpactView blow{point, .5f, BlowKind::Hit, 3, .1f};
             s ? appendImpact(v, blow, viewer, pixel, *s) : appendImpact(v, blow, viewer, pixel);
@@ -9712,6 +9728,13 @@ int main() {
         run(idle,.2f,true,false,false);
         check(run(idle,PadLayer::idleSeconds-1,true,false,false,true),"a busy layer let go");
         check(!run(idle,PadLayer::idleSeconds+1,true,false,false,false),"an idle layer did not let go");
+        // The phone drawn lets it go however busy it is, and a click latches it again.
+        PadLayer drawn;
+        click(drawn);
+        check(run(drawn,5.f,true,false,false,true),"the busy layer did not stay");
+        drawn.leave();
+        check(!drawn.latched() && !run(drawn,1.f,true,false,false,true),"the phone drawn did not let it go");
+        check(click(drawn) && drawn.entries()==2,"a click after the phone did not latch it again");
     });
     test("both thumbsticks held in are the game's Start, once a hold, where the runtime keeps the menu button",
          [] {

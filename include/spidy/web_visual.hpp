@@ -248,6 +248,13 @@ Vec3 onAimLine(Vec3 point, Vec3 normal, Vec3 origin, Vec3 direction);
 // pulse. pixelAngle as for appendWeb.
 void appendSlowMotionMeter(std::vector<Vertex>& out, const SlowMotionView& view, Pose hand, Vec3 viewer,
                            float pixelAngle, float seconds, UiStyle style = UiStyle::comic);
+// The pad layer's sign (game_pad::PadLayer) over the back of the right wrist
+// while it is on, facing the viewer: PAD LAYER, and under it how to leave it.
+// `hand` is the right hand's pose as the glove's, as for the meter.
+inline constexpr const char* padLayerTitle = "PAD LAYER";
+inline constexpr const char* padLayerHint = "CLICK BOTH STICKS TO LEAVE";
+void appendPadLayerSign(std::vector<Vertex>& out, Pose hand, Vec3 viewer, float pixelAngle,
+                        UiStyle style = UiStyle::comic);
 // The combat marks below are printed, as the graphics of Spidy's videos are
 // (their style system: flat plates of colour, every shape keyed in ink, a
 // hard drop where a shadow would be, lettering out of register as it lands),

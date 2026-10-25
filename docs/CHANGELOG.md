@@ -3,7 +3,34 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 25): fewer options - the ones that did nothing or
+**Latest build (October 25, second): the pad layer shows, and drawing the
+phone leaves it.** You, after the 10:23 session: "I couldn't access the phone
+and some other aspects of the vr mode broke after playing around with
+camera (was fixed by opening and closing the pause menu)".
+
+- **What happened:** two seconds after you took the game's camera out from
+  the phone, a click of both thumbsticks latched the pad layer (the whole Xbox
+  controller, for moments VR play cannot reach). Nothing in the headset
+  showed it: a buzz in both hands, and "Pad layer on" in the launcher's
+  window only. In it the grips are the game's LB and RB and the triggers its
+  LT and RT, so no web went out, the right stick is its D-pad (it took the
+  camera out and put it away again), and the phone's draw was off. It lets
+  go after 20 seconds of nothing pressed, but you kept pressing, so it stayed
+  on for 110 seconds, until the pause menu (which ends it) let it go. It was
+  the session's only time in the layer; the camera's other three times out
+  were fine.
+- **The phone always comes out.** Drawing it from a back pocket works in the
+  pad layer too and ends the layer. That grip sends the game no bumper while
+  it draws.
+- **PAD LAYER over your right wrist** while the layer is on, and under it
+  CLICK BOTH STICKS TO LEAVE, in both UI styles (`tools/preview-marks.ps1`
+  draws it: `padlayer.png`).
+- **Checked:** ctest 3/3, 572 core tests (more checks: the phone drawn lets a
+  busy layer go and a click latches it again; the sign in both styles, over
+  the wrist, nothing for a hand that is no number), the six Python suites.
+  Not run: the game, the headset.
+
+**Earlier build (October 25): fewer options - the ones that did nothing or
 were never meant for play.** You, after we went through the options:
 "cleanup the redundant".
 

@@ -462,10 +462,12 @@ Moving
                          (held on, both sticks pause instead). Your grips
                          are the game's LB and RB, your triggers its LT
                          and RT, X is its X and the right stick its D-pad
-                         (the gadget wheel). Click both again to leave it,
-                         or just stop pressing anything for 20 seconds.
-                         Your webs are off while it is on, so it does not
-                         latch while a web is carrying you
+                         (the gadget wheel). PAD LAYER shows over your
+                         right wrist while it is on. Click both again to
+                         leave it, draw the phone, or just stop pressing
+                         anything for 20 seconds. Your webs are off while
+                         it is on, so it does not latch while a web is
+                         carrying you
   A, B and Y are the game's own A, B and Y, and X too while the game shows
   it: where the game shows one of them on screen, press that button. Your
   grips shoot webs, so they are not the game's LB and RB in VR: where the
