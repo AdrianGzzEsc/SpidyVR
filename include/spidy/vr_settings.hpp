@@ -17,6 +17,15 @@ namespace spidy::vr_settings {
 // in its close view, centimetres (GameTrackingRig::wallDistance): fixed since
 // WALL CAMERA DISTANCE went (October 24).
 inline constexpr int fixedWallDistance = 25;
+// Wall-run pose selected by the user; retired tuning keys cannot override it.
+inline constexpr int fixedRunTorsoAngle = 15;
+inline constexpr int fixedRunCameraDistance = 110;
+inline constexpr int fixedMomentumCameraTilt = 30;
+inline constexpr int fixedMomentumCameraDistance = 90;
+inline constexpr int fixedMomentumBodyTilt = 50;
+inline constexpr int fixedMomentumForwardLean = 30;
+inline constexpr int fixedMomentumStepLength = 100;
+inline constexpr int fixedMomentumStepPace = 100;
 struct Values {
     bool aimMarkers = true;
     // Webs catching props and thugs, punching and your own body, like the web
@@ -48,9 +57,11 @@ struct Values {
     // tab's CALIBRATE BODY: ON RESUME); the XR worker clears it once the
     // calibration starts (body_calibration.hpp).
     bool calibrate = false;
-    // Experimental, off unless chosen: the left stick and A in the air flip
-    // you (game_tracking's FlipMotion); off, A does nothing there.
+    // Experimental, off unless chosen: airborne basic flips use the right
+    // stick, release holds the angle, and A returns upright (FlipMotion).
+    // REALISTIC FLIPS retains its own controls and optional left-stick steering.
     bool flips = false;
+    bool controlledFlips = false; // airborne A toggles left-stick flip mode
     // The web button (the tab's WEB BUTTON): false the grip, which shoots and
     // holds a hand's web while the trigger reels it in and shoots web balls;
     // true the trigger, the two swapped (GameTrackingRig::triggerWebs).
@@ -69,6 +80,7 @@ struct Values {
     bool standOnWalls = true;
     // Experimental physical hand pulls, solid palms and crawling body poses.
     bool handClimb = false;
+    bool wallRunCameraTilt = true; // optional horizontal momentum-run camera bank
     // Scenes the game plays on the game screen (cutscenes, finishers) have
     // depth there (the tab's GAME SCREEN 3D): 0 off, the game's flat frame; 1
     // low, 2 medium, 3 high (screenDepths).
@@ -122,6 +134,7 @@ struct Values {
     // SEATED): the view and the body rise from where you sit to that height.
     int heightCm = 0;
     bool seated = false;
+    bool combatVisuals = false; // combat overlays and automatic combat slow-motion VFX
     bool operator==(const Values&) const = default;
 };
 // The steps the game's Settings offer. The launcher's slider sets any swing
@@ -210,8 +223,11 @@ enum class Item : uint8_t {
     height,
     seated,
     automaticCombat,
+    wallRunCameraTilt,
+    controlledFlips,
+    combatVisuals,
 };
-inline constexpr Item lastItem = Item::automaticCombat;
+inline constexpr Item lastItem = Item::combatVisuals;
 // Where a row shows: in the tab; on the pause menu's first page instead,
 // under RESUME: VR VIEW (the user, October 15: "move the VIEW: GAME SCREEN to
 // the first menu (the one with resume)"); or only in the launcher's options:
@@ -234,10 +250,10 @@ struct Row {
     std::span<const char* const> choices{};
     Place place{};
 };
-const std::array<Row, 48>& rows();
+const std::array<Row, 51>& rows();
 // The most choices a row shows (game_menu's buffers): a row with more would
 // lose its last ones.
-inline constexpr size_t maxChoices = 9;
+inline constexpr size_t maxChoices = 25;
 // The values a list setting's choices stand for, in their order; none for a
 // switch.
 std::span<const int> steps(Item);

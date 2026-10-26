@@ -1790,11 +1790,18 @@ void App::options(ImVec2 origin, ImVec2 size) {
                "On a wall with the left stick at rest, squeeze a grip near the wall to hold on and pull to "
                "climb; both grips held roll your view along it.",
                S(42), [&] { tabToggle("##handclimb", Item::handClimb); });
+        option("Wall Run Camera Tilt", "Gently bank with the body on horizontal momentum wall runs.", S(42),
+               [&] { tabToggle("##wallruncameratilt", Item::wallRunCameraTilt); });
     });
     group(0, "Flips", [&] {
-        option("Flips (experimental)", "In the air the left stick turns you over; tap A for one flip, hold A to stay.",
+        option("Flips (experimental)",
+               "Right stick flips; up zips/aims. Release holds the angle. A returns upright.",
                S(42), [&] { changed |= toggle("##flips", &o.flips); });
-        option("Flip speed", "How fast a flip turns you over, at full tilt of the left stick.", S(150), [&] {
+        option("Controlled Flips",
+               "In air: A enables left-stick flips. Release holds the angle. A again resets and exits. "
+               "Overrides basic Flips; Realistic Flips keeps its controls.",
+               S(42), [&] { tabToggle("##controlledflips", Item::controlledFlips); });
+        option("Flip speed", "How fast the steering stick turns you at full tilt.", S(150), [&] {
             stepCombo("##flipspeed", kFlipSpeeds, kFlipSpeedValues, static_cast<int>(std::size(kFlipSpeedValues)),
                       &o.flipSpeed);
         });
@@ -1947,6 +1954,9 @@ void App::options(ImVec2 origin, ImVec2 size) {
                "Spidy's own marks, gadget wheel and meters: Comic, printed like Spidy's videos, or Tech, like the "
                "game's HUD.",
                S(150), [&] { tabCombo("##uistyle", Item::uiStyle); });
+        option("Combat visuals",
+               "Show punch arrows, target rings, hit effects and KO text. Spider-Sense stays on.",
+               S(42), [&] { tabToggle("##combatvisuals", Item::combatVisuals); });
     });
     group(1, "Monitor", [&] {
         option("Small game window", "Saves GPU time while you play in VR.", S(42),

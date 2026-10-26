@@ -400,6 +400,18 @@ void solveHero(float* out, uintptr_t job, uintptr_t instance) {
             body::Targets t;
             t.head = true;
             t.airborne = wanted.flags & native_body::airborne;
+            t.wallRun = wanted.version >= 12 && native_body::wallRunCommand(wanted) &&
+                        native_body::validCrawl(wanted);
+            if (t.wallRun) {
+                t.runNormal = toModel.rotate(wanted.crawlNormal);
+                t.runAhead = toModel.rotate(wanted.crawlAhead);
+                t.runPhase = wanted.crawlPhase; t.runSpeed = wanted.crawlMotion;
+                t.runTorsoAngle = wanted.version >= 14 ? wanted.crawlDistance : .85f;
+                if (wanted.version >= 15) {
+                    const Vec3 tuning = native_body::runTuning(wanted);
+                    t.runBank = tuning.x; t.runLean = tuning.y; t.runStride = tuning.z;
+                }
+            }
             // The player's up, as he stands: the world's, or the surface the
             // view stands him on, whatever the hero's own frame does there -
             // turned onto it by the game's crawl, upright in the air Spidy's
@@ -413,8 +425,9 @@ void solveHero(float* out, uintptr_t job, uintptr_t instance) {
             // surface under the hips instead.
             t.plant = standing;
             t.floor = standing ? toModel.rotate(wanted.floor) : Vec3{};
+            if (t.wallRun) t.floor = toModel.rotate(wanted.floor);
             t.kneel = standing && (wanted.flags & native_body::kneel);
-            t.kick = wanted.version >= 11 && (wanted.flags & native_body::kick) && finite(wanted.kick);
+            t.kick = native_body::kickCommand(wanted) && finite(wanted.kick);
             t.kickAt = t.kick ? toModel.rotate(wanted.kick) : Vec3{};
             t.surfaceHands = wanted.version >= 10 && (wanted.flags & native_body::ventHands);
             if (t.surfaceHands) {

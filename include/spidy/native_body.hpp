@@ -56,17 +56,16 @@ enum Flags : uint32_t {
     crawlLeftHeld = 1024, crawlRightHeld = 2048, // version 9: confirmed wall support, for upper-spine twist
     crawlLeftTouch = 4096, crawlRightTouch = 8192, // version 9: collision contact without a grip press
     crawlTurnAway = 16384, // version 9: feet-supported outward pose
+    kick = 65536, // official v11: feet-first dive target
+    wallRun = 131072, // version 16: travel-driven gait in crawlNormal/Ahead/Phase/Motion
     ventHands = 32768, // version 10: upper-body contact response; native vent legs stay in control
-    // Version 11: a dive - the legs kick out at Command::kick
-    // (body::Targets::kick).
-    kick = 65536,
 };
 inline uint32_t crawlHandFlags(unsigned hands) { return (hands & 3u) << 10; }
 inline unsigned crawlHandMask(uint32_t flags) { return (flags >> 10) & 3u; }
 inline uint32_t crawlTouchFlags(unsigned hands) { return (hands & 3u) << 12; }
 inline unsigned crawlTouchMask(uint32_t flags) { return (flags >> 12) & 3u; }
 struct Command {
-    uint32_t magic = 0x53424443, version = 11, bytes = sizeof(Command), flags{};
+    uint32_t magic = 0x53424443, version = 16, bytes = sizeof(Command), flags{};
     uint64_t serial{};
     uint32_t leaseMs = 250, reserved{};
     Vec3 eyes{};   // between the eyes, relative to the feet
@@ -105,18 +104,23 @@ struct Command {
     Vec3 crawlOrigin{}; // version 7: world anchor for persistent planted feet
     uint32_t originReserved{}; // preserve version 7's trailing alignment bytes
     uint32_t crawlStrokes[2]{}; // version 8: left/right attached-hand stroke counters
-    float crawlDistance = .25f; // version 9: camera/pelvis wall clearance, metres
+    // Version 9 crawl clearance (metres); version 14 wallRun uses this
+    // otherwise-unused field for the joystick torso angle (radians).
+    float crawlDistance = .25f;
     uint32_t distanceReserved{};
-    // Version 11, with Flags::kick: the point the legs kick out at,
-    // relative to the feet, world axes. Version 10 (commandBytesV10) ends
-    // before it.
+    // Official version 11's kick target stays at byte 272. Version 16
+    // appends run tuning after it, keeping dive and running packets distinct.
     Vec3 kick{};
     uint32_t kickReserved{};
+    // Version 16: momentum horizontal pose tuning; no locomotion changes.
+    float runBank = .85f, runLean = .5f, runStride = 1.f;
+    uint32_t runReserved{};
 };
 constexpr uint32_t commandBytesV1 = 144, commandBytesV2 = 160, commandBytesV3 = 168, commandBytesV4 = 192,
                    commandBytesV5 = 232, commandBytesV6 = 240, commandBytesV7 = 256, commandBytesV8 = 264,
-                   commandBytesV10 = 272;
-static_assert(sizeof(Hand) == 36 && sizeof(Command) == 288 && offsetof(Command, tilt) == commandBytesV1 &&
+                   commandBytesV10 = 272, commandBytesV14 = 272,
+                   commandBytesV11 = 288, commandBytesV15 = 288;
+static_assert(sizeof(Hand) == 36 && sizeof(Command) == 304 && offsetof(Command, tilt) == commandBytesV1 &&
               offsetof(Command, shoot) == commandBytesV2 && offsetof(Command, standUp) == commandBytesV3);
 static_assert(offsetof(Command, crawlNormal) == commandBytesV4 && offsetof(Command, crawlPhase) == 228);
 static_assert(offsetof(Command, crawlMotion) == commandBytesV5);
@@ -124,32 +128,74 @@ static_assert(offsetof(Command, crawlOrigin) == commandBytesV6);
 static_assert(offsetof(Command, crawlStrokes) == commandBytesV7);
 static_assert(offsetof(Command, crawlDistance) == commandBytesV8);
 static_assert(offsetof(Command, kick) == commandBytesV10);
+static_assert(offsetof(Command, runBank) == commandBytesV11);
 inline bool commandFormat(uint32_t version, uint32_t bytes) {
     return (version == 1 && bytes == commandBytesV1) || (version == 2 && bytes == commandBytesV2) ||
            (version == 3 && bytes == commandBytesV3) || (version == 4 && bytes == commandBytesV4) ||
            (version == 5 && bytes == commandBytesV5) || (version == 6 && bytes == commandBytesV6) ||
            (version == 7 && bytes == commandBytesV7) || (version == 8 && bytes == commandBytesV8) ||
-           ((version == 9 || version == 10) && bytes == commandBytesV10) ||
-           (version == 11 && bytes == sizeof(Command));
+           ((version >= 9 && version <= 14) && bytes == commandBytesV14) ||
+           ((version == 11 || version == 15) && bytes == commandBytesV11) ||
+           (version == 16 && bytes == sizeof(Command));
 }
+// Earlier custom previews used the official kick bit/offset for run data.
+// Version and byte size identify those packets; new commands use a new bit.
+inline bool legacyRunFormat(const Command& c) {
+    return (c.version == 11 && c.bytes == commandBytesV10) ||
+           (c.version >= 12 && c.version <= 14 && c.bytes == commandBytesV14) ||
+           (c.version == 15 && c.bytes == commandBytesV15);
+}
+inline bool wallRunCommand(const Command& c) {
+    return (c.version == 16 && (c.flags & wallRun)) || (legacyRunFormat(c) && (c.flags & kick));
+}
+inline bool kickCommand(const Command& c) {
+    return (c.flags & kick) && !legacyRunFormat(c) &&
+           ((c.version == 11 && c.bytes == commandBytesV11) || c.version == 16);
+}
+inline Vec3 runTuning(const Command& c) {
+    return c.version == 15 ? c.kick : Vec3{c.runBank, c.runLean, c.runStride};
+}
+inline uint32_t runPadding(const Command& c) { return c.version == 15 ? c.kickReserved : c.runReserved; }
 inline bool validCrawl(const Command& c) {
+    if (c.flags & ~0x3ffffu) return false;
+    if ((c.flags & wallRun) && c.version != 16) return false;
+    if ((c.flags & kick) && !legacyRunFormat(c) && !kickCommand(c)) return false;
+    if (kickCommand(c) && (!finite(c.kick) || c.kickReserved)) return false;
+    const Vec3 tuning = runTuning(c);
+    if (wallRunCommand(c))
+        return (c.version < 15 || (std::isfinite(tuning.x) && tuning.x >= 0 && tuning.x <= 2.747478f &&
+                                   std::isfinite(tuning.y) && tuning.y >= 0 && tuning.y <= 1.047198f &&
+                                   std::isfinite(tuning.z) && tuning.z >= .5f && tuning.z <= 1.5f &&
+                                   !runPadding(c))) &&
+               (c.version < 14 || (std::isfinite(c.crawlDistance) && c.crawlDistance >= 0 &&
+                                   c.crawlDistance <= 1.396264f)) && (c.version >= 11 && c.version <= 16) &&
+            !(c.flags & (standing | kneel | crawl | crawlPlanted | crawlHandSync | crawlLeftHeld |
+                crawlRightHeld | crawlLeftTouch | crawlRightTouch | crawlTurnAway | ventHands)) &&
+            !kickCommand(c) &&
+            (c.version == 11 || (finite(c.crawlNormal) && finite(c.crawlAhead) && finite(c.floor) &&
+                std::abs(length(c.crawlNormal) - 1) < .01f &&
+                std::abs(length(c.crawlAhead) - 1) < .01f &&
+                std::abs(dot(c.crawlNormal, c.crawlAhead)) < .01f &&
+                std::isfinite(c.crawlPhase) && c.crawlPhase >= 0 && c.crawlPhase <= 6.283186f &&
+                std::isfinite(c.crawlMotion) && c.crawlMotion >= .25f && c.crawlMotion <= 80.f));
     if (c.flags & ventHands)
-        return c.version >= 10 && !(c.flags & (crawl | crawlPlanted | crawlHandSync | crawlTurnAway)) &&
+        return (c.version >= 10 && c.version <= 16) &&
+            !(c.flags & (crawl | crawlPlanted | crawlHandSync | crawlTurnAway)) &&
             finite(c.crawlNormal) && std::abs(length(c.crawlNormal) - 1) < .01f && finite(c.floor);
     if ((crawlTouchMask(c.flags) || (c.flags & crawlTurnAway)) &&
-        (!(c.flags & crawlHandSync) || c.version < 9 || c.version > 11))
+        (!(c.flags & crawlHandSync) || c.version < 9 || c.version > 16))
         return false;
-    if (crawlHandMask(c.flags) && (!(c.flags & crawlHandSync) || c.version < 9 || c.version > 11))
+    if (crawlHandMask(c.flags) && (!(c.flags & crawlHandSync) || c.version < 9 || c.version > 16))
         return false;
-    if ((c.flags & crawlHandSync) && (!(c.flags & crawlPlanted) || c.version < 8 || c.version > 11))
+    if ((c.flags & crawlHandSync) && (!(c.flags & crawlPlanted) || c.version < 8 || c.version > 16))
         return false;
     if ((c.flags & crawlHandSync) && c.version >= 9 &&
         (!std::isfinite(c.crawlDistance) || c.crawlDistance < .1f || c.crawlDistance > 1.f))
         return false;
-    if ((c.flags & crawlPlanted) && (!(c.flags & crawl) || c.version < 7 || c.version > 11 ||
+    if ((c.flags & crawlPlanted) && (!(c.flags & crawl) || c.version < 7 || c.version > 16 ||
                                    !finite(c.crawlOrigin)))
         return false;
-    return !(c.flags & crawl) || ((c.version >= 5 && c.version <= 11) &&
+    return !(c.flags & crawl) || ((c.version >= 5 && c.version <= 16) &&
         (c.version < 6 || (std::isfinite(c.crawlMotion) && c.crawlMotion >= 0 && c.crawlMotion <= 1)) &&
         finite(c.crawlNormal) && finite(c.crawlAhead) &&
         finite(c.crawlStep) && std::abs(length(c.crawlNormal) - 1) < .01f &&

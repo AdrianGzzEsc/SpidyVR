@@ -395,8 +395,32 @@ class SuitPowerPress {
 // push already under way keeps through a moment out of play, as long as
 // graceSeconds (a long frame, a blink of the headset's focus), and goes on
 // counting after it. Until October 18 one such moment spent it.
+// Reserve an intentional upward zip command before basic flips read the
+// stick. Keep ownership through a diagonal drag until neutral is seen.
+class FlipZipPriority {
+  public:
+    bool update(bool play, bool tracked, float x, float y) {
+        began_ = false;
+        if (!play) { owned_ = ready_ = false; return false; }
+        if (!tracked || !std::isfinite(x) || !std::isfinite(y)) return owned_;
+        if (std::hypot(x, y) < .5f) { owned_ = false; ready_ = true; return false; }
+        if (!owned_ && ready_ && y >= .75f && std::abs(x) <= .45f) {
+            owned_ = began_ = true; ready_ = false;
+        }
+        return owned_;
+    }
+    bool began() const { return began_; }
+  private:
+    bool ready_{}, owned_{}, began_{};
+};
 class StickPush {
   public:
+    // Another control mode owns the stick. Require neutral before a new shortcut.
+    void cancel() {
+        way_ = Way::none;
+        spent_ = true;
+        held_ = lapse_ = 0;
+    }
     static constexpr float pushed = .75f, aside = .45f, released = .5f, holdSeconds = .15f,
                            graceSeconds = .25f;
     enum class Way { none, down, up };
@@ -467,6 +491,12 @@ class StickPush {
 // after, letting go sending nothing.
 class ZipPress {
   public:
+    bool active() const { return phase_ != Phase::idle; }
+    // Cancel ownership without releasing an aimed zip or clearing telemetry.
+    void cancel() {
+        phase_ = Phase::idle;
+        time_ = lapse_ = 0;
+    }
     static constexpr float slowBelow = .9f, pressSeconds = .2f, gapSeconds = .05f, graceSeconds = .25f;
     struct Keys {
         bool zip{}; // the game's LT + RT

@@ -31,6 +31,8 @@
   ·
   <a href="docs/PLAYERS.md">Players' guide</a>
   ·
+  <a href="docs/WALL_CRAWLING.md">Hand wall crawling</a>
+  ·
   <a href="docs/CHANGELOG.md">What's new</a>
 </p>
 
@@ -227,7 +229,10 @@ Spidy changes nothing in the game's folder.
 | One enemy at a time | A ring marks the enemy your next punch goes to: the one you look at. Hit that enemy and the ring locks on until the enemy is down (**KO!**); look squarely at another for a moment to change |
 | Called blows | An arrow comes into the ring from the side your fist should come from: swing a hook from that side, an uppercut from below or a blow down from above, at arm's reach or from across the room. The yellow arrow into a jagged red ring calls the finisher |
 | Walls | Walk at one, or fly or jump into it, and you stay on it: at speed you run along it, then stop. **Left stick** walks it (pushed at the wall: up it), **A** jumps off, a web pulls you off. Walking it or stopped, your view turns so the wall is your floor |
-| Flip (experimental, off by default: FLIPS and FLIP SPEED in VR settings or the launcher) | **Left stick** in the air: turns you over, as fast as you tilt it; let go to come back level. Tap **A** in the air: one flip toward where the stick points. Hold **A**: you stay turned while the stick rests |
+| Hand wall climbing (experimental, off by default) | Grip near a wall and pull to climb; release to reposition. The left stick runs while on a wall, then returns to crawling when released. Floor movement alone does not mount the wall. See [controls and body behavior](docs/WALL_CRAWLING.md) |
+| Combat visuals | Optional punch arrows, target ring, impact/KO effects and combat screen effects; off by default. Spider-Sense overhead and offscreen warnings remain visible. See [Combat Visuals](docs/COMBAT_VISUALS.md) |
+| Basic flip (experimental, off by default: FLIPS and FLIP SPEED in VR settings or the launcher) | **Right stick** in the air rotates you; **straight up prioritizes zip/aim**. Release holds the angle. **A** returns upright. **Left stick** still moves you. Landing or wall contact also levels you. REALISTIC FLIPS keeps its existing controls |
+| Controlled Flips (separate setting, off by default) | With **CONTROLLED FLIPS** on, press **A in the air** to enter flip mode. The **left stick** rotates you; release holds the angle. **A again** returns upright and exits. The right stick retains turn/zip/aim/heal. This overrides basic FLIPS; REALISTIC FLIPS retains priority and its controls |
 | Turn | **Right stick**: snap 30° (adjustable or off), or hold to turn smoothly with SMOOTH TURN on in VR settings |
 | Dodge (the game's B) | **B**, the way the **left stick** points. While a web carries you (a swing, a zip, a pull), a blow the Spider-Sense warns of is dodged for you just before it lands |
 | Interact (the game's Y) | **Y**, looking at the thing from within about a metre of it; hold **Y** and you step up to what you look at until the game takes it. On a wall, point a hand at a vent or a door (a turning ring in that hand's colour) and press **Y**. Swinging, **Y** is the game's web strike too (onto a car in a chase) |
