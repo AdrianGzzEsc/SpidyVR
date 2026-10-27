@@ -842,6 +842,9 @@ GameMotionFrame GameTrackingRig::update(const XrFrame& f, Vec3 feet, Vec3 gameFo
     const auto head = placed.toWorld(f.head);
     out.head = worldPose(head);
     out.headPose = head;
+    out.gazeValid = f.gazeValid && validTrackedPose(f.gaze);
+    if (out.gazeValid)
+        out.gazePose = placed.toWorld(f.gaze);
     if (handClimb_ && holds && !wallRun)
         climbView_ = unbankedHead.orientation;
     for (unsigned i = 0; i < 2; ++i) {

@@ -3,7 +3,199 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 27, third): the phone's pocket stays put, and the
+**Latest build (October 27, eighth): a floor too high is caught by your
+arms.** You: "height calibration showed very wrong number in one of today's
+sessions - 1.43 or something instead of 1.88".
+
+- **What happened (14:17 session, Quest Pro over Virtual Desktop).** The
+  calibration measured what the headset said: your eyes 1.33 to 1.34 m above
+  its floor through the hold, and 1.30 to 1.33 m standing all through that
+  session, before and after it. At 13:48 the same headset had you at 1.78 to
+  1.80 m: its floor rose about 0.45 m between the two (at 14:03 and 14:05 it
+  lay still at 0.56 m, on the desk). So the whole session's view stood that
+  much low, not only the panel's number. 1.43 m is inside HEIGHT's 1.20 to
+  2.20 m, so the October 27 fourth build's check let it through; launcher.ini
+  now holds eye_height_mm=1334, arm_length_mm=614 (it held 1758 and 560).
+- **The fix: the controllers' span.** Arms straight out, your controllers
+  were 1.65 m apart in both calibrations (1.63 to 1.66 m), whatever the
+  floor: 0.94 of your eyes on October 26, 1.24 of the 1.33 m today. Arms
+  reach no further than straight, so a span over 1.15 times the eyes'
+  height now holds the pose with CHECK YOUR HEADSET'S FLOOR
+  (`Config::widestSpan`, checked once both arms are out and straight). For
+  you it catches a floor more than about 0.3 m too high; a player whose arm
+  span is 10% over their height stays well under it.
+- **Checked:** 703 core tests (new: your T-pose at eyes 1.758 m counts, at
+  1.334 m asks for the floor; the shortest player's arms now in proportion),
+  ctest. Not run: the headset.
+
+**Earlier build (October 27, seventh): EYE AIM gets a Quest Pro's eyes over
+Virtual Desktop.** You: "eye tracking didnt work on my quest pro just now",
+then, with eye tracking on in the headset, "it still isn't working again".
+
+- **First run (13:48): no tracker.** Virtual Desktop's runtime says a
+  headset has an eye tracker only when its Streamer shares the eyes on the
+  PC (`VirtualDesktop.BodyState`) and the headset reports eye tracking; the
+  shared eyes were empty. Its Streaming setting "Forward face/eye tracking to
+  PC" was off: switched on, both eyes came through at 14:03.
+- **Then a tracker and still no gaze (14:03, 14:05): 0 of 4,675 frames.**
+  The runtime (v1.0.10) gives a gaze only when both eyes are valid and more
+  than half confident (`eye_tracking.cpp`), and the Quest Pro's eyes came at
+  exactly 0.50 in every reading, with the eyes moving. Foveated streaming
+  works because Virtual Desktop does it in the headset, not through that check.
+- **The fix.** On Virtual Desktop's runtime (it calls itself
+  VirtualDesktopXR), when it gives no gaze, Spidy reads the eyes from the
+  Streamer's shared state itself (`vd_eyes.hpp`): both eyes valid, at least
+  half confident, unit orientations; their two lines averaged, relative to
+  the head, on the frame's head pose. Other runtimes, and Virtual Desktop
+  whenever its own gaze comes, are as before. No protocol change.
+- **The session log** on Virtual Desktop now names both switches when it has
+  no tracker: eye tracking in the headset (Settings > Movement tracking) and
+  Forward face/eye tracking to PC in its Streaming settings.
+- **Checked:** 703 core tests (new: the shared eyes at half confidence, one
+  eye, an unsure eye, a broken orientation), the six Python suites (new: the
+  Virtual Desktop line). The layout read live on this PC: both eyes valid,
+  confidence 0.50/0.50, the gaze moving. Not run: a session with the fix.
+
+**Earlier build (October 27, sixth): the buildings beside you keep their full
+models, and textures get room.** You: "there is still a bug where buildings
+and detail on objects is low even when really visible and nearby mostly when
+swinging, and it loads in the proper model\textures\lod in front on my eyes
+very crearly. suddenly a blurry low detail large building would pop into an
+sharp detailed version of itself. maybe the culling system is not tracking
+the right camera or body".
+
+- **Which camera each part follows, read from the game's code.** The world's
+  units stream around your body (the hex streaming source is the player's
+  position). Props and details near you become full models within distances
+  of the game's active view (`UpdateHibernateRegistration`, `1a22530`, given
+  the view at `7a34ec8`, the one `189daa0` tests), which Spidy keeps on your
+  head with a lens over both eyes. Each eye picks its own level of detail and
+  asks for its own textures (since October 19). One part was not on your
+  head: which far buildings draw their full models.
+- **The cause: the left eye's exact picture.** A far building is an impostor,
+  a card, until the deciding view wants its full model, and nothing that view
+  does not see keeps one: each frame's wanted states start at none
+  (`16fadbe`), only the impostors that view's frustum query returns get one
+  (`16f8ae0`), and every other one's full model goes that same frame
+  (`16f7f30`). Since October 19 the left eye decides, so the right eye's outer
+  edge never counted, and a building lost its model the moment it left that
+  eye's picture. Swinging with your head ahead, the buildings beside you were
+  cards; turning to look at one swapped it back in front of you, the full
+  model fading in and then streaming its textures.
+- **What changed: a cone about your head.** The left eye's query for far
+  buildings takes the lens over both eyes widened by 30 degrees each way, to
+  at most 80 from straight ahead (about 160 by 159 degrees on a Quest 3),
+  made into the cull the game makes for an eye (`187de80`; the query copies
+  it). Buildings beside you and just out of view keep their full models; the
+  eyes' own culling still draws only what each sees.
+- **A pool the details share.** The full models take their slots from a pool
+  of the scene's (`7a42f80`: size `+1c8`, in use `+1cc`) that the nearby
+  props and details register from too, each checking for room first
+  (`190cb80`); a full pool leaves a zone's details as they were until slots
+  free up. The cone's margin eases off from 60% full to none at 85%, a degree
+  a frame. The pool's size comes from the game's data files, so how full it
+  gets in VR is not known yet: the report says.
+- **Textures: up to twice the budget where the card has room.** In your
+  October 26 session the texture streamer's budget (3,874 MB at Very High,
+  `7a793c0`) was full in every minute, 3,858 to 3,872 MB, with 22 GB of the
+  5090's 32 unused, so a texture came in sharp only once another went. The
+  budget is an account the streamer evicts by, not memory set aside (its heap
+  is made with no size, `19b2e50`). While both eyes render it is raised to at
+  most twice the game's, leaving an eighth of the card's budget for the game
+  (DXGI's), at least 2 GB, free: 7,748 MB on your card, about 6,800 on a 16
+  GB card with 5 GB to spare, the game's own on a 12 GB card in VR. It is
+  looked at every two seconds; with less than 1 GB of the card's budget left
+  the game's comes back for the session, and at the end of VR in any case.
+- **The report's `streaming`** (`SpidyStreamData`, a new export; XrData and
+  the appearance data are unchanged): the cone's frames, margin and angles,
+  the pool's size, use, most and frames 85% full, the game's and the eyes'
+  texture budgets and the card's numbers; each sample has the margin, the
+  pool's use, the budget and the card's use. `SpidyBuildingCone` (0-60
+  degrees, 0 the eye's own lens) and `SpidyTextureBudget` (0 or 1) are there
+  for comparisons.
+- **Checked:** a build of the working tree in a separate folder, ctest 3/3,
+  702 core tests (new: the cone for a Quest 3 lens and lopsided ones, at most
+  80 degrees, never narrower, numbers that are no lens; the pool's easing;
+  the budget for a 32, 16 and 12 GB card, and a card running short), the six
+  Python suites (new: `SpidyStreamData` decoded, torn and of another
+  version), the graphics test with the debug layer, and the built module's
+  new exports refusing a margin over 60 and a budget switch over 1. Not run:
+  the game or the headset. In the headset: swing along a street looking
+  ahead, then look at the buildings beside you; and the report's `streaming`
+  says how full the pool got and what the texture budget was.
+
+**Earlier build (October 27, fifth): EYE AIM - web balls and zips go where
+your eyes look, on a headset that tracks them.** You: "lets make eye tracked
+aiming for zipping and webshooting on xr runtime and headsets where its an
+option (make it optional)".
+
+- **The setting.** EYE AIM, under EXPERIMENTAL before REALISTIC FLIPS: OFF
+  (the default), WEB BALLS, ZIPS or BOTH; kept in spidy_vr.ini as
+  `eye_aim`, and in the launcher's Webs card. Not in settings profiles: it
+  is the headset's, as RECORDING FOV is the monitor's.
+- **Where the eyes come from.** OpenXR's `XR_EXT_eye_gaze_interaction`,
+  enabled wherever the runtime lists it, its pose in an action set of its
+  own that is synced only while EYE AIM is on; a gaze counts only while the
+  tracker tracks it. Whether the headset has a tracker the system says
+  (`supportsEyeGazeInteraction`). Without one, or with the row off, hands
+  aim web balls and the head zips exactly as before.
+- **Web balls.** The trigger still fires from the hand that pulled; the eyes
+  pick what the ball goes to (`Shooter::aim` with a `ShooterGaze`): the
+  enemy nearest their line within the same assist (one they cannot see past
+  a wall is not taken), else the first surface on it, else open air along
+  it. Looking at the hand itself leaves the aim to the hand.
+- **Zips.** The game zips to the point its own camera has in view, so from
+  the stick going up for a zip to the zip's end the camera is turned onto
+  what the eyes look at - the point the gaze meets (the swing module's aim
+  previews raycast it, `AimData::gaze`), seen from where that camera stands
+  - with a close band (starts at 2.5 degrees, rests within 1; the head's is
+  12 and 4). A tap waits for the camera to be within 3 degrees, a third of a
+  second at most (`game_pad::EyeZip`); a hold into the game's aim mode
+  follows the eyes until let go.
+- **Protocol.** Swing Command v6 (272 bytes: v5's 4 bytes of padding named,
+  then the gaze and its web-ball bit; v2-v5 still taken), AimData v2 (128,
+  `tools/probe_aim.py` too), XrData v43 (1312: eye tracking, the row,
+  frames with it on and with the eyes tracked, balls the eyes aimed, zips
+  on the camera's point and late ones; the report's `eye_aim`). The
+  session log says once what the eyes can do ("Eye aim: ..."), and warns
+  when a tracker sends no gaze in 3 s of play.
+- **Checked:** 699 core tests (new: the eyes' wall, thug, hidden thug, sky and
+  hand; the camera's close band; EyeZip's wait and counts; the camera's
+  look from where it stands; Command v6; the row and its ini key), 38
+  launcher checks, the six Python suites (new: XrData v43 and the log line).
+  The instance-only probe (`spidy_xr_lab --probe`): Virtual Desktop's
+  runtime takes the eye gaze binding; Meta's on this PC does not list the
+  extension (its runtime has it, and seems to offer it only with eye
+  tracking over Link switched on). Not run: any headset with eye tracking,
+  or the game.
+
+**Earlier build (October 27, fourth): the calibration shows your height, and
+a wrong headset floor no longer counts.** You: "calibration menu shows wrong
+numbers for some reason - (im around 1,88 m and it shows 1.7 something),
+others reported on discord".
+
+- **Your height, not your eyes.** The CALIBRATED panel (both UI styles) said
+  EYE HEIGHT, the height of the eyes above the floor, which reads as a wrong
+  height: your launcher.ini holds 1.758 m, right for a 1.88 m player. The
+  panel now says HEIGHT, the eye height / 0.936 (the share HEIGHT uses,
+  `seated::eyeShare`): 1.88 M for you. The launcher's "Body calibration" row
+  says "Height 1.88 m (eyes at 1.76 m)". Nothing measured or kept changed:
+  launcher.ini and the session still hold the eye height.
+- **CHECK YOUR HEADSET'S FLOOR.** The two reports on the Discord were not
+  about the label: "2.50 meters tall" (0.3.8, Virtual Desktop, October 19)
+  and "I am 170cm but the calibration measures me for 105cm" (0.4.0, Link,
+  October 21), both gone after the players reset things. Those are eyes
+  measured from a floor the headset had wrong, and the calibration took
+  anything above 1 m. Eyes that give a height outside HEIGHT's 1.20 to 2.20 m
+  now hold the pose with that line instead of baking the wrong size in (the
+  report's calibration hint `floor`, 8; the others keep their numbers).
+- **Checked** in a scratch build of main with only this change: the core
+  tests (697; new: eyes 1.05 and 2.50 m up ask for the floor, 1.13 and 2.05 m
+  count, 1.758 m is a 1.878 m player), the launcher tests, the six Python
+  protocol suites, and the GPU test's panel (eyes 1.63 m read HEIGHT 1.74 M).
+  Not run: the headset.
+
+**Earlier build (October 27, third): the phone's pocket stays put, and the
 report says why a draw failed.** You, on why so many players cannot draw the
 phone, to my two proposals: "sure do both".
 

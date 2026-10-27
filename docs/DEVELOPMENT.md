@@ -1375,8 +1375,52 @@ is what the view's queries carry in their result (`+88`): 145 m in the game
 degrees. While the left eye stands in, both eyes' results get 150% of it,
 218 m (`impostorQueries`, a hook on `16faf10`; `SpidyImpostorReach`, and
 `--building-reach` for a session, set 50-400%); on October 19 that cost
-nothing measurable at 3072 x 3264 eyes, and 200% about 1%. The right eye's outer edge, which the left
-eye does not see, is not covered.
+nothing measurable at 3072 x 3264 eyes, and 200% about 1%.
+
+Which impostors are asked about is the deciding view's frustum, and nothing
+outside it keeps its full model: each frame's wanted states start at none
+(`16fadbe` clears the result's `+48`), the occlusion job (`16f8ae0`) sets one
+for each impostor the view's frustum query returned (`191ecd0`,
+"ImpostorSubmitQueries in frustum") within the reach, by which of its sides
+face the view, and the registration (`16f8940` -> `16f7f30`) takes away the
+full model of every other one that frame. With the left eye deciding, the
+right eye's outer edge never counted, and a building lost its model as soon
+as it left that eye's picture: swinging with the head ahead, the buildings
+beside you were cards, and a look at one swapped it back, fading in and then
+streaming its textures. Since October 27's sixth build the left eye's query
+takes a cone about the head (`native_stream.hpp`): the lens over both eyes,
+widened by 30 degrees each way to at most 80 from straight ahead
+(`SpidyBuildingCone`, 0-60, 0 the eye's own lens), placed with the eyes
+(`placeEyes`) and made into the 0x100-byte cull the game makes for an eye
+(`187de80`, as `189fea0` does; `191ecd0` copies it before its job reads it).
+The full models' slots come from a pool of the scene registry's (`7a42f80`:
+size `+1c8`, in use `+1cc`, from the game's Scene settings) that the
+hibernate zones, the props and details registered near the head
+(`UpdateHibernateRegistration`, `1a22530`), take theirs from too, each
+checking for room first (`190cb80`). So the margin eases off from 60% full to
+none at 85% (`native_stream::poolMargin`), a degree a frame, and the report's
+`streaming` has the pool's size, use and most.
+
+Those hibernate zones follow the head already: the registration job
+(`1a21720` -> `1a21d20`) gives it the active view (`7a34ec8`, the same view
+`189daa0` tests), which Spidy moves to the head with the lens over both eyes,
+and it registers the zones in that view's frustum within the on-screen
+distance and the rest within the shorter off-screen one (`7a89184` to
+`7a89190`). The world's units stream around the player (the hex streaming
+source is the player's position unless a script sets another).
+
+The texture streamer evicts by an account, not memory set aside: its room is
+the budget (`7a793c0`, the Texture Quality's `TextureAlloc` size: 3,874 MB at
+Very High, stored by `1891174`) less what it holds and loads and a 16 MB
+reserve (`19b2d90`), and its heap is made with no size (`19b2e50`). In VR it
+was full in every minute (3,858 to 3,872 MB on October 26, a 32 GB card with
+22 GB unused). While both eyes render, `keepTextureBudget` raises it to at
+most twice the game's, leaving an eighth of the card's DXGI budget for the
+game, at least 2 GB, free (`native_stream::textureBudget`, from
+`native_gpu::videoMemory`), looks again every two seconds, gives the game's
+back for the session when less than 1 GB of that budget is left, and at stop.
+A Texture Quality change writes the game's new budget, which is raised in its
+turn. `SpidyTextureBudget(0)` keeps the game's.
 
 What the player sees is the eyes' since October 20's second build. Each
 view's scene submit clears its list of drawn instances (`+1b80`, a byte per

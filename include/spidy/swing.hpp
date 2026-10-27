@@ -223,6 +223,11 @@ struct Input {
     // Both grips are held for the wall roll (HAND WALL CLIMBING): they shoot
     // no web and grab nothing until let go.
     bool wallRotate{};
+    // Where the eyes look (world; gaze unit, zero: not tracked or EYE AIM
+    // off), from between them. gazeShots: web balls go where it meets
+    // (game_shooter, Shooter::aim) instead of along the hand.
+    Vec3 gazeOrigin{}, gaze{};
+    bool gazeShots{};
 };
 // The tracking space's orientation in the world (Rig::orientation): hand
 // motion relative to the head turns into the world with it.

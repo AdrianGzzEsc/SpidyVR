@@ -934,6 +934,26 @@ uint32_t mirrored() {
 uint32_t mirroredShown() {
     return shownMirrors.load();
 }
+bool videoMemory(uint64_t& budget, uint64_t& usage) {
+    // The adapter behind the game's device, found once (the main thread asks).
+    static ComPtr<IDXGIAdapter3> adapter;
+    if (!adapter) {
+        using CreateFactory = HRESULT(WINAPI*)(UINT, REFIID, void**);
+        const auto dxgi = GetModuleHandleW(L"dxgi.dll");
+        const auto create =
+            dxgi ? reinterpret_cast<CreateFactory>(GetProcAddress(dxgi, "CreateDXGIFactory2")) : nullptr;
+        ComPtr<IDXGIFactory4> factory;
+        if (!create || !device || FAILED(create(0, IID_PPV_ARGS(&factory))) ||
+            FAILED(factory->EnumAdapterByLuid(device->GetAdapterLuid(), IID_PPV_ARGS(&adapter))))
+            return false;
+    }
+    DXGI_QUERY_VIDEO_MEMORY_INFO info{};
+    if (FAILED(adapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info)))
+        return false;
+    budget = info.Budget;
+    usage = info.CurrentUsage;
+    return true;
+}
 void wantScreen(bool wanted) {
     screenWanted = wanted;
 }

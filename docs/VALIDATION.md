@@ -1,6 +1,28 @@
-# Validation — 2026-10-25
+# Validation — 2026-10-27
 
-## The controls in four pictures (latest build)
+## The far buildings' cone and the texture budget (latest build)
+
+The user: "there is still a bug where buildings and detail on objects is low
+even when really visible and nearby mostly when swinging ... maybe the culling
+system is not tracking the right camera or body" (CHANGELOG, October 27,
+sixth). `include/spidy/native_stream.hpp` (new), `src/stereo_probe.cpp`
+(`impostorQueries`, `placeEyes`, `slotPool`, `coneMargin`, `keepTextureBudget`,
+`restoreTextureBudget`, `SpidyStreamData`, `SpidyBuildingCone`,
+`SpidyTextureBudget`), `src/native_eye_gpu.cpp` and
+`include/spidy/native_eye_gpu.hpp` (`videoMemory`), `tools/run_game_vr.py`
+(`stream_snapshot`, the report's `streaming`), `tests/core_tests.cpp`,
+`tests/game_vr_protocol_tests.py`.
+
+| | |
+| --- | --- |
+| The session | `game-vr-20261026-165822.json` (`Downloads\Spidy-0.5.0`): Quest 3 through Virtual Desktop, 3360 x 3600 eyes rendered at 67%, `eye_detail` 1.59, `texture_request_raise` 1.49, `impostor_frames` 39,231 of 39,273, the building reach 150%. The game log's texture lines: 3,858 to 3,872 MB of a 3,874 MB budget in all seven minutes, the card's budget for the game 31,418 MB with 9,448 to 9,511 used. Swing speed at most 32 m/s (the setting), above 25 m/s 37.5% of the time. The eye pictures are 480 pixels across, too small to judge detail. |
+| The game's code | Offline, `tools/research_game.py` on the supported exe: `16faf10` -> `191ecd0` (the frustum query copies its 0x100-byte cull, `1c21cf0`: 16 planes); the wanted states cleared each frame (`16fadbe`, `1c64b10`), set only for queried impostors in reach (`16f8ae0`), applied and taken away by `16f8940` -> `16f7f30`, whose additions check the scene registry's room (`190cb80`: `+1cc` + n <= `+1c8`), as `UpdateHibernateRegistration` (`1a22530`, `1a22f9d`) does for the nearby zones; that job's view is `7a34ec8`, the active view `189daa0` compares with; the descriptor's planes are rebuilt by the pose setter (`187ca10` -> `187b1e0`). The texture budget: stored by `1891174`, read by `19b2d90` (budget - held - loading - the 16 MB reserve), the heap made with no size (`19b2e50`, `1c5e0f0`). The bytes the module checks at these places are the ones read here. |
+| Build | `tools\build-native.cmd` into `build\scratch-4b` (Release, XR and observer on), the shared `build\windows-ninja` left alone: ctest 3/3, 702 core tests (3 new: the cone, the pool's easing, the budget). Warnings in `stereo_probe.cpp` only the three older ones (`placeScreenHud`, `stereoEyes`, `enqueueCommand`). `spidy_graphics_test` at 1536 x 1536 with the debug layer: passed, no errors. |
+| Module | `spidy_stereo_probe.dll` loaded in Python: `SpidyStreamData` reads magic 0x53545244, version 1, 88 bytes, features 0 before a start; `SpidyBuildingCone` 61 -> 4501, 30 and 0 -> 0; `SpidyTextureBudget` 2 -> 4601, 0 and 1 -> 0. |
+| Python | The six protocol suites (new: `stream_snapshot` decodes every field, `-1` for a pool not set up, refuses version 2, gives up on a write in progress, and returns nothing for a short read). |
+| Not run | The game and the headset. |
+
+## The controls in four pictures (October 25, third build)
 
 The user: "lets update the control infographic and also maybe describe
 controls in context and add the motion actions and what's in the phone", then

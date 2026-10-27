@@ -243,12 +243,22 @@ void previewAims(const Command& c, const Input& in, const Body& player, const Wo
             aim = {static_cast<uint32_t>(AimKind::blocked), 0,
                    h.aim.position + normalized(h.aim.orientation.rotate({0, 0, -1})) * physics.maxRange, {}};
     }
+    // What the eyes look at (EYE AIM): the game's camera is turned onto it for
+    // a zip, from where that camera stands (game_xr).
+    Aim gaze{};
+    if (length(in.gaze) > .5f) {
+        if (const auto hit = world.raycast(in.gazeOrigin, in.gaze, gazeRange))
+            gaze = {static_cast<uint32_t>(AimKind::anchor), 0, hit->point, hit->normal};
+        else
+            gaze = {static_cast<uint32_t>(AimKind::air), 0, in.gazeOrigin + in.gaze * gazeRange, {}};
+    }
     AcquireSRWLockExclusive(&output);
     InterlockedIncrement64(&SpidyAimData.sequence);
     SpidyAimData.status = 2;
     SpidyAimData.serial = c.serial;
     for (unsigned i = 0; i < 2; ++i)
         SpidyAimData.hands[i] = hands[i];
+    SpidyAimData.gaze = gaze;
     aimMadeMs = GetTickCount64();
     InterlockedIncrement64(&SpidyAimData.sequence);
     ReleaseSRWLockExclusive(&output);
@@ -1153,7 +1163,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingSubmit(void* input) {
     uint32_t header[3]{};
     if (!copy(header, input, sizeof(header)) ||
         (header[2] != commandBytesV2 && header[2] != commandBytesV3 && header[2] != commandBytesV4 &&
-         header[2] != sizeof(c)) ||
+         header[2] != commandBytesV5 && header[2] != sizeof(c)) ||
         !copy(&c, input, header[2]) || !valid(c))
         return 2001;
     AcquireSRWLockExclusive(&control);
@@ -1227,6 +1237,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyAimSample(void* out) {
         sample.status = 0;
         for (auto& hand : sample.hands)
             hand = {};
+        sample.gaze = {};
     }
     ReleaseSRWLockShared(&control);
     return copy(out, &sample, sizeof(sample)) ? 0 : 2201;

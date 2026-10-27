@@ -807,11 +807,31 @@ VR settings
                    CONTROLLED FLIPS is a separate A-toggle mode, above.
                    FLIP SPEED sets how fast either steering stick turns you.
                    HAND WALL CLIMBING (off until you switch it on, above)
-                   uses a fixed wall-camera clearance. REALISTIC FLIPS (off until
-                   you switch it on, above) and the ten rows that tune it.
+                   uses a fixed wall-camera clearance. EYE AIM (OFF unless
+                   you pick WEB BALLS, ZIPS or BOTH; below). REALISTIC FLIPS
+                   (off until you switch it on, above) and the ten rows that
+                   tune it.
+  EYE AIM ........ for a headset whose VR runtime gives games your eyes
+                   (OpenXR's eye gaze: Quest Pro, Varjo, Pimax Crystal and
+                   the like; a Quest 3 has no eye tracker). The session log
+                   says whether yours does. WEB BALLS: a free hand's trigger still
+                   fires from that hand, but the ball goes to what you look
+                   at: the enemy nearest your gaze, else the surface it
+                   meets, else open air along it. ZIPS: the stick pushed up
+                   zips to the point you look at - Spidy turns the game's
+                   own camera onto it, which is how the game picks its zip
+                   point, and holds the zip back a moment (a third of a
+                   second at most) until it is there. Held into the game's
+                   aim mode, your eyes aim it until you let go. Without an
+                   eye tracker, or with EYE AIM off, your hands aim web
+                   balls and your head zips, as before; the session log
+                   says which ("Eye aim: ..."). Quest Pro over Quest Link
+                   or Virtual Desktop sends its eyes to PC games only with
+                   that switched on (Quest Link: Settings > Beta; Virtual
+                   Desktop: its eye tracking forwarding).
   Changes apply at once. The launcher starts your next session with them;
   its options show every one of them but VR VIEW too.
-  NEAR CLIP, RECORDING FOV, UI STYLE, BLOW SOUNDS, HEIGHT, SEATED, the four body haptics switches and the
+  NEAR CLIP, RECORDING FOV, UI STYLE, BLOW SOUNDS, HEIGHT, SEATED, EYE AIM, the four body haptics switches and the
   CONTROLLED FLIPS and EXPERIMENTAL rows below FLIP SPEED Spidy keeps in
   %APPDATA%\Spidy\spidy_vr.ini, beside the launcher's own settings; the
   launcher shows realistic flips' ten rows while it is on, and the body

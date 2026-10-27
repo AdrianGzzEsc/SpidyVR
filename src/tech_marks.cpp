@@ -1175,7 +1175,7 @@ void appendCalibration(std::vector<Vertex>& out, const body_calibration::View& v
     };
     if (view.phase == Phase::done) {
         char line1[64], line2[64];
-        std::snprintf(line1, sizeof line1, "EYE HEIGHT %.2f M", view.result.eyeHeight);
+        std::snprintf(line1, sizeof line1, "HEIGHT %.2f M", body_calibration::height(view.result.eyeHeight));
         std::snprintf(line2, sizeof line2, "ARM LENGTH %.2f M", view.result.armLength);
         hud.plain([&] {
             say("CALIBRATED", 0, .15f, .055f, cyan);

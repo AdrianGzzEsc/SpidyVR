@@ -135,8 +135,15 @@ struct Values {
     int heightCm = 0;
     bool seated = false;
     bool combatVisuals = true; // combat overlays and automatic combat slow-motion VFX
+    // Aiming with the eyes (the tab's EYE AIM; eyeAimShots, eyeAimZips): web
+    // balls go where the eyes look, from the hand that pulled; a zip goes to
+    // the point the eyes look at, the game's camera being turned onto it.
+    // Only where the headset tracks the eyes (XrRuntime::eyeTracking); 0, or
+    // no eye tracker, the hands aim balls and the head zips as before.
+    int eyeAim = 0;
     bool operator==(const Values&) const = default;
 };
+inline constexpr int eyeAimShots = 1, eyeAimZips = 2;
 // The steps the game's Settings offer. The launcher's slider sets any swing
 // speed; the Settings show the step nearest to it.
 inline constexpr int swingSpeeds[] = {10, 15, 20, 25, 32, 40, 48, 56, 65};
@@ -177,7 +184,7 @@ inline float screenDepth(int choice) {
 // a second, vibration and body haptics 0-100%, weight 40-300%, HUD 0-3, flip
 // speed 90-480 degrees a second, the game screen's depth 0-3, near clip
 // 10-100 mm, recording FOV 0 (off) or 130-150 degrees, UI style 0-1, blow
-// sounds 0-2, height 0 (AUTO) or 120-220 cm.
+// sounds 0-2, height 0 (AUTO) or 120-220 cm, eye aim 0-3.
 Values sanitized(Values);
 
 enum class Item : uint8_t {
@@ -226,8 +233,9 @@ enum class Item : uint8_t {
     wallRunCameraTilt,
     controlledFlips,
     combatVisuals,
+    eyeAim,
 };
-inline constexpr Item lastItem = Item::combatVisuals;
+inline constexpr Item lastItem = Item::eyeAim;
 // Where a row shows: in the tab; on the pause menu's first page instead,
 // under RESUME: VR VIEW (the user, October 15: "move the VIEW: GAME SCREEN to
 // the first menu (the one with resume)"); or only in the launcher's options:
@@ -250,7 +258,7 @@ struct Row {
     std::span<const char* const> choices{};
     Place place{};
 };
-const std::array<Row, 51>& rows();
+const std::array<Row, 52>& rows();
 // The most choices a row shows (game_menu's buffers): a row with more would
 // lose its last ones.
 inline constexpr size_t maxChoices = 9;
@@ -267,7 +275,7 @@ bool choose(Item, int choice, Values&);
 int defaultChoice(Item);
 // The settings no launcher.ini key or XrConfig field carries: NEAR CLIP,
 // RECORDING FOV, UI STYLE, BLOW SOUNDS, HEIGHT, SEATED, WEB SLINGSHOT, BETTER CLIMBING, HAND WALL
-// CLIMBING, the realistic flips' eleven rows and the body haptics' four groups. The game
+// CLIMBING, EYE AIM, the realistic flips' eleven rows and the body haptics' four groups. The game
 // module keeps them as these key=value lines in a file of their own, beside
 // the launcher's settings (game_xr.cpp, tabOnlyPath), and reads them back
 // when VR starts; the launcher's options read and write the same file.

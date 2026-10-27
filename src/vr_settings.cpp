@@ -44,6 +44,10 @@ static_assert(std::size(uiStyleChoices) == std::size(uiStyles));
 constexpr int blowSoundSteps[] = {0, 1, 2};
 constexpr const char* blowSoundChoices[] = {"GAME", "SPIDY", "OFF"};
 static_assert(std::size(blowSoundChoices) == std::size(blowSoundSteps));
+// EYE AIM: what the eyes aim (Values::eyeAim's bits, eyeAimShots and eyeAimZips).
+constexpr int eyeAimSteps[] = {0, eyeAimShots, eyeAimZips, eyeAimShots | eyeAimZips};
+constexpr const char* eyeAimChoices[] = {"OFF", "WEB BALLS", "ZIPS", "BOTH"};
+static_assert(std::size(eyeAimChoices) == std::size(eyeAimSteps));
 // HEIGHT: AUTO, then the player's own.
 constexpr const char* heightChoices[] = {"AUTO",   "150 CM", "160 CM", "165 CM", "170 CM",
                                          "175 CM", "180 CM", "185 CM", "190 CM"};
@@ -113,6 +117,8 @@ std::span<const int> steps(Item item) {
         return blowSoundSteps;
     case Item::height:
         return heights;
+    case Item::eyeAim:
+        return eyeAimSteps;
     case Item::automaticStrength:
         return automaticStrengths;
     case Item::automaticSpeed:
@@ -164,6 +170,8 @@ float numberOf(Item item, const Values& v) {
         return static_cast<float>(v.blowSounds);
     case Item::height:
         return static_cast<float>(v.heightCm);
+    case Item::eyeAim:
+        return static_cast<float>(v.eyeAim);
     case Item::automaticStrength:
         return static_cast<float>(v.automaticStrength);
     case Item::automaticSpeed:
@@ -251,6 +259,7 @@ Values sanitized(Values v) {
     v.uiStyle = std::clamp(v.uiStyle, uiStyles[0], std::end(uiStyles)[-1]);
     v.blowSounds = std::clamp(v.blowSounds, blowSoundSteps[0], std::end(blowSoundSteps)[-1]);
     v.heightCm = v.heightCm <= 0 ? 0 : std::clamp(v.heightCm, seated::minHeightCm, seated::maxHeightCm);
+    v.eyeAim = std::clamp(v.eyeAim, 0, eyeAimShots | eyeAimZips);
     // The realistic flips' ranges, as RealisticFlip takes them.
     v.automaticStrength = std::clamp(v.automaticStrength, 25, 100);
     v.automaticSpeed = std::clamp(v.automaticSpeed, 90, 360);
@@ -261,9 +270,9 @@ Values sanitized(Values v) {
     v.automaticHandThreshold = std::clamp(v.automaticHandThreshold, 50, 300);
     return v;
 }
-const std::array<Row, 51>& rows() {
+const std::array<Row, 52>& rows() {
     // The help fits the game's description column beside the rows.
-    static const std::array<Row, 51> all{{
+    static const std::array<Row, 52> all{{
         {Item::none, "WEBS", nullptr, {}},
         {Item::webStyle, "WEB STYLE",
          "Arcade: webs pass lamp posts, signs and cars, and swings stay above the street.", webStyleChoices},
@@ -336,6 +345,8 @@ const std::array<Row, 51>& rows() {
          "Grip and pull. Reach back near the wall to turn. Left stick: run. A: jump.", {}},
         {Item::wallRunCameraTilt, "WALL RUN CAMERA TILT",
          "Gently bank the view with the body on horizontal momentum wall runs.", {}},
+        {Item::eyeAim, "EYE AIM", "Web balls and zips go where your eyes look. Needs a headset with eye tracking.",
+         eyeAimChoices},
         {Item::realisticFlips, "REALISTIC FLIPS",
          "Momentum rotation from arms and webs. FLIPS also enables left-stick steering.", {}},
         {Item::automaticStrength, "ROTATION STRENGTH",
@@ -435,6 +446,9 @@ bool choose(Item item, int index, Values& v) {
     case Item::height:
         v.heightCm = s[index];
         break;
+    case Item::eyeAim:
+        v.eyeAim = s[index];
+        break;
     case Item::automaticStrength:
         v.automaticStrength = s[index];
         break;
@@ -499,6 +513,7 @@ constexpr TabOnly tabOnly[] = {
     {"better_climbing", &Values::betterClimbing, nullptr},
     {"height_cm", nullptr, &Values::heightCm},
     {"seated", &Values::seated, nullptr},
+    {"eye_aim", nullptr, &Values::eyeAim},
 };
 } // namespace
 std::string tabOnlyText(const Values& v) {

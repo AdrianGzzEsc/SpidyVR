@@ -1825,6 +1825,10 @@ void App::options(ImVec2 origin, ImVec2 size) {
                [&] { changed |= toggle("##air", &o.airWebs); });
         option("Aim markers", "Show where each hand's web would land.", S(42),
                [&] { changed |= toggle("##aim", &o.aimMarkers); });
+        option("Eye aim",
+               "Web balls and zips go where your eyes look. Only where the headset and its VR runtime track "
+               "the eyes (Quest Pro, Varjo, Pimax Crystal...); elsewhere hands and head aim as before.",
+               S(150), [&] { tabCombo("##eyeaim", Item::eyeAim); });
     });
     group(0, "Moving", [&] {
         option("Swing speed limit", "How fast a swing can carry you.", S(150), [&] {
@@ -1905,9 +1909,10 @@ void App::options(ImVec2 origin, ImVec2 size) {
         // The T-pose calibration made in the headset; Redo forgets it, and the next session asks for it again.
         const bool calibrated = spidy::launcher::calibrated(o);
         const std::string calibration =
-            calibrated ? format("Eye height %.2f m, arm %.2f m, from your T-pose in the headset. Redo asks again when "
-                                "VR starts.",
-                                o.eyeHeightMm / 1000.0, o.armLengthMm / 1000.0)
+            calibrated ? format("Height %.2f m (eyes at %.2f m), arm %.2f m, from your T-pose in the headset. Redo "
+                                "asks again when VR starts.",
+                                spidy::body_calibration::height(o.eyeHeightMm / 1000.f), o.eyeHeightMm / 1000.0,
+                                o.armLengthMm / 1000.0)
             : o.calibrationPrompt
                 ? std::string("When VR starts, stand in a T-pose and hold both triggers: Spider-Man takes your height "
                               "and arms.")

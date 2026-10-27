@@ -1130,18 +1130,21 @@ void game_shooter::update(float seconds, const Input& in, uint32_t busy, uint64_
             else if (game_targets::standing(b) && (b.traits & game_targets::webbable) && b.record != record)
                 targets.push_back({b.record, at, deviceRadius});
         }
+        // EYE AIM: the eyes pick what a ball goes to, from the hand that pulled.
+        const ShooterGaze eyes{in.gazeOrigin, in.gaze};
+        const ShooterGaze* gaze = in.gazeShots && length(in.gaze) > .5f ? &eyes : nullptr;
         for (int i = 0; i < 2; ++i) {
             if (!((pulls >> i) & 1))
                 continue;
             const auto& aim = in.hands[static_cast<size_t>(i)].aim;
-            auto shot = shooter.aim(i, aim, targets, world);
+            auto shot = shooter.aim(i, aim, targets, world, gaze);
             if (shot.target) {
                 // One the game has let go of meanwhile is no target.
                 bool live{};
                 for (const auto& b : bots)
                     live |= b.record == shot.target && game_targets::live(base, b);
                 if (!live)
-                    shot = shooter.aim(i, aim, {}, world);
+                    shot = shooter.aim(i, aim, {}, world, gaze);
             }
             ++requested;
             if (!enqueue({shot, record, feet, GetTickCount64()}))

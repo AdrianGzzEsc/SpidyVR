@@ -592,13 +592,18 @@ class ZipPress {
 // root of the turn wanted, above `floor`: from 170 degrees off the camera
 // was within 4 in 1.4 s and stayed there. It starts beyond startDegrees and
 // rests within stopDegrees: a head that looks about turns nothing.
+//
+// precise: EYE AIM's zip (EyeZip), the camera brought onto what the eyes look
+// at, which is the point the game zips to: it starts beyond
+// preciseStartDegrees and rests within preciseStopDegrees.
 class CameraLook {
   public:
     static constexpr float startDegrees = 12, stopDegrees = 4, fullRate = 180, seconds = .25f, floor = .45f;
+    static constexpr float preciseStartDegrees = 2.5f, preciseStopDegrees = 1;
     // look: where the head looks; camera: the game camera's forward (both in
     // the world). steer: VR play, with that camera the player's own. Returns
     // the right stick's X, -1..1.
-    float update(Vec3 look, Vec3 camera, bool steer) {
+    float update(Vec3 look, Vec3 camera, bool steer, bool precise = false) {
         look.y = camera.y = 0;
         // Straight up or down says no way to look.
         if (!steer || !finite(look) || !finite(camera) || length(look) < .3f || length(camera) < .3f) {
@@ -611,7 +616,8 @@ class CameraLook {
         // To the camera's right, as the game takes the stick: cross(forward, up).
         error_ = std::atan2(dot(look, cross(camera, {0, 1, 0})), dot(look, camera)) * 57.29578f;
         const float off = std::abs(error_);
-        const bool turn = off > (turning_ ? stopDegrees : startDegrees);
+        const bool turn = off > (precise ? (turning_ ? preciseStopDegrees : preciseStartDegrees)
+                                         : (turning_ ? stopDegrees : startDegrees));
         turns_ += turn && !turning_;
         turning_ = turn;
         if (!turn)
@@ -647,8 +653,9 @@ class CameraPitch {
   public:
     static constexpr float lowest = -80, highest = 62;
     // look: where the head looks; camera: the game camera's forward (both in
-    // the world). steer: as CameraLook's. Returns the right stick's Y, -1..1.
-    float update(Vec3 look, Vec3 camera, bool steer) {
+    // the world). steer and precise: as CameraLook's. Returns the right
+    // stick's Y, -1..1.
+    float update(Vec3 look, Vec3 camera, bool steer, bool precise = false) {
         if (!steer || !finite(look) || !finite(camera) || length(look) < .5f || length(camera) < .5f) {
             turning_ = false;
             error_ = 0;
@@ -657,7 +664,9 @@ class CameraPitch {
         const auto pitch = [](Vec3 v) { return std::asin(std::clamp(v.y / length(v), -1.f, 1.f)) * 57.29578f; };
         error_ = std::clamp(pitch(look), lowest, highest) - pitch(camera);
         const float off = std::abs(error_);
-        const bool turn = off > (turning_ ? CameraLook::stopDegrees : CameraLook::startDegrees);
+        const bool turn =
+            off > (precise ? (turning_ ? CameraLook::preciseStopDegrees : CameraLook::preciseStartDegrees)
+                           : (turning_ ? CameraLook::stopDegrees : CameraLook::startDegrees));
         turns_ += turn && !turning_;
         turning_ = turn;
         if (!turn)
@@ -679,6 +688,67 @@ class CameraPitch {
     bool turning_{};
     uint32_t turns_{};
 };
+// EYE AIM's zips (vr_settings::eyeAimZips). The game zips to the point its own
+// camera has in view (its aim "snaps to zip-to-perch targets": ZipPress), and
+// that camera follows the head's level look loosely (CameraLook,
+// CameraPitch). With the eyes aiming zips it follows them instead, closely
+// (`precise`), from the moment the stick goes up for one to the zip's end,
+// at the point the eyes meet as seen from where that camera stands. A zip
+// made at once (a tap of the stick) would leave before the camera got
+// there, so the zip waits for it - within settledDegrees each way - for
+// waitSeconds at most past the stick's own holdSeconds; a hold that turned
+// into the game's aim mode zips when let go, as before, with the camera on
+// the eyes all the while.
+class EyeZip {
+  public:
+    static constexpr float settledDegrees = 3, waitSeconds = .35f;
+    // seconds: since the previous update. up: the stick held up for a zip
+    // (StickPush). eyes: the camera follows the eyes now. yaw, pitch: how far
+    // it is from them (CameraLook::error, CameraPitch::error), degrees.
+    // Whether the zip may go out: once it may, it may until the stick comes
+    // down.
+    bool update(float seconds, bool up, bool eyes, float yaw, float pitch) {
+        if (!up) {
+            waited_ = 0;
+            ready_ = false;
+            return false;
+        }
+        if (ready_)
+            return true;
+        if (!eyes)
+            return ready_ = true;
+        waited_ += std::isfinite(seconds) ? std::clamp(seconds, 0.f, .1f) : 0.f;
+        const bool settled = std::abs(yaw) <= settledDegrees && std::abs(pitch) <= settledDegrees;
+        if (settled || waited_ >= waitSeconds) {
+            ready_ = true;
+            ++(settled ? settled_ : late_);
+        }
+        return ready_;
+    }
+    // Zips the eyes aimed that went out with the camera on them, and those
+    // that went out at waitSeconds without.
+    uint32_t settled() const {
+        return settled_;
+    }
+    uint32_t late() const {
+        return late_;
+    }
+
+  private:
+    float waited_{};
+    bool ready_{};
+    uint32_t settled_{}, late_{};
+};
+// Where the game's camera must look for its centre to be on `target`, seen
+// from where it stands: the eyes' point (game_swing::AimData::gaze) from the
+// camera, which stands behind and above the head. A point too near the camera
+// to say (under a metre), or none, is the eyes' own direction.
+inline Vec3 cameraLookAt(Vec3 camera, Vec3 target, bool hasTarget, Vec3 gaze) {
+    const Vec3 to = target - camera;
+    if (hasTarget && finite(to) && length(to) >= 1)
+        return normalized(to);
+    return gaze;
+}
 // Y held, to reach what it is for. The game takes its Y only close to the
 // thing: a door of the first mission showed "Open Door" 1.1 m from its middle
 // and not 1.2 m, nearer than a VR player stands to a wall (October 11: four

@@ -113,6 +113,7 @@ inline XrFrame raised(XrFrame f, float lift) {
     if (!(lift > 0) || !std::isfinite(lift))
         return f;
     f.head.position.y += lift;
+    f.gaze.position.y += lift;
     for (auto& eye : f.eyes)
         eye.pose.position.y += lift;
     for (auto& hand : f.hands) {

@@ -146,7 +146,7 @@ enum GateReason : uint32_t {
     gateTracking = 16,    // the headset's pose or timing was not usable
 };
 struct XrData {
-    uint32_t magic = 0x53585244, version = 42, bytes = sizeof(XrData), status{};
+    uint32_t magic = 0x53585244, version = 43, bytes = sizeof(XrData), status{};
     int64_t sequence{};
     uint64_t frames{}, tracked{}, submitted{}, dropped{}, leftHands{}, rightHands{}, serial{}, generation{};
     uint32_t nativeKeys{}, error{};
@@ -386,8 +386,16 @@ struct XrData {
     int32_t pocketLastHand[3]{};
     uint32_t pocketLastLostMs{};
     int32_t pocketLastLook{}, reserved42{};
+    // Version 43: EYE AIM. eyeGaze: the headset's eye tracking + 1 (0 not
+    // known yet; 1 the runtime offers none, 2 it does but not for this
+    // headset, 3 an eye tracker: XrRuntime::EyeTracking) and the EYE AIM row
+    // in bits 8-9 (1 web balls, 2 zips). Then frames of play with EYE AIM on
+    // and of those the frames the eyes were tracked; web balls the eyes aimed;
+    // zips the eyes aimed that went out with the game's camera on their point,
+    // and those that went at EyeZip::waitSeconds without.
+    uint32_t eyeGaze{}, eyeAimFrames{}, gazeFrames{}, eyeShots{}, eyeZips{}, eyeZipsLate{};
 };
-static_assert(sizeof(XrData) == 1288);
+static_assert(sizeof(XrData) == 1312);
 static_assert(PocketDraw::misses == 6);
 // The game's own prompt and QTE calls, for one play session to say what their
 // arguments hold (game_prompts.hpp). The eight names matched the game on
@@ -795,6 +803,13 @@ DWORD WINAPI run(void*) {
         game_pad::StickPush stickPush;
         game_pad::ZipPress zipPress;
         game_pad::FlipZipPriority flipZipPriority;
+        // EYE AIM: the zip waits for the game's camera to come onto what the
+        // eyes look at (EyeZip); frames of play with EYE AIM on and, of those,
+        // with the eyes tracked; web balls the eyes aimed; and whether the
+        // player was told the headset gives no gaze.
+        game_pad::EyeZip eyeZip;
+        uint32_t eyeAimFrames{}, gazeFrames{}, eyeShots{};
+        bool toldNoGaze{};
         bool interacting{}, dodging{}, healing{}, zipping{};
         // The player asked the game for a move of its own while the swing carried him
         // in the air (game_swing::AirYield), for the next swing command.
@@ -1315,6 +1330,8 @@ DWORD WINAPI run(void*) {
         };
         auto applySettings = [&] {
             runtime.hapticStrength(static_cast<float>(values.haptics) / 100);
+            // The eyes are read only while something aims with them.
+            runtime.wantGaze(values.eyeAim != 0);
             // The bHaptics library loads, on the haptics' own thread, the first
             // time BODY HAPTICS is on; at 0 the devices go quiet.
             if (values.bodyHaptics > 0 && !haptics.started()) {
@@ -1904,6 +1921,21 @@ DWORD WINAPI run(void*) {
                                         swingState.owned ? Vec3{0, 1, 0} : heroUp,
                                         game_swing::airborne(swingState, now.QuadPart, frequency.QuadPart), hold,
                                         {camera[4], camera[5], camera[6]});
+                    if (values.eyeAim && motion.active && !flatScreen) {
+                        ++eyeAimFrames;
+                        gazeFrames += motion.gazeValid ? 1u : 0u;
+                        // An eye tracker that gave no gaze in three seconds of
+                        // play: over Quest Link and Virtual Desktop the eyes reach
+                        // PC games only where the player switched that on.
+                        if (!toldNoGaze && !gazeFrames && eyeAimFrames >= 270 &&
+                            runtime.eyeTracking() == XrRuntime::EyeTracking::tracker) {
+                            toldNoGaze = true;
+                            message(3, 0,
+                                    "EYE AIM: the headset has an eye tracker but sends no gaze. Quest Pro: turn on "
+                                    "eye tracking for PC apps (Quest Link: Settings > Beta; Virtual Desktop: its "
+                                    "eye tracking forwarding). Until then hands and head aim as before.");
+                        }
+                    }
                     if (motion.headDrop > .02f)
                         ++headDroppedFrames;
                     if (motion.active && motion.onSurface) {
@@ -2075,8 +2107,10 @@ DWORD WINAPI run(void*) {
                             runtime.haptic(1, .7f);
                             feel(body_haptics::Kind::calibrated);
                             char text[160];
-                            sprintf_s(text, "Body calibrated: eye height %.2f m, arm length %.2f m (left %.2f, right %.2f)",
-                                      calibratedEye, calibratedArm, lastCalibration.reach[0], lastCalibration.reach[1]);
+                            sprintf_s(text, "Body calibrated: height %.2f m (eyes %.2f m), arm length %.2f m (left %.2f, "
+                                      "right %.2f)",
+                                      body_calibration::height(calibratedEye), calibratedEye, calibratedArm,
+                                      lastCalibration.reach[0], lastCalibration.reach[1]);
                             message(3, 0, text);
                         } else if (before == CalibrationPhase::waiting &&
                                    calibration.phase() == CalibrationPhase::holding) {
@@ -2243,6 +2277,16 @@ DWORD WINAPI run(void*) {
                         if (const Vec3 look = motion.headPose.orientation.rotate({0, 0, -1});
                             input.focused && finite(look) && length(look) > .5f)
                             input.look = normalized(look);
+                        // EYE AIM: where the eyes look, for the web balls they aim
+                        // and for what the aim previews say they meet (the zip's
+                        // camera is turned onto that).
+                        if (const Vec3 gaze = motion.gazePose.orientation.rotate({0, 0, -1});
+                            values.eyeAim && input.focused && motion.gazeValid && finite(gaze) &&
+                            length(gaze) > .5f) {
+                            input.gazeOrigin = motion.gazePose.position;
+                            input.gaze = normalized(gaze);
+                            input.eyeAim = (values.eyeAim & vr_settings::eyeAimShots) ? 1u : 0u;
+                        }
                         const Input climbInput = wallClimbInput(motion);
                         for (unsigned i = 0; i < 2; ++i) {
                             const auto& hand = climbInput.hands[i];
@@ -2701,6 +2745,7 @@ DWORD WINAPI run(void*) {
                                     pulseUntil[i] = frame.predictedDisplayTime + 25'000'000;
                                     ballShot[i] = true;
                                     feel(body_haptics::Kind::webShot, static_cast<int>(i));
+                                    eyeShots += input.eyeAim != 0;
                                 }
                                 shotsBefore[i] = shots.hands[i].shots;
                             }
@@ -3021,12 +3066,31 @@ DWORD WINAPI run(void*) {
                         (void)toldHandoverRefused;
                         // Not on a wall the player stands on: the game's camera
                         // there is not the follow camera's level turn.
-                        walk.look = cameraLook.update(motion.headPose.orientation.rotate({0, 0, -1}),
-                                                      {camera[8], camera[9], camera[10]},
-                                                      steering && !motion.onSurface);
-                        walk.lookUp = cameraPitch.update(motion.headPose.orientation.rotate({0, 0, -1}),
-                                                         {camera[8], camera[9], camera[10]},
-                                                         steering && !motion.onSurface);
+                        const bool cameraSteered = steering && !motion.onSurface;
+                        // EYE AIM's zips (game_pad::EyeZip): from the stick going up
+                        // for a zip to the zip's end, the camera is brought closely
+                        // onto what the eyes look at, from where it stands - the point
+                        // the game zips to. Not while basic flips have the stick.
+                        const auto& zipStick = frame.hands[1];
+                        const bool zipWanted =
+                            zipPress.active() || (zipStick.stickY >= game_pad::StickPush::pushed &&
+                                                  std::abs(zipStick.stickX) <= game_pad::StickPush::aside);
+                        const Vec3 gazeLook = motion.gazePose.orientation.rotate({0, 0, -1});
+                        const bool eyesZip = (values.eyeAim & vr_settings::eyeAimZips) && motion.gazeValid &&
+                                             finite(gazeLook) && length(gazeLook) > .5f && zipWanted &&
+                                             (!motion.basicFlipControls || zipPriority || zipPress.active());
+                        const auto& seen = aimed.gaze;
+                        const Vec3 cameraLookTo =
+                            eyesZip ? game_pad::cameraLookAt(
+                                          {camera[12], camera[13], camera[14]}, seen.point,
+                                          seen.kind == static_cast<uint32_t>(game_swing::AimKind::anchor) ||
+                                              seen.kind == static_cast<uint32_t>(game_swing::AimKind::air),
+                                          normalized(gazeLook))
+                                    : motion.headPose.orientation.rotate({0, 0, -1});
+                        walk.look = cameraLook.update(cameraLookTo, {camera[8], camera[9], camera[10]}, cameraSteered,
+                                                      eyesZip);
+                        walk.lookUp = cameraPitch.update(cameraLookTo, {camera[8], camera[9], camera[10]},
+                                                         cameraSteered, eyesZip);
                         if (stepIn > 0 && std::hypot(walk.right, walk.forward) < .1f) {
                             Vec3 look = motion.headPose.orientation.rotate({0, 0, -1});
                             Vec3 ahead{camera[8], 0, camera[10]};
@@ -3106,7 +3170,11 @@ DWORD WINAPI run(void*) {
                         walk.heal = !motion.basicFlipControls && push == game_pad::StickPush::Way::down;
                         // Held on into the game's aim mode (its own time slowed), LT stays down alone,
                         // and letting go zips to the point its aim holds (ZipPress).
-                        const bool zipUp = (reaching || inFlight) && push == game_pad::StickPush::Way::up;
+                        // With EYE AIM's zips, not before the game's camera is on the
+                        // eyes' point (EyeZip; a moment at most).
+                        const bool zipUp = eyeZip.update(
+                            frame.seconds, (reaching || inFlight) && push == game_pad::StickPush::Way::up,
+                            eyesZip && cameraSteered, cameraLook.error(), cameraPitch.error());
                         const auto gameTime = game_time::telemetry();
                         const bool slow = gameTime.installed && gameTime.own < game_pad::ZipPress::slowBelow;
                         const auto zipKeys = zipPress.update(frame.seconds, zipUp, sticking, slow);
@@ -3531,6 +3599,13 @@ DWORD WINAPI run(void*) {
                             d.pocketLastLostMs = static_cast<uint32_t>(std::lround(p.lastLost * 1000));
                             d.pocketLastLook = static_cast<int32_t>(std::lround(p.lastLook * 1800 / 3.14159265f));
                         }
+                        d.eyeGaze = (static_cast<uint32_t>(runtime.eyeTracking()) + 1) |
+                                    static_cast<uint32_t>(values.eyeAim) << 8;
+                        d.eyeAimFrames = eyeAimFrames;
+                        d.gazeFrames = gazeFrames;
+                        d.eyeShots = eyeShots;
+                        d.eyeZips = eyeZip.settled();
+                        d.eyeZipsLate = eyeZip.late();
                         for (unsigned i = 0; i < 3; ++i) {
                             d.cameraForward[i] = camera[8 + i];
                             d.cameraUp[i] = camera[4 + i];

@@ -119,7 +119,7 @@ struct Hand {
     float trigger{}, grip{};
 };
 struct Command {
-    uint32_t magic = 0x5357434d, version = 5, bytes = sizeof(Command), focused{};
+    uint32_t magic = 0x5357434d, version = 6, bytes = sizeof(Command), focused{};
     uint64_t serial{};
     uint32_t leaseMs = 100, jump{};
     Hand hands[2];
@@ -147,9 +147,15 @@ struct Command {
     // Version 4 (commandBytesV4) ends before them.
     Vec3 wallPositions[2]{};
     float wallGrips[2]{};
-    uint32_t wallRotate{};
+    uint32_t wallRotate{}, padding5{}; // version 5 ended in these 4 bytes of padding
+    // Version 6, EYE AIM: where the eyes look (Input::gazeOrigin, gaze; gaze
+    // zero: untracked, or EYE AIM off), and eyeAim bit 0: web balls go there
+    // (Input::gazeShots). The aim previews say what the gaze meets (AimData::
+    // gaze) whenever there is one. Version 5 (commandBytesV5) ends before them.
+    Vec3 gazeOrigin{}, gaze{};
+    uint32_t eyeAim{}, reserved6{};
 };
-constexpr uint32_t commandBytesV2 = 168, commandBytesV3 = 184, commandBytesV4 = 200;
+constexpr uint32_t commandBytesV2 = 168, commandBytesV3 = 184, commandBytesV4 = 200, commandBytesV5 = 240;
 // attached: 0 none, else bits: 1 a web; 2 both hands hold it (Swing::shared:
 // the other hand's web is the same one); 4 this hand took hold of it and did
 // not shoot it (Web::taken; it stays when the other hand lets go).
@@ -189,9 +195,10 @@ struct Data {
     float wallDistance{};
     uint32_t walls{}, wallJumps{}, mount{};
 };
-static_assert(sizeof(Config) == 64 && sizeof(Hand) == 52 && sizeof(Command) == 240 &&
+static_assert(sizeof(Config) == 64 && sizeof(Hand) == 52 && sizeof(Command) == 272 &&
               offsetof(Command, tilt) == commandBytesV2 && offsetof(Command, leap) == commandBytesV3 &&
-              offsetof(Command, wallPositions) == commandBytesV4 && offsetof(Command, wallRotate) == 232);
+              offsetof(Command, wallPositions) == commandBytesV4 && offsetof(Command, wallRotate) == 232 &&
+              offsetof(Command, gazeOrigin) == commandBytesV5);
 // SpidySwingSettings: what the VR settings (the SPIDY VR tab in the game's
 // Settings) change during play.
 // grab: webs catch props and thugs (a swing started without them starts
@@ -401,19 +408,25 @@ struct Aim {
     Vec3 normal{};   // the surface's normal (anchor, blocked); zero for none
 };
 struct AimData {
-    uint32_t magic = 0x5357414d, version = 1, bytes = sizeof(AimData), status{};
+    uint32_t magic = 0x5357414d, version = 2, bytes = sizeof(AimData), status{};
     int64_t sequence{};
     uint64_t serial{}; // the input command the aims were worked out from
     Aim hands[2];
+    // Version 2: what the eyes look at (Command::gaze; EYE AIM): anchor, the
+    // first surface on their line within gazeRange, at `point`; air, none,
+    // `point` that far out along it; none, no gaze in the command.
+    Aim gaze;
 };
-static_assert(sizeof(Aim) == 32 && sizeof(AimData) == 96);
+static_assert(sizeof(Aim) == 32 && sizeof(AimData) == 128);
+constexpr float gazeRange = 150;
 constexpr uint32_t aimLeaseMs = 250;
 inline bool valid(const Command& c) {
     const auto& t = c.tilt;
     const float tilt = t.x * t.x + t.y * t.y + t.z * t.z + t.w * t.w;
     if (c.magic != 0x5357434d ||
         !((c.version == 2 && c.bytes == commandBytesV2) || (c.version == 3 && c.bytes == commandBytesV3) ||
-          (c.version == 4 && c.bytes == commandBytesV4) || (c.version == 5 && c.bytes == sizeof(c))) ||
+          (c.version == 4 && c.bytes == commandBytesV4) || (c.version == 5 && c.bytes == commandBytesV5) ||
+          (c.version == 6 && c.bytes == sizeof(c))) ||
         !std::isfinite(c.leap) || c.leap < 0 || c.leap > 1 || !finite(c.look) || length(c.look) > 1.01f ||
         !c.serial || c.focused > 1 || c.jump > 1 || c.leaseMs > 250 || (c.focused && !c.leaseMs) ||
         !finite(c.move) || length(c.move) > 1.001f || !std::isfinite(c.trackingYaw) || c.asks > 1 ||
@@ -432,7 +445,10 @@ inline bool valid(const Command& c) {
         if (!finite(c.wallPositions[i]) || !std::isfinite(c.wallGrips[i]) || c.wallGrips[i] < 0 ||
             c.wallGrips[i] > 1)
             return false;
-    return c.wallRotate <= 1;
+    // A gaze is a direction or none at all.
+    const float gaze = length(c.gaze);
+    return c.wallRotate <= 1 && finite(c.gazeOrigin) && finite(c.gaze) &&
+           (gaze == 0 || std::abs(gaze - 1) < .01f) && c.eyeAim <= 1;
 }
 class InputSampleClock {
   public:
@@ -577,6 +593,11 @@ inline Input input(const Command& c) {
             out.hands[i].wallGrip = c.wallGrips[i];
         }
         out.wallRotate = c.wallRotate != 0;
+    }
+    if (c.version >= 6 && length(c.gaze) > .5f) {
+        out.gazeOrigin = c.gazeOrigin;
+        out.gaze = c.gaze;
+        out.gazeShots = (c.eyeAim & 1) != 0;
     }
     return out;
 }

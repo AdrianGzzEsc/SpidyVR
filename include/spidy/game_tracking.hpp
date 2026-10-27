@@ -38,6 +38,9 @@ struct GameMotionFrame {
     // identity orientation while it is not tracked.
     Pose headPose{};
     std::array<Pose, 2> grips{};
+    // Where the eyes look, in the world (XrFrame::gaze), while tracked.
+    Pose gazePose{};
+    bool gazeValid{};
     std::array<EyeFov, 2> fovs{};
     uint32_t nativeKeys{};
     // The left stick in the stock camera's horizontal axes, -1..1: native

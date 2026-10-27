@@ -22,6 +22,7 @@
 #include "spidy/eye_snapshot.hpp"
 #include "spidy/vr_settings.hpp"
 #include "spidy/recording_fov.hpp"
+#include "spidy/native_stream.hpp"
 #include "spidy/body_haptics.hpp"
 #include "spidy/web_visual.hpp"
 #include "spidy/web_pull.hpp"
@@ -49,6 +50,7 @@
 #include "spidy/offer_pointing.hpp"
 #include "spidy/tech_marks.hpp"
 #include "spidy/throw_aim.hpp"
+#include "spidy/vd_eyes.hpp"
 #include <algorithm>
 #include <cstring>
 #include <functional>
@@ -823,6 +825,73 @@ int main() {
         near(native_view::requestScale(2016,2240,1.171f,1.1106f)/native_view::requestScale(1352,1504,1.171f,1.1106f),
              2240.f/1504);
         near(native_view::requestScale(2000,1000,1,1),1000); // the side with more pixels per tangent
+    });
+    test("the far buildings' cone holds both eyes and a margin each way, at most 80 degrees out", [] {
+        // A Quest 3's lens over both eyes (54 degrees out, 48 up and down, with
+        // headView's 5%) widened by 30 degrees: across it reaches the most, 80.
+        const float degree = .0174532925f;
+        const float out = std::tan(54 * degree) * 1.05f, up = std::tan(48 * degree) * 1.05f;
+        const native_eyes::Bounds quest{-out, out, -up, up};
+        const auto cone = native_stream::widened(quest, 30 * degree, 80 * degree);
+        near(std::atan(cone.right) / degree, 80, .01f);
+        near(std::atan(-cone.left) / degree, 80, .01f);
+        near(std::atan(cone.bottom) / degree, std::atan(up) / degree + 30, .01f);
+        near(std::atan(-cone.top) / degree, std::atan(up) / degree + 30, .01f);
+        // Each side on its own: a lopsided lens keeps its shape inside the most.
+        const native_eyes::Bounds lopsided{-std::tan(20 * degree), std::tan(40 * degree), -std::tan(10 * degree),
+                                           std::tan(30 * degree)};
+        const auto wide = native_stream::widened(lopsided, 15 * degree, 80 * degree);
+        near(std::atan(-wide.left) / degree, 35, .01f);
+        near(std::atan(wide.right) / degree, 55, .01f);
+        near(std::atan(-wide.top) / degree, 25, .01f);
+        near(std::atan(wide.bottom) / degree, 45, .01f);
+        // Never narrower: a side already past the most stays as it was.
+        const native_eyes::Bounds broad{-std::tan(85 * degree), 1, -1, 1};
+        near(native_stream::widened(broad, 30 * degree, 80 * degree).left, broad.left);
+        // No margin, a margin or most that is no number, or a broken lens: as it came.
+        const auto same = [](const native_eyes::Bounds& a, const native_eyes::Bounds& b) {
+            return a.left == b.left && a.right == b.right && a.top == b.top && a.bottom == b.bottom;
+        };
+        check(same(native_stream::widened(quest, 0, 80 * degree), quest), "a lens widened without a margin");
+        check(same(native_stream::widened(quest, std::numeric_limits<float>::quiet_NaN(), 80 * degree), quest) &&
+                  same(native_stream::widened(quest, 30 * degree, 90 * degree), quest),
+              "a lens widened by numbers that are not a margin");
+        native_eyes::Bounds broken = quest;
+        broken.right = std::numeric_limits<float>::infinity();
+        check(same(native_stream::widened(broken, 30 * degree, 80 * degree), broken), "a broken lens widened");
+    });
+    test("the cone's margin eases off as the scene's slot pool fills", [] {
+        near(native_stream::poolMargin(0, 10000, 30), 30);
+        near(native_stream::poolMargin(6000, 10000, 30), 30);    // 60%: all of it
+        near(native_stream::poolMargin(7250, 10000, 30), 15);    // halfway to 85%
+        near(native_stream::poolMargin(8500, 10000, 30), 0);     // 85%: none
+        near(native_stream::poolMargin(10000, 10000, 30), 0);
+        // A pool that does not read as one: no margin.
+        near(native_stream::poolMargin(5, 0, 30), 0);
+        near(native_stream::poolMargin(5, -1, 30), 0);
+        near(native_stream::poolMargin(-1, 10000, 30), 0);
+        near(native_stream::poolMargin(10001, 10000, 30), 0);
+        near(native_stream::poolMargin(100, 10000, 0), 0);
+    });
+    test("the texture budget doubles where the card has room and leaves an eighth of it free", [] {
+        constexpr uint64_t mb = 1ull << 20;
+        const uint64_t veryHigh = 3874 * mb;
+        // The October 26 session: a 32 GB card, 31,418 MB for the game, 9,448 used.
+        check(native_stream::textureBudget(veryHigh, 31418 * mb, 9448 * mb) == 2 * veryHigh, "not doubled");
+        // A 16 GB card in VR: what is left over 2 GB (more than an eighth of 15,000 MB).
+        check(native_stream::textureBudget(veryHigh, 15000 * mb, 10000 * mb) == veryHigh + (5000 - 2048) * mb,
+              "not raised by the room left over 2 GB");
+        // A 12 GB card in VR: no room over 2 GB, the game's own.
+        check(native_stream::textureBudget(veryHigh, 11000 * mb, 9500 * mb) == veryHigh, "raised with no room");
+        // Over the card's budget, or nothing to go by: the game's own.
+        check(native_stream::textureBudget(veryHigh, 8000 * mb, 9000 * mb) == veryHigh &&
+                  native_stream::textureBudget(veryHigh, 0, 0) == veryHigh &&
+                  native_stream::textureBudget(0, 31418 * mb, 9448 * mb) == 0,
+              "raised without a budget to go by");
+        // Short: less than 1 GB of the card's budget left.
+        check(native_stream::textureShort(31418 * mb, 30500 * mb) && native_stream::textureShort(0, 0) &&
+                  !native_stream::textureShort(31418 * mb, 9448 * mb + veryHigh),
+              "short at the wrong time");
     });
     test("game rig uses one tracking sample for head hands and both eyes", [] {
         GameTrackingRig rig;auto f=trackedFrame();
@@ -19380,6 +19449,17 @@ int main() {
         s.handTracked[1]=false;
         check(hintFor(s)==Hint::tracking,"an untracked controller");
         check(hintFor(tPose(.9f,.6f))==Hint::standUp,"a seated player");
+        // A headset whose floor is off: a 1.70 m player's eyes measured 1.05 m up, and eyes 2.50 m up (players
+        // on the Discord, October 21 and 19). HEIGHT's range, 1.20 to 2.20 m, still counts at either end.
+        check(hintFor(tPose(1.05f,.6f))==Hint::floor,"a floor half a metre too high");
+        check(hintFor(tPose(2.5f,.6f))==Hint::floor,"a floor 0.8 m too low");
+        check(hintFor(tPose(1.13f,.38f))==Hint::none&&hintFor(tPose(2.05f,.65f))==Hint::none,
+              "the shortest or the tallest player HEIGHT names did not count");
+        // Within that range, the controllers' span: the user, 1.88 m, holds them 1.65 m apart, at eyes 1.76 m up
+        // (October 26) and at the 1.33 m a Quest Pro gave with its floor 0.42 m too high (October 27, the
+        // panel's "1.43"; each arm 0.61 m from shoulders placed at that size).
+        check(hintFor(tPose(1.758f,.56f))==Hint::none,"the user's own T-pose");
+        check(hintFor(tPose(1.334f,.61f))==Hint::floor,"the user's T-pose under a floor 0.42 m too high");
         // Arms hanging down: the wrists 0.6 m under the shoulders.
         s=tPose(1.62f,.6f);
         for(auto& grip:s.grips)grip.position+=Vec3{grip.position.x<0?.6f:-.6f,-.6f,0};
@@ -19403,8 +19483,12 @@ int main() {
         s.grips[1].position+=Vec3{0,.01f,0};
         c.update(s);
         check(c.hint()==Hint::still,"a moving hand held still");
-        for(int h=0;h<=static_cast<int>(Hint::still);++h)
+        for(int h=0;h<=static_cast<int>(Hint::floor);++h)
             check(body_calibration::hintText(static_cast<Hint>(h))[0]!=0,"a hint without text");
+        // What the panel and the launcher show: the height, from HEIGHT's share (a 1.88 m player's eyes are
+        // 1.76 m up: the user, October 27).
+        near(body_calibration::height(1.758f),1.878f,1e-3f);
+        near(body_calibration::height(seated::eyeHeight(170)),1.7f,1e-4f);
     });
     test("calibration: a short lapse pauses the hold, a longer one starts it over", [] {
         body_calibration::Calibration c;c.start();
@@ -19523,10 +19607,10 @@ int main() {
     });
     test("overlay text: capitals, digits and punctuation in strokes on the text's plane", [] {
         for(const char* text:{"BODY CALIBRATION","STAND TALL, LOOK AHEAD","ARMS STRAIGHT OUT TO THE SIDES",
-                              "PRESS B TO SKIP","EYE HEIGHT 1.63 M","SPIDER-MAN NOW HAS YOUR SIZE",
+                              "PRESS B TO SKIP","HEIGHT 1.88 M","SPIDER-MAN NOW HAS YOUR SIZE",
                               "REDO IT IN SETTINGS, SPIDY VR","0123456789%:()!?+=/<>'"})
             for(const char* c=text;*c;++c)check(*c==' '||drawable(*c),"a character the panel uses has no glyph");
-        for(int h=0;h<=static_cast<int>(body_calibration::Hint::still);++h)
+        for(int h=0;h<=static_cast<int>(body_calibration::Hint::floor);++h)
             for(const char* c=body_calibration::hintText(static_cast<body_calibration::Hint>(h));*c;++c)
                 check(*c==' '||drawable(*c),"a hint uses a character without a glyph");
         check(drawable('a')&&!drawable('#')&&!drawable('~'),"lower case or unknown characters");
@@ -20405,6 +20489,134 @@ int main() {
         check(!blocked.target && blocked.surface, "a thug behind the pillar was taken");
         near(blocked.aimPoint.z, -10.4f, .05f);
     });
+    test("EYE AIM: the eyes pick a web ball's thug or surface, and the ball leaves the hand that pulled", [] {
+        // A wall across the way 30 m ahead, and a floor at the player's feet for a look straight down.
+        struct Range : WorldQueries {
+            std::optional<RayHit> raycast(Vec3 o, Vec3 d, float distance) const override {
+                if (d.y < -.9f && o.y - 1.2f <= distance * -d.y)
+                    return RayHit{o + d * ((o.y - 1.2f) / -d.y), {0, 1, 0}, 3, true};
+                if (d.z >= 0)
+                    return {};
+                const float wallAt = (o.z + 30) / -d.z;
+                if (wallAt > 0 && wallAt <= distance)
+                    return RayHit{o + d * wallAt, {0, 0, 1}, 1, true};
+                return {};
+            }
+            bool exists(std::uint64_t) const override {
+                return true;
+            }
+        } world;
+        Shooter s;
+        // The right hand points straight ahead; the eyes look ahead and to the left, meeting the wall at x -6.
+        const Pose hand{{.3f, 1.2f, 0}, {}};
+        const ShooterGaze eyes{{0, 1.7f, 0}, normalized(Vec3{-.2f, 0, -1})};
+        auto shot = s.aim(1, hand, {}, world, &eyes);
+        const Vec3 seen{-6, 1.7f, -30};
+        check(shot.gazed && shot.surface && !shot.target && shot.hand == 1, "the eyes' wall was not the aim");
+        near(length(shot.origin - (hand.position + Vec3{0, 0, -ShooterConfig{}.muzzle})), 0);
+        near(length(shot.direction - normalized(seen - shot.origin)), 0);
+        near(length(shot.aimPoint - seen), ShooterConfig{}.beyond, .001f);
+        check(!s.aim(1, hand, {}, world).gazed && std::abs(s.aim(1, hand, {}, world).aimPoint.x - .3f) < .01f,
+              "without the eyes the hand's line changed");
+        // A thug on the hand's line and one on the eyes': the eyes' is the one; one on the eyes' line
+        // behind the wall is not, there the hand's own thug is not either.
+        const ShooterTarget handThug{21, {.3f, 1.2f, -20}}, eyeThug{22, {-4, 1.7f, -20}},
+            hiddenThug{23, {-8, 1.7f, -40}};
+        const ShooterTarget both[] = {handThug, eyeThug};
+        shot = s.aim(1, hand, both, world, &eyes);
+        check(shot.target == 22 && shot.gazed, "the thug the eyes look at was not taken");
+        near(length(shot.direction - normalized(eyeThug.centre - shot.origin)), 0);
+        check(s.aim(1, hand, both, world).target == 21, "without the eyes the hand's thug was not taken");
+        const ShooterTarget hidden[] = {handThug, hiddenThug};
+        shot = s.aim(1, hand, hidden, world, &eyes);
+        check(!shot.target && shot.surface && shot.gazed, "a thug the eyes cannot see, or the hand's, was taken");
+        // Looking at the sky: open air along the eyes, 60 m out from them.
+        const ShooterGaze up{{0, 1.7f, 0}, normalized(Vec3{-.3f, 1, .2f})};
+        shot = s.aim(1, hand, {}, world, &up);
+        check(shot.gazed && !shot.surface, "the sky is no surface");
+        near(length(shot.aimPoint - (up.origin + up.direction * ShooterConfig{}.range)), 0, .01f);
+        // Looking down at the hand itself: the hand aims as it points.
+        const ShooterGaze down{{.3f, 1.8f, 0}, {0, -1, 0}};
+        shot = s.aim(1, hand, {}, world, &down);
+        check(!shot.gazed && shot.surface, "the hand looked at aimed at itself");
+        near(shot.aimPoint.z, -30.4f);
+        // A gaze that is no direction is no gaze.
+        const ShooterGaze none{{0, 1.7f, 0}, {}};
+        check(!s.aim(1, hand, {}, world, &none).gazed, "a gaze of no direction aimed");
+    });
+    test("EYE AIM: Virtual Desktop's shared eyes give the gaze at half confidence, never a broken one", [] {
+        std::uint8_t state[vd_eyes::bytes]{};
+        const auto put = [&](Quat left, Quat right, float confidence) {
+            state[vd_eyes::leftValidAt] = state[vd_eyes::rightValidAt] = 1;
+            const float l[4]{left.x, left.y, left.z, left.w}, r[4]{right.x, right.y, right.z, right.w},
+                c[2]{confidence, confidence};
+            std::memcpy(state + vd_eyes::leftPoseAt, l, sizeof l);
+            std::memcpy(state + vd_eyes::rightPoseAt, r, sizeof r);
+            std::memcpy(state + vd_eyes::confidenceAt, c, sizeof c);
+        };
+        // A Quest Pro's eyes at exactly half (its runtime wants more), 10 and 14 degrees left, 5 up.
+        const Quat up = Quat::around({1, 0, 0}, .0873f);
+        put(Quat::yaw(.1745f) * up, Quat::yaw(.2443f) * up, .5f);
+        Quat gaze;
+        check(vd_eyes::gaze(state, gaze), "half-confident eyes gave no gaze");
+        const Vec3 ahead = gaze.rotate({0, 0, -1});
+        check(std::abs(std::atan2(-ahead.x, -ahead.z) - .2094f) < .01f, "the gaze is not between the eyes");
+        check(std::abs(std::asin(ahead.y) - .0873f) < .01f, "the gaze lost the eyes' pitch");
+        // A blink (one eye not valid), an unsure eye, or bytes that are not this layout: none.
+        state[vd_eyes::rightValidAt] = 0;
+        check(!vd_eyes::gaze(state, gaze), "one eye made a gaze");
+        put(Quat::yaw(.1745f), Quat::yaw(.1745f), .3f);
+        check(!vd_eyes::gaze(state, gaze), "an unsure eye made a gaze");
+        put({0, 0, 0, 0}, {}, .9f);
+        check(!vd_eyes::gaze(state, gaze), "a zero orientation made a gaze");
+    });
+    test("EYE AIM: a zip waits for the game's camera to be on the eyes' point, a moment at most", [] {
+        using game_pad::CameraLook;
+        using game_pad::EyeZip;
+        // The camera's close band: the head's loose one turns nothing 4 degrees off, the eyes' does, and
+        // rests within a degree.
+        const auto off = [](float degrees) {
+            const float a = degrees * 3.14159265f / 180;
+            return Vec3{std::sin(a), 0, -std::cos(a)};
+        };
+        CameraLook loose, close;
+        check(loose.update(off(4), {0, 0, -1}, true) == 0, "the head's band turned the camera 4 degrees off");
+        check(close.update(off(4), {0, 0, -1}, true, true) > 0, "the eyes' band left the camera 4 degrees off");
+        check(close.update(off(1.5f), {0, 0, -1}, true, true) > 0, "the eyes' band stopped short of a degree");
+        check(close.update(off(.6f), {0, 0, -1}, true, true) == 0, "the eyes' band kept turning within a degree");
+        check(close.update(off(-2), {0, 0, -1}, true, true) == 0 &&
+                  close.update(off(-3), {0, 0, -1}, true, true) < 0,
+              "at rest it starts again past 2.5 degrees, the other way");
+        game_pad::CameraPitch pitch;
+        check(pitch.update(normalized(Vec3{0, .07f, -1}), {0, 0, -1}, true) == 0 &&
+                  pitch.update(normalized(Vec3{0, .07f, -1}), {0, 0, -1}, true, true) > 0,
+              "the pitch's close band");
+        EyeZip z;
+        check(!z.update(.01f, false, true, 20, 0), "no stick, no zip");
+        check(z.update(.01f, true, false, 20, 0) && z.update(.01f, true, false, 0, 0),
+              "without the eyes the zip goes at once and stays, as before");
+        check(!z.update(.01f, false, false, 0, 0), "let go, no zip");
+        check(!z.update(.1f, true, true, 20, 1) && !z.update(.1f, true, true, 4, 1),
+              "out before the camera came onto the point");
+        check(z.update(.01f, true, true, 2, -2.5f), "held with the camera on the point");
+        check(z.update(.01f, true, true, 30, 0), "taken back as the camera moved on");
+        check(z.settled() == 1 && z.late() == 0, "the zip on the point uncounted");
+        check(!z.update(.01f, false, true, 0, 0), "let go");
+        float waited = 0;
+        bool out = false;
+        while (!out && waited < 1) {
+            out = z.update(.05f, true, true, 40, 0);
+            waited += .05f;
+        }
+        check(out && waited > EyeZip::waitSeconds - .06f && waited < EyeZip::waitSeconds + .06f,
+              "a camera that never came round held the zip back more than a moment");
+        check(z.late() == 1 && z.settled() == 1, "the late zip uncounted");
+        // Where the camera looks for the eyes' point: from where it stands, behind and above the head.
+        const Vec3 camera{0, 3, 4}, point{-4, 1.7f, -20}, gaze = normalized(point - Vec3{0, 1.7f, 0});
+        near(length(game_pad::cameraLookAt(camera, point, true, gaze) - normalized(point - camera)), 0);
+        near(length(game_pad::cameraLookAt(camera, point, false, gaze) - gaze), 0);
+        near(length(game_pad::cameraLookAt(camera, camera + Vec3{0, 0, -.5f}, true, gaze) - gaze), 0);
+    });
     test("web shooter configuration rejects invalid tuning", [] {
         auto bad = [](auto change) {
             ShooterConfig c;
@@ -20478,12 +20690,31 @@ int main() {
                                   Item::automaticMinimumSpeed, Item::automaticReleaseFlip, Item::automaticResponse,
                                   Item::automaticHandStrength, Item::automaticFalloff,     Item::automaticHandThreshold,
                                   Item::automaticAirBrake,     Item::automaticCombat};
-        check(all.size() == 40 + std::size(realistic), "the realistic flips' rows are not the last");
+        check(all.size() == 41 + std::size(realistic), "the realistic flips' rows are not the last");
         for (size_t i = 0; i < std::size(realistic); ++i)
-            check(all[40 + i].item == realistic[i], "the realistic flips' rows out of order");
-        check(std::strcmp(all[40].title, "REALISTIC FLIPS") == 0 && all[40].choices.empty(),
+            check(all[41 + i].item == realistic[i], "the realistic flips' rows out of order");
+        check(std::strcmp(all[41].title, "REALISTIC FLIPS") == 0 && all[41].choices.empty(),
               "realistic flips: a switch, first of its rows");
         check(all[36].item == Item::controlledFlips && all[39].item == Item::wallRunCameraTilt, "custom switches misplaced");
+        // EYE AIM, before the realistic flips: what the eyes aim, off by default (only a headset that tracks
+        // the eyes can).
+        check(all[40].item == Item::eyeAim && std::strcmp(all[40].title, "EYE AIM") == 0 &&
+                  all[40].choices.size() == 4 && std::strcmp(all[40].choices[0], "OFF") == 0 &&
+                  std::strcmp(all[40].choices[1], "WEB BALLS") == 0 && std::strcmp(all[40].choices[2], "ZIPS") == 0 &&
+                  std::strcmp(all[40].choices[3], "BOTH") == 0 && all[40].place == Place::tab,
+              "EYE AIM: OFF, WEB BALLS, ZIPS, BOTH, in the tab before the realistic flips");
+        {
+            Values v;
+            check(v.eyeAim == 0 && defaultChoice(Item::eyeAim) == 0, "eye aim on by default");
+            check(choose(Item::eyeAim, 3, v) && v.eyeAim == (eyeAimShots | eyeAimZips) && choice(Item::eyeAim, v) == 3,
+                  "BOTH is web balls and zips");
+            check(choose(Item::eyeAim, 2, v) && v.eyeAim == eyeAimZips && choose(Item::eyeAim, 1, v) &&
+                      v.eyeAim == eyeAimShots && !choose(Item::eyeAim, 4, v),
+                  "ZIPS, WEB BALLS, and nothing past BOTH");
+            check(tabOnlyText({}).find("eye_aim=0\n") != std::string::npos &&
+                      withTabOnly({}, "eye_aim=2\n").eyeAim == eyeAimZips && withTabOnly({}, "eye_aim=9\n").eyeAim == 3,
+                  "spidy_vr.ini keeps EYE AIM as eye_aim, within its range");
+        }
 
         // The wall view has no row of its own (the player, October 14: "i dont
         // get why we have a wall run and a wall stand options where wall run
@@ -20532,7 +20763,7 @@ int main() {
                                                          : Place::tab),
                   "a row in the wrong place");
         }
-        check(std::count_if(all.begin(), all.end(), [](const Row& r) { return r.place == Place::tab; }) == 46,
+        check(std::count_if(all.begin(), all.end(), [](const Row& r) { return r.place == Place::tab; }) == 47,
               "the tab's own rows");
         check(all[1].item == Item::webStyle && std::strcmp(all[1].title, "WEB STYLE") == 0 &&
                   all[1].choices.size() == 2 && std::strcmp(all[1].choices[0], "REALISTIC") == 0 &&
@@ -20653,7 +20884,7 @@ int main() {
                                        "angular_drag_ms=3000\nhand_speed_min_cm=100\nair_rotation_brake=1\n"
                                        "flips_in_combat=1\nbody_haptics_webs=1\nbody_haptics_wind=1\nbody_haptics_combat=1\n"
                                        "body_haptics_movement=1\nrecording_fov=0\nui_style=0\ncombat_visuals=1\nblow_sounds=0\n"
-                                       "web_slingshot=0\nbetter_climbing=0\nheight_cm=0\nseated=0\n",
+                                       "web_slingshot=0\nbetter_climbing=0\nheight_cm=0\nseated=0\neye_aim=0\n",
               "the defaults' text");
         Values changed = defaults;
         changed.recordingFov = 140;
@@ -20681,6 +20912,7 @@ int main() {
         changed.blowSounds = 2;
         changed.heightCm = 178;
         changed.seated = true;
+        changed.eyeAim = 3;
         check(withTabOnly(defaults, tabOnlyText(changed)) == sanitized(changed),
               "the settings did not come back");
         check(withTabOnly(defaults, "height_cm=40\n").heightCm == 120 &&
@@ -21918,7 +22150,32 @@ int main() {
         game_swing::Command c;
         c.focused = 1;
         c.serial = 1;
-        check(c.version == 5 && c.bytes == 240 && game_swing::valid(c), "a level version 5 command was rejected");
+        check(c.version == 6 && c.bytes == 272 && game_swing::valid(c), "a level version 6 command was rejected");
+        check(length(game_swing::input(c).gaze) == 0 && !game_swing::input(c).gazeShots,
+              "a command without a gaze aimed with the eyes");
+        // EYE AIM (version 6): where the eyes look, and whether web balls go there.
+        c.gazeOrigin = {1, 1.7f, 2};
+        c.gaze = normalized(Vec3{.2f, -.1f, -1});
+        c.eyeAim = 1;
+        check(game_swing::valid(c), "a gaze was rejected");
+        const auto gazed = game_swing::input(c);
+        check(gazed.gazeShots && length(gazed.gaze - c.gaze) < 1e-6f && length(gazed.gazeOrigin - c.gazeOrigin) < 1e-6f,
+              "the gaze was lost");
+        auto badGaze = c;
+        badGaze.gaze = {0, 0, -2};
+        check(!game_swing::valid(badGaze), "a gaze of length 2 was accepted");
+        badGaze = c;
+        badGaze.gazeOrigin.x = std::numeric_limits<float>::quiet_NaN();
+        check(!game_swing::valid(badGaze), "a gaze from nowhere was accepted");
+        badGaze = c;
+        badGaze.eyeAim = 2;
+        check(!game_swing::valid(badGaze), "an unknown eye aim bit was accepted");
+        c.version = 5;
+        c.bytes = game_swing::commandBytesV5;
+        check(game_swing::valid(c) && length(game_swing::input(c).gaze) == 0 && !game_swing::input(c).gazeShots,
+              "a version 5 command was rejected, or aimed with eyes it has no room for");
+        c.gaze = c.gazeOrigin = {};
+        c.eyeAim = 0;
         c.wallRotate = 1;
         check(game_swing::valid(c) && game_swing::input(c).wallRotate, "the wall roll's flag was lost");
         c.wallRotate = 2;
