@@ -134,7 +134,7 @@ struct Values {
     // SEATED): the view and the body rise from where you sit to that height.
     int heightCm = 0;
     bool seated = false;
-    bool combatVisuals = false; // combat overlays and automatic combat slow-motion VFX
+    bool combatVisuals = true; // combat overlays and automatic combat slow-motion VFX
     bool operator==(const Values&) const = default;
 };
 // The steps the game's Settings offer. The launcher's slider sets any swing
@@ -253,7 +253,7 @@ struct Row {
 const std::array<Row, 51>& rows();
 // The most choices a row shows (game_menu's buffers): a row with more would
 // lose its last ones.
-inline constexpr size_t maxChoices = 25;
+inline constexpr size_t maxChoices = 9;
 // The values a list setting's choices stand for, in their order; none for a
 // switch.
 std::span<const int> steps(Item);

@@ -29,7 +29,7 @@ inline bool crawlEnclosed(const WorldQueries& world, Vec3 point, Vec3 normal) {
 // and a vent is told from a narrow room or an alley, which crawlEnclosed
 // can pass. Off, a vent is the game's crawl on the stick, as with hand
 // climbing off.
-inline constexpr bool ventHandCrawl = true;
+inline constexpr bool ventHandCrawl = false;
 class VentCrawlMode {
   public:
     bool update(bool floor, bool wall, bool enclosed, bool standing, float seconds) {

@@ -681,7 +681,7 @@ int main() {
                   "better_climbing=0\nwall_run=1\nsnap_turn=30\nsmooth_turn=0\nhaptics=100\nblow_sounds=0\n"
                   "body_haptics=100\nbody_haptics_webs=1\nbody_haptics_wind=1\n"
                   "body_haptics_combat=1\nbody_haptics_movement=1\nscreen_size=1\nscreen_depth=2\nhud=2\n"
-                  "ui_style=0\ncombat_visuals=0\nnear_clip_mm=20\nseated=0\nflips=0\ncontrolled_flips=0\nflip_speed=180\nhand_climb=0\n"
+                  "ui_style=0\ncombat_visuals=1\nnear_clip_mm=20\nseated=0\nflips=0\ncontrolled_flips=0\nflip_speed=180\nhand_climb=0\n"
                   "wall_run_camera_tilt=1\n"
                   "wall_distance_cm=25\n"
                   "realistic_flips=0\nrotation_strength=50\nrotation_speed=240\nflight_speed_min=3\n"

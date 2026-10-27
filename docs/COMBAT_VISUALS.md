@@ -1,7 +1,7 @@
 # Combat visuals
 
 COMBAT VISUALS appears in launcher Options > Game screen and HUD and
-Settings > SPIDY VR > DISPLAY. It defaults off and saves as combat_visuals
+Settings > SPIDY VR > DISPLAY. It defaults on and saves as combat_visuals
 in spidy_vr.ini and shared profiles.
 
 Off hides Spidy's punch-direction arrows, white target/lock circle,

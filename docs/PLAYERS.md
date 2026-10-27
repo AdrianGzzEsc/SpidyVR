@@ -716,9 +716,8 @@ in Settings > SPIDY VR or "Hand wall climbing" in the launcher's options)
                          it, your eyes 40 cm out. The same turns you back.
                          Looking around alone turns nothing, and the two
                          hands' roll waits until you face the wall again
-  In a vent ............ grip and pull along its floor, walls or ceiling.
-                         The native crawl animation and corner transitions
-                         remain; wall running and back-facing turns are off
+  In a vent ............ the left stick crawls you through it, as with hand
+                         climbing off (hand crawling in vents is off for now)
 
 Menus and cutscenes show on a screen in the headset. There the controllers act
 as an Xbox controller: left stick moves, A selects, B goes back, grips switch
@@ -790,12 +789,11 @@ VR settings
                    1.76 m player's. Sit as you will play before you
                    recenter. Stand up with SEATED on and you tower: switch
                    it off first.
-  COMBAT VISUALS ... in DISPLAY, off by default: hides Spidy's punch arrows,
-                   target circle, impact/combo effects, KO text and automatic
-                   combat slow-motion screen effects. Spider-Sense attack
-                   warnings and offscreen direction markers remain visible.
-                   Combat controls, sound and vibration still work. Switch
-                   it on to restore those visuals. Web aim markers and the
+  COMBAT VISUALS ... in DISPLAY, on by default. Off hides Spidy's punch
+                   arrows, target circle, impact/combo effects, KO text and
+                   automatic combat slow-motion screen effects. Spider-Sense
+                   attack warnings and offscreen direction markers remain
+                   visible. Combat controls, sound and vibration still work. Web aim markers and the
                    game's own HUD have their existing separate controls.
   EXPERIMENTAL ... FLIPS (off until you switch it on) uses the right stick
                    in the air; release holds the angle and A returns upright.

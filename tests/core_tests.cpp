@@ -20529,14 +20529,14 @@ int main() {
     test("combat visuals can be hidden independently and persist without changing combat or web aiming", [] {
         using namespace vr_settings;
         Values v;
-        check(!v.combatVisuals && defaultChoice(Item::combatVisuals) == 0, "combat artwork enabled by default");
-        check(choose(Item::combatVisuals, 1, v) && v.combatVisuals && v.punch && v.aimMarkers,
-              "enabling artwork changed combat or web aiming");
-        const auto loaded = withTabOnly(Values{}, tabOnlyText(v));
-        check(loaded == v, "combat visuals choice did not persist");
-        check(!withTabOnly(Values{}, "hand_climb=1\n").combatVisuals, "old settings enabled combat artwork");
+        check(v.combatVisuals && defaultChoice(Item::combatVisuals) == 1, "combat artwork hidden by default");
         check(choose(Item::combatVisuals, 0, v) && !v.combatVisuals && v.punch && v.aimMarkers,
               "hiding artwork disabled combat or web aiming");
+        const auto loaded = withTabOnly(Values{}, tabOnlyText(v));
+        check(loaded == v, "combat visuals choice did not persist");
+        check(withTabOnly(Values{}, "hand_climb=1\n").combatVisuals, "old settings hid combat artwork");
+        check(choose(Item::combatVisuals, 1, v) && v.combatVisuals && v.punch && v.aimMarkers,
+              "enabling artwork changed combat or web aiming");
     });
     test("near clip menu keeps geometry close to the headset", [] {
         using namespace vr_settings;
@@ -20605,7 +20605,7 @@ int main() {
                                        "swing_momentum=1\nrotation_response_ms=500\nhand_momentum=100\n"
                                        "angular_drag_ms=3000\nhand_speed_min_cm=100\nair_rotation_brake=1\n"
                                        "flips_in_combat=1\nbody_haptics_webs=1\nbody_haptics_wind=1\nbody_haptics_combat=1\n"
-                                       "body_haptics_movement=1\nrecording_fov=0\nui_style=0\ncombat_visuals=0\nblow_sounds=0\n"
+                                       "body_haptics_movement=1\nrecording_fov=0\nui_style=0\ncombat_visuals=1\nblow_sounds=0\n"
                                        "web_slingshot=0\nbetter_climbing=0\nheight_cm=0\nseated=0\n",
               "the defaults' text");
         Values changed = defaults;
