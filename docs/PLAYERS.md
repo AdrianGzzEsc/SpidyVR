@@ -363,14 +363,15 @@ Fighting (web strikes: punching across the room, as in Batman: Arkham Shadow)
   stand does both: clench your fists as you like.
 
 Moving
-  Left stick ........... walk and run (with FLIPS on, in the air it flips
-                         you, below)
+  Left stick ........... walk and run (with REALISTIC FLIPS and FLIPS on,
+                         in the air it steers rotation, below)
   Right stick .......... flick left or right to turn (30 degrees; SPIDY VR
                          in Settings sets how far, or turns it off). With
                          SMOOTH TURN on, hold it to turn steadily instead:
-                         the further you tilt it, the faster
+                         the further you tilt it, the faster. Basic FLIPS
+                         uses it to rotate while airborne, below
   A .................... jump (from the ground, a wall or a perch; in the
-                         air it flips you, below: no web zip from the wrist).
+                         air it returns a basic flip upright, below).
                          On the ground the jump is made as you let A go
   Hold A ............... a charged leap: hold A on the ground (your hands
                          buzz as it builds, for most of a second) and let
@@ -623,20 +624,42 @@ Slow motion (as in Blade & Sorcery)
 
 Flips (experimental, off until you switch FLIPS on in Settings > SPIDY VR or
 in the launcher's options)
-  Left stick in the air  turns you head over heels about your head, as
-                         fast as you tilt it (ahead a front flip, back a
-                         backflip, to a side a cartwheel); it does not move
-                         you meanwhile. A stick held from a running jump
-                         still steers you until you let it go once
-  Let go of the stick .. you turn back level
-  Tap A in the air ..... one flip, about a second and a half, toward where
-                         the left stick points (at rest a front flip)
-  Hold A in the air .... the left stick turns you, and at rest you stay
-                         turned; let go of A and the stick to come back level.
-                         Landing or a wall levels you too
+  Right stick in the air turns you head over heels about your head, as
+                         fast as you tilt it (back a backflip, to a side
+                         a cartwheel). Straight up prioritizes zip/aim,
+                         holding the flip angle while the game aims at a
+                         zip point. The left stick
+                         still moves you. Let the right stick rest once
+                         after takeoff before starting a rotation
+  Let go of the stick .. rotation stops and your chosen angle stays
+  A in the air ......... returns you upright by the short path. A no longer
+                         starts a single flip. Release A and let the stick
+                         rest before choosing another rotation
+  Landing or a wall .... returns you upright too
+  Right-stick shortcuts  straight up retains zip/aim during basic flips,
+                         including the aimed zip on release. Snap/smooth
+                         turn and healing remain suspended in the air.
+                         Other ground controls resume after stick release
   FLIP SPEED ........... how fast all of it turns you: 180 degrees a second
                          at full tilt unless you change it (90 to 480;
                          Settings > SPIDY VR or "Flip speed" in the launcher)
+
+Controlled flips (separate option, off until CONTROLLED FLIPS is enabled
+in the launcher or Settings > SPIDY VR)
+  A in the air ......... enables left-stick flip mode; A must be a new press,
+                         not held from a jump or menu
+  Left stick in mode .. turns you about the tracked head. Let it rest once
+                         if already tilted when entering the mode
+  Release the stick ... stops rotation and holds the exact angle
+  A again .............. returns upright by the short path and exits mode;
+                         normal left-stick travel resumes
+  Right stick .......... retains turning, zip/aim/release and healing
+  Landing or a wall .... exits mode and restores the normal view
+  Menus or recenter .... clear the mode; another airborne A press is needed
+  Other flip settings .. works independently of basic FLIPS and overrides
+                         that right-stick mode when both are enabled.
+                         REALISTIC FLIPS keeps priority and its own controls
+  FLIP SPEED ........... adjusts this mode too
 
 Realistic flips (experimental, off until you switch REALISTIC FLIPS on in
 Settings > SPIDY VR or "Realistic flips" in the launcher's options, where
@@ -693,8 +716,9 @@ in Settings > SPIDY VR or "Hand wall climbing" in the launcher's options)
                          it, your eyes 40 cm out. The same turns you back.
                          Looking around alone turns nothing, and the two
                          hands' roll waits until you face the wall again
-  In a vent ............ the left stick crawls you through it, as with hand
-                         climbing off
+  In a vent ............ grip and pull along its floor, walls or ceiling.
+                         The native crawl animation and corner transitions
+                         remain; wall running and back-facing turns are off
 
 Menus and cutscenes show on a screen in the headset. There the controllers act
 as an Xbox controller: left stick moves, A selects, B goes back, grips switch
@@ -766,16 +790,24 @@ VR settings
                    1.76 m player's. Sit as you will play before you
                    recenter. Stand up with SEATED on and you tower: switch
                    it off first.
-  EXPERIMENTAL ... FLIPS (off until you switch it on) lets the left stick
-                   and A in the air flip you, and FLIP SPEED sets how fast.
-                   HAND WALL CLIMBING (off until you switch it on, above).
-                   REALISTIC FLIPS (off until you switch it on, above) and
-                   six of the ten rows that tune it (the launcher has all
-                   ten).
+  COMBAT VISUALS ... in DISPLAY, off by default: hides Spidy's punch arrows,
+                   target circle, impact/combo effects, KO text and automatic
+                   combat slow-motion screen effects. Spider-Sense attack
+                   warnings and offscreen direction markers remain visible.
+                   Combat controls, sound and vibration still work. Switch
+                   it on to restore those visuals. Web aim markers and the
+                   game's own HUD have their existing separate controls.
+  EXPERIMENTAL ... FLIPS (off until you switch it on) uses the right stick
+                   in the air; release holds the angle and A returns upright.
+                   CONTROLLED FLIPS is a separate A-toggle mode, above.
+                   FLIP SPEED sets how fast either steering stick turns you.
+                   HAND WALL CLIMBING (off until you switch it on, above)
+                   uses a fixed wall-camera clearance. REALISTIC FLIPS (off until
+                   you switch it on, above) and the ten rows that tune it.
   Changes apply at once. The launcher starts your next session with them;
   its options show every one of them but VR VIEW too.
-  NEAR CLIP, RECORDING FOV, UI STYLE, BLOW SOUNDS, HEIGHT, SEATED, the four
-  body haptics switches and the EXPERIMENTAL rows below FLIP SPEED Spidy keeps in
+  NEAR CLIP, RECORDING FOV, UI STYLE, BLOW SOUNDS, HEIGHT, SEATED, the four body haptics switches and the
+  CONTROLLED FLIPS and EXPERIMENTAL rows below FLIP SPEED Spidy keeps in
   %APPDATA%\Spidy\spidy_vr.ini, beside the launcher's own settings; the
   launcher shows realistic flips' ten rows while it is on, and the body
   haptics switches while it plays. Playing

@@ -117,6 +117,8 @@ struct SwingConfig {
     // hand-overs between them and the swing - which felt bad and twice put a
     // player out of the world - are gone from walls. allowMounts switches it
     // off where the game crawls the player through a vent.
+    // With hand climbing enabled, floor approaches never mount automatically;
+    // offers from an existing native wall crawl still allow joystick runs.
     bool mountFromGround = true;
     // Physical webs: a web is a rope (the VR settings' PHYSICAL WEBS).
     // - It bends round the edge that comes between the body and its end

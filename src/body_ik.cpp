@@ -481,7 +481,22 @@ Result solve(Pose& pose, const Rig& rig, const Targets& targets, const Config& c
         state.crawlReach = {};
     }
     state.crawlWeight = approach(state.crawlWeight, wanted && t.crawl ? 1.f : 0.f, 6.f * dt);
-    const Quat tilt = unit(targets.tilt);
+    // Leg targets stay in the wall's frame. The view turn aligns the torso
+    // separately, so it cannot rotate foot contacts through the building.
+    t.wallRun = t.wallRun && !t.kick && !t.crawl && !t.surfaceHands && finite(t.runNormal) &&
+        finite(t.runAhead) && finite(t.floor) && std::abs(length(t.runNormal) - 1) < .01f &&
+        std::abs(length(t.runAhead) - 1) < .01f && std::abs(dot(t.runNormal, t.runAhead)) < .01f &&
+        std::isfinite(t.runPhase) && std::isfinite(t.runSpeed);
+    if (t.wallRun) { t.airborne = true; t.plant = t.kneel = false; }
+    const float runTorsoAngle = std::isfinite(t.runTorsoAngle) ?
+        std::clamp(t.runTorsoAngle, 0.f, 1.3962634f) : .85f;
+    const float runBankAmount = std::isfinite(t.runBank) ? std::clamp(t.runBank, 0.f, 2.747478f) : .85f;
+    const float runLeanAmount = std::isfinite(t.runLean) ? std::clamp(t.runLean, 0.f, 1.047198f) : .5f;
+    const float runStride = std::isfinite(t.runStride) ? std::clamp(t.runStride, .5f, 1.5f) : 1.f;
+    const Quat runView = t.wallRun ? unit(t.tilt) : Quat{};
+    const float viewRun = t.wallRun ? std::clamp(angle(runView) / (pi * .5f), 0.f, 1.f) : 0.f;
+    if (t.wallRun) t.facing = runView.conjugate() * t.facing;
+    const Quat tilt = t.wallRun ? Quat{} : unit(targets.tilt);
     const bool tilted = angle(tilt) > 1e-4f;
     if (tilted) {
         const Quat back = tilt.conjugate();
@@ -511,7 +526,18 @@ Result solve(Pose& pose, const Rig& rig, const Targets& targets, const Config& c
     // The world's up in the model: the hero may crawl on a wall, the body
     // stands as the player does. Yaw turns about it, from the model's forward
     // (or, facing straight up or down a wall, its left).
-    Vec3 up = normalized(t.crawl ? t.crawlAhead : t.up);
+    // Horizontal runs bank toward the building's upper side, while upward
+    // runs lose that bank. Heading stays along travel, independent of gaze.
+    Vec3 runBank{};
+    if (t.wallRun) {
+        Vec3 above = t.up - t.runNormal * dot(t.up, t.runNormal);
+        above -= t.runAhead * dot(above, t.runAhead);
+        runBank = normalized(t.runNormal + above * runBankAmount);
+    }
+    // Joystick wall-standing uses the player's level body frame before the
+    // view turn. Momentum keeps its wall-relative directional bank.
+    const Vec3 runBase = viewRun > 0 ? t.up : runBank;
+    Vec3 up = normalized(t.wallRun ? runBase : t.crawl ? t.crawlAhead : t.up);
     if (length(up) < .5f)
         up = worldUp;
     const auto level = [&](Vec3 v) { return v - up * dot(v, up); };
@@ -547,7 +573,12 @@ Result solve(Pose& pose, const Rig& rig, const Targets& targets, const Config& c
     if (length(look) < .2f)
         look = level(dot(F, up) < 0 ? U : U * -1.f); // straight down, the crown points ahead
     const float headYaw = yawOf(normalized(look));
-    if (t.crawl) {
+    if (t.wallRun) {
+        // Looking sets body facing in the joystick view, as on the floor.
+        // Travel still chooses the legs' stepping direction, including backing up.
+        state.yaw = viewRun > 0 ? headYaw : yawOf(t.runAhead);
+        state.yawSet = true;
+    } else if (t.crawl) {
         state.yaw = yawOf(-t.crawlNormal);
         state.yawSet = true;
     } else if (!state.yawSet) {
@@ -555,10 +586,10 @@ Result solve(Pose& pose, const Rig& rig, const Targets& targets, const Config& c
         state.yawSet = true;
     }
     float behind = wrap(headYaw - state.yaw);
-    if (const float excess = std::abs(behind) - c.yawDeadZone; !t.crawl && excess > 0)
+    if (const float excess = std::abs(behind) - c.yawDeadZone; !t.crawl && !t.wallRun && excess > 0)
         state.yaw = wrap(state.yaw + std::copysign(std::min(excess, c.yawSpeed * dt), behind));
     behind = wrap(headYaw - state.yaw);
-    if (!t.crawl)
+    if (!t.crawl && !t.wallRun)
         state.yaw = wrap(state.yaw + behind * std::min(1.f, c.yawDrift * dt));
     r.yaw = state.yaw;
     const Vec3 forward = reference * std::cos(state.yaw) + quarter * std::sin(state.yaw);
@@ -576,7 +607,12 @@ Result solve(Pose& pose, const Rig& rig, const Targets& targets, const Config& c
     // Remove the game's changing lumbar arch before placing an outward body.
     // Align each real spine segment, not just the root-to-head line: opposite
     // bends can cancel along that line while still pushing the chest out.
-    if (t.crawlReachTurn && outwardAnchor > .001f && rig.spineForward.size() == rig.spine.size()) {
+    // Joystick runs first straighten every spine segment. The straight-trunk
+    // lean below then rotates the upper body as a unit instead of stacking
+    // a chest/lumbar bend on top of the native animation.
+    const float straightRun = t.wallRun ? viewRun : 0.f;
+    const float neutralSpine = std::max(straightRun, t.crawlReachTurn ? outwardAnchor : 0.f);
+    if (neutralSpine > .001f && rig.spineForward.size() == rig.spine.size()) {
         for (size_t i = 0; i < rig.spine.size(); ++i) {
             const int joint = rig.spine[i];
             const int next = i + 1 < rig.spine.size() ? rig.spine[i + 1] :
@@ -584,22 +620,27 @@ Result solve(Pose& pose, const Rig& rig, const Targets& targets, const Config& c
             const Vec3 pivot = pose.position(joint);
             const Quat neutral = between(pose.position(next) - pivot,
                 pose.direction(joint, rig.spineForward[i]), up, forward);
-            pose.turn(rig.below[joint], partial(neutral, outwardAnchor * w), pivot);
+            pose.turn(rig.below[joint], partial(neutral, neutralSpine * w), pivot);
         }
         for (size_t i = 0; i < rig.neck.size(); ++i) {
             const int joint = rig.neck[i], next = i + 1 < rig.neck.size() ? rig.neck[i + 1] : rig.head;
             const Vec3 pivot = pose.position(joint);
             const Quat neutral = between(pose.position(next) - pivot,
                 pose.direction(joint, rig.neckForward[i]), up, forward);
-            pose.turn(rig.below[joint], partial(neutral, outwardAnchor * w), pivot);
+            pose.turn(rig.below[joint], partial(neutral, neutralSpine * w), pivot);
         }
     }
     // 2. The spine bends toward the torso's lean: some of the head's pitch.
-    const float lean = t.crawl ? 0.f :
-        std::clamp(-std::asin(std::clamp(dot(F, up), -1.f, 1.f)) * c.lean, -c.maxLean, c.maxLean);
+    const float runVertical = t.wallRun ? std::abs(dot(t.runAhead,
+        normalized(t.up - t.runNormal * dot(t.up, t.runNormal)))) : 0.f;
+    // Ease the horizontal spine bend while retaining the directional body bank.
+    // Vertical runs keep their existing 0.30-radian spine lean.
+    const float lean = t.wallRun ? (.34f - .04f * runVertical) * (1 - viewRun) + runTorsoAngle * viewRun :
+        t.crawl ? 0.f : std::clamp(-std::asin(std::clamp(dot(F, up), -1.f, 1.f)) * c.lean,
+                                  -c.maxLean, c.maxLean);
     const Vec3 torso = up * std::cos(lean) + forward * std::sin(lean);
     const Quat bend = between(pose.position(rig.head) - pose.position(rig.pelvis), torso);
-    const float spineShare = w / static_cast<float>(rig.spine.size());
+    const float spineShare = w * (1 - straightRun) / static_cast<float>(rig.spine.size());
     for (const auto j : rig.spine)
         pose.turn(rig.below[j], partial(bend, spineShare), pose.position(j));
     // 3. The head takes the headset's orientation, the neck some of the way.
@@ -643,6 +684,43 @@ Result solve(Pose& pose, const Rig& rig, const Targets& targets, const Config& c
     const Vec3 headTarget = t.eyes - eyeOffset * s - up * eyeLift;
     pose.move(bodyJoints, (headTarget - pose.position(rig.head)) * w);
     r.headError = length(pose.position(rig.head) - headTarget);
+    Quat runLean;
+    Vec3 runUp = up, runForward = forward;
+    if (t.wallRun) {
+        const Vec3 axis = normalized(cross(t.runNormal, t.runAhead));
+        runLean = axisAngle(axis, viewRun > 0 ? 0.f : runLeanAmount * (1 - runVertical) + .95f * runVertical);
+        // Keep the momentum pose's relationship to the player as the existing
+        // wall-standing view turns. Only the body turns about the tracked head;
+        // the wall-relative leg solve below still keeps contacts outside the wall.
+        const Quat aligned = runView * runLean;
+        runUp = aligned.rotate(up); runForward = aligned.rotate(forward);
+        const Vec3 head = pose.position(rig.head);
+        pose.turn(bodyJoints, partial(runLean, w), head);
+        pose.turn(rig.below[rig.head], partial(headTurn(), w), head);
+        // Undo the view for the neck solve, then carry that pose around the
+        // fixed eyes once. Otherwise the neck receives the transition twice.
+        pose.turn(bodyJoints, partial(runView, w), t.eyes);
+        // Lean the straight upper body forward by the selected torso angle, while
+        // preserving tracked eyes and the original wall-standing pelvis frame.
+        if (viewRun > 0) {
+            const Vec3 chest = normalized(rig.spine.size() > 1 ?
+                pose.position(rig.spine.back()) - pose.position(rig.spine.front()) :
+                pose.position(rig.head) - pose.position(rig.pelvis));
+            const Vec3 wanted = runView.rotate(t.up * std::cos(runTorsoAngle) +
+                                              forward * std::sin(runTorsoAngle));
+            const Vec3 target = normalized(chest * (1 - viewRun) + wanted * viewRun);
+            const Quat fit = between(chest, target);
+            const Vec3 atHead = pose.position(rig.head);
+            pose.turn(bodyJoints, partial(fit, w), atHead);
+            // Keep the waist upright while the straight upper body leans forward.
+            // The lower-body solve counterturns the spine subtree as needed.
+            runUp = runView.rotate(t.up); runForward = runView.rotate(forward);
+            const Quat trackedHead = between(pose.direction(rig.head, rig.headForward),
+                pose.direction(rig.head, rig.headUp), runView.rotate(F), runView.rotate(U));
+            pose.turn(rig.below[rig.head], partial(trackedHead, w), atHead);
+        }
+        r.headError = length(pose.position(rig.head) - (t.eyes - runView.rotate(eyeOffset) * s));
+    }
     if (t.crawl) {
         // Anchor a compact pelvis near the wall before solving the legs.
         // A distant camera or a downturned neck used to carry the hips out
@@ -699,6 +777,63 @@ Result solve(Pose& pose, const Rig& rig, const Targets& targets, const Config& c
             const Quat along = between(pose.direction(leg.foot, rig.footForward[i]),
                                        pose.direction(leg.foot, rig.footUp[i]), out, top);
             pose.turn(rig.below[leg.foot], partial(along, w), pose.position(leg.foot));
+        }
+    } else if (t.wallRun) {
+        const Vec3 n = normalized(t.runNormal), travel = normalized(t.runAhead);
+        const Vec3 legUp = normalized(runBank * (1 - viewRun) + n * viewRun);
+        const Vec3 bodyAhead = normalized(runForward - n * dot(runForward, n));
+        const float toeTurn = std::atan2(dot(cross(travel, bodyAhead), n), dot(travel, bodyAhead));
+        const Vec3 toeAhead = axisAngle(n, toeTurn * viewRun).rotate(travel);
+        const Vec3 side = cross(n, toeAhead);
+        const Vec3 hipAt = pose.position(rig.hipRoot);
+        const Quat settle = partial(between(pose.direction(rig.hipRoot, rig.hipForward),
+            pose.direction(rig.hipRoot, rig.hipUp), runForward, runUp), w);
+        pose.turn(rig.below[rig.hipRoot], settle, hipAt);
+        if (rig.hipRoot == rig.pelvis)
+            pose.turn(rig.below[rig.spine.front()], settle.conjugate(), hipAt);
+        for (int i = 0; i < 2; ++i) {
+            const auto& leg = legs[i];
+            const Vec3 hip = pose.position(leg.upper);
+            const float thigh = length(pose.position(leg.lower) - hip);
+            const float shin = length(pose.position(leg.foot) - pose.position(leg.lower));
+            float cycle = std::fmod(t.runPhase / (2 * pi) + i * .5f, 1.f);
+            if (cycle < 0) cycle += 1;
+            // Authored running keys: front reach, weight/push, long trailing
+            // leg, then a folded heel recovery. Do not cap the entire swing
+            // using the reach of an almost-straight wall-contact leg.
+            constexpr float hipKeys[5]{1.05f, -.10f, -.95f, .25f, 1.05f};
+            constexpr float kneeKeys[5]{.65f, .18f, .22f, 2.05f, .65f};
+            const float part = cycle * 4;
+            const int key = std::min(3, static_cast<int>(part));
+            const float f = part - key, eased = f * f * (3 - 2 * f);
+            const float hipAngle = hipKeys[key] + (hipKeys[key + 1] - hipKeys[key]) * eased;
+            const float kneeAngle = kneeKeys[key] + (kneeKeys[key + 1] - kneeKeys[key]) * eased;
+            const float sideSign = i ? -1.f : 1.f;
+            // Keep the stride in the wall-relative frame while the pelvis
+            // pitches through it; torso lean must not shorten the front reach.
+            const Vec3 legForward = normalized(travel + side * (.04f * sideSign));
+            const Vec3 knee = hip + (legForward * std::sin(hipAngle) - legUp * std::cos(hipAngle)) * thigh;
+            Vec3 foot = knee + (legForward * std::sin(hipAngle - kneeAngle) -
+                               legUp * std::cos(hipAngle - kneeAngle)) * shin;
+            // Only the facade is solid. A recovery foot can lift away from
+            // it freely; an unreachable contact must not collapse the stride.
+            // Slightly longer joystick steps, at the existing cadence. The
+            // limb solve still limits reach to the actual thigh/shin lengths.
+            foot += travel * (dot(foot - hip, travel) * .12f * viewRun);
+            foot += travel * (dot(foot - hip, travel) * (runStride - 1) *
+                              (1 - viewRun) * (1 - runVertical));
+            const float depth = dot(foot - t.floor, n), ankle = rig.ankleHeight[i] * s;
+            if (depth < ankle) foot += n * (ankle - depth);
+            const Vec3 pole = (knee - hip) * (1 - viewRun) + toeAhead * viewRun;
+            limb(pose, rig, leg.upper, leg.lower, leg.foot, foot, pole, w);
+            if (dot(pose.position(leg.lower) - t.floor, n) < .08f * s)
+                limb(pose, rig, leg.upper, leg.lower, leg.foot, foot, n, w);
+            const float pitch = .15f + .45f * std::sin(cycle * pi);
+            const Vec3 toe = toeAhead * std::cos(pitch) + n * std::sin(pitch);
+            const Vec3 sole = n * std::cos(pitch) - toeAhead * std::sin(pitch);
+            pose.turn(rig.below[leg.foot], partial(between(
+                pose.direction(leg.foot, rig.footForward[i]), pose.direction(leg.foot, rig.footUp[i]),
+                toe, sole), w), pose.position(leg.foot));
         }
     } else if (t.crawl) {
         const float share = w * state.crawlWeight;
@@ -1520,7 +1655,8 @@ Result solve(Pose& pose, const Rig& rig, const Targets& targets, const Config& c
                     std::clamp((length(wrist - shoulder) - .8f * length2) / (.4f * length2), 0.f, 1.f);
                 if (stretch > 0)
                     pose.turn(rig.below[arm.clavicle],
-                              partial(between(shoulder - base, wrist - base), .35f * stretch * w), base);
+                              partial(between(shoulder - base, wrist - base),
+                                      (t.wallRun && viewRun > 0 ? .55f : .35f) * stretch * w), base);
             }
             const Vec3 side = i == 0 ? left : left * -1.f;
             const Vec3 pole = upperTurn.rotate(normalized(up * -1.f + side * .6f - forward * .3f));

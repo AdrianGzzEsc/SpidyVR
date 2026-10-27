@@ -39,6 +39,7 @@ struct NativeEyeFrame {
     PhoneImage phone{};
     // How Spidy's marks look in this image (the tab's UI STYLE).
     UiStyle uiStyle{};
+    bool combatVisuals{}; // overlay choice when this image was submitted
     bool flatScreen{};
     // The game screen in stereo (eye command 3): the pair goes on the screen,
     // the left image for the left eye and the right one for the right.

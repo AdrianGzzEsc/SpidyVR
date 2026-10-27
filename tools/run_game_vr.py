@@ -1934,9 +1934,9 @@ def main():
     p.add_argument('--no-air-webs', action='store_true',
                    help='A web that meets nothing within reach misses, instead of holding in open air 100 m out')
     p.add_argument('--flips', action='store_true',
-                   help='Experimental: in the air the left stick turns you over, and a tap of A flips you')
+                   help='Basic flips: airborne right stick; up prioritizes zip/aim, release holds, A returns upright')
     p.add_argument('--flip-speed', type=int, default=180,
-                   help='How fast a flip turns you at full tilt of the left stick, in degrees a second (90..480; '
+                   help='How fast a flip turns you at full tilt of its steering stick, in degrees a second (90..480; '
                         'default 180)')
     p.add_argument('--game-depth-of-field', action='store_true',
                    help="Keep the game's own Depth of Field setting; without it a session turns it off (in the "

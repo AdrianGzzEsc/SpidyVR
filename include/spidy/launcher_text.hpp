@@ -503,7 +503,7 @@ struct SessionOptions {
     int screenDepth = 2; // the depth cutscenes have on that screen: 0 off (flat), 1 low, 2 medium, 3 high
     int smoothTurn = 0; // degrees a second the right stick turns you while held over; 0: it snap turns
     int weight = 100;   // how heavy you are while webs fly you, percent of real gravity
-    bool flips = false; // experimental: in the air the left stick turns you over, and a tap of A flips you
+    bool flips = false; // basic flips: airborne right stick; release holds orientation, A returns upright
     int flipSpeed = 180; // degrees a second a flip turns you at full tilt of the left stick
     // The trigger shoots and holds webs, and the grip reels them in and shoots web balls; off, the other way round.
     bool triggerWebs = false;

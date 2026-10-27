@@ -372,6 +372,15 @@ void Swing::senseWall(float dt, const Input& in, const WorldQueries& world) {
             mountLeft_ = mounting_ ? config_.mountHold : std::max(0.f, mountLeft_ - dt);
             return;
         }
+        // Hand climbing must let the player walk right up to the facade.
+        // Only an existing native wall crawl (the offer above) may start a
+        // joystick run from support; walking on the floor never asks for a
+        // mount jump. Clear pending mounts too when this option is enabled.
+        if (handClimb_) {
+            mount_ = mountLeft_ = 0;
+            mountOffered_ = false;
+            return;
+        }
         auto wall = walkedAt(.7f);
         if (wall) {
             const auto above =

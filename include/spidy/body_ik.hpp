@@ -159,6 +159,11 @@ struct Targets {
     // In the air (swinging, falling): the legs keep the game's pose instead
     // of standing on the ground.
     bool airborne{};
+    // Directional running cycle; head and arms remain tracked.
+    bool wallRun{};
+    Vec3 runNormal{}, runAhead{};
+    float runPhase{}, runSpeed{}, runTorsoAngle = .85f;
+    float runBank = .85f, runLean = .5f, runStride = 1.f;
     // The player's up in model space: the way he stands. The world's up on
     // the ground; on a wall or a ceiling the view stands him on, that
     // surface's normal, whatever the hero's own frame is doing there (turned

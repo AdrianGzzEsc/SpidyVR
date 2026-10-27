@@ -217,6 +217,50 @@ class ProtocolTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             body_command(*args, crawl_turn_away=True)
 
+    def test_wall_run_angle_v14_preserves_legacy_packet_and_uses_existing_mode_field(self):
+        hands = [((0, 0, 0), (0, 0, 0, 1), 1, 0)] * 2
+        args = (7, 1, (0, 1, 0), (0, 0, 0, 1), hands)
+        options = dict(wall_run=True, run_surface=((0, 0, 1), (0, 1, 0)))
+        old = body_command(*args, **options)
+        packet = body_command(*args, **options, run_torso_angle=math.radians(50))
+        self.assertEqual(len(packet), 304)
+        self.assertEqual(struct.unpack_from('<I', old, 4)[0], 16)
+        self.assertEqual(struct.unpack_from('<I', packet, 4)[0], 16)
+        self.assertAlmostEqual(struct.unpack_from('<f', packet, 264)[0], math.radians(50), places=6)
+        self.assertEqual(old[12:264], packet[12:264])
+
+    def test_wall_run_angle_requires_its_mode_and_rejects_invalid_values(self):
+        hands = [((0, 0, 0), (0, 0, 0, 1), 1, 0)] * 2
+        args = (7, 1, (0, 1, 0), (0, 0, 0, 1), hands)
+        for angle in (-.1, math.radians(81), math.nan, math.inf):
+            with self.assertRaises(ValueError):
+                body_command(*args, wall_run=True, run_surface=((0, 0, 1), (0, 1, 0)), run_torso_angle=angle)
+        with self.assertRaises(ValueError):
+            body_command(*args, run_torso_angle=.5)
+        with self.assertRaises(ValueError):
+            body_command(args[0], 0x20001, *args[2:])
+
+    def test_momentum_body_tuning_v15_appends_fields_without_changing_legacy_commands(self):
+        hands = [((0, 0, 0), (0, 0, 0, 1), 1, 0)] * 2
+        args = (7, 1, (0, 1, 0), (0, 0, 0, 1), hands)
+        options = dict(wall_run=True, run_surface=((0, 0, 1), (1, 0, 0)), run_torso_angle=.8)
+        old = body_command(*args, **options)
+        packet = body_command(*args, **options, run_bank=1.2, run_lean=.7, run_stride=1.3)
+        self.assertEqual(len(packet), 304)
+        self.assertEqual(struct.unpack_from('<2I', packet, 4), (16, 304))
+        self.assertEqual(packet[12:272], old[12:272])
+        for got, want in zip(struct.unpack_from('<3fI', packet, 288), (1.2, .7, 1.3, 0)):
+            self.assertAlmostEqual(got, want, places=5)
+
+    def test_momentum_body_tuning_rejects_invalid_ranges_and_missing_mode(self):
+        hands = [((0, 0, 0), (0, 0, 0, 1), 1, 0)] * 2
+        args = (7, 1, (0, 1, 0), (0, 0, 0, 1), hands)
+        for options in ({'run_bank': 3}, {'run_bank': math.nan}, {'run_lean': 2}, {'run_stride': .4}):
+            with self.assertRaises(ValueError):
+                body_command(*args, wall_run=True, run_surface=((0, 0, 1), (1, 0, 0)), **options)
+        with self.assertRaises(ValueError):
+            body_command(*args, run_stride=1)
+
     def test_vent_contact_packet_uses_version_10_without_outdoor_pose_flags(self):
         hands = [((0, 0, 0), (0, 0, 0, 1), 1, 0)] * 2
         packet = body_command(7, 1, (0, .4, 0), (0, 0, 0, 1), hands,
@@ -233,6 +277,30 @@ class ProtocolTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             body_command(7, 1, (0, .4, 0), (0, 0, 0, 1), hands,
                          vent_surface=((0, 1, 0), (0, 0, 1)), crawl_turn_away=True)
+
+    def test_wall_run_packet_version_12_keeps_tracking_and_adds_direction_and_cycle(self):
+        hands = [((.2, .7, .1), (0, 0, 0, 1), 1, .3)] * 2
+        args = (7, 1, (0, 1.7, .4), (0, 0, 0, 1), hands)
+        original = body_command(*args)
+        surface = ((0, 0, 1), (1, 0, 0))
+        packet = body_command(*args, wall_run=True, run_surface=surface, run_phase=1.5, run_speed=12.)
+        self.assertEqual(struct.unpack_from('<4I', packet), (0x53424443, 16, 304, 1 | 131072 | 8))
+        self.assertEqual(packet[16:len(original)], original[16:])
+        self.assertEqual(struct.unpack_from('<6f', packet, 192), (0, 0, 1, 1, 0, 0))
+        self.assertEqual(struct.unpack_from('<2f', packet, 228), (1.5, 12.))
+        self.assertEqual(len(packet), 304)
+        self.assertEqual(struct.unpack_from('<4f', packet, 144), (0, 0, 0, 1))
+        self.assertEqual(packet[272:288], bytes(16))
+        for flag in (32, 64, 128, 256, 512, 1024, 4096, 16384, 32768):
+            with self.assertRaises(ValueError):
+                body_command(7, 1 | flag, *args[2:], wall_run=True, run_surface=surface)
+        for options in ({}, {'run_phase': math.nan}, {'run_speed': 0},
+                        {'run_surface': ((0, 0, 1), (0, 0, 1))}):
+            with self.assertRaises(ValueError):
+                if not options:
+                    body_command(*args, wall_run=True)
+                else:
+                    body_command(*args, wall_run=True, **({'run_surface': surface} | options))
 
     def test_wall_contact_snapshot_reads_both_palms_and_counters(self):
         raw = struct.pack('<4IQ2Q2I', 0x53434c44, 1, 48, 1, 2, 7, 9, 3, 0)

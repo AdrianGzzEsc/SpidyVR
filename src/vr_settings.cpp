@@ -189,6 +189,8 @@ template <class V> auto switchOf(Item item, V& v) -> decltype(&v.aimMarkers) {
         return &v.webSlingshot;
     case Item::betterClimbing:
         return &v.betterClimbing;
+    case Item::combatVisuals:
+        return &v.combatVisuals;
     case Item::aimMarkers:
         return &v.aimMarkers;
     case Item::airWebs:
@@ -197,12 +199,16 @@ template <class V> auto switchOf(Item item, V& v) -> decltype(&v.aimMarkers) {
         return &v.calibrate;
     case Item::flips:
         return &v.flips;
+    case Item::controlledFlips:
+        return &v.controlledFlips;
     case Item::webButton:
         return &v.triggerWebs;
     case Item::webStyle:
         return &v.arcadeWebs;
     case Item::handClimb:
         return &v.handClimb;
+    case Item::wallRunCameraTilt:
+        return &v.wallRunCameraTilt;
     case Item::view:
         return &v.flatScreen;
     case Item::realisticFlips:
@@ -255,9 +261,9 @@ Values sanitized(Values v) {
     v.automaticHandThreshold = std::clamp(v.automaticHandThreshold, 50, 300);
     return v;
 }
-const std::array<Row, 48>& rows() {
+const std::array<Row, 51>& rows() {
     // The help fits the game's description column beside the rows.
-    static const std::array<Row, 48> all{{
+    static const std::array<Row, 51> all{{
         {Item::none, "WEBS", nullptr, {}},
         {Item::webStyle, "WEB STYLE",
          "Arcade: webs pass lamp posts, signs and cars, and swings stay above the street.", webStyleChoices},
@@ -305,6 +311,8 @@ const std::array<Row, 48>& rows() {
         {Item::hud, "HUD", "How large the game's HUD shows in front of you. Off: no HUD in VR.", hudChoices},
         {Item::uiStyle, "UI STYLE",
          "Spidy's own marks, gadget wheel and meters: comic print, or tech like the HUD.", uiStyleChoices},
+        {Item::combatVisuals, "COMBAT VISUALS",
+         "Show punch arrows, target rings, hit effects and KO text. Spider-Sense stays on.", {}},
         {Item::nearClip, "NEAR CLIP",
          "How near your eyes things still show. Nearer keeps your hands in view.", nearClipChoices},
         {Item::recordingFov, "RECORDING FOV",
@@ -318,11 +326,16 @@ const std::array<Row, 48>& rows() {
         {Item::seated, "SEATED",
          "Play sitting: your view rises to your standing height. Recenter after sitting.", {}},
         {Item::none, "EXPERIMENTAL", nullptr, {}},
-        {Item::flips, "FLIPS", "In the air the left stick turns you over; tap A for one flip, hold A to stay.", {}},
-        {Item::flipSpeed, "FLIP SPEED", "How fast a flip turns you over, at full tilt of the left stick.",
+        {Item::flips, "FLIPS",
+         "Right stick flips; up zips/aims. Release holds the angle. A returns upright.", {}},
+        {Item::controlledFlips, "CONTROLLED FLIPS",
+         "Air: A enables left-stick flips. Release holds. A again resets and exits.", {}},
+        {Item::flipSpeed, "FLIP SPEED", "How fast a flip turns you over at full stick tilt.",
          flipSpeedChoices},
         {Item::handClimb, "HAND WALL CLIMBING",
          "Grip and pull. Reach back near the wall to turn. Left stick: run. A: jump.", {}},
+        {Item::wallRunCameraTilt, "WALL RUN CAMERA TILT",
+         "Gently bank the view with the body on horizontal momentum wall runs.", {}},
         {Item::realisticFlips, "REALISTIC FLIPS",
          "Momentum rotation from arms and webs. FLIPS also enables left-stick steering.", {}},
         {Item::automaticStrength, "ROTATION STRENGTH",
@@ -459,8 +472,10 @@ struct TabOnly {
     int Values::*number;
 };
 constexpr TabOnly tabOnly[] = {
+    {"controlled_flips", &Values::controlledFlips, nullptr},
     {"near_clip_mm", nullptr, &Values::nearClipMm},
     {"hand_climb", &Values::handClimb, nullptr},
+    {"wall_run_camera_tilt", &Values::wallRunCameraTilt, nullptr},
     {"realistic_flips", &Values::realisticFlips, nullptr},
     {"rotation_strength", nullptr, &Values::automaticStrength},
     {"rotation_speed", nullptr, &Values::automaticSpeed},
@@ -478,6 +493,7 @@ constexpr TabOnly tabOnly[] = {
     {"body_haptics_movement", &Values::hapticMovement, nullptr},
     {"recording_fov", nullptr, &Values::recordingFov},
     {"ui_style", nullptr, &Values::uiStyle},
+    {"combat_visuals", &Values::combatVisuals, nullptr},
     {"blow_sounds", nullptr, &Values::blowSounds},
     {"web_slingshot", &Values::webSlingshot, nullptr},
     {"better_climbing", &Values::betterClimbing, nullptr},

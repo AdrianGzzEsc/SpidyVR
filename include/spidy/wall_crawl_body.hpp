@@ -66,6 +66,7 @@ class WallCrawlBody {
     Vec3 normal() const { return normal_; }
     Vec3 ahead() const { return ahead_; }
     Vec3 step() const { return step_; }
+    bool running() const { return running_; }
     Vec3 floor() const { return floor_; }
     float phase() const { return phase_; }
     float motion() const { return motion_; }
@@ -76,4 +77,14 @@ class WallCrawlBody {
     Vec3 normal_{}, ahead_{}, step_{}, floor_{}, feet_{};
     float phase_{}, motion_{};
 };
+// Require confirmed outdoor support, never an ordinary ground animation.
+inline bool wallRunPose(const GameMotionFrame& frame, const SurfaceHold& hold, bool enabled,
+                        bool grounded, unsigned wallHands, bool momentumRun) {
+    return enabled && frame.active && (!grounded || (hold.crawl && frame.standing)) &&
+        !frame.ventCrawl && !hold.vent &&
+        !frame.swing.jump && !wallHands && finite(hold.normal) &&
+        std::abs(length(hold.normal) - 1) < .01f && std::abs(hold.normal.y) < .7f &&
+        finite(hold.anchor) && std::isfinite(hold.speed) && hold.speed > .25f &&
+        (frame.standing || momentumRun);
+}
 } // namespace spidy

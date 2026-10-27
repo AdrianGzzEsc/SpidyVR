@@ -569,6 +569,13 @@ int main() {
         const auto tabs = [](const ProfileSetting& s) { return s.flag || s.number; };
         check(lines == static_cast<size_t>(std::count_if(begin, end, tabs)),
               "a setting kept with the tab's own that spidy_vr.ini lacks");
+        const auto older = readProfile("controlled_flips=1\nwall_run_torso_angle_deg=80\n"
+                                       "momentum_camera_tilt_deg=-30\nmomentum_step_pace_pct=150\n");
+        check(older && older->count() == 1, "retired wall sliders still appear in imported profiles");
+        PlaySettings upgraded;
+        applyProfile(*older, upgraded);
+        check(upgraded.tab.controlledFlips && !upgraded.options.flips,
+              "controlled mode was not imported independently of the original flip setting");
         // None of the launcher's own options (no graphics option, no body calibration), and two settings no
         // more: wall running (until October 25 the one launcher option a profile held) and the wall camera's
         // distance, at the values Spidy plays with. Only they have no row.
@@ -650,8 +657,10 @@ int main() {
         auto& t = mine.tab;
         t.hapticWebs = t.hapticWind = t.hapticCombat = t.hapticMovement = false;
         t.automaticReleaseFlip = t.automaticAirBrake = t.automaticCombat = false;
-        t.handClimb = t.realisticFlips = t.seated = true;
+        t.handClimb = t.realisticFlips = t.seated = t.controlledFlips = true;
+        t.wallRunCameraTilt = false;
         t.uiStyle = 1;
+        t.combatVisuals = true;
         t.blowSounds = 1;
         t.webSlingshot = true;
         t.betterClimbing = true;
@@ -672,7 +681,8 @@ int main() {
                   "better_climbing=0\nwall_run=1\nsnap_turn=30\nsmooth_turn=0\nhaptics=100\nblow_sounds=0\n"
                   "body_haptics=100\nbody_haptics_webs=1\nbody_haptics_wind=1\n"
                   "body_haptics_combat=1\nbody_haptics_movement=1\nscreen_size=1\nscreen_depth=2\nhud=2\n"
-                  "ui_style=0\nnear_clip_mm=20\nseated=0\nflips=0\nflip_speed=180\nhand_climb=0\n"
+                  "ui_style=0\ncombat_visuals=0\nnear_clip_mm=20\nseated=0\nflips=0\ncontrolled_flips=0\nflip_speed=180\nhand_climb=0\n"
+                  "wall_run_camera_tilt=1\n"
                   "wall_distance_cm=25\n"
                   "realistic_flips=0\nrotation_strength=50\nrotation_speed=240\nflight_speed_min=3\n"
                   "swing_momentum=1\nrotation_response_ms=500\nhand_momentum=100\nangular_drag_ms=3000\n"
