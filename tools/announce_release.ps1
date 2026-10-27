@@ -10,7 +10,7 @@ param(
     [string]$NotesFile,
     [string]$Repository = 'IlyaMez/SpidyVR',
     [string]$RoleId = '1558016092197355620',       # the role "Spidy releases" (opt-in, not mentionable by members)
-    [string]$HelpChannel = '1558016152309989401',  # #spidy-help
+    [string]$HelpChannel = '1558067917310922814',  # #spidy-bugs (#spidy-help is archived)
     [switch]$DryRun
 )
 $ErrorActionPreference = 'Stop'
@@ -33,7 +33,7 @@ $head = @(
     "<@&$RoleId>"
     "**Update:** start the launcher and press **Update now**. New here? Download: <$release>"
 )
-$foot = "-# Something wrong after updating? Post in <#$HelpChannel>."
+$foot = "-# Something wrong after updating? Report it in <#$HelpChannel>."
 $body = @()
 if ($changes.Count) {
     $body += ''
