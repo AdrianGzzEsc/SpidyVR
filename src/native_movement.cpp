@@ -298,11 +298,12 @@ bool signature(uintptr_t rva, const uint8_t* expected, size_t n) {
 DWORD disable() {
     enabled = false;
     DWORD result{};
-    for (unsigned i = 0; i < hookCount; ++i) {
-        const auto s = MH_DisableHook(hooks[i]);
-        if (s != MH_OK && s != MH_ERROR_DISABLED)
-            result = 1400 + s;
-    }
+    // Under one freeze, as they went in; a hook queued but never applied is
+    // taken off the queue too.
+    for (unsigned i = 0; i < hookCount; ++i)
+        MH_QueueDisableHook(hooks[i]);
+    if (const auto s = MH_ApplyQueued(); s != MH_OK)
+        result = 1400 + s;
     const auto until = GetTickCount64() + 2000;
     while (active && GetTickCount64() < until)
         Sleep(1);
@@ -382,13 +383,13 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyMotionStart(void* input) {
         timestep = reinterpret_cast<Timestep>(config.base + 0x16769f0);
         deadline = config.durationMs ? GetTickCount64() + config.durationMs : UINT64_MAX;
         enabled = true;
-        for (unsigned i = 0; i < hookCount; ++i) {
-            s = MH_EnableHook(hooks[i]);
-            if (s != MH_OK) {
-                result = 1300 + s;
-                break;
-            }
-        }
+        // Under one freeze of the game's threads (stereo_probe.cpp says why).
+        for (unsigned i = 0; i < hookCount && s == MH_OK; ++i)
+            s = MH_QueueEnableHook(hooks[i]);
+        if (s == MH_OK)
+            s = MH_ApplyQueued();
+        if (s != MH_OK)
+            result = 1300 + s;
     } while (false);
     if (result && hookCount)
         disable();

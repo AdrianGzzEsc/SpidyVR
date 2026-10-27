@@ -538,6 +538,12 @@ bool PocketDraw::update(float seconds, bool play, const Pose& head, const Pose g
         const bool press = down && !down_[i];
         down_[i] = down;
         if (tracked[i] && finite(grips[i].position)) {
+            if (lost_[i] == 0 && dt > 0) {
+                const Vec3 velocity = (grips[i].position - seen_[i]) * (1 / dt);
+                going_[i] = going_[i] + (velocity - going_[i]) * std::min(1.f, dt / smoothing);
+            } else {
+                going_[i] = {};
+            }
             seen_[i] = grips[i].position;
             lost_[i] = 0;
         } else {
@@ -556,8 +562,12 @@ bool PocketDraw::update(float seconds, bool play, const Pose& head, const Pose g
         }
         if (!play || !headSeen || lost_[i] > lostSeconds)
             continue;
-        // The grip in the body's level axes: x right, y up, z ahead.
-        const Vec3 d = seen_[i] - head.position;
+        // The grip in the body's level axes: x right, y up, z ahead; a lost
+        // one carried on its way (carrySeconds).
+        const Vec3 at = lost_[i] > 0
+                            ? seen_[i] + limited(going_[i], carrySpeed) * std::min(lost_[i], carrySeconds)
+                            : seen_[i];
+        const Vec3 d = at - head.position;
         const float x = dot(d, right), y = d.y, z = dot(d, forward);
         if (press && drawing_ < 0 && -y >= pocketAbove && -y <= pocketBelow && std::abs(x) >= pocketSide &&
             std::abs(x) <= pocketOut && z <= -behind) {

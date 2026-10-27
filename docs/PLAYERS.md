@@ -451,7 +451,11 @@ Moving
                          GADGETS YET
   Phone ................ squeeze a grip with that hand behind your hip and
                          bring it up in front, still squeezed: your phone
-                         opens in that hand. The stick picks an app, A
+                         opens in that hand. Reach for your back pocket,
+                         not the side of your hip, with your head facing
+                         ahead (turning it far toward the pocket turns the
+                         pocket with you), and bring the hand up within
+                         1.5 s. The stick picks an app, A
                          opens it, B goes back or puts the phone away.
                          MENU puts it away and opens the game menu (map,
                          suits, skills; B closes it). CAMERA puts it away
@@ -499,10 +503,12 @@ Moving
   fist thrown down is both: the Ground Strike. A button you were already
   holding as the prompt came up goes on doing what it did, and the grips
   stay your webs, so you can still swing.
-  The Ground Strike also needs no prompt: in the air, throw both fists
-  down together, hard (no web in either hand). That is the game's X and A
-  held, and it takes you from your webs for its move. One fist alone stays
-  a punch. Not with REALISTIC FLIPS on, where both arms swung down flip you.
+  The Ground Strike also needs no prompt: in a fight, in the air, throw both
+  fists down together, hard (no web in either hand, and none let go of in
+  the moment before). That is the game's X and A held, and it takes you from
+  your webs for its move. One fist alone stays a punch. Not with no enemy
+  near (a hard pull down on both webs while swinging is no Ground Strike),
+  and not with REALISTIC FLIPS on, where both arms swung down flip you.
 
   THE GAME'S CAMERA (the research stations' photos)
   Phone, CAMERA ........ takes the game's camera out, as its D-pad up does

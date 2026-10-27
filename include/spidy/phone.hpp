@@ -234,7 +234,12 @@ class Phone {
 // did, and a hanging arm's grip shot no web). A hand the headset loses
 // behind the back (the cameras of a headset do not see there) neither lets
 // go of the grip nor ends the draw: the grip is the squeeze's alone, and a
-// squeeze begins a draw where the hand was last seen, lostSeconds ago at most.
+// squeeze begins a draw where the hand was last seen, lostSeconds ago at most,
+// carried on the way it was going for carrySeconds at most: a Quest loses a
+// controller at the side of the hip on its way back, and where it was last
+// seen is no pocket (October 25: "I'm going through TSA in my room"; players
+// found theirs above the back of the knee, where the cameras still see it). A
+// hand hanging still at the side goes nowhere.
 class PocketDraw {
   public:
     // In the body's level axes from the head, metres: a pocket is
@@ -247,6 +252,9 @@ class PocketDraw {
     static constexpr float pocketBelow = 1.1f, pocketAbove = .55f, pocketSide = .05f, pocketOut = .4f,
                            behind = .15f, front = .15f, raised = .65f, drawSeconds = 1.5f, pressed = .6f,
                            released = .3f, yawDeadZone = .6f, yawSpeed = 6, yawDrift = .5f, lostSeconds = .5f;
+    // A lost hand's way: its last velocity, measured over about `smoothing`,
+    // no faster than carrySpeed, for carrySeconds at most.
+    static constexpr float carrySeconds = .3f, carrySpeed = 2.5f, smoothing = .05f;
     // seconds: since the previous update. play: the controllers play VR.
     // head, grips: in one space; tracked: each grip's pose; squeezes: each
     // hand's. True as the phone comes out: hand() says where.
@@ -277,7 +285,7 @@ class PocketDraw {
     unsigned hands_{}, draws_{};
     int drawing_ = -1, drewWith_{};
     float time_{}, yaw_{}, lost_[2]{lostSeconds + 1, lostSeconds + 1};
-    Vec3 hand_{}, seen_[2]{};
+    Vec3 hand_{}, seen_[2]{}, going_[2]{};
 };
 // The phone as the eyes see it (the user, October 24: "currently its very
 // flat with tons of zfighting"): a body 9 mm deep with rounded corners and

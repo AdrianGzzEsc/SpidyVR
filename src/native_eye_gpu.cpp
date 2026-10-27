@@ -1216,13 +1216,19 @@ DWORD start(void* input) {
     hooked = true;
     deadline = c.durationMs ? GetTickCount64() + c.durationMs : UINT64_MAX;
     enabled = true;
+    // Under one freeze of the game's threads (stereo_probe.cpp says why).
     for (auto h : hooks)
-        if ((s = MH_EnableHook(h)) != MH_OK) {
-            enabled = false;
-            for (auto t : hooks)
-                MH_DisableHook(t);
-            return 1300 + s;
-        }
+        if (s == MH_OK)
+            s = MH_QueueEnableHook(h);
+    if (s == MH_OK)
+        s = MH_ApplyQueued();
+    if (s != MH_OK) {
+        enabled = false;
+        for (auto t : hooks)
+            MH_QueueDisableHook(t);
+        MH_ApplyQueued();
+        return 1300 + s;
+    }
     // The game's presented frame is optional: without it the headset shows
     // nothing while gameplay is unavailable, as before.
     void* presentAddress{};
@@ -1237,7 +1243,8 @@ DWORD start(void* input) {
         bool hookedPresent = true;
         for (auto h : presentHooks)
             if (h)
-                hookedPresent = MH_EnableHook(h) == MH_OK && hookedPresent;
+                hookedPresent = MH_QueueEnableHook(h) == MH_OK && hookedPresent;
+        hookedPresent = MH_ApplyQueued() == MH_OK && hookedPresent;
         publishScreen(hookedPresent ? 1 : 2, nullptr, 0);
     }
     std::lock_guard lock(telemetry);

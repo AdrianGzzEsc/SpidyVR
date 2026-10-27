@@ -2138,24 +2138,25 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidyStart(void* value) {
         attempted = false;
         stopRequested = false;
         deadline = config.durationMs ? GetTickCount64() + config.durationMs : UINT64_MAX;
-        auto s = MH_EnableHook(updateHook);
-        if (s == MH_OK)
-            s = MH_EnableHook(copyFinalHook);
-        if (s == MH_OK)
-            s = MH_EnableHook(toneHook);
-        for (auto hook : {copyJobHook, beginJobHook, endJobHook, initBuffersHook, sizeBuffersHook, renderActorHook,
-                          setupModelsHook, isActiveViewHook, impostorQueriesHook, setupDisplayHook, submitHook,
-                          renderOffscreenHook, hudPlaceHook, submitSceneHook, fitCascadesHook})
+        // All under one freeze of the game's threads: MinHook lists every
+        // thread on the PC for each freeze, and on a PC with some 10,000 of
+        // them each took 300 ms, so 19 freezes one by one stalled the eyes
+        // for 8 s (LOST_INVAD3, October 23).
+        const std::initializer_list<void*> eyeHooks{
+            updateHook, copyFinalHook, toneHook, copyJobHook, beginJobHook, endJobHook, initBuffersHook,
+            sizeBuffersHook, renderActorHook, setupModelsHook, isActiveViewHook, impostorQueriesHook,
+            setupDisplayHook, submitHook, renderOffscreenHook, hudPlaceHook, submitSceneHook, fitCascadesHook,
+            maintainHook};
+        auto s = MH_OK;
+        for (auto hook : eyeHooks)
             if (s == MH_OK)
-                s = MH_EnableHook(hook);
+                s = MH_QueueEnableHook(hook);
         if (s == MH_OK)
-            s = MH_EnableHook(maintainHook);
+            s = MH_ApplyQueued();
         if (s != MH_OK) {
-            for (auto hook : {updateHook, copyFinalHook, toneHook, copyJobHook, beginJobHook, endJobHook,
-                              initBuffersHook, sizeBuffersHook, renderActorHook, setupModelsHook, isActiveViewHook,
-                              impostorQueriesHook, setupDisplayHook, submitHook, renderOffscreenHook, hudPlaceHook,
-                              submitSceneHook, fitCascadesHook})
-                MH_DisableHook(hook);
+            for (auto hook : eyeHooks)
+                MH_QueueDisableHook(hook);
+            MH_ApplyQueued();
             result = 1300 + s;
             break;
         }

@@ -1640,7 +1640,7 @@ DWORD WINAPI run(void*) {
                         named.stickX = frame.hands[1].stickX;
                         named.stickY = frame.hands[1].stickY;
                         named.airborne = game_swing::airborne(swingState, now.QuadPart, frequency.QuadPart);
-                        named.slams = !values.realisticFlips || (fightLately && !values.automaticCombat);
+                        named.slams = fightLately && (!values.realisticFlips || !values.automaticCombat);
                         const bool namedPlay =
                             gesturesPlay && !padLayer.latched() && !phone.open() && !gadgetWheel.open();
                         namedPad = namedPress.update(frame.seconds, namedPlay, named, asked);

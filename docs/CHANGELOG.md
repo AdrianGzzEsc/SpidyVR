@@ -3,7 +3,68 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
-**Latest build (October 25, third): the controls in four pictures.** You:
+**Latest build (October 27): fixes from the players' 0.5.0 reports.** You:
+"review bugs on discord in bugs and spidy chat, fix what you know how to or
+problems where the user provided to info for reseach (reports, save etc)".
+
+- **No Ground Strike in the middle of a swing.** Since 0.5.0 both fists
+  thrown down hard in the air were the Ground Strike, and a hard pull down on
+  two webs is that motion: the webs let go mid-pull, the arms went on down,
+  and the game's Ground Strike dashed players to the ground ("Can't Swing",
+  owen_scorpion, tacomaster699, frost_vr1 and a bug post asking for a
+  switch). Now it needs an enemy near (the 3 s FLIPS IN COMBAT already used),
+  and a hand whose web let go in the last 0.4 s throws no blow at all, a
+  prompt's X included. owen_scorpion's session showed REALISTIC FLIPS off,
+  where the slam had no limit.
+- **"Native eye presentation stalled for 3 seconds" as play begins.**
+  LOST_INVAD3 measured it on a PC with some 10,000 threads: MinHook lists
+  every thread on the PC each time it switches a hook on, about 300 ms each
+  there, and the eyes' start switched on 26 one by one and the swing's 11
+  (7.9 s and 4.2 s; the eyes stop after 0.25 s without the XR thread). The
+  reports of "crashes as soon as I load" since 0.5.0 (ghostboi1918,
+  exist483, fnafgamer0) end the same way: `prepare` 6.1 to 6.2 s, one or two
+  stereo pairs. Each module start now switches its hooks on together under
+  one freeze, as `game_menu` did: the stereo probe (19), the HUD (4), the
+  webs (2), the eye GPU (4, then the presented frame's 2), movement (4),
+  offers, shooter and throw (3 each) and the controller (its XInput
+  modules). Movement's stop takes them off together too, and a failed start
+  takes off what it queued, so no later start switches them on by accident.
+  His numbers after the same change: eyes 1.6 s, swing 1.4 s.
+- **Spidy in a folder named outside the PC's code page.** haim.knafo's Spidy
+  sat in OneDrive's Hebrew Desktop, and every start said the game held
+  "Spidy from another folder (C:\Users\...\????? ??????\...)": its own.
+  Windows' module snapshot hands paths through the ANSI code page, so a
+  Hebrew (or Cyrillic, or Japanese) letter came back as `?` and matched
+  nothing. Such paths are read again from the game's loader
+  (`GetModuleFileNameExW`). Reproduced here with a DLL in a Hebrew folder:
+  `????? ??????` before, the real name after.
+- **An empty saved-settings file no longer stops every start.**
+  spazzmatic_1's `desktop-view-before-vr.json` was empty (the PC went off as
+  it was written, most likely), and each start ended in a Python traceback,
+  "Expecting value: line 1 column 1". An unreadable file is now set aside
+  as `desktop-view-before-vr.unreadable.json` with a warning, and the file is
+  written whole or not at all (a temporary file, then a rename).
+- **The phone from the back pocket, for a hand the headset loses.** A Quest
+  stops seeing a controller at the side of the hip on its way back, and the
+  pocket was judged where it was last seen, short of 15 cm behind the eyes:
+  players found theirs "just above the knee", where the cameras still see
+  it. A hand lost on its way is now carried along the way it was moving for
+  up to 0.3 s (at most 2.5 m/s); one hanging still at the side goes nowhere,
+  so its grip stays a web's.
+- **Not changed, waiting on you or on reports:** X as the throw and as the
+  gadget wheel (in a fight full of props X throws, and players ask for the
+  wheel on another control); bosses that freeze or float after a launch
+  (Doc Ock, Mr Negative, Octavius: Spidy asks the game to fling a bot its
+  blow did not fling within 0.4 s, which may be what a boss does not
+  recover from; not checked); the reel failing since 0.5.0 (no report yet).
+- **Checked:** the build, the core tests (new: the slam with webs let go
+  mid-pull and a moment later, a fist just off its web, a hand lost on its
+  way to the pocket and one lost hanging still), every Python suite (new:
+  the unreadable backup, the Hebrew folder in a real process). Not run: the
+  game and the headset, so neither the hooks' start nor the pocket was
+  tried in play.
+
+**Earlier build (October 25, third): the controls in four pictures.** You:
 "lets update the control infographic and also maybe describe controls in
 context and add the motion actions and what's in the phone", then "can we
 make an infograhpic with other common controllers with diffirent button

@@ -5586,6 +5586,27 @@ int main() {
         tracked[1]=true;
         check(step(d,front,1)&&d.draws()==3,"a draw begun with the hand lost did not open the phone");
         step(d,front,0);
+        // A hand the headset loses at the side of the hip on its way back (the cameras see no further), squeezed
+        // a moment later: carried on its way, it is at the pocket (October 25: "I cannot find the damn phone").
+        {
+            PocketDraw way;
+            const Vec3 from{.25f,.95f,-.1f};
+            // 1.2 m/s back, lost 10 cm behind the eyes: short of `behind` where it was last seen.
+            for(int i=0;i<=15;++i)step(way,Pose{from+Vec3{0,0,.2f}*(i/15.f),{}},0);
+            tracked[1]=false;
+            for(int i=0;i<12;++i)step(way,Pose{},0);
+            check(!step(way,Pose{},1)&&way.hands()==2u,"a hand lost on its way to the pocket began no draw");
+            tracked[1]=true;
+            check(step(way,front,1)&&way.draws()==1,"a draw begun on the way to the pocket did not open the phone");
+            step(way,front,0);
+            // Lost while hanging still at the side, it stays there: a squeeze is a web's.
+            PocketDraw still;
+            for(int i=0;i<20;++i)step(still,side,0);
+            tracked[1]=false;
+            for(int i=0;i<12;++i)step(still,Pose{},0);
+            check(!step(still,Pose{},1)&&still.hands()==0u,"a hand lost hanging at the side began a draw");
+            tracked[1]=true;
+        }
         // A game hitch on the way (a moment out of play) does not end a draw.
         step(d,pocket,1);
         step(d,pocket,1,1.f/90,false);
@@ -9908,6 +9929,18 @@ int main() {
         check(throwHand(none,{},{0,0,-1},3.5f,.1f)==State{} && !none.blows(),"a fist was an X with nothing named");
         P webbed;
         check(throwHand(webbed,takedown,{0,0,-1},3.5f,.1f,false,true)==State{},"a hand on its web threw an X");
+        // throwHand's busy hand holds its web through the throw: let go just before it, still no X.
+        P letGo;
+        {
+            P::Input in;in.tracked[0]=true;in.busy[0]=true;Vec3 at{.15f,-.35f,-.2f};
+            for(float t=0;t<.2f;t+=dt){in.hands[0]=at;letGo.update(dt,true,in,takedown);}
+            in.busy[0]=false;
+            State most;
+            for(float t=0;t<.1f-1e-4f;t+=dt){
+                at=at+Vec3{0,0,-1}*(3.5f*dt);in.hands[0]=at;most.buttons|=letGo.update(dt,true,in,takedown).buttons;
+            }
+            check(most==State{} && !letGo.blows(),"a hand that had just let go of its web threw an X");
+        }
         // The recoil: from the arm out, straight back toward the head.
         P back;
         const Vec3 out{.15f,-.3f,-.65f};
@@ -9951,10 +9984,17 @@ int main() {
         Vec3 at[2]{};
         // Both hands at rest by the body; then each thrown along `way` at 3.5 m/s for 0.1 s, the right `lag`
         // seconds after the left. What went out meanwhile, together.
-        const auto slam=[&](P& p,Vec3 way,float lag,bool airborne=true,bool slams=true,bool busy=false){
+        // freeFor: both hands held webs until this long before the throw.
+        const auto slam=[&](P& p,Vec3 way,float lag,bool airborne=true,bool slams=true,bool busy=false,
+                            float freeFor=-1){
             in=P::Input{};in.tracked[0]=in.tracked[1]=true;in.airborne=airborne;in.slams=slams;in.busy[1]=busy;
             at[0]={-.2f,-.35f,-.2f};at[1]={.2f,-.35f,-.2f};
+            if(freeFor>=0)in.busy[0]=in.busy[1]=true;
             for(float t=0;t<.2f;t+=dt){in.hands[0]=at[0];in.hands[1]=at[1];p.update(dt,true,in,{});}
+            if(freeFor>=0){
+                in.busy[0]=in.busy[1]=false;
+                for(float t=0;t<freeFor-1e-4f;t+=dt)p.update(dt,true,in,{});
+            }
             State most;
             for(float t=0;t<lag+.1f-1e-4f;t+=dt){
                 for(int h=0;h<2;++h){
@@ -9990,6 +10030,14 @@ int main() {
         check(slam(flips,{0,-1,0},0,true,false)==State{},"both arms swung down for a realistic flip were a slam");
         P webbed;
         check(slam(webbed,{0,-1,0},0,true,true,true)==State{},"a hand on its web made half a slam");
+        // Two webs pulled down hard and let go mid-pull (October 26: "it slams me on the ground while I swing"):
+        // no slam until the arms have been free a moment.
+        P pulled;
+        check(slam(pulled,{0,-1,0},0,true,true,false,0)==State{} && !pulled.slams(),
+              "both webs let go mid-pull were a slam");
+        P freed;
+        check(slam(freed,{0,-1,0},0,true,true,false,P::letGoSeconds+.05f)==strike,
+              "fists thrown down a moment after the webs let go were no slam");
         P level;
         check(slam(level,{0,0,-1},0)==State{},"both fists thrown level were a slam");
         // The game's camera, its overlay up: LT held raises the viewfinder, RB takes the photo, D-pad up puts

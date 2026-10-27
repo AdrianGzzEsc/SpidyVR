@@ -1232,6 +1232,27 @@ class ProtocolTests(unittest.TestCase):
             # The launcher offers to close the game for it (exit 6), and the session it then starts does.
             self.assertEqual(run_game_vr.exit_code(run_game_vr.GameNeedsRestart(run_game_vr.VR_RAN)), 6)
 
+    def test_a_module_in_a_folder_named_outside_the_ansi_code_page_lists_its_real_path(self):
+        # haim.knafo, October 26: Spidy in OneDrive's Hebrew Desktop read back as "????? ??????" and was
+        # "Spidy from another folder" to itself.
+        import shutil
+        from observe_game import modules
+        with tempfile.TemporaryDirectory() as folder:
+            dll = pathlib.Path(folder).resolve()/'שולחן העבודה'/'Spidy-0.5.0'/'spidy_probe_copy.dll'
+            dll.parent.mkdir(parents=True)
+            shutil.copyfile(pathlib.Path(r'C:\Windows\System32\version.dll'), dll)
+            child = subprocess.Popen([sys.executable, '-c', 'import ctypes,sys,time; ctypes.WinDLL(sys.argv[1]); '
+                                      'print(1, flush=True); time.sleep(30)', str(dll)], stdout=subprocess.PIPE)
+            try:
+                child.stdout.readline()
+                found = [m for m in modules(child.pid) if m['name'].lower() == dll.name]
+                self.assertEqual(len(found), 1)
+                self.assertEqual(pathlib.Path(found[0]['path']).resolve(), dll)
+            finally:
+                child.kill()
+                child.wait()
+                child.stdout.close()
+
     def test_a_game_holding_another_spidy_build_is_named_and_can_be_closed_for_the_player(self):
         import argparse
         import hashlib

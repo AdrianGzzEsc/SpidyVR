@@ -1037,7 +1037,10 @@ class ScreenControls {
 // Shaking Harlem (October 22) asked for Ground Strikes with none on screen.
 // Two hands at once (chosen that day), so no single punch makes one; not
 // while REALISTIC FLIPS turns the player by his arms' swings (Input::slams),
-// where both arms swung down is a flip.
+// where both arms swung down is a flip. Nor out of a fight (Input::slams),
+// nor from a hand that let go of its web a moment ago (letGoSeconds): 0.5.0's
+// players pulled both webs down hard to climb and were dashed to the ground
+// mid-swing (October 25-26, "Can't Swing").
 //
 // A control is the game's only when it goes down while the game names it, and
 // it stays the game's, sending what it began with, until it is let go: a web
@@ -1061,6 +1064,9 @@ class NamedPress {
                            inward = .7f, steep = .6f, tapSeconds = .15f, holdSeconds = .6f;
     // Both fists thrown down within this of each other in the air: a slam.
     static constexpr float slamSeconds = .25f;
+    // A hand whose web let go this recently throws no blow: the pull on it is
+    // still in the arm.
+    static constexpr float letGoSeconds = .4f;
     // The VR controls a named button can claim, a bit each.
     enum Control : uint32_t {
         controlA = 1u << 0,
@@ -1094,7 +1100,8 @@ class NamedPress {
         Vec3 hands[2]{};
         bool tracked[2]{}, busy[2]{};
         bool airborne{};
-        // Both fists thrown down in the air are the Ground Strike's.
+        // Both fists thrown down in the air are the Ground Strike's (in a
+        // fight, and not where they are a realistic flip).
         bool slams = true;
     };
     // seconds: since the previous update. play: the controllers play VR, the
@@ -1265,10 +1272,11 @@ class NamedPress {
             hand.seen = true;
             hand.since += dt;
             hand.down += dt;
+            hand.free = in.busy[h] ? 0.f : hand.free + dt;
             const float speed = length(hand.velocity);
             if (speed < rearmSpeed || hand.since >= rearmSeconds)
                 hand.armed = true;
-            if (in.busy[h] || !hand.armed || speed < blowSpeed)
+            if (hand.free < letGoSeconds || !hand.armed || speed < blowSpeed)
                 continue;
             const bool thrownDown = hand.velocity.y <= -steep * speed;
             // Half a slam, whatever the game names.
@@ -1307,8 +1315,9 @@ class NamedPress {
     }
     struct Hand {
         Vec3 at{}, velocity{};
-        // since: its latest blow; down: since it was last thrown down in the air.
-        float since = rearmSeconds, down = slamSeconds;
+        // since: its latest blow; down: since it was last thrown down in the
+        // air; free: since its web let go.
+        float since = rearmSeconds, down = slamSeconds, free = letGoSeconds;
         bool seen{}, armed = true;
     };
     std::array<Hand, 2> hands_{};

@@ -1032,14 +1032,18 @@ uint32_t game_shooter::start(uintptr_t gameBase) {
         watch.start(base, 1u << static_cast<unsigned>(game_targets::Kind::bot) |
                               1u << static_cast<unsigned>(game_targets::Kind::throwable) |
                               1u << static_cast<unsigned>(game_targets::Kind::device));
-        // The muzzle and the collisions first: a frame may fire as soon as
-        // it is hooked.
-        for (auto* hook : {hooks[1], hooks[2], hooks[0]})
-            if (const auto s = MH_EnableHook(hook); s != MH_OK && !result)
+        // All three at once, so a frame that fires finds the muzzle and the
+        // collisions hooked; under one freeze of the game's threads
+        // (stereo_probe.cpp says why).
+        for (auto* hook : hooks)
+            if (const auto s = MH_QueueEnableHook(hook); s != MH_OK && !result)
                 result = 9770 + s;
+        if (const auto s = result ? MH_OK : MH_ApplyQueued(); s != MH_OK)
+            result = 9770 + s;
         if (result) {
             for (auto* hook : hooks)
-                MH_DisableHook(hook);
+                MH_QueueDisableHook(hook);
+            MH_ApplyQueued();
             watch.stop();
             gadgets.stop();
             break;
