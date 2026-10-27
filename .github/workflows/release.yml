@@ -1,9 +1,10 @@
 # Builds Spidy on a clean Windows machine and publishes the player zip under Releases.
 # Publish from GitHub: Actions > Release > Run workflow on main, choosing the part of the version to
 # raise. The run raises project(Spidy VERSION) in CMakeLists.txt, builds and tests that, and only then
-# commits the version, tags it (v1.2.3), pushes both and publishes the zip. Without "publish" it is a
-# test run: the same steps, the push only checked, the zip kept with the run. On another branch it
-# test-builds the branch as it is. Given an existing tag, it builds and publishes that tag again.
+# commits the version, tags it (v1.2.3), pushes both, publishes the zip and announces the release on
+# Discord (tools/announce_release.ps1). Without "publish" it is a test run: the same steps, the push
+# only checked, the zip kept with the run. On another branch it test-builds the branch as it is. Given
+# an existing tag, it builds and publishes that tag again.
 # tools/release.ps1 makes the version commit and tag on the PC instead; the pushed tag starts this.
 name: Release
 run-name: >-
@@ -154,6 +155,7 @@ jobs:
           if ($LASTEXITCODE) { throw 'The push was refused, probably because main moved during the build. Run the workflow again.' }
 
       - name: Publish the release
+        id: publish
         if: steps.version.outputs.tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
@@ -185,9 +187,21 @@ jobs:
           gh release view $env:TAG --json tagName *> $null
           if ($LASTEXITCODE) {
             gh release create $env:TAG $zip --verify-tag --title "Spidy $env:VERSION" --notes-file release-notes.md
+            if (-not $LASTEXITCODE) { 'created=true' >> $env:GITHUB_OUTPUT }
           } else {
             gh release upload $env:TAG $zip --clobber
             if ($LASTEXITCODE) { throw 'Uploading the zip failed.' }
             gh release edit $env:TAG --title "Spidy $env:VERSION" --notes-file release-notes.md
           }
           if ($LASTEXITCODE) { throw 'Publishing the release failed.' }
+
+      - name: Announce on Discord
+        # A new release only: publishing a tag again does not announce it twice. The release stands
+        # whether or not the announcement goes through.
+        if: steps.publish.outputs.created == 'true'
+        continue-on-error: true
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_SPIDY_RELEASES_WEBHOOK }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: ./tools/announce_release.ps1 -Version $env:VERSION -Tag $env:TAG -NotesFile release-notes.md -Repository $env:GITHUB_REPOSITORY

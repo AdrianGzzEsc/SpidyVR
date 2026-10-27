@@ -141,6 +141,9 @@ private:
     // 3072 x 3264 before a check.
     std::array<uint32_t, 2> eyeSize();
     const Runtime* runtime();
+    // What "Copy for Discord" copies: Spidy's version, this PC, the options a helper asks about and the
+    // last session, in a few lines.
+    std::string summary();
     void chooseDefaultRuntime();
     // closeGame: the session first closes a running game that already holds Spidy (kCloseGameExit).
     void start(bool closeGame = false);
@@ -173,6 +176,8 @@ private:
     bool wantCloseGame_{};
     Outcome lastInstall_ = Outcome::idle;
     std::string shortcutMessage_;
+    // ImGui's time when "Copy for Discord" last copied: its button says "Copied" for two seconds.
+    double summaryCopied_ = -2;
     // Updates: the player's copy of Spidy (empty in a checkout), and the banner's state.
     std::wstring installFolder_;
     Updater updater_;

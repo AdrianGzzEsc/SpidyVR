@@ -347,6 +347,58 @@ std::array<uint32_t, 2> App::eyeSize() {
     return spidy::scaledEyeSize(eye[0], eye[1], static_cast<uint32_t>(settings_.options.renderScale));
 }
 
+std::string App::summary() {
+    namespace text = spidy::launcher;
+    text::SupportFacts facts;
+    facts.version = kVersion;
+    // The session this launcher ran last; before it has run one, the last one in the reports folder.
+    std::string session;
+    for (const auto& line : log_)
+        session += line.text + "\n";
+    if (session.empty() && !scan_.root.empty())
+        session = lastConsoleLog(scan_.root);
+    facts.session = text::sessionEnd(session);
+    if (scan_.done) {
+        const Runtime* chosen = runtime();
+        facts.runtime = scan_.runtimes.empty() ? "none installed" : chosen ? chosen->name : "Automatic";
+        for (const auto& r : scan_.runtimes)
+            facts.runtime += (&r == &scan_.runtimes.front() ? "; installed: " : ", ") + r.name +
+                             (r.active ? " (Windows' active)" : "");
+        // The game's row, without its path.
+        const std::string version = scan_.gameVersion.empty() ? "" : " " + scan_.gameVersion;
+        if (scan_.gameExe.empty())
+            facts.game = scan_.epicFound ? "only the Epic Games Store version, which Spidy does not work with"
+                                         : "not found";
+        else if (scan_.build == Build::supported)
+            facts.game = scan_.gameSource + ", supported version" + version;
+        else if (scan_.build == Build::sameVersion)
+            facts.game = scan_.gameSource + ", version" + version + " but not Steam's file";
+        else if (scan_.build == Build::unsupported)
+            facts.game = scan_.gameSource + ", not supported. " +
+                         text::unsupportedGame(scan_.gameVersion, scan_.expectedVersion, scan_.steamApp);
+        else if (scan_.build == Build::unreadable)
+            facts.game = scan_.gameSource + ", Spider-Man.exe could not be read";
+    }
+    // The headset as the check found it; unchecked, as the session found it.
+    if (headset_.state() != Outcome::idle)
+        facts.headset = headset_.summary();
+    else if (session.find("Headset available: ") != std::string::npos)
+        facts.headset = text::headsetSummary(session, true) + " (in the last session)";
+    else
+        facts.headset = "not checked";
+    facts.pc = hardware();
+    const auto& o = settings_.options;
+    // A value the list of steps does not have counts as the nearest one.
+    size_t upscale = 0;
+    for (size_t i = 1; i < std::size(kUpscaleValues); ++i)
+        if (std::abs(kUpscaleValues[i] - o.upscale) < std::abs(kUpscaleValues[upscale] - o.upscale))
+            upscale = i;
+    facts.upscaling = kUpscales[upscale];
+    facts.renderResolution = format("%d%%", o.renderScale);
+    facts.webButton = kWebButtons[o.triggerWebs ? 1 : 0];
+    return text::supportSummary(facts);
+}
+
 // A chosen runtime that is no longer installed gives way to Automatic.
 void App::chooseDefaultRuntime() {
     if (runtime() || settings_.runtime == kAutoRuntime || scan_.runtimes.empty())
@@ -1583,8 +1635,8 @@ void App::logCard(ImVec2 size) {
         return;
     }
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(S(8), 0));
-    const float copyWidth = S(96), reportsWidth = S(116);
-    cardTitle("Session log", copyWidth + S(8) + reportsWidth);
+    const float copyWidth = S(96), reportsWidth = S(116), summaryWidth = S(200);
+    cardTitle("Session log", copyWidth + S(8) + reportsWidth + S(8) + summaryWidth);
     ImGui::BeginDisabled(log_.empty());
     if (button("Copy", copyWidth, Ink::plain, kCopy))
         copyLog();
@@ -1594,6 +1646,16 @@ void App::logCard(ImVec2 size) {
         openPath((std::filesystem::path(scan_.root) / L"reports").wstring());
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
         tip("Every session leaves a report there: send it with a bug report.");
+    ImGui::SameLine(0, S(8));
+    // For a help post: what a helper asks first, ready to paste. The button says so for two seconds.
+    const bool copied = ImGui::GetTime() - summaryCopied_ < 2;
+    if (button(copied ? "Copied###summary" : "Copy for Discord###summary", summaryWidth, Ink::plain, kCopy)) {
+        ImGui::SetClipboardText(summary().c_str());
+        summaryCopied_ = ImGui::GetTime();
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        tip("Copies your Spidy version, headset, PC and last session in a few lines: paste them into your post "
+            "on the Discord.");
     ImGui::PopStyleVar();
     ImGui::Dummy(ImVec2(0, S(8)));
     ImGui::PushStyleColor(ImGuiCol_ChildBg, vec(kWell));

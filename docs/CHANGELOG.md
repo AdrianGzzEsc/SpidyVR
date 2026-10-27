@@ -3,6 +3,32 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
+**Integration (October 27): every open branch and pull request together.**
+You: "create a merge with all changed for all active branches\prs". Branch
+`integration-2026-10-27`, on main (#33 in it) with the fixes below:
+
+- **Pull request #34** (AdrianGzzEsc): wall-run animations, controlled
+  flips and the COMBAT VISUALS switch, then spidy-1b's review corrections:
+  COMBAT VISUALS on by default, vents with the hands still off (October 24),
+  no row with more than 9 choices. Its FLIPS rework (FLIPS on the right
+  stick, CONTROLLED FLIPS) waits on your review of the flip settings; the
+  body command is version 16, so the stereo and body modules come from one
+  build.
+- **Copy for Discord** (October 12, never merged): a button beside Reports
+  above the session log copies a short code block for a help post (Spidy's
+  version, runtime, headset, game, graphics card, memory, upscaling, render
+  resolution, web button, the last session's last line and error, no
+  Windows user name). Moved onto the October 21 launcher, which had
+  rewritten the card it sat in.
+- **The release announces itself** (October 12, asked for October 20): the
+  Release workflow posts the new version to #spidy-updates through the
+  DISCORD_SPIDY_RELEASES_WEBHOOK secret (`tools/announce_release.ps1`), new
+  releases only, and a failed post leaves the release standing. Once this
+  is on main every release is announced there automatically.
+- **Checked:** the build, the core, flips and launcher tests (38 of 38),
+  every Python suite, the graphics test with the debug layer. Not run: the
+  game, the headset, a release run.
+
 **Latest build (October 27): fixes from the players' 0.5.0 reports.** You:
 "review bugs on discord in bugs and spidy chat, fix what you know how to or
 problems where the user provided to info for reseach (reports, save etc)".
