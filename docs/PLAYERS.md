@@ -458,10 +458,12 @@ Moving
   Phone ................ squeeze a grip with that hand behind your hip and
                          bring it up in front, still squeezed: your phone
                          opens in that hand. Reach for your back pocket,
-                         not the side of your hip, with your head facing
-                         ahead (turning it far toward the pocket turns the
-                         pocket with you), and bring the hand up within
-                         1.5 s. The stick picks an app, A
+                         not the side of your hip, squeeze once you are
+                         there (not on the way), and bring the hand up
+                         within 1.5 s. You can look at the pocket; a look
+                         back past about 70 degrees turns it with you.
+                         Still nothing? The session's report says why
+                         (`pocket`). The stick picks an app, A
                          opens it, B goes back or puts the phone away.
                          MENU puts it away and opens the game menu (map,
                          suits, skills; B closes it). CAMERA puts it away

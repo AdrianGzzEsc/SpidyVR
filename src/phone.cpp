@@ -513,9 +513,10 @@ bool PocketDraw::update(float seconds, bool play, const Pose& head, const Pose g
     const float dt = std::isfinite(seconds) ? std::clamp(seconds, 0.f, .1f) : 0.f;
     const bool headSeen = validTrackedPose(head);
     // The body's way: the head's level look, kept within yawDeadZone of it
-    // and drifting toward it (body_ik.cpp turns the body so).
+    // and drifting toward it.
     Vec3 look = head.orientation.rotate({0, 0, -1});
     look.y = 0;
+    float lookOff{};
     if (headSeen && length(look) > .1f) {
         const float headYaw = std::atan2(-look.x, -look.z);
         if (!yawSet_) {
@@ -527,9 +528,11 @@ bool PocketDraw::update(float seconds, bool play, const Pose& head, const Pose g
             yaw_ = std::remainder(yaw_ + std::copysign(std::min(excess, yawSpeed * dt), off), 2 * pi);
         off = std::remainder(headYaw - yaw_, 2 * pi);
         yaw_ = std::remainder(yaw_ + off * std::min(1.f, yawDrift * dt), 2 * pi);
+        lookOff = std::remainder(headYaw - yaw_, 2 * pi);
     }
     const Vec3 forward{-std::sin(yaw_), 0, -std::cos(yaw_)};
     const Vec3 right = cross(forward, {0, 1, 0});
+    const Vec3 neck = head.position - head.orientation.rotate({0, neckUp, -neckAhead});
     bool out{};
     for (int i = 0; i < 2; ++i) {
         // The grip is the squeeze's alone, wherever the headset has the hand.
@@ -552,33 +555,61 @@ bool PocketDraw::update(float seconds, bool play, const Pose& head, const Pose g
         const unsigned bit = 1u << i;
         if (!down) {
             hands_ &= ~bit;
-            if (drawing_ == i)
+            if (drawing_ == i) {
                 drawing_ = -1;
+                ++stats_.letGo;
+            }
             continue;
         }
         if (drawing_ == i && (time_ += dt) > drawSeconds) {
-            drawing_ = -1; // too slow
+            drawing_ = -1;
+            ++stats_.tooSlow;
             continue;
         }
-        if (!play || !headSeen || lost_[i] > lostSeconds)
+        if (!play || !headSeen)
             continue;
-        // The grip in the body's level axes: x right, y up, z ahead; a lost
-        // one carried on its way (carrySeconds).
+        const bool lostLong = lost_[i] > lostSeconds;
+        // The grip in the body's level axes from the neck: x right, y up, z
+        // ahead; a lost one carried on its way (carrySeconds).
         const Vec3 at = lost_[i] > 0
                             ? seen_[i] + limited(going_[i], carrySpeed) * std::min(lost_[i], carrySeconds)
                             : seen_[i];
+        const Vec3 n = at - neck;
+        const float x = dot(n, right), y = n.y, z = dot(n, forward);
+        if (press && drawing_ < 0) {
+            const Miss miss = lostLong                   ? lost
+                              : -y < pocketAbove         ? high
+                              : -y > pocketBelow         ? low
+                              : std::abs(x) < pocketSide ? central
+                              : std::abs(x) > pocketOut  ? wide
+                              : z > -behind              ? ahead
+                                                         : misses;
+            if (miss == misses) {
+                drawing_ = i;
+                time_ = 0;
+                hands_ |= bit;
+                ++stats_.presses;
+                ++stats_.begun;
+            } else if (lostLong || (-y >= reachBelow && z <= reachAhead)) {
+                ++stats_.presses;
+                ++stats_.missed[miss];
+                stats_.lastMiss = miss;
+                stats_.lastHand = {x, y, z};
+                stats_.lastLost = std::min(lost_[i], lostSeconds + 1);
+                stats_.lastLook = lookOff;
+            }
+            continue;
+        }
+        if (lostLong)
+            continue;
+        // Out in front: from the eyes.
         const Vec3 d = at - head.position;
-        const float x = dot(d, right), y = d.y, z = dot(d, forward);
-        if (press && drawing_ < 0 && -y >= pocketAbove && -y <= pocketBelow && std::abs(x) >= pocketSide &&
-            std::abs(x) <= pocketOut && z <= -behind) {
-            drawing_ = i;
-            time_ = 0;
-            hands_ |= bit;
-        } else if (drawing_ == i && lost_[i] == 0 && z >= front && -y <= raised) {
+        if (drawing_ == i && lost_[i] == 0 && dot(d, forward) >= front && -d.y <= raised) {
             out = true;
             hand_ = seen_[i];
             drewWith_ = i;
             ++draws_;
+            ++stats_.draws;
             drawing_ = -1; // the grip stays the draw's until let go
         }
     }

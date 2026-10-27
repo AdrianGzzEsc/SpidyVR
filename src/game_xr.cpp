@@ -146,7 +146,7 @@ enum GateReason : uint32_t {
     gateTracking = 16,    // the headset's pose or timing was not usable
 };
 struct XrData {
-    uint32_t magic = 0x53585244, version = 41, bytes = sizeof(XrData), status{};
+    uint32_t magic = 0x53585244, version = 42, bytes = sizeof(XrData), status{};
     int64_t sequence{};
     uint64_t frames{}, tracked{}, submitted{}, dropped{}, leftHands{}, rightHands{}, serial{}, generation{};
     uint32_t nativeKeys{}, error{};
@@ -374,8 +374,21 @@ struct XrData {
     // last measured and how far the tracking space is raised now, millimetres;
     // and how many seated eye heights were measured.
     uint32_t seated{}, heightCm{}, seatedEyeMm{}, seatedLiftMm{}, seatedMeasures{}, reserved41{};
+    // Version 42: the phone drawn from a back pocket (PocketDraw::Stats):
+    // grip presses that may have been for it, draws begun, phones out, draws
+    // too slow and let go of on the way, and presses that began none, by
+    // PocketDraw::Miss. Then the latest miss: its Miss + 1 (0 none yet), the hand
+    // from the neck in the body's level axes (millimetres: x right, y up, z
+    // ahead), how long the headset had lost it (milliseconds) and how far the
+    // head looked from the body's way (tenths of a degree, left positive).
+    uint32_t pocketPresses{}, pocketBegun{}, pocketDraws{}, pocketSlow{}, pocketLetGo{}, pocketMissed[6]{};
+    uint32_t pocketLastMiss{};
+    int32_t pocketLastHand[3]{};
+    uint32_t pocketLastLostMs{};
+    int32_t pocketLastLook{}, reserved42{};
 };
-static_assert(sizeof(XrData) == 1216);
+static_assert(sizeof(XrData) == 1288);
+static_assert(PocketDraw::misses == 6);
 // The game's own prompt and QTE calls, for one play session to say what their
 // arguments hold (game_prompts.hpp). The eight names matched the game on
 // October 13 - 107 of 630 calls into Flash in a 224 s session - but no prompt
@@ -3501,6 +3514,23 @@ DWORD WINAPI run(void*) {
                         d.seatedEyeMm = static_cast<uint32_t>(std::lround(seatLift.seatedEye() * 1000));
                         d.seatedLiftMm = static_cast<uint32_t>(std::lround(seatLift.lift() * 1000));
                         d.seatedMeasures = seatLift.measures();
+                        {
+                            const auto& p = pocketDraw.stats();
+                            d.pocketPresses = p.presses;
+                            d.pocketBegun = p.begun;
+                            d.pocketDraws = p.draws;
+                            d.pocketSlow = p.tooSlow;
+                            d.pocketLetGo = p.letGo;
+                            for (unsigned m = 0; m < PocketDraw::misses; ++m)
+                                d.pocketMissed[m] = p.missed[m];
+                            d.pocketLastMiss = p.lastMiss < PocketDraw::misses ? p.lastMiss + 1 : 0;
+                            const float hand[3]{p.lastHand.x, p.lastHand.y, p.lastHand.z};
+                            for (unsigned a = 0; a < 3; ++a)
+                                d.pocketLastHand[a] =
+                                    static_cast<int32_t>(std::lround(std::clamp(hand[a], -9.f, 9.f) * 1000));
+                            d.pocketLastLostMs = static_cast<uint32_t>(std::lround(p.lastLost * 1000));
+                            d.pocketLastLook = static_cast<int32_t>(std::lround(p.lastLook * 1800 / 3.14159265f));
+                        }
                         for (unsigned i = 0; i < 3; ++i) {
                             d.cameraForward[i] = camera[8 + i];
                             d.cameraUp[i] = camera[4 + i];

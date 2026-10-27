@@ -5699,6 +5699,53 @@ int main() {
             check(!step(still,Pose{},1)&&still.hands()==0u,"a hand lost hanging at the side began a draw");
             tracked[1]=true;
         }
+        // The head turned 60 degrees to look at the pocket for a second, the eyes going round the neck with it
+        // (October 25: "it's based on where your head is pointing"): the pocket stays the body's.
+        {
+            const Vec3 neck{0,1.6f,.09f};
+            const auto eyes=[&](Quat q){return Pose{neck+q.rotate({0,PocketDraw::neckUp,-PocketDraw::neckAhead}),q};};
+            const Pose looking=eyes(Quat::yaw(-1.05f)),nodding=eyes(Quat::around({1,0,0},-1.05f));
+            check(length(eyes(Quat{}).position-head.position)<1e-4f,"the test's neck is not under the eyes");
+            const Pose rightPocket{{.15f,.9f,.2f},{}};
+            PocketDraw turned;
+            for(int i=0;i<30;++i)step(turned,side,0);
+            for(int i=0;i<90;++i)step(turned,side,0,1.f/90,true,&looking);
+            check(!step(turned,rightPocket,1,1.f/90,true,&looking)&&turned.hands()==2u,
+                  "a look at the pocket turned it away from the hand");
+            check(step(turned,front,1)&&turned.draws()==1,"the draw begun with the head turned did not open");
+            step(turned,front,0);
+            // A nod, the eyes going forward and down, does not put the hand hanging at the side in the pocket.
+            PocketDraw nod;
+            for(int i=0;i<30;++i)step(nod,side,0);
+            for(int i=0;i<30;++i)step(nod,side,0,1.f/90,true,&nodding);
+            check(!step(nod,side,1,1.f/90,true,&nodding)&&nod.hands()==0u,"a nod made a pocket of the side");
+            // The report's count: that squeeze, not behind the neck, its hand and the look.
+            const auto& s=nod.stats();
+            check(s.presses==1&&s.begun==0&&s.missed[PocketDraw::ahead]==1&&s.lastMiss==PocketDraw::ahead,
+                  "the miss at the side was not counted as not behind");
+            check(std::abs(s.lastHand.x-.25f)<.01f&&std::abs(s.lastHand.z-.01f)<.005f&&s.lastLost==0,
+                  "the miss's hand is not where it was from the neck");
+            const auto& t=turned.stats();
+            check(t.presses==1&&t.begun==1&&t.draws==1&&t.lastMiss==PocketDraw::misses,"the draw was not counted");
+            check(t.lastLook==0,"a draw left a look in the report");
+            // A squeeze up in front (a web's) is no press for the phone; one with the hand lost long is, as lost.
+            PocketDraw counted;
+            step(counted,front,1);
+            step(counted,front,0);
+            tracked[1]=false;
+            for(int i=0;i<60;++i)step(counted,Pose{},0);
+            step(counted,Pose{},1);
+            tracked[1]=true;
+            check(counted.stats().presses==1&&counted.stats().missed[PocketDraw::lost]==1,
+                  "a squeeze in front was counted, or one with the hand lost long was not");
+            // Too slow and let go of are counted too.
+            step(counted,front,0);
+            step(counted,pocket,1);
+            step(counted,pocket,0);
+            step(counted,pocket,1);
+            for(int i=0;i<20;++i)step(counted,pocket,1,.1f);
+            check(counted.stats().letGo==1&&counted.stats().tooSlow==1,"the draws that ended were not counted");
+        }
         // A game hitch on the way (a moment out of play) does not end a draw.
         step(d,pocket,1);
         step(d,pocket,1,1.f/90,false);

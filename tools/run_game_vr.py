@@ -781,6 +781,11 @@ CALIBRATION_HINTS = {0: None, 1: 'tracking', 2: 'stand_up', 3: 'arms_out', 4: 's
                      6: 'triggers', 7: 'still'}
 
 
+# Why a grip pressed at the hip drew no phone (phone.hpp's PocketDraw::Miss): the headset had lost the hand,
+# it was above the pocket or below it, too near the middle or too far out, or not behind.
+POCKET_MISSES = ('lost', 'high', 'low', 'central', 'wide', 'ahead')
+
+
 # Why the view rig could not place a frame of play (GameTrackingRig::Inactive bits).
 TRACKING_GAP_REASONS = ((1, 'not_playing'), (2, 'unfocused'), (4, 'no_head'), (8, 'no_feet'), (16, 'no_camera'),
                         (32, 'frame_time'), (64, 'stale_display'), (128, 'no_eyes'))
@@ -788,10 +793,10 @@ TRACKING_GAP_REASONS = ((1, 'not_playing'), (2, 'unfocused'), (4, 'no_head'), (8
 
 def snapshot(game, address):
     for _ in range(8):
-        raw = game.read(address, 1216)
-        if len(raw) != 1216:
+        raw = game.read(address, 1288)
+        if len(raw) != 1288:
             return None
-        if struct.unpack_from('<3I', raw) != (0x53585244, 41, 1216):
+        if struct.unpack_from('<3I', raw) != (0x53585244, 42, 1288):
             raise RuntimeError('Game XR protocol mismatch')
         if struct.unpack_from('<Q', raw, 16)[0] & 1 or raw[16:24] != game.read(address+16, 8):
             continue
@@ -942,6 +947,19 @@ def snapshot(game, address):
         s_flags, s_height, s_eye, s_lift, s_measures = struct.unpack_from('<5I', raw, 1192)
         result.update(seated=dict(on=bool(s_flags & 1), measured=bool(s_flags & 2), height_cm=s_height,
                                   seated_eye_m=s_eye/1000, lift_m=s_lift/1000, measures=s_measures))
+        # Version 42: the phone drawn from a back pocket (phone.hpp's PocketDraw::Stats) - grip presses that may
+        # have been for it, draws begun, phones out, draws too slow or let go of on the way, presses that began
+        # none by why (POCKET_MISSES), and the latest such miss (0 none, else its POCKET_MISSES index + 1): why,
+        # the hand from the neck in the body's level axes (m: x right, y up, z ahead), how long the headset had
+        # lost it and how far the head looked from the body's way (degrees, left positive).
+        (p_presses, p_begun, p_draws, p_slow, p_let_go, *p_missed, p_last, p_x, p_y, p_z, p_lost,
+         p_look) = struct.unpack_from('<5I6II3iIi', raw, 1216)
+        result.update(pocket=dict(
+            presses=p_presses, begun=p_begun, draws=p_draws, too_slow=p_slow, let_go=p_let_go,
+            missed={name: count for name, count in zip(POCKET_MISSES, p_missed) if count},
+            last_miss=None if not 0 < p_last <= len(POCKET_MISSES) else dict(
+                why=POCKET_MISSES[p_last - 1], hand_m=[p_x/1000, p_y/1000, p_z/1000], lost_s=p_lost/1000,
+                look_deg=p_look/10)))
         result.update(crawl=dict(frames=crawl_frames, stood=crawl_stood, stick_samples=crawl_stick,
                                  stick_turn_degrees=round(math.degrees(crawl_turn), 1),
                                  stick_agreement=round(crawl_agreement, 3),

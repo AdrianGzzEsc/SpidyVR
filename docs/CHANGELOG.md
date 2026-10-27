@@ -3,6 +3,36 @@
 Every build, newest first, with what changed, why, and what was measured.
 Per-check results are in [VALIDATION.md](VALIDATION.md).
 
+**Latest build (October 27, third): the phone's pocket stays put, and the
+report says why a draw failed.** You, on why so many players cannot draw the
+phone, to my two proposals: "sure do both".
+
+- **A look at the pocket no longer turns it away.** The pocket is the body's,
+  and the body's way followed the head past 34 degrees and drifted half the
+  rest a second, so looking over a shoulder at the pocket you reach for
+  turned it toward the side: a back pocket 20 cm behind the eyes read 7.5
+  after a second's look at 60 degrees. The pocket's way now follows only
+  looks past about 70 degrees (1.2 rad), and drifts 0.2 a second.
+- **Measured from the neck.** The eyes go round the neck as the head turns
+  or nods (a nod brings them 4 to 5 cm forward), and every distance was from
+  the eyes. The pocket is now measured from a neck 10 cm under and 9 cm
+  behind the eyes in the head's own axes: 45 to 100 cm under it, 5 to 40 cm
+  to the side, 6 cm behind (the same pocket as before with the head straight:
+  a back pocket about 11 cm behind the neck, a hand hanging at the side about
+  1). Bringing the phone out in front is still judged from the eyes.
+- **The session report's `pocket`** (XrData version 42): grip presses that
+  may have been for the phone (in play, the hand 30 cm or more under the
+  neck and no more than 10 cm in front of it, or lost), draws begun, phones
+  out, draws too slow or let go of, presses that began none by why (`lost`,
+  `high`, `low`, `central`, `wide`, `ahead`), and the latest miss with the
+  hand from the neck, how long the headset had lost it and how far the head
+  looked from the body's way. One report from a player who cannot draw it
+  now tells which.
+- **Checked:** the core tests (new: a 60 degree look held a second at the
+  pocket, a nod with the hand at the side, every count; the old pocket fails
+  the look) and the protocol test of version 42. Not run: the headset. The
+  stereo module and the Python runner must come from one build (version 42).
+
 **Integration (October 27): every open branch and pull request together.**
 You: "create a merge with all changed for all active branches\prs". Branch
 `integration-2026-10-27`, on main (#33 in it) with the fixes below:
@@ -29,7 +59,7 @@ You: "create a merge with all changed for all active branches\prs". Branch
   every Python suite, the graphics test with the debug layer. Not run: the
   game, the headset, a release run.
 
-**Latest build (October 27): fixes from the players' 0.5.0 reports.** You:
+**Earlier build (October 27): fixes from the players' 0.5.0 reports.** You:
 "review bugs on discord in bugs and spidy chat, fix what you know how to or
 problems where the user provided to info for reseach (reports, save etc)".
 

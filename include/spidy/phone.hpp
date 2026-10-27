@@ -228,10 +228,15 @@ class Phone {
 //
 // The pocket is the body's, not the head's: the body faces where the head
 // has for a while - it turns with the head only past yawDeadZone, at up to
-// yawSpeed, and drifts toward it at yawDrift a second meanwhile, as the
-// body's own does (body_ik.hpp) - so a look over a shoulder does not bring a
-// hand hanging at the side into a pocket (October 19: 20 degrees of a turn
-// did, and a hanging arm's grip shot no web). A hand the headset loses
+// yawSpeed, and drifts toward it at yawDrift a second meanwhile - so a look
+// over a shoulder does not bring a hand hanging at the side into a pocket
+// (October 19: 20 degrees of a turn did, and a hanging arm's grip shot no
+// web), nor turn the pocket away from the hand reaching for it. Players look
+// at the pocket they reach for, and with body_ik's 34 degrees and half the
+// rest a second the pocket turned with that look (October 25, dasvors: "it's
+// based on where your head is pointing"), so it has its own, wider ones. And
+// the pocket is measured from the neck, which a turn or a nod of the head
+// does not move, not from the eyes, which go round it. A hand the headset loses
 // behind the back (the cameras of a headset do not see there) neither lets
 // go of the grip nor ends the draw: the grip is the squeeze's alone, and a
 // squeeze begins a draw where the hand was last seen, lostSeconds ago at most,
@@ -242,19 +247,47 @@ class Phone {
 // hand hanging still at the side goes nowhere.
 class PocketDraw {
   public:
-    // In the body's level axes from the head, metres: a pocket is
-    // `pocketBelow` to `pocketAbove` under the head, `pocketSide` to
-    // `pocketOut` to either side, and at least `behind` back of the eyes (a
-    // hand on a back pocket is about 20 cm behind them, one hanging at the
-    // side about 8 cm, and a look down brings the eyes 5 cm forward); the hand
-    // is out in front once it is `front` ahead and no lower than `raised`
-    // under the head.
-    static constexpr float pocketBelow = 1.1f, pocketAbove = .55f, pocketSide = .05f, pocketOut = .4f,
-                           behind = .15f, front = .15f, raised = .65f, drawSeconds = 1.5f, pressed = .6f,
-                           released = .3f, yawDeadZone = .6f, yawSpeed = 6, yawDrift = .5f, lostSeconds = .5f;
+    // The neck: the eyes are neckUp over it and neckAhead in front of it, in
+    // the head's own axes.
+    static constexpr float neckUp = .1f, neckAhead = .09f;
+    // In the body's level axes from the neck, metres: a pocket is
+    // `pocketBelow` to `pocketAbove` under it, `pocketSide` to `pocketOut` to
+    // either side, and at least `behind` back of it (a hand on a back pocket
+    // is about 11 cm behind the neck, one hanging at the side about 1 cm: 20
+    // and 8 behind the eyes, as measured until October 27). The hand is out
+    // in front once it is `front` ahead of the eyes and no lower than `raised`
+    // under them.
+    static constexpr float pocketBelow = 1.f, pocketAbove = .45f, pocketSide = .05f, pocketOut = .4f,
+                           behind = .06f, front = .15f, raised = .65f, drawSeconds = 1.5f, pressed = .6f,
+                           released = .3f, yawDeadZone = 1.2f, yawSpeed = 6, yawDrift = .2f, lostSeconds = .5f;
     // A lost hand's way: its last velocity, measured over about `smoothing`,
     // no faster than carrySpeed, for carrySeconds at most.
     static constexpr float carrySeconds = .3f, carrySpeed = 2.5f, smoothing = .05f;
+    // Why a grip pressed for the phone began no draw, the first thing wrong:
+    // the headset had lost the hand longer than lostSeconds, it was above the
+    // pocket or below it, too near the middle or too far out, or not behind.
+    enum Miss : uint32_t { lost, high, low, central, wide, ahead, misses };
+    // What the session report says of the draws (the player's question, October
+    // 27: why can so many not draw it?). A press counts where it may have been
+    // one for the phone: in play, the hand lower than `reachBelow` under the
+    // neck and no more than `reachAhead` in front of it, or lost.
+    static constexpr float reachBelow = .3f, reachAhead = .1f;
+    struct Stats {
+        // Such presses; draws begun at a pocket; phones out; draws that ended
+        // without one, too slow or let go of on the way; presses that began
+        // none, by Miss.
+        uint32_t presses{}, begun{}, draws{}, tooSlow{}, letGo{}, missed[misses]{};
+        // The latest miss: its Miss, the hand from the neck in the body's
+        // level axes (metres: x right, y up, z ahead), how long the headset
+        // had lost it (seconds, 0 seen), and how far the head looked from the
+        // body's way (radians, toward the left positive).
+        uint32_t lastMiss = misses;
+        Vec3 lastHand{};
+        float lastLost{}, lastLook{};
+    };
+    const Stats& stats() const {
+        return stats_;
+    }
     // seconds: since the previous update. play: the controllers play VR.
     // head, grips: in one space; tracked: each grip's pose; squeezes: each
     // hand's. True as the phone comes out: hand() says where.
@@ -286,6 +319,7 @@ class PocketDraw {
     int drawing_ = -1, drewWith_{};
     float time_{}, yaw_{}, lost_[2]{lostSeconds + 1, lostSeconds + 1};
     Vec3 hand_{}, seen_[2]{}, going_[2]{};
+    Stats stats_;
 };
 // The phone as the eyes see it (the user, October 24: "currently its very
 // flat with tons of zfighting"): a body 9 mm deep with rounded corners and
