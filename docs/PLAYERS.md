@@ -800,7 +800,11 @@ VR settings
                    arrows, target circle, impact/combo effects, KO text and
                    automatic combat slow-motion screen effects. Spider-Sense
                    attack warnings and offscreen direction markers remain
-                   visible. Combat controls, sound and vibration still work. Web aim markers and the
+                   visible. Off also removes directional combo requirements:
+                   uppercuts launch freely, downward blows knock standing enemies
+                   down or slam airborne enemies into the ground, even on a
+                   finisher count. Punch speed, contact and free-hand rules
+                   still apply. Sound and vibration still work. Web aim markers and the
                    game's own HUD have their existing separate controls.
   EXPERIMENTAL ... FLIPS (off until you switch it on) uses the right stick
                    in the air; release holds the angle and A returns upright.

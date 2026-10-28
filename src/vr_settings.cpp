@@ -321,7 +321,7 @@ const std::array<Row, 52>& rows() {
         {Item::uiStyle, "UI STYLE",
          "Spidy's own marks, gadget wheel and meters: comic print, or tech like the HUD.", uiStyleChoices},
         {Item::combatVisuals, "COMBAT VISUALS",
-         "Show punch arrows, target rings, hit effects and KO text. Spider-Sense stays on.", {}},
+         "Off: no combat effects; free uppercuts/smashes. Spider-Sense stays on.", {}},
         {Item::nearClip, "NEAR CLIP",
          "How near your eyes things still show. Nearer keeps your hands in view.", nearClipChoices},
         {Item::recordingFov, "RECORDING FOV",
