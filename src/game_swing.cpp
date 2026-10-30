@@ -1094,10 +1094,9 @@ extern "C" __declspec(dllexport) DWORD WINAPI SpidySwingSettings(void* input) {
     Settings s;
     uint32_t header[3]{};
     if (!copy(header, input, sizeof(header)) ||
-        (header[2] != settingsBytesV3 && header[2] != settingsBytesV4 &&
-         header[2] != settingsBytesV5 && header[2] != settingsBytesV6 &&
-         header[2] != settingsBytesV7 && header[2] != settingsBytesV8 && header[2] != settingsBytesV9 && header[2] != settingsBytesV10 &&
-         header[2] != sizeof(s)) ||
+        (header[2] != settingsBytesV3 && header[2] != settingsBytesV4 && header[2] != settingsBytesV5 &&
+         header[2] != settingsBytesV6 && header[2] != settingsBytesV7 && header[2] != settingsBytesV8 &&
+         header[2] != settingsBytesV9 && header[2] != settingsBytesV10 && header[2] != sizeof(s)) ||
         !copy(&s, input, header[2]) || !validSettings(s))
         return 2001;
     AcquireSRWLockExclusive(&lifecycle);

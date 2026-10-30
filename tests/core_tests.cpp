@@ -652,6 +652,30 @@ int main() {
             tick();
         }
     };
+    test("zero hand momentum is persisted and applies no arm torque", [] {
+        using namespace vr_settings;
+        Values v;
+        choose(Item::automaticHandStrength, 0, v);
+        check(v.automaticHandStrength == 0 &&
+                  withTabOnly(Values{}, tabOnlyText(v)).automaticHandStrength == 0,
+              "zero strength did not save");
+        spidy::RealisticFlip zero, strong;
+        RealisticFlipSettings settings;
+        settings.enabled = true;
+        settings.handStrength = 0;
+        RealisticFlight flight;
+        flight.valid = true;
+        flight.velocity = {0, 0, -10};
+        flight.handMomentum = {2, 0, 0};
+        for (int i = 0; i < 100; ++i) {
+            zero.update(flight, true, false, 0, .01f, settings);
+            settings.handStrength = 100;
+            strong.update(flight, true, false, 0, .01f, settings);
+            settings.handStrength = 0;
+        }
+        check(length(zero.angularVelocity()) < 1e-5f, "zero still applied arm torque");
+        check(length(strong.angularVelocity()) > .05f, "control case generated no arm torque");
+    });
     test("slingshot draws two fixed webs and launches once, capped, toward their midpoint", [] {
         Sling s;
         s.solver.limitSpeed(25);
@@ -20161,64 +20185,86 @@ int main() {
     test("free combat: vertical punches override hidden calls and every finisher count", [] {
         const Punches punches;
         const Flow flow;
-        const auto upper = punches.blow({0,.9f,-.44f},5);
-        const auto down = punches.blow({0,-.9f,-.44f},5);
-        for (int count=1; count<=10; ++count) {
+        const auto upper = punches.blow({0, .9f, -.44f}, 5);
+        const auto down = punches.blow({0, -.9f, -.44f}, 5);
+        for (int count = 1; count <= 10; ++count) {
             for (auto cue : {CueWay::None, CueWay::Up, CueWay::Down, CueWay::Left, CueWay::Right}) {
-                const auto up=deliver(upper,false,count,flow,{},cue,1.5f,true);
-                check(up.kind==BlowKind::Launch && up.fly && up.velocity.y>8,
+                const auto up = deliver(upper, false, count, flow, {}, cue, 1.5f, true);
+                check(up.kind == BlowKind::Launch && up.fly && up.velocity.y > 8,
                       "a hidden call or finisher replaced the uppercut");
-                near(up.damage,upper.damage*flow.damage(count),.01f);
-                const auto airUp=deliver(upper,true,count,flow,{},cue,1.5f,true);
-                check(airUp.kind==BlowKind::Juggle && airUp.velocity.y>8,"uppercut did not relaunch an airborne enemy");
-                const auto slam=deliver(down,true,count,flow,{},cue,1.5f,true);
-                check(slam.kind==BlowKind::Slam && slam.fly && slam.velocity.y<-20,
+                near(up.damage, upper.damage * flow.damage(count), .01f);
+                const auto airUp = deliver(upper, true, count, flow, {}, cue, 1.5f, true);
+                check(airUp.kind == BlowKind::Juggle && airUp.velocity.y > 8,
+                      "uppercut did not relaunch an airborne enemy");
+                const auto slam = deliver(down, true, count, flow, {}, cue, 1.5f, true);
+                check(slam.kind == BlowKind::Slam && slam.fly && slam.velocity.y < -20,
                       "a hidden call or finisher replaced the ground slam");
-                near(slam.damage,down.damage*flow.damage(count)*1.6f,.01f);
-                const auto floor=deliver(down,false,count,flow,{},cue,1.5f,true);
-                check(floor.knockback==Knockback::Knockdown && !floor.fly,
+                near(slam.damage, down.damage * flow.damage(count) * 1.6f, .01f);
+                const auto floor = deliver(down, false, count, flow, {}, cue, 1.5f, true);
+                check(floor.knockback == Knockback::Knockdown && !floor.fly,
                       "a hidden call or finisher prevented the grounded knockdown");
             }
         }
-        check(deliver(upper,false,5,flow).kind==BlowKind::Finisher,
+        check(deliver(upper, false, 5, flow).kind == BlowKind::Finisher,
               "visuals-on finisher behavior changed");
-        const auto weak=deliver(punches.blow({0,1,-.1f},3),false,1,flow,{},CueWay::Up,1.5f,true);
-        check(weak.kind==BlowKind::Hit && !weak.fly,"a hidden call bypassed uppercut strength");
-        const auto jab=deliver(punches.blow({0,0,-1},3),false,1,flow,{},CueWay::Down,1.5f,true);
-        check(jab.kind==BlowKind::Hit && jab.knockback!=Knockback::Knockdown,
+        const auto weak = deliver(punches.blow({0, 1, -.1f}, 3), false, 1, flow, {}, CueWay::Up, 1.5f, true);
+        check(weak.kind == BlowKind::Hit && !weak.fly, "a hidden call bypassed uppercut strength");
+        const auto jab = deliver(punches.blow({0, 0, -1}, 3), false, 1, flow, {}, CueWay::Down, 1.5f, true);
+        check(jab.kind == BlowKind::Hit && jab.knockback != Knockback::Knockdown,
               "a hidden call turned a straight jab into a smash");
     });
     test("free combat: vertical web strikes need no call but retain aim, speed and free-hand gates", [] {
-        for (Vec3 way : {Vec3{0,1,-.45f},Vec3{0,-1,-.45f}}) {
-            Fight f; f.wish.target=7; f.wish.freeDirections=true; f.rest();
-            const auto opened=f.punch(way,5);
-            check(opened && opened->target==7,"an intentional vertical swing needed a hidden call");
-            check(dot(f.strike.direction(),normalized(way))>.99f,"vertical strike lost the hand direction");
-            Fight on; on.wish.target=7; on.rest();
-            check(!on.punch(way,5),"visuals-on opened an uncalled vertical strike");
-            Fight slow; slow.wish.target=7; slow.wish.freeDirections=true; slow.rest();
-            check(!slow.punch(way,1),"a slow motion opened a strike");
-            Fight busy; busy.wish.target=7; busy.wish.freeDirections=true; busy.rest(.5f,false);
-            check(!busy.punch(way,5,nullptr,false),"an occupied hand opened a vertical strike");
-            Fight away; away.wish.target=7; away.wish.freeDirections=true; away.rest();
-            check(!away.punch({way.x,way.y,.5f},5),"a vertical swing away from the enemy opened a strike");
+        for (Vec3 way : {Vec3{0, 1, -.45f}, Vec3{0, -1, -.45f}}) {
+            Fight f;
+            f.wish.target = 7;
+            f.wish.freeDirections = true;
+            f.rest();
+            const auto opened = f.punch(way, 5);
+            check(opened && opened->target == 7, "an intentional vertical swing needed a hidden call");
+            check(dot(f.strike.direction(), normalized(way)) > .99f,
+                  "vertical strike lost the hand direction");
+            Fight on;
+            on.wish.target = 7;
+            on.rest();
+            check(!on.punch(way, 5), "visuals-on opened an uncalled vertical strike");
+            Fight slow;
+            slow.wish.target = 7;
+            slow.wish.freeDirections = true;
+            slow.rest();
+            check(!slow.punch(way, 1), "a slow motion opened a strike");
+            Fight busy;
+            busy.wish.target = 7;
+            busy.wish.freeDirections = true;
+            busy.rest(.5f, false);
+            check(!busy.punch(way, 5, nullptr, false), "an occupied hand opened a vertical strike");
+            Fight away;
+            away.wish.target = 7;
+            away.wish.freeDirections = true;
+            away.rest();
+            check(!away.punch({way.x, way.y, .5f}, 5),
+                  "a vertical swing away from the enemy opened a strike");
             const Walled wall;
-            Fight blocked; blocked.wish.target=7; blocked.wish.freeDirections=true; blocked.rest();
-            check(!blocked.punch(way,5,&wall),"a vertical strike passed through a wall");
+            Fight blocked;
+            blocked.wish.target = 7;
+            blocked.wish.freeDirections = true;
+            blocked.rest();
+            check(!blocked.punch(way, 5, &wall), "a vertical strike passed through a wall");
         }
     });
     test("free combat: settings default to called combat and preserve older packet layouts", [] {
         using namespace game_swing;
         Settings s;
-        check(s.version==11 && s.bytes==60 && s.combatVisuals==1 &&
-              offsetof(Settings,combatVisuals)==56,"free combat broke the settings defaults or layout");
-        s.combatVisuals=0;
-        check(validSettings(s),"free combat setting refused");
-        s.combatVisuals=2;
-        check(!validSettings(s),"invalid combat mode accepted");
+        check(s.version == 11 && s.bytes == 60 && s.combatVisuals == 1 &&
+                  offsetof(Settings, combatVisuals) == 56,
+              "free combat broke the settings defaults or layout");
+        s.combatVisuals = 0;
+        check(validSettings(s), "free combat setting refused");
+        s.combatVisuals = 2;
+        check(!validSettings(s), "invalid combat mode accepted");
         Settings old;
-        old.version=10; old.bytes=settingsBytesV10;
-        check(validSettings(old) && old.combatVisuals==1,"old settings changed combat semantics");
+        old.version = 10;
+        old.bytes = settingsBytesV10;
+        check(validSettings(old) && old.combatVisuals == 1, "old settings changed combat semantics");
     });
     test("hit stop: the game's time stops for a blow and eases back, longer for a finisher", [] {
         HitStop stop;
